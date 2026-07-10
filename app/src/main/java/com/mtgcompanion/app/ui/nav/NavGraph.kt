@@ -10,6 +10,8 @@ import androidx.navigation.navArgument
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.detail.CardDetailScreen
 import com.mtgcompanion.app.ui.detail.CardDetailViewModel
+import com.mtgcompanion.app.ui.scan.ScanScreen
+import com.mtgcompanion.app.ui.scan.ScanViewModel
 import com.mtgcompanion.app.ui.search.SearchScreen
 import com.mtgcompanion.app.ui.search.SearchViewModel
 import com.mtgcompanion.app.ui.settings.SettingsScreen
@@ -21,6 +23,7 @@ import java.nio.charset.StandardCharsets
 private object Routes {
     const val SEARCH = "search"
     const val SETTINGS = "settings"
+    const val SCAN = "scan"
     const val DETAIL = "detail/{cardName}"
     fun detail(cardName: String) = "detail/" + URLEncoder.encode(cardName, StandardCharsets.UTF_8.name())
 }
@@ -35,7 +38,21 @@ fun MtgNavGraph(settingsRepository: SettingsRepository) {
             SearchScreen(
                 viewModel = viewModel,
                 onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
-                onSettingsClick = { navController.navigate(Routes.SETTINGS) }
+                onSettingsClick = { navController.navigate(Routes.SETTINGS) },
+                onScanClick = { navController.navigate(Routes.SCAN) }
+            )
+        }
+
+        composable(Routes.SCAN) {
+            val viewModel: ScanViewModel = viewModel()
+            ScanScreen(
+                viewModel = viewModel,
+                onCardFound = { card ->
+                    navController.navigate(Routes.detail(card.name)) {
+                        popUpTo(Routes.SCAN) { inclusive = true }
+                    }
+                },
+                onBack = { navController.popBackStack() }
             )
         }
 

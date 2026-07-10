@@ -12,4 +12,7 @@ interface ScryfallApi {
 
     @GET("cards/named")
     suspend fun getCardByExactName(@Query("exact") name: String): ScryfallCard
+
+    @GET("cards/named")
+    suspend fun getCardByFuzzyName(@Query("fuzzy") name: String): ScryfallCard
 }

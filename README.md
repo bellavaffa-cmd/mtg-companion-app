@@ -15,6 +15,14 @@ The visual theme (dark near-black background, gold accent, Cinzel/DM Sans fonts)
 [mtgoracle.gg](https://www.mtgoracle.gg/)'s own design system, including its exact color tokens and
 bundled Google Fonts.
 
+## Scanning a physical card
+
+Tap the camera icon on the search screen to scan a card with the device camera. This uses
+on-device ML Kit text recognition (no cloud call, no key needed) to read the card's title - the
+top-most line of text on the frame - then looks that name up via Scryfall's fuzzy-name search, so
+minor OCR misreads still resolve to the right card. If no text is found, or nothing matches, you
+get an inline error and can retry.
+
 ## Build
 
 ```bash
@@ -40,8 +48,8 @@ their developer program at [docs.tcgplayer.com](https://docs.tcgplayer.com/). On
   `edhrec`, `tcgplayer`), plus `NetworkModule.kt` wiring up the Retrofit/OkHttp instances.
 - `data/` — repositories combining the network layer for each feature (`CardRepository`,
   `EdhrecRepository`, `ComboRepository`, `TcgPlayerRepository`, `SettingsRepository`).
-- `ui/search`, `ui/detail`, `ui/settings` — Compose screens + ViewModels.
-- `ui/nav/NavGraph.kt` — navigation between the three screens.
+- `ui/search`, `ui/detail`, `ui/settings`, `ui/scan` — Compose screens + ViewModels.
+- `ui/nav/NavGraph.kt` — navigation between screens.
 
 ## Known limitations
 

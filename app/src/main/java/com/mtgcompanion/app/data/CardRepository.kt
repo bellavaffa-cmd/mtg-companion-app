@@ -12,4 +12,6 @@ class CardRepository {
     }
 
     suspend fun getByExactName(name: String): ScryfallCard = api.getCardByExactName(name)
+
+    suspend fun getByFuzzyName(name: String): ScryfallCard = api.getCardByFuzzyName(name)
 }

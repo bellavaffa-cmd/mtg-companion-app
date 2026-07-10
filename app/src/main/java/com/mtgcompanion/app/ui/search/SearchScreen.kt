@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -57,7 +58,8 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 fun SearchScreen(
     viewModel: SearchViewModel,
     onCardClick: (ScryfallCard) -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onScanClick: () -> Unit
 ) {
     val query by viewModel.query.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
@@ -75,6 +77,9 @@ fun SearchScreen(
                         )
                     },
                     actions = {
+                        IconButton(onClick = onScanClick) {
+                            Icon(Icons.Filled.CameraAlt, contentDescription = "Scan a card", tint = Gold)
+                        }
                         IconButton(onClick = onSettingsClick) {
                             Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Gold)
                         }
