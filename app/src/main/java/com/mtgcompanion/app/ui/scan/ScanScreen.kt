@@ -19,11 +19,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,12 +45,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -56,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
@@ -77,7 +80,6 @@ import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 import java.util.concurrent.Executors
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScanScreen(
     viewModel: ScanViewModel,
@@ -100,129 +102,147 @@ fun ScanScreen(
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    // Which card (if any) currently has its "add to deck" picker open.
     var deckPickerCard by remember { mutableStateOf<ScryfallCard?>(null) }
+    var showList by remember { mutableStateOf(false) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { cameraExecutor.shutdown() }
-    }
+    DisposableEffect(Unit) { onDispose { cameraExecutor.shutdown() } }
 
-    Scaffold(
-        containerColor = Bg,
-        topBar = {
-            TopAppBar(
-                title = { Text("SCAN CARDS", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
+    Box(modifier = Modifier.fillMaxSize().background(Bg)) {
+        if (!hasCameraPermission) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    "Camera access is needed to scan a card. Grant it to continue.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            OverlayBackButton(onBack)
+            return@Box
+        }
+
+        // Full-screen camera preview.
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                val previewView = PreviewView(ctx).apply {
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                }
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                cameraProviderFuture.addListener({
+                    val cameraProvider = cameraProviderFuture.get()
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
                     }
-                },
-                actions = {
-                    // Debug-only: feed a bundled card image through the real recognition
-                    // pipeline (ML Kit + Scryfall) since the emulator has no real camera.
-                    // Stripped from release builds by the BuildConfig.DEBUG guard.
-                    if (BuildConfig.DEBUG) {
-                        IconButton(onClick = {
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also { imageAnalysis ->
+                            imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                                val mediaImage = imageProxy.image
+                                if (mediaImage == null) {
+                                    imageProxy.close()
+                                    return@setAnalyzer
+                                }
+                                val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                                viewModel.onFrame(inputImage, onProcessed = { imageProxy.close() })
+                            }
+                        }
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                        analysis
+                    )
+                }, ContextCompat.getMainExecutor(ctx))
+                previewView
+            }
+        )
+
+        // Framing guide so the user knows to fill the frame with the card title.
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(0.8f)
+                .fillMaxHeight(0.55f)
+                .border(BorderStroke(2.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(12.dp))
+        )
+
+        // Top overlay: back + status pill + (debug) test button.
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ScrimIconButton(onClick = onBack, icon = Icons.Filled.ArrowBack, desc = "Back")
+                Box(modifier = Modifier.weight(1f))
+                if (BuildConfig.DEBUG) {
+                    ScrimIconButton(
+                        onClick = {
                             Thread {
                                 runCatching {
                                     val bitmap = context.assets.open("test_card.png").use { BitmapFactory.decodeStream(it) }
                                     viewModel.debugScan(InputImage.fromBitmap(bitmap, 0))
                                 }
                             }.start()
-                        }) {
-                            Icon(Icons.Filled.Science, contentDescription = "Scan test card", tint = Gold)
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
-            )
-        }
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding).padding(horizontal = 20.dp)) {
-            if (!hasCameraPermission) {
-                Text(
-                    "Camera access is needed to scan a card. Grant it to continue.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 20.dp)
-                )
-                return@Column
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .padding(top = 12.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
-            ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        val previewView = PreviewView(ctx)
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                        cameraProviderFuture.addListener({
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
-                            val analysis = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build()
-                                .also { imageAnalysis ->
-                                    imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                                        val mediaImage = imageProxy.image
-                                        if (mediaImage == null) {
-                                            imageProxy.close()
-                                            return@setAnalyzer
-                                        }
-                                        val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                                        viewModel.onFrame(inputImage, onProcessed = { imageProxy.close() })
-                                    }
-                                }
-                            cameraProvider.unbindAll()
-                            cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                preview,
-                                analysis
-                            )
-                        }, ContextCompat.getMainExecutor(ctx))
-                        previewView
-                    }
-                )
-            }
-
-            Text(
-                state.status ?: "Point the camera at a card — scanned cards drop into the list below.",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (state.status != null) Gold else TextMuted,
-                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-            )
-
-            if (state.scannedCards.isEmpty()) {
-                Text(
-                    "No cards scanned yet.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextDim,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(state.scannedCards, key = { it.id }) { card ->
-                        ScannedCardRow(
-                            card = card,
-                            onAddToCollection = { viewModel.addToCollection(card) },
-                            onAddToDeck = { deckPickerCard = card },
-                            onRemove = { viewModel.removeFromList(card) }
-                        )
-                    }
+                        },
+                        icon = Icons.Filled.Science,
+                        desc = "Scan test card"
+                    )
                 }
             }
+            state.status?.let { status ->
+                Text(
+                    status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GoldLight,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Bg.copy(alpha = 0.7f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+            }
+        }
+
+        // Bottom overlay: view-list button.
+        Button(
+            onClick = { showList = true },
+            shape = RoundedCornerShape(2.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(24.dp)
+        ) {
+            Text(
+                "VIEW LIST (${state.scannedCards.size})",
+                style = MaterialTheme.typography.labelLarge,
+                color = Bg
+            )
+        }
+
+        // Slide-up list panel.
+        if (showList) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .clickable(onClick = { showList = false })
+            )
+            ScannedListPanel(
+                cards = state.scannedCards,
+                onClose = { showList = false },
+                onAddToCollection = { viewModel.addToCollection(it) },
+                onAddToDeck = { deckPickerCard = it },
+                onRemove = { viewModel.removeFromList(it) },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
     }
 
@@ -243,6 +263,82 @@ fun ScanScreen(
 }
 
 @Composable
+private fun OverlayBackButton(onBack: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(12.dp)
+    ) {
+        ScrimIconButton(onClick = onBack, icon = Icons.Filled.ArrowBack, desc = "Back")
+    }
+}
+
+@Composable
+private fun ScrimIconButton(onClick: () -> Unit, icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Bg.copy(alpha = 0.6f))
+    ) {
+        Icon(icon, contentDescription = desc, tint = Gold)
+    }
+}
+
+@Composable
+private fun ScannedListPanel(
+    cards: List<ScryfallCard>,
+    onClose: () -> Unit,
+    onAddToCollection: (ScryfallCard) -> Unit,
+    onAddToDeck: (ScryfallCard) -> Unit,
+    onRemove: (ScryfallCard) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.6f)
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(Surface)
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "SCANNED (${cards.size})",
+                style = MaterialTheme.typography.titleMedium,
+                color = GoldLight
+            )
+            Box(modifier = Modifier.weight(1f))
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = "Close list", tint = TextDim)
+            }
+        }
+        if (cards.isEmpty()) {
+            Text(
+                "No cards scanned yet. Point the camera at a card.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(cards, key = { it.id }) { card ->
+                    ScannedCardRow(
+                        card = card,
+                        onAddToCollection = { onAddToCollection(card) },
+                        onAddToDeck = { onAddToDeck(card) },
+                        onRemove = { onRemove(card) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ScannedCardRow(
     card: ScryfallCard,
     onAddToCollection: () -> Unit,
@@ -255,7 +351,7 @@ private fun ScannedCardRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
+            .background(Bg)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
             .padding(10.dp)
     ) {
