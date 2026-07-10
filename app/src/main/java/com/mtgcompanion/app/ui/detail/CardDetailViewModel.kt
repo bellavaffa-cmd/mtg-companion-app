@@ -28,6 +28,8 @@ data class CardDetailUiState(
     val error: String? = null,
     val edhrecLists: List<EdhrecCardList>? = null,
     val edhrecLoading: Boolean = false,
+    val cardEdhrecLists: List<EdhrecCardList>? = null,
+    val cardEdhrecLoading: Boolean = false,
     val combos: List<Variant> = emptyList(),
     val combosLoading: Boolean = false,
     val tcgPrices: List<TcgPriceResult>? = null,
@@ -65,6 +67,7 @@ class CardDetailViewModel(
                 _uiState.value = _uiState.value.copy(loading = false, card = card)
 
                 loadCombos()
+                loadCardEdhrec()
                 if (card.canBeCommander) loadEdhrec()
                 card.tcgplayerId?.let { loadTcgPrice(it) }
             } catch (e: Exception) {
@@ -85,6 +88,18 @@ class CardDetailViewModel(
                 null
             }
             _uiState.value = _uiState.value.copy(edhrecLoading = false, edhrecLists = lists)
+        }
+    }
+
+    private fun loadCardEdhrec() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(cardEdhrecLoading = true)
+            val lists = try {
+                edhrecRepository.getCardPage(cardName)
+            } catch (e: Exception) {
+                null
+            }
+            _uiState.value = _uiState.value.copy(cardEdhrecLoading = false, cardEdhrecLists = lists)
         }
     }
 

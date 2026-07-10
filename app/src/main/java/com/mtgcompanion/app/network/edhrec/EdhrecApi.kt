@@ -6,6 +6,9 @@ import retrofit2.http.Path
 interface EdhrecApi {
     @GET("pages/commanders/{slug}.json")
     suspend fun getCommanderPage(@Path("slug") slug: String): EdhrecPage
+
+    @GET("pages/cards/{slug}.json")
+    suspend fun getCardPage(@Path("slug") slug: String): EdhrecPage
 }
 
 /**

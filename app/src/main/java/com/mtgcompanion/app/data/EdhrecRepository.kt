@@ -17,4 +17,17 @@ class EdhrecRepository {
             if (e.code() == 404) null else throw e
         }
     }
+
+    /**
+     * EDHREC's per-card page: which commanders run this card and what's played alongside it.
+     * Returns null if EDHREC has no page for the card (e.g. unplayed/too new).
+     */
+    suspend fun getCardPage(cardName: String): List<EdhrecCardList>? {
+        val slug = edhrecSlug(cardName)
+        return try {
+            api.getCardPage(slug).container?.jsonDict?.cardlists
+        } catch (e: HttpException) {
+            if (e.code() == 404) null else throw e
+        }
+    }
 }

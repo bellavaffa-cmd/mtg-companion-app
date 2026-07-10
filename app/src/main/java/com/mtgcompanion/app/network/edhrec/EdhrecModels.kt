@@ -27,6 +27,7 @@ data class EdhrecCardView(
     val sanitized: String? = null,
     val url: String? = null,
     val synergy: Double? = null,
+    val lift: Double? = null,
     val inclusion: Int? = null,
     @Json(name = "num_decks") val numDecks: Int? = null,
     @Json(name = "potential_decks") val potentialDecks: Int? = null

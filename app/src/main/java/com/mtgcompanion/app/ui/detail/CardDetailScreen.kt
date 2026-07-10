@@ -140,6 +140,18 @@ fun CardDetailScreen(
                     }
                     item {
                         Column {
+                            SectionLabel("EDHREC · Top Commanders")
+                            EdhrecCommandersSection(state)
+                        }
+                    }
+                    item {
+                        Column {
+                            SectionLabel("EDHREC · Often Played With")
+                            EdhrecSynergySection(state)
+                        }
+                    }
+                    item {
+                        Column {
                             SectionLabel("Combos · Commander Spellbook")
                             CombosSection(state)
                         }
@@ -371,6 +383,71 @@ private fun EdhrecSection(state: CardDetailUiState) {
                         style = MaterialTheme.typography.bodySmall,
                         color = TextPrimary
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EdhrecCommandersSection(state: CardDetailUiState) {
+    GoldPanel {
+        when {
+            state.cardEdhrecLoading -> CircularProgressIndicator(color = Gold)
+            state.cardEdhrecLists == null -> Text(
+                "No EDHREC data found for this card.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            else -> {
+                val commanders = state.cardEdhrecLists.firstOrNull { it.tag == "topcommanders" }
+                    ?: state.cardEdhrecLists.firstOrNull { it.header?.contains("Commander", ignoreCase = true) == true }
+                val views = commanders?.cardviews?.take(10).orEmpty()
+                if (views.isEmpty()) {
+                    Text("No commander data for this card.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    views.forEachIndexed { index, view ->
+                        if (index > 0) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))
+                        }
+                        Text(
+                            "${view.name} — runs it in ${view.numDecks ?: 0} decks",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextPrimary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EdhrecSynergySection(state: CardDetailUiState) {
+    GoldPanel {
+        when {
+            state.cardEdhrecLoading -> CircularProgressIndicator(color = Gold)
+            state.cardEdhrecLists == null -> Text(
+                "No EDHREC data found for this card.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            else -> {
+                // Prefer high-synergy ("lift") cards; fall back to raw top cards.
+                val synergy = state.cardEdhrecLists.firstOrNull { it.tag == "highliftcards" }
+                    ?: state.cardEdhrecLists.firstOrNull { it.tag == "topcards" }
+                val views = synergy?.cardviews?.take(10).orEmpty()
+                if (views.isEmpty()) {
+                    Text("No synergy data for this card.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    views.forEachIndexed { index, view ->
+                        if (index > 0) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))
+                        }
+                        Text(
+                            "${view.name} — in ${view.numDecks ?: 0} decks",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextPrimary
+                        )
+                    }
                 }
             }
         }
