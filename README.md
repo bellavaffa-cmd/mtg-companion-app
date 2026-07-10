@@ -26,6 +26,17 @@ one's OCR + lookup has finished, so it naturally throttles to roughly one attemp
 instead of hammering ML Kit/Scryfall at full camera frame rate. Misses just keep scanning silently;
 a status line surfaces the last attempted name if nothing matched.
 
+## Collection and decks
+
+- **Collection** tab: track owned copies of any card (normal/foil quantities) via "ADD TO COLLECTION"
+  on a card's detail page. Adjust or remove counts from the Collection tab itself.
+- **Decks** tab: create named decks, add cards to them via "ADD TO DECK" on a card's detail page
+  (pick an existing deck or create a new one on the spot), and star any commander-eligible card in
+  a deck to set it as that deck's commander.
+
+Both are stored locally on-device as JSON via DataStore (`CollectionRepository`, `DeckRepository`) -
+no account, no sync, no server.
+
 ## Build
 
 ```bash
@@ -50,9 +61,10 @@ their developer program at [docs.tcgplayer.com](https://docs.tcgplayer.com/). On
 - `network/` — Retrofit API interfaces + Moshi data classes per source (`scryfall`, `spellbook`,
   `edhrec`, `tcgplayer`), plus `NetworkModule.kt` wiring up the Retrofit/OkHttp instances.
 - `data/` — repositories combining the network layer for each feature (`CardRepository`,
-  `EdhrecRepository`, `ComboRepository`, `TcgPlayerRepository`, `SettingsRepository`).
-- `ui/search`, `ui/detail`, `ui/settings`, `ui/scan` — Compose screens + ViewModels.
-- `ui/nav/NavGraph.kt` — navigation between screens.
+  `EdhrecRepository`, `ComboRepository`, `TcgPlayerRepository`, `SettingsRepository`), plus
+  on-device storage (`CollectionRepository`, `DeckRepository`) backed by DataStore + Moshi JSON.
+- `ui/search`, `ui/detail`, `ui/settings`, `ui/scan`, `ui/collection`, `ui/decks` — Compose screens + ViewModels.
+- `ui/nav/NavGraph.kt` — navigation graph, including the bottom nav bar (Search/Collection/Decks).
 
 ## Known limitations
 

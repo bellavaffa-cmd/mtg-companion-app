@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,13 +28,21 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,16 +50,19 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
+import com.mtgcompanion.app.ui.theme.GoldDim
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,7 +71,16 @@ fun CardDetailScreen(
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val decks by viewModel.decks.collectAsState()
     val context = LocalContext.current
+    var showDeckPicker by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.addedToCollectionMessage, state.addedToDeckMessage) {
+        if (state.addedToCollectionMessage != null || state.addedToDeckMessage != null) {
+            delay(2000)
+            viewModel.clearMessages()
+        }
+    }
 
     Scaffold(
         containerColor = Bg,
@@ -94,6 +116,13 @@ fun CardDetailScreen(
                 ) {
                     item { CardHeader(card) }
                     item {
+                        CollectionAndDeckActions(
+                            state = state,
+                            onAddToCollection = viewModel::addToCollection,
+                            onAddToDeck = { showDeckPicker = true }
+                        )
+                    }
+                    item {
                         Column {
                             SectionLabel("Prices")
                             PricesSection(state, onOpenTcgplayer = {
@@ -119,6 +148,103 @@ fun CardDetailScreen(
             }
         }
     }
+
+    if (showDeckPicker) {
+        DeckPickerDialog(
+            decks = decks,
+            onDismiss = { showDeckPicker = false },
+            onPickDeck = { deckId ->
+                showDeckPicker = false
+                viewModel.addToDeck(deckId)
+            },
+            onCreateDeck = { name ->
+                showDeckPicker = false
+                viewModel.createDeckAndAdd(name)
+            }
+        )
+    }
+}
+
+@Composable
+private fun CollectionAndDeckActions(
+    state: CardDetailUiState,
+    onAddToCollection: () -> Unit,
+    onAddToDeck: () -> Unit
+) {
+    Column {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = onAddToCollection,
+                shape = RoundedCornerShape(2.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("ADD TO COLLECTION", style = MaterialTheme.typography.labelLarge, color = Bg) }
+            OutlinedButton(
+                onClick = onAddToDeck,
+                shape = RoundedCornerShape(2.dp),
+                border = BorderStroke(1.dp, BorderColor),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
+            ) { Text("ADD TO DECK", style = MaterialTheme.typography.labelLarge) }
+        }
+        (state.addedToCollectionMessage ?: state.addedToDeckMessage)?.let {
+            Text(it, color = Gold, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun DeckPickerDialog(
+    decks: List<Deck>,
+    onDismiss: () -> Unit,
+    onPickDeck: (String) -> Unit,
+    onCreateDeck: (String) -> Unit
+) {
+    var newDeckName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = { Text("Add to deck", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column {
+                decks.forEach { deck ->
+                    Text(
+                        deck.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPickDeck(deck.id) }
+                            .padding(vertical = 10.dp)
+                    )
+                }
+                if (decks.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))
+                }
+                OutlinedTextField(
+                    value = newDeckName,
+                    onValueChange = { newDeckName = it },
+                    label = { Text("New deck name", color = GoldDim) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Gold
+                    ),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (newDeckName.isNotBlank()) onCreateDeck(newDeckName.trim()) },
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("CREATE & ADD", color = Bg) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+        }
+    )
 }
 
 @Composable

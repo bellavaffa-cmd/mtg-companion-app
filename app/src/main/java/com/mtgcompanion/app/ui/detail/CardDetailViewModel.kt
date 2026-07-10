@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.ComboRepository
+import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.TcgPlayerRepository
@@ -13,8 +16,10 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.network.tcgplayer.TcgPriceResult
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class CardDetailUiState(
@@ -26,7 +31,9 @@ data class CardDetailUiState(
     val combos: List<Variant> = emptyList(),
     val combosLoading: Boolean = false,
     val tcgPrices: List<TcgPriceResult>? = null,
-    val tcgPricesConfigured: Boolean = false
+    val tcgPricesConfigured: Boolean = false,
+    val addedToCollectionMessage: String? = null,
+    val addedToDeckMessage: String? = null
 )
 
 class CardDetailViewModel(
@@ -34,11 +41,17 @@ class CardDetailViewModel(
     private val cardRepository: CardRepository,
     private val edhrecRepository: EdhrecRepository,
     private val comboRepository: ComboRepository,
-    private val tcgPlayerRepository: TcgPlayerRepository
+    private val tcgPlayerRepository: TcgPlayerRepository,
+    private val collectionRepository: CollectionRepository,
+    private val deckRepository: DeckRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CardDetailUiState())
     val uiState: StateFlow<CardDetailUiState> = _uiState.asStateFlow()
+
+    val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
 
     init {
         loadCard()
@@ -101,9 +114,40 @@ class CardDetailViewModel(
         }
     }
 
+    fun addToCollection() {
+        val card = _uiState.value.card ?: return
+        viewModelScope.launch {
+            collectionRepository.addCard(card)
+            _uiState.value = _uiState.value.copy(addedToCollectionMessage = "Added to collection.")
+        }
+    }
+
+    fun addToDeck(deckId: String) {
+        val card = _uiState.value.card ?: return
+        viewModelScope.launch {
+            deckRepository.addCardToDeck(deckId, card)
+            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added to deck.")
+        }
+    }
+
+    fun createDeckAndAdd(name: String) {
+        val card = _uiState.value.card ?: return
+        viewModelScope.launch {
+            val deck = deckRepository.createDeck(name)
+            deckRepository.addCardToDeck(deck.id, card)
+            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added to \"${deck.name}\".")
+        }
+    }
+
+    fun clearMessages() {
+        _uiState.value = _uiState.value.copy(addedToCollectionMessage = null, addedToDeckMessage = null)
+    }
+
     class Factory(
         private val cardName: String,
-        private val settingsRepository: SettingsRepository
+        private val settingsRepository: SettingsRepository,
+        private val collectionRepository: CollectionRepository,
+        private val deckRepository: DeckRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -112,7 +156,9 @@ class CardDetailViewModel(
                 cardRepository = CardRepository(),
                 edhrecRepository = EdhrecRepository(),
                 comboRepository = ComboRepository(),
-                tcgPlayerRepository = TcgPlayerRepository(settingsRepository)
+                tcgPlayerRepository = TcgPlayerRepository(settingsRepository),
+                collectionRepository = collectionRepository,
+                deckRepository = deckRepository
             ) as T
         }
     }
