@@ -89,6 +89,42 @@ class ScanViewModel(
         }
     }
 
+    /**
+     * Debug-only entry point: run one image through the real ML Kit + Scryfall pipeline,
+     * bypassing the [busy] gate that the live camera analyzer holds. Surfaces the OCR result
+     * in the status line so a headless emulator (no real camera) can still exercise recognition.
+     */
+    fun debugScan(image: InputImage) {
+        recognizer.process(image)
+            .addOnSuccessListener { visionText ->
+                val candidate = extractCardName(visionText)
+                if (candidate == null) {
+                    _uiState.value = _uiState.value.copy(status = "OCR read no card title")
+                    return@addOnSuccessListener
+                }
+                _uiState.value = _uiState.value.copy(status = "OCR read \"$candidate\" — looking up…")
+                viewModelScope.launch {
+                    try {
+                        val card = cardRepository.getByFuzzyName(candidate)
+                        val alreadyScanned = _uiState.value.scannedCards.any { it.id == card.id }
+                        _uiState.value = if (alreadyScanned) {
+                            _uiState.value.copy(status = "${card.name} is already in the list")
+                        } else {
+                            _uiState.value.copy(
+                                status = "Added ${card.name}",
+                                scannedCards = listOf(card) + _uiState.value.scannedCards
+                            )
+                        }
+                    } catch (e: Exception) {
+                        _uiState.value = _uiState.value.copy(status = "No match for \"$candidate\"")
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                _uiState.value = _uiState.value.copy(status = "OCR failed: ${e.message}")
+            }
+    }
+
     fun removeFromList(card: ScryfallCard) {
         _uiState.value = _uiState.value.copy(scannedCards = _uiState.value.scannedCards.filterNot { it.id == card.id })
     }

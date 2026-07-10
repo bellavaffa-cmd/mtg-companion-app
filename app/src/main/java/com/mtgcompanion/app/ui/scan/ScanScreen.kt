@@ -2,6 +2,7 @@ package com.mtgcompanion.app.ui.scan
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -29,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +63,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.google.mlkit.vision.common.InputImage
+import com.mtgcompanion.app.BuildConfig
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.theme.Bg
@@ -113,6 +116,23 @@ fun ScanScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
+                    }
+                },
+                actions = {
+                    // Debug-only: feed a bundled card image through the real recognition
+                    // pipeline (ML Kit + Scryfall) since the emulator has no real camera.
+                    // Stripped from release builds by the BuildConfig.DEBUG guard.
+                    if (BuildConfig.DEBUG) {
+                        IconButton(onClick = {
+                            Thread {
+                                runCatching {
+                                    val bitmap = context.assets.open("test_card.png").use { BitmapFactory.decodeStream(it) }
+                                    viewModel.debugScan(InputImage.fromBitmap(bitmap, 0))
+                                }
+                            }.start()
+                        }) {
+                            Icon(Icons.Filled.Science, contentDescription = "Scan test card", tint = Gold)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
