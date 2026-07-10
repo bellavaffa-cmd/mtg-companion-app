@@ -11,6 +11,10 @@ data from four sources:
 - **TCGPlayer** — optional live marketplace pricing via TCGPlayer's partner API. Requires your own
   API credentials (see below); without them the app just shows Scryfall's bundled price data.
 
+The visual theme (dark near-black background, gold accent, Cinzel/DM Sans fonts) is matched to
+[mtgoracle.gg](https://www.mtgoracle.gg/)'s own design system, including its exact color tokens and
+bundled Google Fonts.
+
 ## Build
 
 ```bash
