@@ -17,11 +17,14 @@ bundled Google Fonts.
 
 ## Scanning a physical card
 
-Tap the camera icon on the search screen to scan a card with the device camera. This uses
+Tap the camera icon on the search screen to scan a card - there's no shutter button, just point the
+camera at the card and it resolves automatically. Under the hood, CameraX streams frames through
 on-device ML Kit text recognition (no cloud call, no key needed) to read the card's title - the
 top-most line of text on the frame - then looks that name up via Scryfall's fuzzy-name search, so
-minor OCR misreads still resolve to the right card. If no text is found, or nothing matches, you
-get an inline error and can retry.
+minor OCR misreads still resolve to the right card. A frame is only analyzed once the previous
+one's OCR + lookup has finished, so it naturally throttles to roughly one attempt per round trip
+instead of hammering ML Kit/Scryfall at full camera frame rate. Misses just keep scanning silently;
+a status line surfaces the last attempted name if nothing matched.
 
 ## Build
 

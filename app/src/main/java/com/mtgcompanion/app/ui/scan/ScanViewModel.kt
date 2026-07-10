@@ -12,52 +12,57 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 sealed interface ScanUiState {
-    data object Ready : ScanUiState
-    data object Processing : ScanUiState
+    data class Scanning(val status: String? = null) : ScanUiState
     data class Found(val card: ScryfallCard) : ScanUiState
-    data class NotFound(val recognizedText: String) : ScanUiState
-    data class Error(val message: String) : ScanUiState
 }
 
 class ScanViewModel(private val repository: CardRepository = CardRepository()) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    private val _uiState = MutableStateFlow<ScanUiState>(ScanUiState.Ready)
+    // Gates one frame's OCR+lookup at a time; combined with ImageAnalysis's
+    // STRATEGY_KEEP_ONLY_LATEST (which withholds the next frame until this one's
+    // ImageProxy is closed), this naturally throttles scanning to roughly one
+    // attempt per round trip instead of hammering ML Kit/Scryfall at camera frame rate.
+    private val busy = AtomicBoolean(false)
+
+    private val _uiState = MutableStateFlow<ScanUiState>(ScanUiState.Scanning())
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
 
-    /** [onProcessed] must always be called so the caller can release the camera frame. */
-    fun onImageCaptured(image: InputImage, onProcessed: () -> Unit) {
-        _uiState.value = ScanUiState.Processing
+    /** Called for each analyzed camera frame; [onProcessed] must always run so the frame is released. */
+    fun onFrame(image: InputImage, onProcessed: () -> Unit) {
+        if (_uiState.value is ScanUiState.Found || !busy.compareAndSet(false, true)) {
+            onProcessed()
+            return
+        }
         recognizer.process(image)
-            .addOnSuccessListener { visionText -> handleRecognizedText(visionText) }
-            .addOnFailureListener { e ->
-                _uiState.value = ScanUiState.Error(e.message ?: "Text recognition failed.")
+            .addOnSuccessListener { visionText -> handleRecognizedText(visionText, onProcessed) }
+            .addOnFailureListener {
+                busy.set(false)
+                onProcessed()
             }
-            .addOnCompleteListener { onProcessed() }
     }
 
-    fun onCaptureError(message: String) {
-        _uiState.value = ScanUiState.Error(message)
-    }
-
-    fun reset() {
-        _uiState.value = ScanUiState.Ready
-    }
-
-    private fun handleRecognizedText(visionText: Text) {
+    private fun handleRecognizedText(visionText: Text, onProcessed: () -> Unit) {
         val candidate = extractCardName(visionText)
         if (candidate == null) {
-            _uiState.value = ScanUiState.Error("Couldn't read a card name. Fill the frame with the card's title and try again.")
+            busy.set(false)
+            onProcessed()
             return
         }
         viewModelScope.launch {
-            _uiState.value = try {
-                ScanUiState.Found(repository.getByFuzzyName(candidate))
+            try {
+                val card = repository.getByFuzzyName(candidate)
+                _uiState.value = ScanUiState.Found(card)
+                // Leave busy = true: the screen navigates away and unbinds the camera.
             } catch (e: Exception) {
-                ScanUiState.NotFound(candidate)
+                _uiState.value = ScanUiState.Scanning("Didn't recognize \"$candidate\" — keep scanning…")
+                busy.set(false)
+            } finally {
+                onProcessed()
             }
         }
     }

@@ -4,28 +4,25 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.ImageProxy
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -36,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,6 +53,7 @@ import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldLight
+import java.util.concurrent.Executors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,7 +81,11 @@ fun ScanScreen(
     LaunchedEffect(uiState) {
         val found = uiState as? ScanUiState.Found ?: return@LaunchedEffect
         onCardFound(found.card)
-        viewModel.reset()
+    }
+
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    DisposableEffect(Unit) {
+        onDispose { cameraExecutor.shutdown() }
     }
 
     Scaffold(
@@ -108,8 +111,6 @@ fun ScanScreen(
                 return@Column
             }
 
-            var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -126,14 +127,26 @@ fun ScanScreen(
                             val preview = Preview.Builder().build().also {
                                 it.setSurfaceProvider(previewView.surfaceProvider)
                             }
-                            val capture = ImageCapture.Builder().build()
-                            imageCapture = capture
+                            val analysis = ImageAnalysis.Builder()
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .build()
+                                .also { imageAnalysis ->
+                                    imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                                        val mediaImage = imageProxy.image
+                                        if (mediaImage == null) {
+                                            imageProxy.close()
+                                            return@setAnalyzer
+                                        }
+                                        val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                                        viewModel.onFrame(inputImage, onProcessed = { imageProxy.close() })
+                                    }
+                                }
                             cameraProvider.unbindAll()
                             cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
                                 CameraSelector.DEFAULT_BACK_CAMERA,
                                 preview,
-                                capture
+                                analysis
                             )
                         }, ContextCompat.getMainExecutor(ctx))
                         previewView
@@ -141,64 +154,23 @@ fun ScanScreen(
                 )
             }
 
-            Text(
-                "Fill the frame with the card so its title is clearly visible, then tap Scan.",
-                style = MaterialTheme.typography.bodySmall,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 16.dp)
-            )
-
-            when (val state = uiState) {
-                is ScanUiState.Processing -> Box(
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                    contentAlignment = Alignment.Center
-                ) { CircularProgressIndicator(color = Gold) }
-
-                is ScanUiState.NotFound -> Text(
-                    "No card matched \"${state.recognizedText}\". Try again with better lighting or framing.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
-
-                is ScanUiState.Error -> Text(
-                    state.message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
-
-                else -> {}
-            }
-
-            Button(
-                onClick = {
-                    val capture = imageCapture ?: return@Button
-                    capture.takePicture(
-                        ContextCompat.getMainExecutor(context),
-                        object : ImageCapture.OnImageCapturedCallback() {
-                            override fun onCaptureSuccess(image: ImageProxy) {
-                                val mediaImage = image.image
-                                if (mediaImage == null) {
-                                    image.close()
-                                    viewModel.onCaptureError("Couldn't read the camera frame.")
-                                    return
-                                }
-                                val inputImage = InputImage.fromMediaImage(mediaImage, image.imageInfo.rotationDegrees)
-                                viewModel.onImageCaptured(inputImage, onProcessed = { image.close() })
-                            }
-
-                            override fun onError(exception: ImageCaptureException) {
-                                viewModel.onCaptureError(exception.message ?: "Capture failed.")
-                            }
-                        }
-                    )
-                },
-                enabled = uiState !is ScanUiState.Processing,
-                shape = RoundedCornerShape(2.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             ) {
-                Text("SCAN", style = MaterialTheme.typography.labelLarge, color = Bg)
+                if (uiState is ScanUiState.Scanning) {
+                    CircularProgressIndicator(
+                        color = Gold,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Text(
+                    (uiState as? ScanUiState.Scanning)?.status
+                        ?: "Fill the frame with the card so its title is clearly visible — it scans automatically.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 10.dp)
+                )
             }
         }
     }
