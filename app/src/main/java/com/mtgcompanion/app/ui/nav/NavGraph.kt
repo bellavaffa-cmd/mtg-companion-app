@@ -121,14 +121,11 @@ fun MtgNavGraph(
             }
 
             composable(Routes.SCAN) {
-                val viewModel: ScanViewModel = viewModel()
+                val viewModel: ScanViewModel = viewModel(
+                    factory = ScanViewModel.Factory(collectionRepository, deckRepository)
+                )
                 ScanScreen(
                     viewModel = viewModel,
-                    onCardFound = { card ->
-                        navController.navigate(Routes.detail(card.name)) {
-                            popUpTo(Routes.SCAN) { inclusive = true }
-                        }
-                    },
                     onBack = { navController.popBackStack() }
                 )
             }

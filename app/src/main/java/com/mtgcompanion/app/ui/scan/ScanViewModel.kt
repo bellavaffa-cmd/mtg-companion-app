@@ -1,25 +1,35 @@
 package com.mtgcompanion.app.ui.scan
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.CollectionRepository
+import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
-sealed interface ScanUiState {
-    data class Scanning(val status: String? = null) : ScanUiState
-    data class Found(val card: ScryfallCard) : ScanUiState
-}
+data class ScanUiState(
+    val status: String? = null,
+    val scannedCards: List<ScryfallCard> = emptyList()
+)
 
-class ScanViewModel(private val repository: CardRepository = CardRepository()) : ViewModel() {
+class ScanViewModel(
+    private val cardRepository: CardRepository = CardRepository(),
+    private val collectionRepository: CollectionRepository,
+    private val deckRepository: DeckRepository
+) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
@@ -29,12 +39,16 @@ class ScanViewModel(private val repository: CardRepository = CardRepository()) :
     // attempt per round trip instead of hammering ML Kit/Scryfall at camera frame rate.
     private val busy = AtomicBoolean(false)
 
-    private val _uiState = MutableStateFlow<ScanUiState>(ScanUiState.Scanning())
+    private val _uiState = MutableStateFlow(ScanUiState())
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
+
+    val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
 
     /** Called for each analyzed camera frame; [onProcessed] must always run so the frame is released. */
     fun onFrame(image: InputImage, onProcessed: () -> Unit) {
-        if (_uiState.value is ScanUiState.Found || !busy.compareAndSet(false, true)) {
+        if (!busy.compareAndSet(false, true)) {
             onProcessed()
             return
         }
@@ -55,15 +69,63 @@ class ScanViewModel(private val repository: CardRepository = CardRepository()) :
         }
         viewModelScope.launch {
             try {
-                val card = repository.getByFuzzyName(candidate)
-                _uiState.value = ScanUiState.Found(card)
-                // Leave busy = true: the screen navigates away and unbinds the camera.
+                val card = cardRepository.getByFuzzyName(candidate)
+                val alreadyScanned = _uiState.value.scannedCards.any { it.id == card.id }
+                _uiState.value = if (alreadyScanned) {
+                    _uiState.value.copy(status = "${card.name} is already in the list")
+                } else {
+                    // Newest first so the just-scanned card is visible at the top of the list.
+                    _uiState.value.copy(
+                        status = "Added ${card.name}",
+                        scannedCards = listOf(card) + _uiState.value.scannedCards
+                    )
+                }
             } catch (e: Exception) {
-                _uiState.value = ScanUiState.Scanning("Didn't recognize \"$candidate\" — keep scanning…")
-                busy.set(false)
+                _uiState.value = _uiState.value.copy(status = "Didn't recognize \"$candidate\" — keep scanning…")
             } finally {
+                busy.set(false)
                 onProcessed()
             }
+        }
+    }
+
+    fun removeFromList(card: ScryfallCard) {
+        _uiState.value = _uiState.value.copy(scannedCards = _uiState.value.scannedCards.filterNot { it.id == card.id })
+    }
+
+    fun addToCollection(card: ScryfallCard) {
+        viewModelScope.launch {
+            collectionRepository.addCard(card)
+            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to collection")
+        }
+    }
+
+    fun addToDeck(card: ScryfallCard, deckId: String) {
+        viewModelScope.launch {
+            deckRepository.addCardToDeck(deckId, card)
+            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to deck")
+        }
+    }
+
+    fun createDeckAndAdd(card: ScryfallCard, name: String) {
+        viewModelScope.launch {
+            val deck = deckRepository.createDeck(name)
+            deckRepository.addCardToDeck(deck.id, card)
+            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to \"${deck.name}\"")
+        }
+    }
+
+    class Factory(
+        private val collectionRepository: CollectionRepository,
+        private val deckRepository: DeckRepository
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return ScanViewModel(
+                cardRepository = CardRepository(),
+                collectionRepository = collectionRepository,
+                deckRepository = deckRepository
+            ) as T
         }
     }
 }

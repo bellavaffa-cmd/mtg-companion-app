@@ -15,16 +15,20 @@ The visual theme (dark near-black background, gold accent, Cinzel/DM Sans fonts)
 [mtgoracle.gg](https://www.mtgoracle.gg/)'s own design system, including its exact color tokens and
 bundled Google Fonts.
 
-## Scanning a physical card
+## Scanning physical cards
 
-Tap the camera icon on the search screen to scan a card - there's no shutter button, just point the
-camera at the card and it resolves automatically. Under the hood, CameraX streams frames through
-on-device ML Kit text recognition (no cloud call, no key needed) to read the card's title - the
-top-most line of text on the frame - then looks that name up via Scryfall's fuzzy-name search, so
-minor OCR misreads still resolve to the right card. A frame is only analyzed once the previous
-one's OCR + lookup has finished, so it naturally throttles to roughly one attempt per round trip
-instead of hammering ML Kit/Scryfall at full camera frame rate. Misses just keep scanning silently;
-a status line surfaces the last attempted name if nothing matched.
+Tap the camera icon on the search screen to batch-scan cards - there's no shutter button, just point
+the camera at a card and it resolves automatically. Recognized cards drop into a running list below
+the camera rather than interrupting the flow; keep panning across a pile and each new card is added.
+From the list, add any card straight to your collection or to a deck (existing or a new one created
+inline), or swipe it off the list. The same card won't be added twice in one session.
+
+Under the hood, CameraX streams frames through on-device ML Kit text recognition (no cloud call, no
+key needed) to read the card's title - the top-most line of text on the frame - then looks that name
+up via Scryfall's fuzzy-name search, so minor OCR misreads still resolve to the right card. A frame
+is only analyzed once the previous one's OCR + lookup has finished, so it naturally throttles to
+roughly one attempt per round trip instead of hammering ML Kit/Scryfall at full camera frame rate.
+Misses just keep scanning silently; a status line surfaces the last result.
 
 ## Collection and decks
 
