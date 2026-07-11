@@ -132,12 +132,21 @@ fun SearchScreen(
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = 24.dp)
                 )
-                is SearchUiState.Success -> LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.padding(top = 20.dp)
-                ) {
-                    items(state.cards, key = { it.id }) { card ->
-                        CardResultRow(card = card, onClick = { onCardClick(card) })
+                is SearchUiState.Success -> if (state.cards.isEmpty()) {
+                    Text(
+                        "No cards match.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontStyle = FontStyle.Italic,
+                        modifier = Modifier.padding(top = 28.dp)
+                    )
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(top = 20.dp)
+                    ) {
+                        items(state.cards, key = { it.id }) { card ->
+                            CardResultRow(card = card, onClick = { onCardClick(card) })
+                        }
                     }
                 }
             }
