@@ -24,8 +24,10 @@ import androidx.navigation.navArgument
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.SettingsRepository
-import com.mtgcompanion.app.ui.collection.CollectionScreen
-import com.mtgcompanion.app.ui.collection.CollectionViewModel
+import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
+import com.mtgcompanion.app.ui.collection.CollectionDetailViewModel
+import com.mtgcompanion.app.ui.collection.CollectionsScreen
+import com.mtgcompanion.app.ui.collection.CollectionsViewModel
 import com.mtgcompanion.app.ui.decks.DeckDetailScreen
 import com.mtgcompanion.app.ui.decks.DeckDetailViewModel
 import com.mtgcompanion.app.ui.decks.DecksScreen
@@ -54,8 +56,10 @@ private object Routes {
     const val SCAN = "scan"
     const val DETAIL = "detail/{cardName}"
     const val DECK_DETAIL = "deck/{deckId}"
+    const val COLLECTION_DETAIL = "collection/{collectionId}"
     fun detail(cardName: String) = "detail/" + URLEncoder.encode(cardName, StandardCharsets.UTF_8.name())
     fun deckDetail(deckId: String) = "deck/$deckId"
+    fun collectionDetail(collectionId: String) = "collection/$collectionId"
 }
 
 private val bottomNavRoutes = setOf(Routes.SEARCH, Routes.COLLECTION, Routes.DECKS)
@@ -93,11 +97,27 @@ fun MtgNavGraph(
             }
 
             composable(Routes.COLLECTION) {
-                val viewModel: CollectionViewModel = viewModel(
-                    factory = CollectionViewModel.Factory(collectionRepository)
+                val viewModel: CollectionsViewModel = viewModel(
+                    factory = CollectionsViewModel.Factory(collectionRepository, deckRepository)
                 )
-                CollectionScreen(
+                CollectionsScreen(
                     viewModel = viewModel,
+                    onCollectionClick = { id -> navController.navigate(Routes.collectionDetail(id)) },
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) }
+                )
+            }
+
+            composable(
+                route = Routes.COLLECTION_DETAIL,
+                arguments = listOf(navArgument("collectionId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val collectionId = backStackEntry.arguments?.getString("collectionId").orEmpty()
+                val viewModel: CollectionDetailViewModel = viewModel(
+                    factory = CollectionDetailViewModel.Factory(collectionId, collectionRepository)
+                )
+                CollectionDetailScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
                     onCardClick = { name -> navController.navigate(Routes.detail(name)) }
                 )
             }

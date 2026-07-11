@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -41,16 +40,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldDim
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
-import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
@@ -88,7 +88,7 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(decks, key = { it.id }) { deck ->
-                    DeckRow(deck = deck, onClick = { onDeckClick(deck.id) }, onDelete = { viewModel.deleteDeck(deck.id) })
+                    DeckRow(deck = deck, onClick = { onDeckClick(deck.id) })
                 }
             }
         }
@@ -106,7 +106,7 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
 }
 
 @Composable
-private fun DeckRow(deck: Deck, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun DeckRow(deck: Deck, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -119,9 +119,10 @@ private fun DeckRow(deck: Deck, onClick: () -> Unit, onDelete: () -> Unit) {
             .padding(12.dp)
     ) {
         AsyncImage(
-            model = deck.commander?.imageUrl,
+            model = deck.commander?.imageUrl.toArtCropUrl(),
             contentDescription = deck.commander?.name,
-            modifier = Modifier.size(width = 48.dp, height = 67.dp).clip(RoundedCornerShape(3.dp))
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(deck.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
@@ -130,9 +131,6 @@ private fun DeckRow(deck: Deck, onClick: () -> Unit, onDelete: () -> Unit) {
                 style = MaterialTheme.typography.labelMedium,
                 color = TextMuted
             )
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = "Delete deck", tint = TextDim)
         }
     }
 }

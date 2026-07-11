@@ -17,12 +17,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -39,6 +44,7 @@ import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
+import com.mtgcompanion.app.ui.theme.GoldDim
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
@@ -47,57 +53,100 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CollectionScreen(
-    viewModel: CollectionViewModel,
+fun CollectionDetailScreen(
+    viewModel: CollectionDetailViewModel,
+    onBack: () -> Unit,
     onCardClick: (String) -> Unit = {}
 ) {
+    val collection by viewModel.collection.collectAsState()
     val entries by viewModel.entries.collectAsState()
+    val query by viewModel.query.collectAsState()
+    val dashboard by viewModel.dashboard.collectAsState()
 
     Scaffold(
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text("COLLECTION", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                title = { Text(collection?.name ?: "Binder", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.deleteCollection(onBack) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Delete binder", tint = TextDim)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )
         }
     ) { padding ->
-        if (entries.isEmpty()) {
-            Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding).padding(20.dp)) {
-                Text(
-                    "No cards yet. Add cards to your collection from a card's detail page.",
-                    style = MaterialTheme.typography.bodySmall
-                )
+        Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
+            if (collection?.entries?.isNotEmpty() == true) {
+                Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)) {
+                    DashboardPanel(dashboard)
+                }
             }
-            return@Scaffold
-        }
+            OutlinedTextField(
+                value = query,
+                onValueChange = viewModel::onQueryChange,
+                label = { Text("Search this binder", color = GoldDim) },
+                singleLine = true,
+                shape = RoundedCornerShape(2.dp),
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Gold) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Gold,
+                    unfocusedBorderColor = BorderColor,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    cursorColor = Gold,
+                    focusedContainerColor = Surface,
+                    unfocusedContainerColor = Surface
+                ),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)
+            )
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().background(Bg).padding(padding),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item {
-                Text(
-                    "${entries.sumOf { it.quantity + it.foilQuantity }} cards, ${entries.size} unique",
+            val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
+            when {
+                collection?.entries.isNullOrEmpty() -> Text(
+                    "No cards yet. Add cards from a card's detail page or the scanner.",
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    modifier = Modifier.padding(horizontal = 20.dp)
                 )
-            }
-            items(entries, key = { it.scryfallId }) { entry ->
-                CollectionRow(
-                    entry = entry,
-                    onClick = { onCardClick(entry.name) },
-                    onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
-                    onRemove = { viewModel.remove(entry) }
+                entries.isEmpty() -> Text(
+                    "No cards match \"$query\".",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 20.dp)
                 )
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    item {
+                        Text(
+                            "$total cards · ${collection?.entries?.size ?: 0} unique",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+                    items(entries, key = { it.scryfallId }) { entry ->
+                        CollectionCardRow(
+                            entry = entry,
+                            onClick = { onCardClick(entry.name) },
+                            onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
+                            onRemove = { viewModel.remove(entry) }
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CollectionRow(
+private fun CollectionCardRow(
     entry: CollectionEntry,
     onClick: () -> Unit,
     onQuantityChange: (Int, Int) -> Unit,
@@ -136,7 +185,7 @@ private fun CollectionRow(
                 Icon(Icons.Filled.Add, contentDescription = "Increase quantity", tint = Gold)
             }
             IconButton(onClick = onRemove) {
-                Icon(Icons.Filled.Close, contentDescription = "Remove from collection", tint = TextDim)
+                Icon(Icons.Filled.Close, contentDescription = "Remove from binder", tint = TextDim)
             }
         }
     }

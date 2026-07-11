@@ -90,6 +90,7 @@ fun ScanScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
+    val collections by viewModel.collections.collectAsState()
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -104,6 +105,7 @@ fun ScanScreen(
     }
 
     var deckPickerCard by remember { mutableStateOf<ScryfallCard?>(null) }
+    var collectionPickerCard by remember { mutableStateOf<ScryfallCard?>(null) }
     var showList by remember { mutableStateOf(false) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -240,7 +242,7 @@ fun ScanScreen(
                 cards = state.scannedCards,
                 onClose = { showList = false },
                 onCardClick = { showList = false; onCardClick(it.name) },
-                onAddToCollection = { viewModel.addToCollection(it) },
+                onAddToCollection = { collectionPickerCard = it },
                 onAddToDeck = { deckPickerCard = it },
                 onRemove = { viewModel.removeFromList(it) },
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -262,6 +264,77 @@ fun ScanScreen(
             }
         )
     }
+
+    collectionPickerCard?.let { card ->
+        CollectionPickerDialog(
+            collections = collections,
+            onDismiss = { collectionPickerCard = null },
+            onPickCollection = { collectionId ->
+                collectionPickerCard = null
+                viewModel.addToCollection(card, collectionId)
+            },
+            onCreateCollection = { name ->
+                collectionPickerCard = null
+                viewModel.createCollectionAndAdd(card, name)
+            }
+        )
+    }
+}
+
+@Composable
+private fun CollectionPickerDialog(
+    collections: List<com.mtgcompanion.app.data.Collection>,
+    onDismiss: () -> Unit,
+    onPickCollection: (String) -> Unit,
+    onCreateCollection: (String) -> Unit
+) {
+    var newName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = { Text("Add to binder", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column {
+                collections.forEach { collection ->
+                    Text(
+                        collection.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPickCollection(collection.id) }
+                            .padding(vertical = 10.dp)
+                    )
+                }
+                if (collections.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))
+                }
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("New binder name", color = GoldDim) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Gold
+                    ),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (newName.isNotBlank()) onCreateCollection(newName.trim()) },
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("CREATE & ADD", color = Bg) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+        }
+    )
 }
 
 @Composable
@@ -374,7 +447,7 @@ private fun ScannedCardRow(
                     shape = RoundedCornerShape(2.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-                ) { Text("+ COLLECTION", style = MaterialTheme.typography.labelMedium, color = Bg) }
+                ) { Text("+ BINDER", style = MaterialTheme.typography.labelMedium, color = Bg) }
                 OutlinedButton(
                     onClick = onAddToDeck,
                     shape = RoundedCornerShape(2.dp),

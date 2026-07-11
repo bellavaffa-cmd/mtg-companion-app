@@ -8,6 +8,11 @@ data class ScryfallSearchResponse(
     val data: List<ScryfallCard> = emptyList()
 )
 
+/** POST /cards/collection body: look up many cards at once (max 75 identifiers per request). */
+data class ScryfallCollectionRequest(val identifiers: List<ScryfallIdentifier>)
+
+data class ScryfallIdentifier(val id: String)
+
 data class ScryfallCard(
     val id: String,
     @Json(name = "oracle_id") val oracleId: String? = null,
@@ -23,7 +28,8 @@ data class ScryfallCard(
     val prices: ScryfallPrices? = null,
     @Json(name = "purchase_uris") val purchaseUris: ScryfallPurchaseUris? = null,
     @Json(name = "tcgplayer_id") val tcgplayerId: Long? = null,
-    @Json(name = "scryfall_uri") val scryfallUri: String? = null
+    @Json(name = "scryfall_uri") val scryfallUri: String? = null,
+    @Json(name = "game_changer") val gameChanger: Boolean? = null
 ) {
     val displayImageUrl: String?
         get() = imageUris?.normal ?: cardFaces?.firstOrNull()?.imageUris?.normal
@@ -52,8 +58,18 @@ data class ScryfallCardFace(
 data class ScryfallImageUris(
     val small: String? = null,
     val normal: String? = null,
-    val large: String? = null
+    val large: String? = null,
+    @Json(name = "art_crop") val artCrop: String? = null
 )
+
+/**
+ * Scryfall serves the cropped art at the same CDN path as the full image, differing only in the
+ * size folder. So a stored "normal" URL can be turned into its art crop without re-fetching.
+ */
+fun String?.toArtCropUrl(): String? = this
+    ?.replace("/normal/", "/art_crop/")
+    ?.replace("/large/", "/art_crop/")
+    ?.replace("/small/", "/art_crop/")
 
 data class ScryfallPrices(
     val usd: String? = null,

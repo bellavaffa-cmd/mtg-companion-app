@@ -8,6 +8,7 @@ import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
@@ -43,6 +44,10 @@ class ScanViewModel(
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
 
     val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
+
+    val collections: StateFlow<List<Collection>> = collectionRepository.collectionsFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
@@ -129,10 +134,18 @@ class ScanViewModel(
         _uiState.value = _uiState.value.copy(scannedCards = _uiState.value.scannedCards.filterNot { it.id == card.id })
     }
 
-    fun addToCollection(card: ScryfallCard) {
+    fun addToCollection(card: ScryfallCard, collectionId: String) {
         viewModelScope.launch {
-            collectionRepository.addCard(card)
-            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to collection")
+            collectionRepository.addCard(collectionId, card)
+            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to binder")
+        }
+    }
+
+    fun createCollectionAndAdd(card: ScryfallCard, name: String) {
+        viewModelScope.launch {
+            val collection = collectionRepository.createCollection(name)
+            collectionRepository.addCard(collection.id, card)
+            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to \"${collection.name}\"")
         }
     }
 

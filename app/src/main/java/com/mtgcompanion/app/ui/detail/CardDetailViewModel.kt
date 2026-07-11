@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.ComboRepository
 import com.mtgcompanion.app.data.Deck
@@ -52,6 +53,10 @@ class CardDetailViewModel(
     val uiState: StateFlow<CardDetailUiState> = _uiState.asStateFlow()
 
     val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
+
+    val collections: StateFlow<List<Collection>> = collectionRepository.collectionsFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
@@ -129,11 +134,20 @@ class CardDetailViewModel(
         }
     }
 
-    fun addToCollection() {
+    fun addToCollection(collectionId: String) {
         val card = _uiState.value.card ?: return
         viewModelScope.launch {
-            collectionRepository.addCard(card)
-            _uiState.value = _uiState.value.copy(addedToCollectionMessage = "Added to collection.")
+            collectionRepository.addCard(collectionId, card)
+            _uiState.value = _uiState.value.copy(addedToCollectionMessage = "Added to binder.")
+        }
+    }
+
+    fun createCollectionAndAdd(name: String) {
+        val card = _uiState.value.card ?: return
+        viewModelScope.launch {
+            val collection = collectionRepository.createCollection(name)
+            collectionRepository.addCard(collection.id, card)
+            _uiState.value = _uiState.value.copy(addedToCollectionMessage = "Added to \"${collection.name}\".")
         }
     }
 

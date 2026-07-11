@@ -1,26 +1,41 @@
 package com.mtgcompanion.app.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 
 private val Context.collectionDataStore by preferencesDataStore(name = "collection")
+
+private const val LEGACY_COLLECTION_ID = "default"
 
 class CollectionRepository(private val context: Context) {
 
     private val key = stringPreferencesKey("collection_json")
     private val adapter = localMoshi.adapter(CollectionStore::class.java)
 
-    val collectionFlow: Flow<List<CollectionEntry>> = context.collectionDataStore.data.map { prefs ->
-        prefs[key]?.let { json -> runCatching { adapter.fromJson(json)?.entries }.getOrNull() } ?: emptyList()
+    val collectionsFlow: Flow<List<Collection>> = context.collectionDataStore.data.map { readCollections(it) }
+
+    fun collectionFlow(collectionId: String): Flow<Collection?> =
+        collectionsFlow.map { collections -> collections.find { it.id == collectionId } }
+
+    suspend fun createCollection(name: String): Collection {
+        val collection = Collection(id = UUID.randomUUID().toString(), name = name)
+        update { it + collection }
+        return collection
     }
 
-    suspend fun addCard(card: ScryfallCard, foil: Boolean = false) {
-        update { entries ->
+    suspend fun deleteCollection(collectionId: String) {
+        update { collections -> collections.filterNot { it.id == collectionId } }
+    }
+
+    suspend fun addCard(collectionId: String, card: ScryfallCard, foil: Boolean = false) {
+        updateEntries(collectionId) { entries ->
             val existing = entries.find { it.scryfallId == card.id }
             if (existing != null) {
                 entries.map {
@@ -39,8 +54,8 @@ class CollectionRepository(private val context: Context) {
         }
     }
 
-    suspend fun setQuantity(scryfallId: String, quantity: Int, foilQuantity: Int) {
-        update { entries ->
+    suspend fun setQuantity(collectionId: String, scryfallId: String, quantity: Int, foilQuantity: Int) {
+        updateEntries(collectionId) { entries ->
             entries.mapNotNull {
                 if (it.scryfallId != scryfallId) return@mapNotNull it
                 val updated = it.copy(quantity = quantity.coerceAtLeast(0), foilQuantity = foilQuantity.coerceAtLeast(0))
@@ -49,14 +64,29 @@ class CollectionRepository(private val context: Context) {
         }
     }
 
-    suspend fun removeEntry(scryfallId: String) {
-        update { entries -> entries.filterNot { it.scryfallId == scryfallId } }
+    suspend fun removeEntry(collectionId: String, scryfallId: String) {
+        updateEntries(collectionId) { entries -> entries.filterNot { it.scryfallId == scryfallId } }
     }
 
-    private suspend fun update(transform: (List<CollectionEntry>) -> List<CollectionEntry>) {
+    private fun readCollections(prefs: Preferences): List<Collection> {
+        val store = prefs[key]?.let { runCatching { adapter.fromJson(it) }.getOrNull() } ?: return emptyList()
+        if (store.collections.isNotEmpty()) return store.collections
+        // Migrate a legacy single-collection store into one default collection.
+        val legacy = store.entries.orEmpty()
+        return if (legacy.isEmpty()) emptyList()
+        else listOf(Collection(id = LEGACY_COLLECTION_ID, name = "My Collection", entries = legacy))
+    }
+
+    private suspend fun updateEntries(collectionId: String, transform: (List<CollectionEntry>) -> List<CollectionEntry>) {
+        update { collections ->
+            collections.map { if (it.id == collectionId) it.copy(entries = transform(it.entries)) else it }
+        }
+    }
+
+    private suspend fun update(transform: (List<Collection>) -> List<Collection>) {
         context.collectionDataStore.edit { prefs ->
-            val current = prefs[key]?.let { runCatching { adapter.fromJson(it)?.entries }.getOrNull() } ?: emptyList()
-            prefs[key] = adapter.toJson(CollectionStore(transform(current)))
+            val current = readCollections(prefs)
+            prefs[key] = adapter.toJson(CollectionStore(collections = transform(current)))
         }
     }
 }

@@ -34,3 +34,19 @@ data class ComboFeature(
     val id: Int,
     val name: String
 )
+
+// --- find-my-combos (which combos a decklist contains) ---
+
+data class FindMyCombosRequest(
+    val commanders: List<DeckCardRef>,
+    val main: List<DeckCardRef>
+)
+
+data class DeckCardRef(val card: String, val quantity: Int = 1)
+
+data class FindMyCombosResponse(val results: FindMyCombosResults? = null)
+
+data class FindMyCombosResults(
+    /** Combos fully present in the deck. */
+    val included: List<Variant> = emptyList()
+)

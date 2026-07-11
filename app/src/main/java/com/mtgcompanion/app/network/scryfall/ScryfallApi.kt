@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.network.scryfall
 
+import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Query
 
 interface ScryfallApi {
@@ -15,4 +17,7 @@ interface ScryfallApi {
 
     @GET("cards/named")
     suspend fun getCardByFuzzyName(@Query("fuzzy") name: String): ScryfallCard
+
+    @POST("cards/collection")
+    suspend fun getCollection(@Body body: ScryfallCollectionRequest): ScryfallSearchResponse
 }

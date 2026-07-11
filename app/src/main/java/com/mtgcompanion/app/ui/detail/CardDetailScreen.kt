@@ -28,6 +28,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mtgcompanion.app.ui.common.ManaCost
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.network.edhrec.EdhrecCardList
@@ -86,8 +89,10 @@ fun CardDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
+    val collections by viewModel.collections.collectAsState()
     val context = LocalContext.current
     var showDeckPicker by remember { mutableStateOf(false) }
+    var showCollectionPicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.addedToCollectionMessage, state.addedToDeckMessage) {
         if (state.addedToCollectionMessage != null || state.addedToDeckMessage != null) {
@@ -136,7 +141,7 @@ fun CardDetailScreen(
                     fullSpanItem {
                         CollectionAndDeckActions(
                             state = state,
-                            onAddToCollection = viewModel::addToCollection,
+                            onAddToCollection = { showCollectionPicker = true },
                             onAddToDeck = { showDeckPicker = true }
                         )
                     }
@@ -183,6 +188,77 @@ fun CardDetailScreen(
             }
         )
     }
+
+    if (showCollectionPicker) {
+        CollectionPickerDialog(
+            collections = collections,
+            onDismiss = { showCollectionPicker = false },
+            onPickCollection = { collectionId ->
+                showCollectionPicker = false
+                viewModel.addToCollection(collectionId)
+            },
+            onCreateCollection = { name ->
+                showCollectionPicker = false
+                viewModel.createCollectionAndAdd(name)
+            }
+        )
+    }
+}
+
+@Composable
+private fun CollectionPickerDialog(
+    collections: List<com.mtgcompanion.app.data.Collection>,
+    onDismiss: () -> Unit,
+    onPickCollection: (String) -> Unit,
+    onCreateCollection: (String) -> Unit
+) {
+    var newName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = { Text("Add to binder", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column {
+                collections.forEach { collection ->
+                    Text(
+                        collection.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPickCollection(collection.id) }
+                            .padding(vertical = 10.dp)
+                    )
+                }
+                if (collections.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))
+                }
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("New binder name", color = GoldDim) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Gold
+                    ),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (newName.isNotBlank()) onCreateCollection(newName.trim()) },
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("CREATE & ADD", color = Bg) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+        }
+    )
 }
 
 /** Adds a single full-width row inside the grid. */
@@ -270,8 +346,8 @@ private fun CardHeader(card: ScryfallCard) {
         )
         Column(modifier = Modifier.weight(1.4f)) {
             Text(card.name, style = MaterialTheme.typography.titleLarge)
-            card.manaCost?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = TextMuted, modifier = Modifier.padding(top = 6.dp))
+            card.manaCost?.takeIf { it.isNotBlank() }?.let {
+                ManaCost(it, size = 18.dp, modifier = Modifier.padding(vertical = 6.dp))
             }
             Text(
                 (card.typeLine ?: "").uppercase(),
@@ -296,19 +372,29 @@ private fun CollectionAndDeckActions(
     onAddToCollection: () -> Unit,
     onAddToDeck: () -> Unit
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     Column {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box {
             Button(
-                onClick = onAddToCollection,
+                onClick = { menuOpen = true },
                 shape = RoundedCornerShape(2.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("ADD TO COLLECTION", style = MaterialTheme.typography.labelLarge, color = Bg) }
-            OutlinedButton(
-                onClick = onAddToDeck,
-                shape = RoundedCornerShape(2.dp),
-                border = BorderStroke(1.dp, BorderColor),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
-            ) { Text("ADD TO DECK", style = MaterialTheme.typography.labelLarge) }
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("ADD TO…", style = MaterialTheme.typography.labelLarge, color = Bg) }
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+                modifier = Modifier.background(Surface)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Binder", style = MaterialTheme.typography.bodyMedium, color = TextPrimary) },
+                    onClick = { menuOpen = false; onAddToCollection() }
+                )
+                DropdownMenuItem(
+                    text = { Text("Deck", style = MaterialTheme.typography.bodyMedium, color = TextPrimary) },
+                    onClick = { menuOpen = false; onAddToDeck() }
+                )
+            }
         }
         (state.addedToCollectionMessage ?: state.addedToDeckMessage)?.let {
             Text(it, color = Gold, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))

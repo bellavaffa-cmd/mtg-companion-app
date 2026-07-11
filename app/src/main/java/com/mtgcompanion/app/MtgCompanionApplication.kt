@@ -3,6 +3,7 @@ package com.mtgcompanion.app
 import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.decode.SvgDecoder
 import com.mtgcompanion.app.network.NetworkModule
 
 class MtgCompanionApplication : Application(), ImageLoaderFactory {
@@ -12,5 +13,7 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
             // HTTP-library User-Agent (400 generic_user_agent) - reuse the client that
             // already sets a custom one instead of Coil's own default client.
             .okHttpClient(NetworkModule.okHttpClient)
+            // Mana symbols are served by Scryfall as SVGs.
+            .components { add(SvgDecoder.Factory()) }
             .build()
 }
