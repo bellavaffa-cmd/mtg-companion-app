@@ -83,7 +83,8 @@ import java.util.concurrent.Executors
 @Composable
 fun ScanScreen(
     viewModel: ScanViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onCardClick: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -238,6 +239,7 @@ fun ScanScreen(
             ScannedListPanel(
                 cards = state.scannedCards,
                 onClose = { showList = false },
+                onCardClick = { showList = false; onCardClick(it.name) },
                 onAddToCollection = { viewModel.addToCollection(it) },
                 onAddToDeck = { deckPickerCard = it },
                 onRemove = { viewModel.removeFromList(it) },
@@ -290,6 +292,7 @@ private fun ScrimIconButton(onClick: () -> Unit, icon: androidx.compose.ui.graph
 private fun ScannedListPanel(
     cards: List<ScryfallCard>,
     onClose: () -> Unit,
+    onCardClick: (ScryfallCard) -> Unit,
     onAddToCollection: (ScryfallCard) -> Unit,
     onAddToDeck: (ScryfallCard) -> Unit,
     onRemove: (ScryfallCard) -> Unit,
@@ -328,6 +331,7 @@ private fun ScannedListPanel(
                 items(cards, key = { it.id }) { card ->
                     ScannedCardRow(
                         card = card,
+                        onClick = { onCardClick(card) },
                         onAddToCollection = { onAddToCollection(card) },
                         onAddToDeck = { onAddToDeck(card) },
                         onRemove = { onRemove(card) }
@@ -341,6 +345,7 @@ private fun ScannedListPanel(
 @Composable
 private fun ScannedCardRow(
     card: ScryfallCard,
+    onClick: () -> Unit,
     onAddToCollection: () -> Unit,
     onAddToDeck: () -> Unit,
     onRemove: () -> Unit
@@ -353,6 +358,7 @@ private fun ScannedCardRow(
             .clip(RoundedCornerShape(4.dp))
             .background(Bg)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
             .padding(10.dp)
     ) {
         AsyncImage(

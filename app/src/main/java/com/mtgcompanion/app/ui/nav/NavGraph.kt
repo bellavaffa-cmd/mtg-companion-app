@@ -96,7 +96,10 @@ fun MtgNavGraph(
                 val viewModel: CollectionViewModel = viewModel(
                     factory = CollectionViewModel.Factory(collectionRepository)
                 )
-                CollectionScreen(viewModel = viewModel)
+                CollectionScreen(
+                    viewModel = viewModel,
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) }
+                )
             }
 
             composable(Routes.DECKS) {
@@ -117,7 +120,11 @@ fun MtgNavGraph(
                 val viewModel: DeckDetailViewModel = viewModel(
                     factory = DeckDetailViewModel.Factory(deckId, deckRepository)
                 )
-                DeckDetailScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+                DeckDetailScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) }
+                )
             }
 
             composable(Routes.SCAN) {
@@ -126,7 +133,8 @@ fun MtgNavGraph(
                 )
                 ScanScreen(
                     viewModel = viewModel,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) }
                 )
             }
 
@@ -139,7 +147,11 @@ fun MtgNavGraph(
                 val viewModel: CardDetailViewModel = viewModel(
                     factory = CardDetailViewModel.Factory(cardName, settingsRepository, collectionRepository, deckRepository)
                 )
-                CardDetailScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+                CardDetailScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) }
+                )
             }
 
             composable(Routes.SETTINGS) {

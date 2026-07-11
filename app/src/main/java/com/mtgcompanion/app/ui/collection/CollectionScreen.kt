@@ -3,6 +3,7 @@ package com.mtgcompanion.app.ui.collection
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,7 +47,10 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CollectionScreen(viewModel: CollectionViewModel) {
+fun CollectionScreen(
+    viewModel: CollectionViewModel,
+    onCardClick: (String) -> Unit = {}
+) {
     val entries by viewModel.entries.collectAsState()
 
     Scaffold(
@@ -83,6 +87,7 @@ fun CollectionScreen(viewModel: CollectionViewModel) {
             items(entries, key = { it.scryfallId }) { entry ->
                 CollectionRow(
                     entry = entry,
+                    onClick = { onCardClick(entry.name) },
                     onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
                     onRemove = { viewModel.remove(entry) }
                 )
@@ -94,6 +99,7 @@ fun CollectionScreen(viewModel: CollectionViewModel) {
 @Composable
 private fun CollectionRow(
     entry: CollectionEntry,
+    onClick: () -> Unit,
     onQuantityChange: (Int, Int) -> Unit,
     onRemove: () -> Unit
 ) {
@@ -105,6 +111,7 @@ private fun CollectionRow(
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
         AsyncImage(

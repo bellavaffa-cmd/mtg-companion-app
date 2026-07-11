@@ -3,6 +3,7 @@ package com.mtgcompanion.app.ui.decks
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -49,7 +50,11 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DeckDetailScreen(viewModel: DeckDetailViewModel, onBack: () -> Unit) {
+fun DeckDetailScreen(
+    viewModel: DeckDetailViewModel,
+    onBack: () -> Unit,
+    onCardClick: (String) -> Unit = {}
+) {
     val deck by viewModel.deck.collectAsState()
 
     Scaffold(
@@ -78,7 +83,7 @@ fun DeckDetailScreen(viewModel: DeckDetailViewModel, onBack: () -> Unit) {
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            item { CommanderSection(currentDeck) }
+            item { CommanderSection(currentDeck, onClick = { currentDeck.commander?.let { onCardClick(it.name) } }) }
             item {
                 Text(
                     "CARDS (${currentDeck.cards.sumOf { it.quantity }})",
@@ -98,6 +103,7 @@ fun DeckDetailScreen(viewModel: DeckDetailViewModel, onBack: () -> Unit) {
                 DeckCardRow(
                     card = card,
                     isCommander = currentDeck.commander?.scryfallId == card.scryfallId,
+                    onClick = { onCardClick(card.name) },
                     onToggleCommander = {
                         viewModel.setCommander(if (currentDeck.commander?.scryfallId == card.scryfallId) null else card)
                     },
@@ -109,7 +115,7 @@ fun DeckDetailScreen(viewModel: DeckDetailViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun CommanderSection(deck: Deck) {
+private fun CommanderSection(deck: Deck, onClick: () -> Unit) {
     val commander = deck.commander ?: return
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -119,6 +125,7 @@ private fun CommanderSection(deck: Deck) {
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
         AsyncImage(
@@ -137,6 +144,7 @@ private fun CommanderSection(deck: Deck) {
 private fun DeckCardRow(
     card: DeckCardEntry,
     isCommander: Boolean,
+    onClick: () -> Unit,
     onToggleCommander: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -148,6 +156,7 @@ private fun DeckCardRow(
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
         AsyncImage(

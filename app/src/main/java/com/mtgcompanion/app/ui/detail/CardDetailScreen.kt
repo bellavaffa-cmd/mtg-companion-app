@@ -81,7 +81,8 @@ private const val TILES_PER_SECTION = 12
 @Composable
 fun CardDetailScreen(
     viewModel: CardDetailViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onCardClick: (String) -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
@@ -158,7 +159,7 @@ fun CardDetailScreen(
                             )
                         }
                     } else {
-                        sections.forEach { section -> edhrecSection(section) }
+                        sections.forEach { section -> edhrecSection(section, onCardClick) }
                     }
 
                     fullSpanItem { SectionHeader("Combos · Commander Spellbook") }
@@ -190,16 +191,22 @@ private fun androidx.compose.foundation.lazy.grid.LazyGridScope.fullSpanItem(
 ) = item(span = { GridItemSpan(maxLineSpan) }) { content() }
 
 /** One EDHREC section: a full-width header followed by a grid of card tiles. */
-private fun androidx.compose.foundation.lazy.grid.LazyGridScope.edhrecSection(section: EdhrecCardList) {
+private fun androidx.compose.foundation.lazy.grid.LazyGridScope.edhrecSection(
+    section: EdhrecCardList,
+    onCardClick: (String) -> Unit
+) {
     fullSpanItem { SectionHeader(section.header ?: "") }
     items(section.cardviews.take(TILES_PER_SECTION), key = { "${section.tag}-${it.id ?: it.name}" }) { view ->
-        EdhrecTile(view)
+        EdhrecTile(view, onClick = { onCardClick(view.name) })
     }
 }
 
 @Composable
-private fun EdhrecTile(view: EdhrecCardView) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun EdhrecTile(view: EdhrecCardView, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
         AsyncImage(
             model = view.scryfallImageUrl,
             contentDescription = view.name,
