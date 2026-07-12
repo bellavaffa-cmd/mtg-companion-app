@@ -98,9 +98,11 @@ private object Routes {
     fun collectionDetail(collectionId: String) = "collection/$collectionId"
 }
 
-// Routes that show the side nav rail (so you can jump straight to another section).
+// Routes that show the side nav rail (so you can jump straight to another section). Scan is
+// excluded so its full-screen camera stays centered rather than being squeezed beside the rail;
+// the scanner has its own back button to exit.
 private val bottomNavRoutes = setOf(
-    Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SCAN, Routes.SETTINGS
+    Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS
 )
 
 @Composable

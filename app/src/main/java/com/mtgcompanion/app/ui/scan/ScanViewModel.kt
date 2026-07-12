@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.scan
 
+import android.media.MediaActionSound
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -9,8 +10,10 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,9 +24,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** A scanned card and how many copies were scanned (adjustable before adding to a deck/binder). */
+data class ScannedCard(val card: ScryfallCard, val quantity: Int = 1)
+
 data class ScanUiState(
     val status: String? = null,
-    val scannedCards: List<ScryfallCard> = emptyList()
+    val scannedCards: List<ScannedCard> = emptyList()
 )
 
 class ScanViewModel(
@@ -48,6 +54,9 @@ class ScanViewModel(
     private var lastCandidate: String? = null
     private var lastLookedUp: String? = null
     private val nameCache = HashMap<String, ScryfallCard>()
+
+    // A camera-shutter click played on each successful scan.
+    private val scanSound = MediaActionSound().apply { load(MediaActionSound.SHUTTER_CLICK) }
 
     private val _uiState = MutableStateFlow(ScanUiState())
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
@@ -149,16 +158,49 @@ class ScanViewModel(
     }
 
     private fun addScannedCard(card: ScryfallCard) {
-        val alreadyScanned = _uiState.value.scannedCards.any { it.id == card.id }
-        _uiState.value = if (alreadyScanned) {
-            _uiState.value.copy(status = "${card.name} is already in the list")
+        val existing = _uiState.value.scannedCards.find { it.card.id == card.id }
+        _uiState.value = if (existing != null) {
+            // Re-scanning a card bumps its copy count instead of duplicating the row.
+            _uiState.value.copy(
+                status = "${card.name} ×${existing.quantity + 1}",
+                scannedCards = _uiState.value.scannedCards.map {
+                    if (it.card.id == card.id) it.copy(quantity = it.quantity + 1) else it
+                }
+            )
         } else {
             // Newest first so the just-scanned card is visible at the top of the list.
             _uiState.value.copy(
                 status = "Added ${card.name}",
-                scannedCards = listOf(card) + _uiState.value.scannedCards
+                scannedCards = listOf(ScannedCard(card, 1)) + _uiState.value.scannedCards
             )
         }
+        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+    }
+
+    fun incrementScanned(card: ScryfallCard) {
+        _uiState.value = _uiState.value.copy(
+            scannedCards = _uiState.value.scannedCards.map {
+                if (it.card.id == card.id) it.copy(quantity = it.quantity + 1) else it
+            }
+        )
+    }
+
+    /** Lower a scanned card's count; drops it from the list at zero. */
+    fun decrementScanned(card: ScryfallCard) {
+        _uiState.value = _uiState.value.copy(
+            scannedCards = _uiState.value.scannedCards.mapNotNull {
+                when {
+                    it.card.id != card.id -> it
+                    it.quantity > 1 -> it.copy(quantity = it.quantity - 1)
+                    else -> null
+                }
+            }
+        )
+    }
+
+    override fun onCleared() {
+        scanSound.release()
+        super.onCleared()
     }
 
     /**
@@ -190,36 +232,42 @@ class ScanViewModel(
     }
 
     fun removeFromList(card: ScryfallCard) {
-        _uiState.value = _uiState.value.copy(scannedCards = _uiState.value.scannedCards.filterNot { it.id == card.id })
+        _uiState.value = _uiState.value.copy(scannedCards = _uiState.value.scannedCards.filterNot { it.card.id == card.id })
     }
 
-    fun addToCollection(card: ScryfallCard, collectionId: String) {
+    private fun collectionEntry(card: ScryfallCard, quantity: Int) =
+        CollectionEntry(card.id, card.name, card.displayImageUrl, quantity = quantity, foilQuantity = 0)
+
+    private fun deckEntry(card: ScryfallCard, quantity: Int) =
+        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity = quantity, canBeCommander = card.canBeCommander)
+
+    fun addToCollection(card: ScryfallCard, quantity: Int, collectionId: String) {
         viewModelScope.launch {
-            collectionRepository.addCard(collectionId, card)
-            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to binder")
+            collectionRepository.addEntry(collectionId, collectionEntry(card, quantity))
+            _uiState.value = _uiState.value.copy(status = "Added $quantity × ${card.name} to binder")
         }
     }
 
-    fun createCollectionAndAdd(card: ScryfallCard, name: String) {
+    fun createCollectionAndAdd(card: ScryfallCard, quantity: Int, name: String) {
         viewModelScope.launch {
             val collection = collectionRepository.createCollection(name)
-            collectionRepository.addCard(collection.id, card)
-            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to \"${collection.name}\"")
+            collectionRepository.addEntry(collection.id, collectionEntry(card, quantity))
+            _uiState.value = _uiState.value.copy(status = "Added $quantity × ${card.name} to \"${collection.name}\"")
         }
     }
 
-    fun addToDeck(card: ScryfallCard, deckId: String) {
+    fun addToDeck(card: ScryfallCard, quantity: Int, deckId: String) {
         viewModelScope.launch {
-            deckRepository.addCardToDeck(deckId, card)
-            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to deck")
+            deckRepository.addEntry(deckId, deckEntry(card, quantity))
+            _uiState.value = _uiState.value.copy(status = "Added $quantity × ${card.name} to deck")
         }
     }
 
-    fun createDeckAndAdd(card: ScryfallCard, name: String) {
+    fun createDeckAndAdd(card: ScryfallCard, quantity: Int, name: String) {
         viewModelScope.launch {
             val deck = deckRepository.createDeck(name)
-            deckRepository.addCardToDeck(deck.id, card)
-            _uiState.value = _uiState.value.copy(status = "Added ${card.name} to \"${deck.name}\"")
+            deckRepository.addEntry(deck.id, deckEntry(card, quantity))
+            _uiState.value = _uiState.value.copy(status = "Added $quantity × ${card.name} to \"${deck.name}\"")
         }
     }
 

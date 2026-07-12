@@ -35,8 +35,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -63,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -107,8 +110,8 @@ fun ScanScreen(
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    var deckPickerCard by remember { mutableStateOf<ScryfallCard?>(null) }
-    var collectionPickerCard by remember { mutableStateOf<ScryfallCard?>(null) }
+    var deckPickerCard by remember { mutableStateOf<ScannedCard?>(null) }
+    var collectionPickerCard by remember { mutableStateOf<ScannedCard?>(null) }
     var showList by remember { mutableStateOf(false) }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -240,7 +243,7 @@ fun ScanScreen(
                 .padding(24.dp)
         ) {
             Text(
-                "VIEW LIST (${state.scannedCards.size})",
+                "VIEW LIST (${state.scannedCards.sumOf { it.quantity }})",
                 style = MaterialTheme.typography.labelLarge,
                 color = Bg
             )
@@ -257,41 +260,43 @@ fun ScanScreen(
             ScannedListPanel(
                 cards = state.scannedCards,
                 onClose = { showList = false },
-                onCardClick = { showList = false; onCardClick(it.name) },
+                onCardClick = { showList = false; onCardClick(it.card.name) },
                 onAddToCollection = { collectionPickerCard = it },
                 onAddToDeck = { deckPickerCard = it },
-                onRemove = { viewModel.removeFromList(it) },
+                onIncrement = { viewModel.incrementScanned(it.card) },
+                onDecrement = { viewModel.decrementScanned(it.card) },
+                onRemove = { viewModel.removeFromList(it.card) },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
     }
 
-    deckPickerCard?.let { card ->
+    deckPickerCard?.let { scanned ->
         DeckPickerDialog(
             decks = decks,
             onDismiss = { deckPickerCard = null },
             onPickDeck = { deckId ->
                 deckPickerCard = null
-                viewModel.addToDeck(card, deckId)
+                viewModel.addToDeck(scanned.card, scanned.quantity, deckId)
             },
             onCreateDeck = { name ->
                 deckPickerCard = null
-                viewModel.createDeckAndAdd(card, name)
+                viewModel.createDeckAndAdd(scanned.card, scanned.quantity, name)
             }
         )
     }
 
-    collectionPickerCard?.let { card ->
+    collectionPickerCard?.let { scanned ->
         CollectionPickerDialog(
             collections = collections,
             onDismiss = { collectionPickerCard = null },
             onPickCollection = { collectionId ->
                 collectionPickerCard = null
-                viewModel.addToCollection(card, collectionId)
+                viewModel.addToCollection(scanned.card, scanned.quantity, collectionId)
             },
             onCreateCollection = { name ->
                 collectionPickerCard = null
-                viewModel.createCollectionAndAdd(card, name)
+                viewModel.createCollectionAndAdd(scanned.card, scanned.quantity, name)
             }
         )
     }
@@ -379,12 +384,14 @@ private fun ScrimIconButton(onClick: () -> Unit, icon: androidx.compose.ui.graph
 
 @Composable
 private fun ScannedListPanel(
-    cards: List<ScryfallCard>,
+    cards: List<ScannedCard>,
     onClose: () -> Unit,
-    onCardClick: (ScryfallCard) -> Unit,
-    onAddToCollection: (ScryfallCard) -> Unit,
-    onAddToDeck: (ScryfallCard) -> Unit,
-    onRemove: (ScryfallCard) -> Unit,
+    onCardClick: (ScannedCard) -> Unit,
+    onAddToCollection: (ScannedCard) -> Unit,
+    onAddToDeck: (ScannedCard) -> Unit,
+    onIncrement: (ScannedCard) -> Unit,
+    onDecrement: (ScannedCard) -> Unit,
+    onRemove: (ScannedCard) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -397,7 +404,7 @@ private fun ScannedListPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "SCANNED (${cards.size})",
+                "SCANNED (${cards.sumOf { it.quantity }})",
                 style = MaterialTheme.typography.titleMedium,
                 color = GoldLight
             )
@@ -417,13 +424,15 @@ private fun ScannedListPanel(
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(cards, key = { it.id }) { card ->
+                items(cards, key = { it.card.id }) { scanned ->
                     ScannedCardRow(
-                        card = card,
-                        onClick = { onCardClick(card) },
-                        onAddToCollection = { onAddToCollection(card) },
-                        onAddToDeck = { onAddToDeck(card) },
-                        onRemove = { onRemove(card) }
+                        scanned = scanned,
+                        onClick = { onCardClick(scanned) },
+                        onAddToCollection = { onAddToCollection(scanned) },
+                        onAddToDeck = { onAddToDeck(scanned) },
+                        onIncrement = { onIncrement(scanned) },
+                        onDecrement = { onDecrement(scanned) },
+                        onRemove = { onRemove(scanned) }
                     )
                 }
             }
@@ -433,15 +442,16 @@ private fun ScannedListPanel(
 
 @Composable
 private fun ScannedCardRow(
-    card: ScryfallCard,
+    scanned: ScannedCard,
     onClick: () -> Unit,
     onAddToCollection: () -> Unit,
     onAddToDeck: () -> Unit,
+    onIncrement: () -> Unit,
+    onDecrement: () -> Unit,
     onRemove: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    val card = scanned.card
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
@@ -450,31 +460,46 @@ private fun ScannedCardRow(
             .clickable(onClick = onClick)
             .padding(10.dp)
     ) {
-        AsyncImage(
-            model = card.displayImageUrl,
-            contentDescription = card.name,
-            modifier = Modifier.size(width = 40.dp, height = 56.dp).clip(RoundedCornerShape(3.dp))
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-                Button(
-                    onClick = onAddToCollection,
-                    shape = RoundedCornerShape(2.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-                ) { Text("+ BINDER", style = MaterialTheme.typography.labelMedium, color = Bg) }
-                OutlinedButton(
-                    onClick = onAddToDeck,
-                    shape = RoundedCornerShape(2.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    border = BorderStroke(1.dp, BorderColor),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
-                ) { Text("+ DECK", style = MaterialTheme.typography.labelMedium) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            AsyncImage(
+                model = card.displayImageUrl,
+                contentDescription = card.name,
+                modifier = Modifier.size(width = 40.dp, height = 56.dp).clip(RoundedCornerShape(3.dp))
+            )
+            Text(
+                card.name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            // Compact quantity stepper for how many copies were scanned.
+            IconButton(onClick = onDecrement, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Remove, contentDescription = "One fewer", tint = Gold, modifier = Modifier.size(18.dp))
+            }
+            Text("${scanned.quantity}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            IconButton(onClick = onIncrement, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Add, contentDescription = "One more", tint = Gold, modifier = Modifier.size(18.dp))
+            }
+            IconButton(onClick = onRemove, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Remove from list", tint = TextDim, modifier = Modifier.size(18.dp))
             }
         }
-        IconButton(onClick = onRemove) {
-            Icon(Icons.Filled.Close, contentDescription = "Remove from list", tint = TextDim)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            Button(
+                onClick = onAddToCollection,
+                shape = RoundedCornerShape(2.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("+ BINDER", style = MaterialTheme.typography.labelMedium, color = Bg) }
+            OutlinedButton(
+                onClick = onAddToDeck,
+                shape = RoundedCornerShape(2.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                border = BorderStroke(1.dp, BorderColor),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
+            ) { Text("+ DECK", style = MaterialTheme.typography.labelMedium) }
         }
     }
 }
