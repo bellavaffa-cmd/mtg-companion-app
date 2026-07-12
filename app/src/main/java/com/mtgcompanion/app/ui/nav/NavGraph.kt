@@ -1,18 +1,38 @@
 package com.mtgcompanion.app.ui.nav
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -62,7 +82,7 @@ private object Routes {
     fun collectionDetail(collectionId: String) = "collection/$collectionId"
 }
 
-// The deck detail keeps the bottom nav so you can jump straight to another tab from a deck.
+// The deck detail keeps the side nav so you can jump straight to another tab from a deck.
 private val bottomNavRoutes = setOf(Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL)
 
 @Composable
@@ -75,18 +95,16 @@ fun MtgNavGraph(
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
 
     Scaffold(
-        containerColor = Bg,
-        bottomBar = {
-            if (currentRoute in bottomNavRoutes) {
-                MtgBottomBar(currentRoute = currentRoute, navController = navController)
-            }
-        }
+        containerColor = Bg
     ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = Routes.SEARCH,
-            modifier = Modifier.padding(padding)
-        ) {
+        Row(modifier = Modifier.padding(padding)) {
+            if (currentRoute in bottomNavRoutes) {
+                MtgNavRail(currentRoute = currentRoute, navController = navController)
+            }
+            NavHost(
+                navController = navController,
+                startDestination = Routes.SEARCH
+            ) {
             composable(Routes.SEARCH) {
                 val viewModel: SearchViewModel = viewModel()
                 SearchScreen(
@@ -178,45 +196,80 @@ fun MtgNavGraph(
                 )
                 SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
+            }
+        }
+    }
+}
+
+// Thin icon-only rail that expands to show labels when the menu toggle is tapped.
+@Composable
+private fun MtgNavRail(currentRoute: String?, navController: NavHostController) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxHeight()
+            .background(Surface)
+            .width(if (expanded) 148.dp else 52.dp)
+            .animateContentSize()
+            .padding(vertical = 8.dp, horizontal = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        // Toggle collapse/expand.
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = !expanded }
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Menu, contentDescription = "Toggle menu", tint = Gold, modifier = Modifier.size(20.dp))
+        }
+        RailItem(Icons.Filled.Search, "Search", expanded, currentRoute == Routes.SEARCH) {
+            navController.navigateToTab(Routes.SEARCH)
+        }
+        RailItem(Icons.Filled.Collections, "Collection", expanded, currentRoute == Routes.COLLECTION) {
+            navController.navigateToTab(Routes.COLLECTION)
+        }
+        RailItem(
+            Icons.Filled.Style, "Decks", expanded,
+            currentRoute == Routes.DECKS || currentRoute == Routes.DECK_DETAIL
+        ) {
+            navController.navigateToTab(Routes.DECKS)
         }
     }
 }
 
 @Composable
-private fun MtgBottomBar(currentRoute: String?, navController: NavHostController) {
-    NavigationBar(containerColor = Surface) {
-        NavigationBarItem(
-            selected = currentRoute == Routes.SEARCH,
-            onClick = { navController.navigateToTab(Routes.SEARCH) },
-            icon = { Icon(Icons.Filled.Search, contentDescription = "Search") },
-            label = { Text("Search") },
-            colors = bottomItemColors()
-        )
-        NavigationBarItem(
-            selected = currentRoute == Routes.COLLECTION,
-            onClick = { navController.navigateToTab(Routes.COLLECTION) },
-            icon = { Icon(Icons.Filled.Collections, contentDescription = "Collection") },
-            label = { Text("Collection") },
-            colors = bottomItemColors()
-        )
-        NavigationBarItem(
-            selected = currentRoute == Routes.DECKS || currentRoute == Routes.DECK_DETAIL,
-            onClick = { navController.navigateToTab(Routes.DECKS) },
-            icon = { Icon(Icons.Filled.Style, contentDescription = "Decks") },
-            label = { Text("Decks") },
-            colors = bottomItemColors()
-        )
+private fun RailItem(
+    icon: ImageVector,
+    label: String,
+    expanded: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val tint = if (selected) Gold else TextDim
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) Bg else Surface)
+            .clickable(onClick = onClick)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
+        if (expanded) {
+            Spacer(Modifier.width(12.dp))
+            Text(
+                label,
+                color = tint,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
-
-@Composable
-private fun bottomItemColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = Gold,
-    selectedTextColor = Gold,
-    unselectedIconColor = TextDim,
-    unselectedTextColor = TextDim,
-    indicatorColor = Bg
-)
 
 private fun NavHostController.navigateToTab(route: String) {
     navigate(route) {

@@ -27,8 +27,9 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Star
@@ -331,8 +332,13 @@ private fun CardsTab(
     viewModel: DeckDetailViewModel
 ) {
     // Grouped by type once analysis has loaded; otherwise a flat list so cards show immediately.
-    val groups = if (analysis.byType.isNotEmpty()) analysis.byType
-    else listOf(TypeGroup("Cards", deck.cards))
+    // The commander is shown in its own pinned section, so exclude it from the list to avoid a duplicate.
+    val commanderId = deck.commander?.scryfallId
+    val groups = (if (analysis.byType.isNotEmpty()) analysis.byType else listOf(TypeGroup("Cards", deck.cards)))
+        .mapNotNull { group ->
+            val cards = group.cards.filterNot { it.scryfallId == commanderId }
+            if (cards.isEmpty()) null else group.copy(cards = cards)
+        }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -368,7 +374,8 @@ private fun CardsTab(
                     onToggleCommander = {
                         viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
                     },
-                    onRemove = { viewModel.removeCard(card.scryfallId) }
+                    onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
+                    onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
                 )
             }
         }
@@ -648,7 +655,8 @@ private fun DeckCardRow(
     isCommander: Boolean,
     onClick: () -> Unit,
     onToggleCommander: () -> Unit,
-    onRemove: () -> Unit
+    onIncrement: () -> Unit,
+    onDecrement: () -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -667,10 +675,12 @@ private fun DeckCardRow(
             contentScale = ContentScale.Crop,
             modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
         )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            Text("Qty ${card.quantity}", style = MaterialTheme.typography.labelMedium, color = TextMuted)
-        }
+        Text(
+            card.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextPrimary,
+            modifier = Modifier.weight(1f)
+        )
         if (card.canBeCommander) {
             IconButton(onClick = onToggleCommander) {
                 Icon(
@@ -680,8 +690,15 @@ private fun DeckCardRow(
                 )
             }
         }
-        IconButton(onClick = onRemove) {
-            Icon(Icons.Filled.Close, contentDescription = "Remove from deck", tint = TextDim)
+        // Quantity stepper on the right: − removes a copy (removes the card at 0), + adds one.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onDecrement) {
+                Icon(Icons.Filled.Remove, contentDescription = "Remove a copy", tint = Gold)
+            }
+            Text("${card.quantity}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            IconButton(onClick = onIncrement) {
+                Icon(Icons.Filled.Add, contentDescription = "Add a copy", tint = Gold)
+            }
         }
     }
 }

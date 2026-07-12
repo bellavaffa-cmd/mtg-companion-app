@@ -82,7 +82,6 @@ import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 import kotlinx.coroutines.delay
 
-private const val GRID_COLUMNS = 3
 private const val TILES_PER_SECTION = 12
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,7 +135,8 @@ fun CardDetailScreen(
                 val sections = state.cardEdhrecLists?.filter { it.cardviews.isNotEmpty() }.orEmpty()
 
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(GRID_COLUMNS),
+                    // Adaptive: as many ~104dp card tiles as fit — 3 on a phone, more on wider screens.
+                    columns = GridCells.Adaptive(minSize = 104.dp),
                     modifier = Modifier.fillMaxSize().background(Bg).padding(padding),
                     contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),

@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -43,10 +45,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -60,6 +64,7 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 @Composable
 fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
     val decks by viewModel.decks.collectAsState()
+    val commanderColors by viewModel.commanderColors.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -84,13 +89,18 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
                 )
             }
         } else {
-            LazyColumn(
+            LazyVerticalGrid(
+                // Adaptive: as many ~160dp columns as fit — 2 on a phone, more on wider screens.
+                columns = GridCells.Adaptive(minSize = 160.dp),
                 modifier = Modifier.fillMaxSize().background(Bg).padding(padding),
                 contentPadding = PaddingValues(20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(decks, key = { it.id }) { deck ->
-                    DeckRow(deck = deck, onClick = { onDeckClick(deck.id) })
+                    // Colourless commander -> a single "C" pip; unknown (not fetched yet) -> none.
+                    val colors = commanderColors[deck.id]?.ifEmpty { listOf("C") }.orEmpty()
+                    DeckTile(deck = deck, colors = colors, onClick = { onDeckClick(deck.id) })
                 }
             }
         }
@@ -108,11 +118,11 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
 }
 
 @Composable
-private fun DeckRow(deck: Deck, onClick: () -> Unit) {
+private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(150.dp)
+            .aspectRatio(1f)
             .clip(RoundedCornerShape(8.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
@@ -124,14 +134,28 @@ private fun DeckRow(deck: Deck, onClick: () -> Unit) {
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
+        // Commander colour identity pips, top-right over the art.
+        if (colors.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(horizontal = 5.dp, vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                colors.forEach { ManaSymbol(it, size = 16.dp) }
+            }
+        }
         // Dark scrim over the lower half so the overlaid name stays legible on bright art.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0.35f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.85f)
+                        0.4f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.9f)
                     )
                 )
         )
@@ -139,13 +163,21 @@ private fun DeckRow(deck: Deck, onClick: () -> Unit) {
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(12.dp)
         ) {
-            Text(deck.name, style = MaterialTheme.typography.titleMedium, color = GoldLight)
+            Text(
+                deck.name,
+                style = MaterialTheme.typography.titleSmall,
+                color = GoldLight,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             Text(
                 (deck.commander?.name ?: "No commander set") + " · ${deck.cards.sumOf { it.quantity }} cards",
                 style = MaterialTheme.typography.labelMedium,
-                color = TextPrimary
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
