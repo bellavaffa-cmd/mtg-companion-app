@@ -143,13 +143,14 @@ fun ScanScreen(
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
                     val analysis = ImageAnalysis.Builder()
-                        // Cap analysis frames to ~720p: ample to read a card title, and far
-                        // cheaper for ML Kit than full-sensor frames, so OCR runs faster.
+                        // ~1080p: enough detail to read the tiny set code + collector number at the
+                        // card's bottom edge (for exact-edition detection), while KEEP_ONLY_LATEST and
+                        // the ViewModel's stability/dedupe gating keep the workload in check.
                         .setResolutionSelector(
                             ResolutionSelector.Builder()
                                 .setResolutionStrategy(
                                     ResolutionStrategy(
-                                        Size(1280, 720),
+                                        Size(1920, 1080),
                                         ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
                                     )
                                 )

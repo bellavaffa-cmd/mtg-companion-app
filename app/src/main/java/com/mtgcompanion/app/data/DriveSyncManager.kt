@@ -6,6 +6,8 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.mtgcompanion.app.network.drive.GoogleDriveClient
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +73,28 @@ class DriveSyncManager(
     fun onSignedIn(account: GoogleSignInAccount) {
         _status.value = _status.value.copy(connectedEmail = account.email, message = null)
         syncNow()
+    }
+
+    /** Handle the sign-in Activity result, surfacing the error so failures aren't silent. */
+    fun reportSignIn(account: GoogleSignInAccount?, error: Throwable?) {
+        if (account != null) {
+            onSignedIn(account)
+            return
+        }
+        val code = (error as? ApiException)?.statusCode
+        _status.value = _status.value.copy(
+            connectedEmail = null,
+            message = when (code) {
+                GoogleSignInStatusCodes.DEVELOPER_ERROR ->
+                    "Sign-in failed (DEVELOPER_ERROR / code 10): this build isn't registered in a " +
+                        "Google Cloud OAuth client for package com.mtgcompanion.app + its signing SHA-1. " +
+                        "Finish the Drive setup, then retry."
+                GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> "Sign-in cancelled."
+                GoogleSignInStatusCodes.NETWORK_ERROR -> "Sign-in failed: network error."
+                null -> "Sign-in failed: ${error?.message ?: "unknown error"}"
+                else -> "Sign-in failed: ${GoogleSignInStatusCodes.getStatusCodeString(code)} (code $code)"
+            }
+        )
     }
 
     fun syncNow() {

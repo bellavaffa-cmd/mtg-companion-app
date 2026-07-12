@@ -241,8 +241,10 @@ private fun AllCardsTab(
     }
 
     zoomId?.let { id ->
-        // Owned cards across all binders/decks: show value and total, but no editing (ambiguous source).
-        val zoomCards = filtered.map { c -> ZoomCard(imageUrl = c.imageUrl, priceUsd = prices[c.scryfallId], quantity = c.total) }
+        // Owned cards across all binders/decks: show value, total, and which binders/decks hold it.
+        val zoomCards = filtered.map { c ->
+            ZoomCard(imageUrl = c.imageUrl, priceUsd = prices[c.scryfallId], quantity = c.total, sources = c.sources)
+        }
         CardZoomDialog(zoomCards, filtered.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
     }
 }

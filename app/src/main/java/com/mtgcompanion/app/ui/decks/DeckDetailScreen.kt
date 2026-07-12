@@ -68,6 +68,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
@@ -84,6 +85,7 @@ import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.ManaSymbol
+import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -113,6 +115,9 @@ fun DeckDetailScreen(
     var zoom by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Alternate-art target while the printing picker is open: (current scryfallId, card name).
     var artTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // The card whose move-destination picker is open.
+    var moveTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
+    val moveTargets by viewModel.moveTargets.collectAsState()
     var showImport by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
 
@@ -173,7 +178,7 @@ fun DeckDetailScreen(
 
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             TabRow(selectedTabIndex = pagerState.currentPage, containerColor = Bg, contentColor = Gold) {
-                listOf("CARDS", "STATS", "EDHREC", "LEGAL").forEachIndexed { index, label ->
+                listOf("CARDS", "STATS", "REC", "LEGAL").forEachIndexed { index, label ->
                     Tab(
                         selected = pagerState.currentPage == index,
                         onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
@@ -210,7 +215,8 @@ fun DeckDetailScreen(
                         quantity = entry.quantity,
                         onIncrement = { viewModel.setCardQuantity(entry.scryfallId, entry.quantity + 1) },
                         onDecrement = { viewModel.setCardQuantity(entry.scryfallId, (entry.quantity - 1).coerceAtLeast(1)) },
-                        onChangeArt = { artTarget = entry.scryfallId to entry.name }
+                        onChangeArt = { artTarget = entry.scryfallId to entry.name },
+                        onMove = { zoom = null; moveTarget = entry }
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
@@ -223,6 +229,15 @@ fun DeckDetailScreen(
 
         artTarget?.let { (id, name) ->
             AlternateArtDialog(name, onSelect = { viewModel.changePrinting(id, it) }, onDismiss = { artTarget = null })
+        }
+
+        moveTarget?.let { entry ->
+            MoveTargetDialog(
+                cardName = entry.name,
+                targets = moveTargets,
+                onPick = { target -> viewModel.moveCard(entry, target); moveTarget = null },
+                onDismiss = { moveTarget = null }
+            )
         }
 
         if (showSettings) {
@@ -728,19 +743,20 @@ private fun ComboRow(combo: Variant) {
 private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
             .clickable(onClick = onClick)
-            .padding(10.dp)
+            .padding(12.dp)
     ) {
         AsyncImage(
-            model = view.scryfallImageUrl,
+            model = view.scryfallImageUrl.toArtCropUrl(),
             contentDescription = view.name,
-            modifier = Modifier.size(width = 40.dp, height = 56.dp).clip(RoundedCornerShape(3.dp))
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(view.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
@@ -792,7 +808,7 @@ private fun DeckCardRow(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
@@ -811,25 +827,28 @@ private fun DeckCardRow(
             card.name,
             style = MaterialTheme.typography.bodyMedium,
             color = TextPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
         if (card.canBeCommander) {
-            IconButton(onClick = onToggleCommander) {
+            IconButton(onClick = onToggleCommander, modifier = Modifier.size(30.dp)) {
                 Icon(
                     if (isCommander) Icons.Filled.Star else Icons.Outlined.Star,
                     contentDescription = "Set as commander",
-                    tint = Gold
+                    tint = Gold,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
-        // Quantity stepper on the right: − removes a copy (removes the card at 0), + adds one.
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onDecrement) {
-                Icon(Icons.Filled.Remove, contentDescription = "Remove a copy", tint = Gold)
+        // Compact quantity stepper on the right: − removes a copy (removes the card at 0), + adds one.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            IconButton(onClick = onDecrement, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Remove, contentDescription = "Remove a copy", tint = Gold, modifier = Modifier.size(18.dp))
             }
             Text("${card.quantity}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            IconButton(onClick = onIncrement) {
-                Icon(Icons.Filled.Add, contentDescription = "Add a copy", tint = Gold)
+            IconButton(onClick = onIncrement, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Add, contentDescription = "Add a copy", tint = Gold, modifier = Modifier.size(18.dp))
             }
         }
     }

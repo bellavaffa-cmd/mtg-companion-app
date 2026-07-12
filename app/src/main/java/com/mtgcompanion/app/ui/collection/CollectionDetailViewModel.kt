@@ -7,6 +7,10 @@ import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.CollectionRepository
+import com.mtgcompanion.app.data.DeckCardEntry
+import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.ui.common.MoveTarget
+import com.mtgcompanion.app.ui.common.SourceKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,8 +25,16 @@ import kotlinx.coroutines.launch
 class CollectionDetailViewModel(
     private val collectionId: String,
     private val repository: CollectionRepository,
+    private val deckRepository: DeckRepository,
     private val cardRepository: CardRepository = CardRepository()
 ) : ViewModel() {
+
+    /** Decks and other binders this binder's cards can be moved into. */
+    val moveTargets: StateFlow<List<MoveTarget>> =
+        combine(deckRepository.decksFlow, repository.collectionsFlow) { decks, collections ->
+            decks.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
+                collections.filter { it.id != collectionId }.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val collection: StateFlow<Collection?> = repository.collectionFlow(collectionId).stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), null
@@ -59,6 +71,20 @@ class CollectionDetailViewModel(
         viewModelScope.launch { repository.removeEntry(collectionId, entry.scryfallId) }
     }
 
+    /** Move a card (all its copies) out of this binder into [target] deck or binder. */
+    fun moveEntry(entry: CollectionEntry, target: MoveTarget) {
+        viewModelScope.launch {
+            when (target.kind) {
+                SourceKind.DECK -> deckRepository.addEntry(
+                    target.id,
+                    DeckCardEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity + entry.foilQuantity)
+                )
+                SourceKind.BINDER -> repository.addEntry(target.id, entry)
+            }
+            repository.removeEntry(collectionId, entry.scryfallId)
+        }
+    }
+
     /** Swap an entry to a different printing/art, keeping its quantities. */
     fun changePrinting(oldScryfallId: String, newCard: com.mtgcompanion.app.network.scryfall.ScryfallCard) {
         viewModelScope.launch { repository.changeEntryPrinting(collectionId, oldScryfallId, newCard) }
@@ -73,10 +99,11 @@ class CollectionDetailViewModel(
 
     class Factory(
         private val collectionId: String,
-        private val repository: CollectionRepository
+        private val repository: CollectionRepository,
+        private val deckRepository: DeckRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            CollectionDetailViewModel(collectionId, repository) as T
+            CollectionDetailViewModel(collectionId, repository, deckRepository) as T
     }
 }

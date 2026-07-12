@@ -7,6 +7,8 @@ import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.ui.common.CardSource
+import com.mtgcompanion.app.ui.common.SourceKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -15,12 +17,13 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** One card aggregated across every collection and deck, with the total number of copies. */
+/** One card aggregated across every collection and deck, with the total copies and where they are. */
 data class AllCardEntry(
     val scryfallId: String,
     val name: String,
     val imageUrl: String?,
-    val total: Int
+    val total: Int,
+    val sources: List<CardSource> = emptyList()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -37,18 +40,31 @@ class CollectionsViewModel(
     /** Every card owned anywhere (all collections + all decks), deduped by card and summed. */
     val allCards: StateFlow<List<AllCardEntry>> =
         combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
-            val byCard = LinkedHashMap<String, AllCardEntry>()
-            fun add(id: String, name: String, imageUrl: String?, qty: Int) {
-                val current = byCard[id]
-                byCard[id] = AllCardEntry(id, name, imageUrl, (current?.total ?: 0) + qty)
+            // Accumulate total copies plus the list of binders/decks holding each card.
+            class Acc(val name: String, val imageUrl: String?) {
+                var total = 0
+                val sources = mutableListOf<CardSource>()
+            }
+            val byCard = LinkedHashMap<String, Acc>()
+            fun add(id: String, name: String, imageUrl: String?, qty: Int, source: CardSource) {
+                if (qty <= 0) return
+                val acc = byCard.getOrPut(id) { Acc(name, imageUrl) }
+                acc.total += qty
+                acc.sources += source
             }
             collections.forEach { collection ->
-                collection.entries.forEach { add(it.scryfallId, it.name, it.imageUrl, it.quantity + it.foilQuantity) }
+                collection.entries.forEach {
+                    val qty = it.quantity + it.foilQuantity
+                    add(it.scryfallId, it.name, it.imageUrl, qty, CardSource(SourceKind.BINDER, collection.name, qty))
+                }
             }
             decks.forEach { deck ->
-                deck.cards.forEach { add(it.scryfallId, it.name, it.imageUrl, it.quantity) }
+                deck.cards.forEach {
+                    add(it.scryfallId, it.name, it.imageUrl, it.quantity, CardSource(SourceKind.DECK, deck.name, it.quantity))
+                }
             }
-            byCard.values.sortedBy { it.name.lowercase() }
+            byCard.map { (id, acc) -> AllCardEntry(id, acc.name, acc.imageUrl, acc.total, acc.sources.toList()) }
+                .sortedBy { it.name.lowercase() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**

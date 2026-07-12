@@ -48,6 +48,7 @@ import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -70,6 +71,9 @@ fun CollectionDetailScreen(
     val query by viewModel.query.collectAsState()
     val dashboard by viewModel.dashboard.collectAsState()
     val prices by viewModel.prices.collectAsState()
+    val moveTargets by viewModel.moveTargets.collectAsState()
+    // The card whose move-destination picker is open.
+    var moveTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
     var zoomId by remember { mutableStateOf<String?>(null) }
     // Alternate-art target while the printing picker is open: (current scryfallId, card name).
@@ -164,10 +168,20 @@ fun CollectionDetailScreen(
                 quantity = entry.quantity,
                 onIncrement = { viewModel.setQuantity(entry, entry.quantity + 1, entry.foilQuantity) },
                 onDecrement = { viewModel.setQuantity(entry, (entry.quantity - 1).coerceAtLeast(0), entry.foilQuantity) },
-                onChangeArt = { artTarget = entry.scryfallId to entry.name }
+                onChangeArt = { artTarget = entry.scryfallId to entry.name },
+                onMove = { zoomId = null; moveTarget = entry }
             )
         }
         CardZoomDialog(zoomCards, entries.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
+    }
+
+    moveTarget?.let { entry ->
+        MoveTargetDialog(
+            cardName = entry.name,
+            targets = moveTargets,
+            onPick = { target -> viewModel.moveEntry(entry, target); moveTarget = null },
+            onDismiss = { moveTarget = null }
+        )
     }
 
     artTarget?.let { (id, name) ->

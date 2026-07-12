@@ -96,8 +96,12 @@ class ScanViewModel(
         }
         lastLookedUp = normalized
 
-        // Serve a repeat title from the in-session cache without touching the network.
-        nameCache[normalized]?.let { cached ->
+        // Also read the set code + collector number so we can fetch the exact printing, not just
+        // the default one. Cache by that printing when known so a re-scan skips the network.
+        val printing = extractSetAndNumber(visionText)
+        val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: normalized
+
+        nameCache[cacheKey]?.let { cached ->
             addScannedCard(cached)
             busy.set(false)
             onProcessed()
@@ -106,8 +110,8 @@ class ScanViewModel(
 
         viewModelScope.launch {
             try {
-                val card = cardRepository.getByFuzzyName(candidate)
-                nameCache[normalized] = card
+                val card = resolveCard(candidate, printing)
+                nameCache[cacheKey] = card
                 addScannedCard(card)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(status = "Didn't recognize \"$candidate\" — keep scanning…")
@@ -116,6 +120,32 @@ class ScanViewModel(
                 onProcessed()
             }
         }
+    }
+
+    /**
+     * Resolve OCR to a card. Prefer the exact printing read off the card (set + collector number),
+     * accepting it only if its name matches the read title; otherwise fall back to a fuzzy name
+     * lookup (which returns the default printing).
+     */
+    private suspend fun resolveCard(candidate: String, printing: Pair<String, String>?): ScryfallCard {
+        if (printing != null) {
+            val exact = try {
+                cardRepository.getBySetAndNumber(printing.first, printing.second)
+            } catch (e: Exception) {
+                null
+            }
+            if (exact != null && looksLikeSameCard(candidate, exact.name)) return exact
+        }
+        return cardRepository.getByFuzzyName(candidate)
+    }
+
+    /** Guard against a mis-read set/number returning an unrelated card: names must roughly match. */
+    private fun looksLikeSameCard(ocrTitle: String, cardName: String): Boolean {
+        fun norm(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+        val a = norm(ocrTitle)
+        val b = norm(cardName)
+        if (a.isEmpty() || b.isEmpty()) return false
+        return a.contains(b) || b.contains(a) || a.commonPrefixWith(b).length >= 4
     }
 
     private fun addScannedCard(card: ScryfallCard) {
@@ -144,10 +174,11 @@ class ScanViewModel(
                     _uiState.value = _uiState.value.copy(status = "OCR read no card title")
                     return@addOnSuccessListener
                 }
+                val printing = extractSetAndNumber(visionText)
                 _uiState.value = _uiState.value.copy(status = "OCR read \"$candidate\" — looking up…")
                 viewModelScope.launch {
                     try {
-                        addScannedCard(cardRepository.getByFuzzyName(candidate))
+                        addScannedCard(resolveCard(candidate, printing))
                     } catch (e: Exception) {
                         _uiState.value = _uiState.value.copy(status = "No match for \"$candidate\"")
                     }
@@ -221,4 +252,24 @@ internal fun extractCardName(visionText: Text): String? {
         ?.substringBefore("{")
         ?.trim()
         ?.takeIf { it.isNotBlank() }
+}
+
+private val SET_LANG = Regex("\\b([A-Z0-9]{3,5})\\s*[•·・∙]\\s*[A-Z]{2}\\b")
+private val RARITY_NUMBER = Regex("\\b[CURMSPLT]\\s+(\\d{1,4})\\b")
+private val SLASH_NUMBER = Regex("\\b(\\d{1,4})\\s*/\\s*\\d{1,4}\\b")
+
+/**
+ * Try to read the exact printing from the small print at the bottom of a card: the set code sits
+ * before a bullet and 2-letter language ("MSC • EN"), and the collector number follows the rarity
+ * letter ("U 0211") or is written as "number/total". Returns (setCode, collectorNumber) with leading
+ * zeros stripped, or null when either can't be read confidently (the caller then falls back to name).
+ */
+internal fun extractSetAndNumber(visionText: Text): Pair<String, String>? {
+    val lines = visionText.textBlocks.flatMap { it.lines }.map { it.text }
+    val setCode = lines.firstNotNullOfOrNull { SET_LANG.find(it)?.groupValues?.get(1) } ?: return null
+    val number = lines.firstNotNullOfOrNull { RARITY_NUMBER.find(it)?.groupValues?.get(1) }
+        ?: lines.firstNotNullOfOrNull { SLASH_NUMBER.find(it)?.groupValues?.get(1) }
+        ?: return null
+    val trimmed = number.trimStart('0').ifEmpty { "0" }
+    return setCode to trimmed
 }

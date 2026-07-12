@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.CollectionEntry
+import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.ComboRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
@@ -12,6 +14,8 @@ import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.LegalityReport
 import com.mtgcompanion.app.data.evaluateLegality
+import com.mtgcompanion.app.ui.common.MoveTarget
+import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.ui.collection.fetchPrices
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
@@ -19,6 +23,7 @@ import com.mtgcompanion.app.network.spellbook.Variant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -47,6 +52,7 @@ data class DeckAnalysis(
 class DeckDetailViewModel(
     private val deckId: String,
     private val repository: DeckRepository,
+    private val collectionRepository: CollectionRepository,
     private val cardRepository: CardRepository = CardRepository(),
     private val comboRepository: ComboRepository = ComboRepository(),
     private val edhrecRepository: EdhrecRepository = EdhrecRepository()
@@ -55,6 +61,13 @@ class DeckDetailViewModel(
     val deck: StateFlow<Deck?> = repository.deckFlow(deckId).stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), null
     )
+
+    /** Other decks and all binders this deck's cards can be moved into. */
+    val moveTargets: StateFlow<List<MoveTarget>> =
+        combine(repository.decksFlow, collectionRepository.collectionsFlow) { decks, collections ->
+            decks.filter { it.id != deckId }.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
+                collections.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val analysis: StateFlow<DeckAnalysis> = deck.mapLatest { d ->
         if (d == null) return@mapLatest DeckAnalysis(loading = false)
@@ -165,6 +178,20 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.setGameMode(deckId, mode) }
     }
 
+    /** Move a card (all its copies) out of this deck into [target] deck or binder. */
+    fun moveCard(entry: DeckCardEntry, target: MoveTarget) {
+        viewModelScope.launch {
+            when (target.kind) {
+                SourceKind.DECK -> repository.addEntry(target.id, entry)
+                SourceKind.BINDER -> collectionRepository.addEntry(
+                    target.id,
+                    CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity, foilQuantity = 0)
+                )
+            }
+            repository.removeCardFromDeck(deckId, entry.scryfallId)
+        }
+    }
+
     fun deleteDeck(onDeleted: () -> Unit) {
         viewModelScope.launch {
             repository.deleteDeck(deckId)
@@ -201,10 +228,12 @@ class DeckDetailViewModel(
 
     class Factory(
         private val deckId: String,
-        private val repository: DeckRepository
+        private val repository: DeckRepository,
+        private val collectionRepository: CollectionRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = DeckDetailViewModel(deckId, repository) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            DeckDetailViewModel(deckId, repository, collectionRepository) as T
     }
 }
 

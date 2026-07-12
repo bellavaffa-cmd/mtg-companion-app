@@ -199,9 +199,8 @@ private fun DriveSyncSection(syncManager: DriveSyncManager) {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        runCatching { task.getResult(ApiException::class.java) }.getOrNull()?.let {
-            syncManager.onSignedIn(it)
-        }
+        val result0 = runCatching { task.getResult(ApiException::class.java) }
+        syncManager.reportSignIn(result0.getOrNull(), result0.exceptionOrNull())
     }
 
     Text("Google Drive Sync".uppercase(), style = MaterialTheme.typography.titleMedium)

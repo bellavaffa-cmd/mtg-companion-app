@@ -153,7 +153,7 @@ fun MtgNavGraph(
             ) { backStackEntry ->
                 val collectionId = backStackEntry.arguments?.getString("collectionId").orEmpty()
                 val viewModel: CollectionDetailViewModel = viewModel(
-                    factory = CollectionDetailViewModel.Factory(collectionId, collectionRepository)
+                    factory = CollectionDetailViewModel.Factory(collectionId, collectionRepository, deckRepository)
                 )
                 CollectionDetailScreen(
                     viewModel = viewModel,
@@ -177,7 +177,7 @@ fun MtgNavGraph(
             ) { backStackEntry ->
                 val deckId = backStackEntry.arguments?.getString("deckId").orEmpty()
                 val viewModel: DeckDetailViewModel = viewModel(
-                    factory = DeckDetailViewModel.Factory(deckId, deckRepository)
+                    factory = DeckDetailViewModel.Factory(deckId, deckRepository, collectionRepository)
                 )
                 DeckDetailScreen(
                     viewModel = viewModel,

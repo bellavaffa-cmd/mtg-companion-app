@@ -33,6 +33,10 @@ class CardRepository {
 
     suspend fun getByFuzzyName(name: String): ScryfallCard = api.getCardByFuzzyName(name)
 
+    /** A specific printing by set code + collector number (exact edition). */
+    suspend fun getBySetAndNumber(set: String, number: String): ScryfallCard =
+        api.getCardBySetNumber(set.lowercase(), number)
+
     /** Bulk lookup by Scryfall id; batches into the 75-per-request limit of /cards/collection. */
     suspend fun getCardsByIds(ids: List<String>): List<ScryfallCard> {
         if (ids.isEmpty()) return emptyList()

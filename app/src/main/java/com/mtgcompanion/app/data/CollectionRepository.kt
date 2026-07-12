@@ -78,6 +78,24 @@ class CollectionRepository(private val context: Context) {
         updateEntries(collectionId) { entries -> entries.filterNot { it.scryfallId == scryfallId } }
     }
 
+    /** Add a card entry (with its quantities) to a binder, merging into an existing copy. For moves. */
+    suspend fun addEntry(collectionId: String, entry: CollectionEntry) {
+        updateEntries(collectionId) { entries ->
+            val existing = entries.find { it.scryfallId == entry.scryfallId }
+            if (existing != null) {
+                entries.map {
+                    if (it.scryfallId != entry.scryfallId) it
+                    else it.copy(
+                        quantity = it.quantity + entry.quantity,
+                        foilQuantity = it.foilQuantity + entry.foilQuantity
+                    )
+                }
+            } else {
+                entries + entry
+            }
+        }
+    }
+
     /** Overwrite all collections — used when restoring/pulling from Drive sync. */
     suspend fun replaceAll(collections: List<Collection>) {
         update { collections }

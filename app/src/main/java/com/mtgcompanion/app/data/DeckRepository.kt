@@ -99,6 +99,24 @@ class DeckRepository(private val context: Context) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(commander = card) else it } }
     }
 
+    /** Add a card entry (with its quantity) to a deck, merging into an existing copy. For moves. */
+    suspend fun addEntry(deckId: String, entry: DeckCardEntry) {
+        update { decks ->
+            decks.map { deck ->
+                if (deck.id != deckId) return@map deck
+                val existing = deck.cards.find { it.scryfallId == entry.scryfallId }
+                val newCards = if (existing != null) {
+                    deck.cards.map {
+                        if (it.scryfallId == entry.scryfallId) it.copy(quantity = it.quantity + entry.quantity) else it
+                    }
+                } else {
+                    deck.cards + entry
+                }
+                deck.copy(cards = newCards)
+            }
+        }
+    }
+
     /** Overwrite the whole deck list — used when restoring/pulling from Drive sync. */
     suspend fun replaceAll(decks: List<Deck>) {
         update { decks }
