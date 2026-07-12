@@ -62,7 +62,8 @@ private object Routes {
     fun collectionDetail(collectionId: String) = "collection/$collectionId"
 }
 
-private val bottomNavRoutes = setOf(Routes.SEARCH, Routes.COLLECTION, Routes.DECKS)
+// The deck detail keeps the bottom nav so you can jump straight to another tab from a deck.
+private val bottomNavRoutes = setOf(Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL)
 
 @Composable
 fun MtgNavGraph(
@@ -199,7 +200,7 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
             colors = bottomItemColors()
         )
         NavigationBarItem(
-            selected = currentRoute == Routes.DECKS,
+            selected = currentRoute == Routes.DECKS || currentRoute == Routes.DECK_DETAIL,
             onClick = { navController.navigateToTab(Routes.DECKS) },
             icon = { Icon(Icons.Filled.Style, contentDescription = "Decks") },
             label = { Text("Decks") },
