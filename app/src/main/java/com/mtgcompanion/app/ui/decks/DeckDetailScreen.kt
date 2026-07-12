@@ -173,7 +173,7 @@ fun DeckDetailScreen(
 
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             TabRow(selectedTabIndex = pagerState.currentPage, containerColor = Bg, contentColor = Gold) {
-                listOf("CARDS", "STATS", "ANALYSIS", "LEGAL").forEachIndexed { index, label ->
+                listOf("CARDS", "STATS", "EDHREC", "LEGAL").forEachIndexed { index, label ->
                     Tab(
                         selected = pagerState.currentPage == index,
                         onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
@@ -527,6 +527,36 @@ private fun StatsTab(analysis: DeckAnalysis) {
     ) {
         item {
             Panel {
+                SectionLabel("COMMANDER BRACKET")
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Bracket ${analysis.bracket}", style = MaterialTheme.typography.titleLarge)
+                    Text(analysis.bracketName, style = MaterialTheme.typography.bodyMedium, color = GoldLight, modifier = Modifier.padding(bottom = 4.dp))
+                }
+                Text(analysis.bracketReason, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+                if (analysis.gameChangers.isNotEmpty()) {
+                    Text(
+                        "Game Changers: ${analysis.gameChangers.joinToString(", ")}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextMuted,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+                Text(
+                    "Estimated from Game Changers and combos — not an official rating.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextDim,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+        }
+        item {
+            Panel {
+                SectionLabel("TOTAL VALUE (USD)")
+                Text("$" + "%,.2f".format(analysis.totalUsd), style = MaterialTheme.typography.titleLarge)
+            }
+        }
+        item {
+            Panel {
                 SectionLabel("MANA CURVE")
                 ManaCurveChart(analysis.manaCurve)
                 Text(
@@ -577,36 +607,6 @@ private fun AnalysisTab(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item {
-            Panel {
-                SectionLabel("COMMANDER BRACKET")
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Bracket ${analysis.bracket}", style = MaterialTheme.typography.titleLarge)
-                    Text(analysis.bracketName, style = MaterialTheme.typography.bodyMedium, color = GoldLight, modifier = Modifier.padding(bottom = 4.dp))
-                }
-                Text(analysis.bracketReason, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-                if (analysis.gameChangers.isNotEmpty()) {
-                    Text(
-                        "Game Changers: ${analysis.gameChangers.joinToString(", ")}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextMuted,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
-                }
-                Text(
-                    "Estimated from Game Changers and combos — not an official rating.",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = TextDim,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-            }
-        }
-        item {
-            Panel {
-                SectionLabel("TOTAL VALUE (USD)")
-                Text("$" + "%,.2f".format(analysis.totalUsd), style = MaterialTheme.typography.titleLarge)
-            }
-        }
         item { SectionLabel("COMBOS (${analysis.combos.size})") }
         if (analysis.combos.isEmpty()) {
             item { Text("No complete combos detected in this deck.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }

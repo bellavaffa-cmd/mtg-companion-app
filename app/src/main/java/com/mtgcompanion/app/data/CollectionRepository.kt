@@ -78,6 +78,11 @@ class CollectionRepository(private val context: Context) {
         updateEntries(collectionId) { entries -> entries.filterNot { it.scryfallId == scryfallId } }
     }
 
+    /** Overwrite all collections — used when restoring/pulling from Drive sync. */
+    suspend fun replaceAll(collections: List<Collection>) {
+        update { collections }
+    }
+
     private fun readCollections(prefs: Preferences): List<Collection> {
         val store = prefs[key]?.let { runCatching { adapter.fromJson(it) }.getOrNull() } ?: return emptyList()
         if (store.collections.isNotEmpty()) return store.collections

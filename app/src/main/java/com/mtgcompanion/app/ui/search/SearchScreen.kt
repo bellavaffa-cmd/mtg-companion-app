@@ -54,12 +54,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -344,11 +346,12 @@ private fun CardResultRow(card: ScryfallCard, onClick: () -> Unit) {
             .padding(12.dp)
     ) {
         AsyncImage(
-            model = card.displayImageUrl,
+            model = card.displayImageUrl.toArtCropUrl(),
             contentDescription = card.name,
-            modifier = Modifier.size(width = 48.dp, height = 67.dp).clip(RoundedCornerShape(3.dp))
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
         )
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
             Text(
                 (card.typeLine ?: "").uppercase(),

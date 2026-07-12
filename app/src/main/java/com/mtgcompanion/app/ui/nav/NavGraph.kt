@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,11 +21,18 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +53,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.DriveSyncManager
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
 import com.mtgcompanion.app.ui.collection.CollectionDetailViewModel
@@ -64,8 +73,13 @@ import com.mtgcompanion.app.ui.settings.SettingsScreen
 import com.mtgcompanion.app.ui.settings.SettingsViewModel
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.Gold
+import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
+import com.mtgcompanion.app.ui.theme.TextMuted
+import com.mtgcompanion.app.ui.theme.TextPrimary
+import com.mtgcompanion.app.update.UpdateInfo
+import com.mtgcompanion.app.update.UpdateManager
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -93,10 +107,16 @@ private val bottomNavRoutes = setOf(
 fun MtgNavGraph(
     settingsRepository: SettingsRepository,
     collectionRepository: CollectionRepository,
-    deckRepository: DeckRepository
+    deckRepository: DeckRepository,
+    driveSyncManager: DriveSyncManager,
+    updateManager: UpdateManager
 ) {
     val navController = rememberNavController()
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+
+    // Check GitHub for a newer release once on launch; the dialog below shows if one is found.
+    val updateState by updateManager.state.collectAsState()
+    LaunchedEffect(Unit) { updateManager.checkForUpdate() }
 
     Scaffold(
         containerColor = Bg
@@ -196,11 +216,77 @@ fun MtgNavGraph(
                 val viewModel: SettingsViewModel = viewModel(
                     factory = SettingsViewModel.Factory(settingsRepository)
                 )
-                SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+                SettingsScreen(
+                    viewModel = viewModel,
+                    syncManager = driveSyncManager,
+                    updateManager = updateManager,
+                    onBack = { navController.popBackStack() }
+                )
             }
             }
         }
     }
+
+    val update = updateState.available
+    if (update != null && !updateState.dismissed) {
+        UpdateDialog(
+            info = update,
+            downloading = updateState.downloading,
+            onUpdate = { updateManager.startUpdate() },
+            onDismiss = { updateManager.dismiss() }
+        )
+    }
+}
+
+@Composable
+private fun UpdateDialog(
+    info: UpdateInfo,
+    downloading: Boolean,
+    onUpdate: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!downloading) onDismiss() },
+        containerColor = Surface,
+        title = { Text("Update available", color = GoldLight) },
+        text = {
+            Column {
+                Text(
+                    "Version ${info.versionName} is available. Download and install it now?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary
+                )
+                if (info.notes.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        info.notes.trim().take(300),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextDim,
+                        maxLines = 8,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (downloading) {
+                    Spacer(Modifier.height(14.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Gold)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Downloading…", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onUpdate,
+                enabled = !downloading,
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("UPDATE", color = Bg) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !downloading) { Text("LATER", color = TextMuted) }
+        }
+    )
 }
 
 // Thin icon-only rail that expands to show labels when the menu toggle is tapped.

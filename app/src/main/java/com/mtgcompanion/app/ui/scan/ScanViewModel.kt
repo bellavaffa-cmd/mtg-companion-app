@@ -40,6 +40,15 @@ class ScanViewModel(
     // attempt per round trip instead of hammering ML Kit/Scryfall at camera frame rate.
     private val busy = AtomicBoolean(false)
 
+    // Scan-throughput guards so we don't fire a Scryfall lookup on every frame:
+    //  - lastCandidate: the previous frame's OCR title, to require a stable two-frame read.
+    //  - lastLookedUp:  the title we last sent to Scryfall, so a card lingering in frame
+    //                   isn't looked up again and again.
+    //  - nameCache:     titles already resolved this session, to skip the network entirely.
+    private var lastCandidate: String? = null
+    private var lastLookedUp: String? = null
+    private val nameCache = HashMap<String, ScryfallCard>()
+
     private val _uiState = MutableStateFlow(ScanUiState())
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
 
@@ -68,29 +77,57 @@ class ScanViewModel(
     private fun handleRecognizedText(visionText: Text, onProcessed: () -> Unit) {
         val candidate = extractCardName(visionText)
         if (candidate == null) {
+            // No title in view (e.g. between cards) — reset so the next card reads as fresh.
+            lastCandidate = null
+            lastLookedUp = null
             busy.set(false)
             onProcessed()
             return
         }
+        val normalized = candidate.lowercase()
+        // Require the same title on two consecutive frames before spending a lookup — this
+        // rejects blurry mid-motion misreads — and don't re-look-up a title still in frame.
+        val stable = normalized == lastCandidate
+        lastCandidate = normalized
+        if (!stable || normalized == lastLookedUp) {
+            busy.set(false)
+            onProcessed()
+            return
+        }
+        lastLookedUp = normalized
+
+        // Serve a repeat title from the in-session cache without touching the network.
+        nameCache[normalized]?.let { cached ->
+            addScannedCard(cached)
+            busy.set(false)
+            onProcessed()
+            return
+        }
+
         viewModelScope.launch {
             try {
                 val card = cardRepository.getByFuzzyName(candidate)
-                val alreadyScanned = _uiState.value.scannedCards.any { it.id == card.id }
-                _uiState.value = if (alreadyScanned) {
-                    _uiState.value.copy(status = "${card.name} is already in the list")
-                } else {
-                    // Newest first so the just-scanned card is visible at the top of the list.
-                    _uiState.value.copy(
-                        status = "Added ${card.name}",
-                        scannedCards = listOf(card) + _uiState.value.scannedCards
-                    )
-                }
+                nameCache[normalized] = card
+                addScannedCard(card)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(status = "Didn't recognize \"$candidate\" — keep scanning…")
             } finally {
                 busy.set(false)
                 onProcessed()
             }
+        }
+    }
+
+    private fun addScannedCard(card: ScryfallCard) {
+        val alreadyScanned = _uiState.value.scannedCards.any { it.id == card.id }
+        _uiState.value = if (alreadyScanned) {
+            _uiState.value.copy(status = "${card.name} is already in the list")
+        } else {
+            // Newest first so the just-scanned card is visible at the top of the list.
+            _uiState.value.copy(
+                status = "Added ${card.name}",
+                scannedCards = listOf(card) + _uiState.value.scannedCards
+            )
         }
     }
 
@@ -110,16 +147,7 @@ class ScanViewModel(
                 _uiState.value = _uiState.value.copy(status = "OCR read \"$candidate\" — looking up…")
                 viewModelScope.launch {
                     try {
-                        val card = cardRepository.getByFuzzyName(candidate)
-                        val alreadyScanned = _uiState.value.scannedCards.any { it.id == card.id }
-                        _uiState.value = if (alreadyScanned) {
-                            _uiState.value.copy(status = "${card.name} is already in the list")
-                        } else {
-                            _uiState.value.copy(
-                                status = "Added ${card.name}",
-                                scannedCards = listOf(card) + _uiState.value.scannedCards
-                            )
-                        }
+                        addScannedCard(cardRepository.getByFuzzyName(candidate))
                     } catch (e: Exception) {
                         _uiState.value = _uiState.value.copy(status = "No match for \"$candidate\"")
                     }

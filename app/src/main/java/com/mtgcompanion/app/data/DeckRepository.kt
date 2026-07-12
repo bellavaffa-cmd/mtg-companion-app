@@ -99,6 +99,11 @@ class DeckRepository(private val context: Context) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(commander = card) else it } }
     }
 
+    /** Overwrite the whole deck list — used when restoring/pulling from Drive sync. */
+    suspend fun replaceAll(decks: List<Deck>) {
+        update { decks }
+    }
+
     private suspend fun update(transform: (List<Deck>) -> List<Deck>) {
         context.decksDataStore.edit { prefs ->
             val current = prefs[key]?.let { runCatching { adapter.fromJson(it)?.decks }.getOrNull() } ?: emptyList()
