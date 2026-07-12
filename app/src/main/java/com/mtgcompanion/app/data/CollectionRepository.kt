@@ -64,6 +64,16 @@ class CollectionRepository(private val context: Context) {
         }
     }
 
+    /** Swap an entry to a different printing (art), keeping its quantities. */
+    suspend fun changeEntryPrinting(collectionId: String, oldScryfallId: String, newCard: ScryfallCard) {
+        updateEntries(collectionId) { entries ->
+            entries.map {
+                if (it.scryfallId != oldScryfallId) it
+                else it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl)
+            }
+        }
+    }
+
     suspend fun removeEntry(collectionId: String, scryfallId: String) {
         updateEntries(collectionId) { entries -> entries.filterNot { it.scryfallId == scryfallId } }
     }

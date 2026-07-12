@@ -29,10 +29,17 @@ data class ScryfallCard(
     @Json(name = "purchase_uris") val purchaseUris: ScryfallPurchaseUris? = null,
     @Json(name = "tcgplayer_id") val tcgplayerId: Long? = null,
     @Json(name = "scryfall_uri") val scryfallUri: String? = null,
-    @Json(name = "game_changer") val gameChanger: Boolean? = null
+    @Json(name = "game_changer") val gameChanger: Boolean? = null,
+    val set: String? = null,
+    @Json(name = "set_name") val setName: String? = null,
+    @Json(name = "collector_number") val collectorNumber: String? = null
 ) {
     val displayImageUrl: String?
         get() = imageUris?.normal ?: cardFaces?.firstOrNull()?.imageUris?.normal
+
+    /** A short label for this specific printing, e.g. "Modern Horizons 3 · 123". */
+    val printingLabel: String
+        get() = listOfNotNull(setName ?: set?.uppercase(), collectorNumber?.let { "#$it" }).joinToString(" · ")
 
     val displayOracleText: String?
         get() = oracleText ?: cardFaces?.joinToString("\n\n") { face ->

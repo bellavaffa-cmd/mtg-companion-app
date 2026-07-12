@@ -5,13 +5,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -107,29 +109,43 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
 
 @Composable
 private fun DeckRow(deck: Deck, onClick: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
+            .height(150.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .padding(12.dp)
     ) {
         AsyncImage(
             model = deck.commander?.imageUrl.toArtCropUrl(),
             contentDescription = deck.commander?.name,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
+            modifier = Modifier.fillMaxSize()
         )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(deck.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+        // Dark scrim over the lower half so the overlaid name stays legible on bright art.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.35f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.85f)
+                    )
+                )
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text(deck.name, style = MaterialTheme.typography.titleMedium, color = GoldLight)
             Text(
                 (deck.commander?.name ?: "No commander set") + " · ${deck.cards.sumOf { it.quantity }} cards",
                 style = MaterialTheme.typography.labelMedium,
-                color = TextMuted
+                color = TextPrimary
             )
         }
     }

@@ -57,6 +57,40 @@ class DeckRepository(private val context: Context) {
         }
     }
 
+    /** Set a card's copy count; a quantity of 0 or less removes the card (and clears it as commander). */
+    suspend fun setCardQuantity(deckId: String, scryfallId: String, quantity: Int) {
+        update { decks ->
+            decks.map { deck ->
+                if (deck.id != deckId) return@map deck
+                if (quantity <= 0) {
+                    val newCommander = deck.commander?.takeUnless { it.scryfallId == scryfallId }
+                    deck.copy(cards = deck.cards.filterNot { it.scryfallId == scryfallId }, commander = newCommander)
+                } else {
+                    deck.copy(cards = deck.cards.map { if (it.scryfallId == scryfallId) it.copy(quantity = quantity) else it })
+                }
+            }
+        }
+    }
+
+    /** Swap a card to a different printing (art), keeping its quantity; updates the commander too. */
+    suspend fun changeCardPrinting(deckId: String, oldScryfallId: String, newCard: ScryfallCard) {
+        update { decks ->
+            decks.map { deck ->
+                if (deck.id != deckId) return@map deck
+                val newCards = deck.cards.map {
+                    if (it.scryfallId == oldScryfallId)
+                        it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl)
+                    else it
+                }
+                val newCommander = deck.commander
+                    ?.takeIf { it.scryfallId == oldScryfallId }
+                    ?.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl)
+                    ?: deck.commander
+                deck.copy(cards = newCards, commander = newCommander)
+            }
+        }
+    }
+
     suspend fun setCommander(deckId: String, card: DeckCardEntry?) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(commander = card) else it } }
     }

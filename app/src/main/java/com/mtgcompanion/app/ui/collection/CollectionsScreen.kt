@@ -3,6 +3,7 @@ package com.mtgcompanion.app.ui.collection
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -44,13 +47,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -61,19 +68,20 @@ import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun CollectionsScreen(
     viewModel: CollectionsViewModel,
-    onCollectionClick: (String) -> Unit,
-    onCardClick: (String) -> Unit = {}
+    onCollectionClick: (String) -> Unit
 ) {
     val collections by viewModel.collections.collectAsState()
     val allCards by viewModel.allCards.collectAsState()
     val dashboard by viewModel.dashboard.collectAsState()
+    val prices by viewModel.prices.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
-    // Tab 0 = All Cards (left), tab 1 = Collections (right).
-    var selectedTab by remember { mutableStateOf(0) }
+    // Page 0 = All Cards (left), page 1 = Binders (right). Swipe or tap the tabs to switch.
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = Bg,
@@ -81,7 +89,7 @@ fun CollectionsScreen(
             TopAppBar(
                 title = { Text("COLLECTION", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
                 actions = {
-                    if (selectedTab == 1) {
+                    if (pagerState.currentPage == 1) {
                         IconButton(onClick = { showCreateDialog = true }) {
                             Icon(Icons.Filled.Add, contentDescription = "New binder", tint = Gold)
                         }
@@ -93,30 +101,32 @@ fun CollectionsScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             TabRow(
-                selectedTabIndex = selectedTab,
+                selectedTabIndex = pagerState.currentPage,
                 containerColor = Bg,
                 contentColor = Gold
             ) {
                 Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("ALL CARDS", style = MaterialTheme.typography.labelMedium, color = if (selectedTab == 0) Gold else TextMuted) }
+                    selected = pagerState.currentPage == 0,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
+                    text = { Text("ALL CARDS", style = MaterialTheme.typography.labelMedium, color = if (pagerState.currentPage == 0) Gold else TextMuted) }
                 )
                 Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("BINDERS", style = MaterialTheme.typography.labelMedium, color = if (selectedTab == 1) Gold else TextMuted) }
+                    selected = pagerState.currentPage == 1,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
+                    text = { Text("BINDERS", style = MaterialTheme.typography.labelMedium, color = if (pagerState.currentPage == 1) Gold else TextMuted) }
                 )
             }
 
-            if (selectedTab == 0) {
-                AllCardsTab(allCards = allCards, dashboard = dashboard, onCardClick = onCardClick)
-            } else {
-                CollectionsTab(
-                    collections = collections,
-                    onCollectionClick = onCollectionClick,
-                    onDelete = { viewModel.deleteCollection(it) }
-                )
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                if (page == 0) {
+                    AllCardsTab(allCards = allCards, dashboard = dashboard, prices = prices)
+                } else {
+                    CollectionsTab(
+                        collections = collections,
+                        onCollectionClick = onCollectionClick,
+                        onDelete = { viewModel.deleteCollection(it) }
+                    )
+                }
             }
         }
     }
@@ -163,7 +173,7 @@ private fun CollectionsTab(
 private fun AllCardsTab(
     allCards: List<AllCardEntry>,
     dashboard: CollectionDashboard?,
-    onCardClick: (String) -> Unit
+    prices: Map<String, Double>
 ) {
     // Search filters the visible card list only; the dashboard still reflects the whole collection.
     var query by remember { mutableStateOf("") }
@@ -171,6 +181,8 @@ private fun AllCardsTab(
         if (query.isBlank()) allCards
         else allCards.filter { it.name.contains(query.trim(), ignoreCase = true) }
     }
+    // Tapping a card enlarges it (swipeable through the filtered list) with value/total.
+    var zoomId by remember { mutableStateOf<String?>(null) }
 
     if (allCards.isEmpty()) {
         Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
@@ -220,10 +232,16 @@ private fun AllCardsTab(
                 }
             } else {
                 items(filtered, key = { it.scryfallId }) { card ->
-                    AllCardRow(card = card, onClick = { onCardClick(card.name) })
+                    AllCardRow(card = card, onClick = { zoomId = card.scryfallId })
                 }
             }
         }
+    }
+
+    zoomId?.let { id ->
+        // Owned cards across all binders/decks: show value and total, but no editing (ambiguous source).
+        val zoomCards = filtered.map { c -> ZoomCard(imageUrl = c.imageUrl, priceUsd = prices[c.scryfallId], quantity = c.total) }
+        CardZoomDialog(zoomCards, filtered.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
     }
 }
 

@@ -56,6 +56,14 @@ suspend fun computeDashboard(
     )
 }
 
+/** scryfallId -> USD price for the given ids; cards without a price (or not found) are omitted. */
+suspend fun fetchPrices(cardRepository: CardRepository, ids: List<String>): Map<String, Double> {
+    if (ids.isEmpty()) return emptyMap()
+    return cardRepository.getCardsByIds(ids).mapNotNull { card ->
+        card.prices?.usd?.toDoubleOrNull()?.let { card.id to it }
+    }.toMap()
+}
+
 /** Coarse card-type category from a Scryfall type line, creatures taking priority over other types. */
 private fun primaryType(typeLine: String?): String {
     val line = typeLine ?: return "Other"

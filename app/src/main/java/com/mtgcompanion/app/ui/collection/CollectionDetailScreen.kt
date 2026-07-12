@@ -35,12 +35,18 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CollectionEntry
+import com.mtgcompanion.app.ui.common.AlternateArtDialog
+import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -55,13 +61,17 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 @Composable
 fun CollectionDetailScreen(
     viewModel: CollectionDetailViewModel,
-    onBack: () -> Unit,
-    onCardClick: (String) -> Unit = {}
+    onBack: () -> Unit
 ) {
     val collection by viewModel.collection.collectAsState()
     val entries by viewModel.entries.collectAsState()
     val query by viewModel.query.collectAsState()
     val dashboard by viewModel.dashboard.collectAsState()
+    val prices by viewModel.prices.collectAsState()
+    // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
+    var zoomId by remember { mutableStateOf<String?>(null) }
+    // Alternate-art target while the printing picker is open: (current scryfallId, card name).
+    var artTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     Scaffold(
         containerColor = Bg,
@@ -134,7 +144,7 @@ fun CollectionDetailScreen(
                     items(entries, key = { it.scryfallId }) { entry ->
                         CollectionCardRow(
                             entry = entry,
-                            onClick = { onCardClick(entry.name) },
+                            onClick = { zoomId = entry.scryfallId },
                             onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
                             onRemove = { viewModel.remove(entry) }
                         )
@@ -142,6 +152,24 @@ fun CollectionDetailScreen(
                 }
             }
         }
+    }
+
+    zoomId?.let { id ->
+        val zoomCards = entries.map { entry ->
+            ZoomCard(
+                imageUrl = entry.imageUrl,
+                priceUsd = prices[entry.scryfallId],
+                quantity = entry.quantity,
+                onIncrement = { viewModel.setQuantity(entry, entry.quantity + 1, entry.foilQuantity) },
+                onDecrement = { viewModel.setQuantity(entry, (entry.quantity - 1).coerceAtLeast(0), entry.foilQuantity) },
+                onChangeArt = { artTarget = entry.scryfallId to entry.name }
+            )
+        }
+        CardZoomDialog(zoomCards, entries.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
+    }
+
+    artTarget?.let { (id, name) ->
+        AlternateArtDialog(name, onSelect = { viewModel.changePrinting(id, it) }, onDismiss = { artTarget = null })
     }
 }
 

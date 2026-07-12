@@ -9,7 +9,9 @@ interface ScryfallApi {
     @GET("cards/search")
     suspend fun searchCards(
         @Query("q") query: String,
-        @Query("page") page: Int = 1
+        @Query("page") page: Int = 1,
+        @Query("unique") unique: String? = null,
+        @Query("order") order: String? = null
     ): ScryfallSearchResponse
 
     @GET("cards/named")

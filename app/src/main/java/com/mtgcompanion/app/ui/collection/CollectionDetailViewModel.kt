@@ -33,6 +33,11 @@ class CollectionDetailViewModel(
         computeDashboard(cardRepository, c?.entries.orEmpty().map { it.scryfallId to (it.quantity + it.foilQuantity) })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    /** scryfallId -> USD price for this binder's cards, for the enlarged-card value/total display. */
+    val prices: StateFlow<Map<String, Double>> = collection.mapLatest { c ->
+        fetchPrices(cardRepository, c?.entries.orEmpty().map { it.scryfallId })
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
@@ -52,6 +57,11 @@ class CollectionDetailViewModel(
 
     fun remove(entry: CollectionEntry) {
         viewModelScope.launch { repository.removeEntry(collectionId, entry.scryfallId) }
+    }
+
+    /** Swap an entry to a different printing/art, keeping its quantities. */
+    fun changePrinting(oldScryfallId: String, newCard: com.mtgcompanion.app.network.scryfall.ScryfallCard) {
+        viewModelScope.launch { repository.changeEntryPrinting(collectionId, oldScryfallId, newCard) }
     }
 
     fun deleteCollection(onDeleted: () -> Unit) {

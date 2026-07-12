@@ -6,17 +6,21 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -53,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,6 +143,15 @@ fun CardDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     fullSpanItem { CardHeader(card) }
+                    if (state.prints.size > 1) {
+                        fullSpanItem {
+                            PrintsSection(
+                                prints = state.prints,
+                                selectedId = card.id,
+                                onSelect = viewModel::selectPrinting
+                            )
+                        }
+                    }
                     fullSpanItem {
                         CollectionAndDeckActions(
                             state = state,
@@ -334,6 +348,50 @@ private fun GoldPanel(content: @Composable ColumnScope.() -> Unit) {
             .padding(16.dp),
         content = content
     )
+}
+
+@Composable
+private fun PrintsSection(prints: List<ScryfallCard>, selectedId: String, onSelect: (ScryfallCard) -> Unit) {
+    Column {
+        SectionHeader("Prints · Alternate art")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            prints.forEach { print ->
+                val selected = print.id == selectedId
+                Column(
+                    modifier = Modifier.width(90.dp).clickable { onSelect(print) },
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    AsyncImage(
+                        model = print.displayImageUrl,
+                        contentDescription = print.printingLabel,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .width(90.dp)
+                            .aspectRatio(0.72f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .border(
+                                BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Gold else BorderColor),
+                                RoundedCornerShape(6.dp)
+                            )
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        print.set?.uppercase() ?: "",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (selected) GoldLight else TextMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

@@ -20,6 +20,15 @@ class CardRepository {
         }
     }
 
+    /** Every printing of a card (unique arts/sets), newest first, for alternate-art selection. */
+    suspend fun getPrintings(cardName: String): List<ScryfallCard> {
+        return try {
+            api.searchCards(query = "!\"$cardName\"", unique = "prints", order = "released").data
+        } catch (e: HttpException) {
+            if (e.code() == 404) emptyList() else throw e
+        }
+    }
+
     suspend fun getByExactName(name: String): ScryfallCard = api.getCardByExactName(name)
 
     suspend fun getByFuzzyName(name: String): ScryfallCard = api.getCardByFuzzyName(name)

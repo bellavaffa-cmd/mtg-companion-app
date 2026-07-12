@@ -59,6 +59,11 @@ class CollectionsViewModel(
         computeDashboard(cardRepository, entries.map { it.scryfallId to it.total })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    /** scryfallId -> USD price across all owned cards, for the enlarged-card value/total display. */
+    val prices: StateFlow<Map<String, Double>> = allCards.mapLatest { entries ->
+        fetchPrices(cardRepository, entries.map { it.scryfallId })
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     fun createCollection(name: String, onCreated: (Collection) -> Unit) {
         viewModelScope.launch { onCreated(repository.createCollection(name)) }
     }

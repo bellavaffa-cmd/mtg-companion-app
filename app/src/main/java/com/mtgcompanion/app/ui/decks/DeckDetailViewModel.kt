@@ -10,6 +10,7 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
+import com.mtgcompanion.app.ui.collection.fetchPrices
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.spellbook.Variant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -55,6 +56,11 @@ class DeckDetailViewModel(
         if (d == null || d.cards.isEmpty()) return@mapLatest DeckAnalysis(loading = false)
         buildAnalysis(d)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DeckAnalysis(loading = true))
+
+    /** scryfallId -> USD price for the deck's cards, for the enlarged-card value/total display. */
+    val prices: StateFlow<Map<String, Double>> = deck.mapLatest { d ->
+        fetchPrices(cardRepository, d?.cards.orEmpty().map { it.scryfallId })
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /** EDHREC "top cards" suggestions for this deck's commander (null if no commander/data). */
     val suggestions: StateFlow<List<EdhrecCardView>?> = deck.mapLatest { d ->
@@ -137,6 +143,16 @@ class DeckDetailViewModel(
 
     fun setCommander(card: DeckCardEntry?) {
         viewModelScope.launch { repository.setCommander(deckId, card) }
+    }
+
+    /** Change a card's copy count in the deck (used by the enlarged-card quantity stepper). */
+    fun setCardQuantity(scryfallId: String, quantity: Int) {
+        viewModelScope.launch { repository.setCardQuantity(deckId, scryfallId, quantity) }
+    }
+
+    /** Swap a card to a different printing/art, keeping its quantity. */
+    fun changePrinting(oldScryfallId: String, newCard: ScryfallCard) {
+        viewModelScope.launch { repository.changeCardPrinting(deckId, oldScryfallId, newCard) }
     }
 
     fun deleteDeck(onDeleted: () -> Unit) {

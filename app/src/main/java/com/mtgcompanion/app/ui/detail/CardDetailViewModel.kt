@@ -35,6 +35,7 @@ data class CardDetailUiState(
     val combosLoading: Boolean = false,
     val tcgPrices: List<TcgPriceResult>? = null,
     val tcgPricesConfigured: Boolean = false,
+    val prints: List<ScryfallCard> = emptyList(),
     val addedToCollectionMessage: String? = null,
     val addedToDeckMessage: String? = null
 )
@@ -73,6 +74,7 @@ class CardDetailViewModel(
 
                 loadCombos()
                 loadCardEdhrec()
+                loadPrints()
                 if (card.canBeCommander) loadEdhrec()
                 card.tcgplayerId?.let { loadTcgPrice(it) }
             } catch (e: Exception) {
@@ -118,6 +120,23 @@ class CardDetailViewModel(
             }
             _uiState.value = _uiState.value.copy(combosLoading = false, combos = combos)
         }
+    }
+
+    private fun loadPrints() {
+        viewModelScope.launch {
+            val prints = try {
+                cardRepository.getPrintings(cardName)
+            } catch (e: Exception) {
+                emptyList()
+            }
+            _uiState.value = _uiState.value.copy(prints = prints)
+        }
+    }
+
+    /** Switch the detail view (and what gets added to a deck/binder) to a chosen printing/art. */
+    fun selectPrinting(card: ScryfallCard) {
+        _uiState.value = _uiState.value.copy(card = card)
+        card.tcgplayerId?.let { loadTcgPrice(it) }
     }
 
     private fun loadTcgPrice(productId: Long) {

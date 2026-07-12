@@ -3,6 +3,7 @@ package com.mtgcompanion.app.ui.decks
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +23,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -53,6 +56,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +67,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
@@ -70,7 +75,10 @@ import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.network.spellbook.Variant
+import com.mtgcompanion.app.ui.common.AlternateArtDialog
+import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ManaSymbol
+import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -80,18 +88,24 @@ import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DeckDetailScreen(
     viewModel: DeckDetailViewModel,
-    onBack: () -> Unit,
-    onCardClick: (String) -> Unit = {}
+    onBack: () -> Unit
 ) {
     val deck by viewModel.deck.collectAsState()
     val analysis by viewModel.analysis.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
-    var selectedTab by remember { mutableStateOf(0) }
+    val prices by viewModel.prices.collectAsState()
+    val pagerState = rememberPagerState(pageCount = { 3 })
+    val scope = rememberCoroutineScope()
     var menuOpen by remember { mutableStateOf(false) }
+    // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
+    // Holds (source, key): source "card" -> deck card by scryfallId, "sugg" -> suggestion by id/name.
+    var zoom by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Alternate-art target while the printing picker is open: (current scryfallId, card name).
+    var artTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showImport by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
 
@@ -99,7 +113,19 @@ fun DeckDetailScreen(
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text(deck?.name ?: "Deck", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        deck?.commander?.imageUrl?.let { img ->
+                            AsyncImage(
+                                model = img.toArtCropUrl(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(6.dp))
+                            )
+                        }
+                        Text(deck?.name ?: "Deck", color = GoldLight, style = MaterialTheme.typography.labelLarge)
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
@@ -135,27 +161,56 @@ fun DeckDetailScreen(
         val currentDeck = deck ?: return@Scaffold
 
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
-            TabRow(selectedTabIndex = selectedTab, containerColor = Bg, contentColor = Gold) {
+            TabRow(selectedTabIndex = pagerState.currentPage, containerColor = Bg, contentColor = Gold) {
                 listOf("CARDS", "STATS", "ANALYSIS").forEachIndexed { index, label ->
                     Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
+                        selected = pagerState.currentPage == index,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
                         text = {
                             Text(
                                 label,
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (selectedTab == index) Gold else TextMuted
+                                color = if (pagerState.currentPage == index) Gold else TextMuted
                             )
                         }
                     )
                 }
             }
 
-            when (selectedTab) {
-                0 -> CardsTab(currentDeck, analysis, onCardClick, viewModel)
-                1 -> StatsTab(analysis)
-                else -> AnalysisTab(analysis, suggestions, onCardClick)
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                when (page) {
+                    0 -> CardsTab(currentDeck, analysis, onZoomCard = { zoom = "card" to it }, viewModel)
+                    1 -> StatsTab(analysis)
+                    else -> AnalysisTab(analysis, suggestions, onZoomSugg = { zoom = "sugg" to it })
+                }
             }
+        }
+
+        zoom?.let { (source, key) ->
+            if (source == "card") {
+                val groups = if (analysis.byType.isNotEmpty()) analysis.byType
+                else listOf(TypeGroup("Cards", currentDeck.cards))
+                val flatCards = groups.flatMap { it.cards }
+                val zoomCards = flatCards.map { entry ->
+                    ZoomCard(
+                        imageUrl = entry.imageUrl,
+                        priceUsd = prices[entry.scryfallId],
+                        quantity = entry.quantity,
+                        onIncrement = { viewModel.setCardQuantity(entry.scryfallId, entry.quantity + 1) },
+                        onDecrement = { viewModel.setCardQuantity(entry.scryfallId, (entry.quantity - 1).coerceAtLeast(1)) },
+                        onChangeArt = { artTarget = entry.scryfallId to entry.name }
+                    )
+                }
+                CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
+            } else {
+                val sug = suggestions.orEmpty()
+                val zoomCards = sug.map { ZoomCard(imageUrl = it.scryfallImageUrl) }
+                CardZoomDialog(zoomCards, sug.indexOfFirst { (it.id ?: it.name) == key }.coerceAtLeast(0)) { zoom = null }
+            }
+        }
+
+        artTarget?.let { (id, name) ->
+            AlternateArtDialog(name, onSelect = { viewModel.changePrinting(id, it) }, onDismiss = { artTarget = null })
         }
 
         if (showImport) {
@@ -272,16 +327,20 @@ private fun ExportDialog(decklist: String, onDismiss: () -> Unit) {
 private fun CardsTab(
     deck: Deck,
     analysis: DeckAnalysis,
-    onCardClick: (String) -> Unit,
+    onZoomCard: (String) -> Unit,
     viewModel: DeckDetailViewModel
 ) {
+    // Grouped by type once analysis has loaded; otherwise a flat list so cards show immediately.
+    val groups = if (analysis.byType.isNotEmpty()) analysis.byType
+    else listOf(TypeGroup("Cards", deck.cards))
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         if (deck.commander != null) {
-            item { CommanderSection(deck, onClick = { deck.commander?.let { onCardClick(it.name) } }) }
+            item { CommanderSection(deck, onClick = { deck.commander?.let { onZoomCard(it.scryfallId) } }) }
         }
         if (deck.cards.isEmpty()) {
             item {
@@ -292,10 +351,6 @@ private fun CardsTab(
             }
             return@LazyColumn
         }
-
-        // Grouped by type once analysis has loaded; otherwise a flat list so cards show immediately.
-        val groups = if (analysis.byType.isNotEmpty()) analysis.byType
-        else listOf(TypeGroup("Cards", deck.cards))
 
         groups.forEach { group ->
             item {
@@ -309,7 +364,7 @@ private fun CardsTab(
                 DeckCardRow(
                     card = card,
                     isCommander = deck.commander?.scryfallId == card.scryfallId,
-                    onClick = { onCardClick(card.name) },
+                    onClick = { onZoomCard(card.scryfallId) },
                     onToggleCommander = {
                         viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
                     },
@@ -372,7 +427,7 @@ private fun StatsTab(analysis: DeckAnalysis) {
 private fun AnalysisTab(
     analysis: DeckAnalysis,
     suggestions: List<EdhrecCardView>?,
-    onCardClick: (String) -> Unit
+    onZoomSugg: (String) -> Unit
 ) {
     if (analysis.loading) {
         LoadingBox()
@@ -430,7 +485,9 @@ private fun AnalysisTab(
                 )
             }
             sug.isEmpty() -> item { Text("No suggestions found.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
-            else -> items(sug, key = { it.id ?: it.name }) { view -> SuggestionRow(view, onClick = { onCardClick(view.name) }) }
+            else -> items(sug, key = { it.id ?: it.name }) { view ->
+                SuggestionRow(view, onClick = { onZoomSugg(view.id ?: view.name) })
+            }
         }
     }
 }
