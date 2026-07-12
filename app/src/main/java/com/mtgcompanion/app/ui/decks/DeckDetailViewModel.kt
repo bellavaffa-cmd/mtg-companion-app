@@ -9,6 +9,9 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
+import com.mtgcompanion.app.data.GameMode
+import com.mtgcompanion.app.data.LegalityReport
+import com.mtgcompanion.app.data.evaluateLegality
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.ui.collection.fetchPrices
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
@@ -36,7 +39,8 @@ data class DeckAnalysis(
     val bracketName: String = "",
     val bracketReason: String = "",
     val gameChangers: List<String> = emptyList(),
-    val combos: List<Variant> = emptyList()
+    val combos: List<Variant> = emptyList(),
+    val legality: LegalityReport? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -53,7 +57,8 @@ class DeckDetailViewModel(
     )
 
     val analysis: StateFlow<DeckAnalysis> = deck.mapLatest { d ->
-        if (d == null || d.cards.isEmpty()) return@mapLatest DeckAnalysis(loading = false)
+        if (d == null) return@mapLatest DeckAnalysis(loading = false)
+        if (d.cards.isEmpty()) return@mapLatest DeckAnalysis(loading = false, legality = evaluateLegality(d, emptyMap()))
         buildAnalysis(d)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DeckAnalysis(loading = true))
 
@@ -133,7 +138,8 @@ class DeckDetailViewModel(
             bracketName = bracketName,
             bracketReason = reason,
             gameChangers = gameChangers.distinct(),
-            combos = combos
+            combos = combos,
+            legality = evaluateLegality(d, byId)
         )
     }
 
@@ -153,6 +159,10 @@ class DeckDetailViewModel(
     /** Swap a card to a different printing/art, keeping its quantity. */
     fun changePrinting(oldScryfallId: String, newCard: ScryfallCard) {
         viewModelScope.launch { repository.changeCardPrinting(deckId, oldScryfallId, newCard) }
+    }
+
+    fun setGameMode(mode: GameMode) {
+        viewModelScope.launch { repository.setGameMode(deckId, mode) }
     }
 
     fun deleteDeck(onDeleted: () -> Unit) {

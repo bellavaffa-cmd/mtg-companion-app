@@ -22,10 +22,14 @@ class DeckRepository(private val context: Context) {
 
     fun deckFlow(deckId: String): Flow<Deck?> = decksFlow.map { decks -> decks.find { it.id == deckId } }
 
-    suspend fun createDeck(name: String): Deck {
-        val deck = Deck(id = UUID.randomUUID().toString(), name = name)
+    suspend fun createDeck(name: String, gameMode: GameMode = GameMode.DEFAULT): Deck {
+        val deck = Deck(id = UUID.randomUUID().toString(), name = name, gameMode = gameMode.name)
         update { it + deck }
         return deck
+    }
+
+    suspend fun setGameMode(deckId: String, gameMode: GameMode) {
+        update { decks -> decks.map { if (it.id == deckId) it.copy(gameMode = gameMode.name) else it } }
     }
 
     suspend fun deleteDeck(deckId: String) {

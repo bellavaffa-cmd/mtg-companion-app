@@ -32,7 +32,9 @@ data class ScryfallCard(
     @Json(name = "game_changer") val gameChanger: Boolean? = null,
     val set: String? = null,
     @Json(name = "set_name") val setName: String? = null,
-    @Json(name = "collector_number") val collectorNumber: String? = null
+    @Json(name = "collector_number") val collectorNumber: String? = null,
+    /** Format -> legality ("legal", "not_legal", "banned", "restricted"). */
+    val legalities: Map<String, String>? = null
 ) {
     val displayImageUrl: String?
         get() = imageUris?.normal ?: cardFaces?.firstOrNull()?.imageUris?.normal

@@ -74,15 +74,12 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel,
-    onCardClick: (ScryfallCard) -> Unit,
-    onSettingsClick: () -> Unit,
-    onScanClick: () -> Unit
+    onCardClick: (ScryfallCard) -> Unit
 ) {
     val query by viewModel.query.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val filters by viewModel.filters.collectAsState()
     var showFilters by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     Scaffold(
         containerColor = Bg,
@@ -95,14 +92,6 @@ fun SearchScreen(
                             style = MaterialTheme.typography.labelLarge,
                             color = GoldLight
                         )
-                    },
-                    actions = {
-                        IconButton(onClick = onScanClick) {
-                            Icon(Icons.Filled.CameraAlt, contentDescription = "Scan a card", tint = Gold)
-                        }
-                        IconButton(onClick = onSettingsClick) {
-                            Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Gold)
-                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
                 )
@@ -130,12 +119,9 @@ fun SearchScreen(
                     ),
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = viewModel::search) {
-                    Icon(Icons.Filled.Search, contentDescription = "Search", tint = Gold)
-                }
-                IconButton(onClick = { showFilters = true }) {
+                IconButton(onClick = { showFilters = !showFilters }) {
                     Box(contentAlignment = Alignment.TopEnd) {
-                        Icon(Icons.Filled.Tune, contentDescription = "Filters", tint = if (filters.isActive) Gold else TextMuted)
+                        Icon(Icons.Filled.Tune, contentDescription = "Filters", tint = if (filters.isActive || showFilters) Gold else TextMuted)
                         if (filters.isActive) {
                             Box(
                                 Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(Gold)
@@ -145,35 +131,53 @@ fun SearchScreen(
                 }
             }
 
-            when (val state = uiState) {
-                is SearchUiState.Idle -> Text(
-                    "Search a card name, or use Scryfall syntax like “is:commander c:g”.",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontStyle = FontStyle.Italic,
-                    modifier = Modifier.padding(top = 28.dp)
-                )
-                is SearchUiState.Loading -> Column(
-                    modifier = Modifier.fillMaxWidth().padding(top = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) { CircularProgressIndicator(color = Gold) }
-                is SearchUiState.Error -> Text(
-                    state.message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 24.dp)
-                )
-                is SearchUiState.Success -> if (state.cards.isEmpty()) {
-                    Text(
-                        "No cards match.",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontStyle = FontStyle.Italic,
-                        modifier = Modifier.padding(top = 28.dp)
-                    )
-                } else {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.padding(top = 20.dp)
-                    ) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (showFilters) {
+                    item {
+                        InlineFilters(
+                            filters = filters,
+                            onChange = viewModel::onFiltersChange,
+                            onClear = { viewModel.onFiltersChange(SearchFilters()) }
+                        )
+                    }
+                }
+
+                when (val state = uiState) {
+                    is SearchUiState.Idle -> item {
+                        Text(
+                            "Search a card name, or use Scryfall syntax like “is:commander c:g”.",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontStyle = FontStyle.Italic,
+                            modifier = Modifier.padding(top = 16.dp)
+                        )
+                    }
+                    is SearchUiState.Loading -> item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) { CircularProgressIndicator(color = Gold) }
+                    }
+                    is SearchUiState.Error -> item {
+                        Text(
+                            state.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 16.dp)
+                        )
+                    }
+                    is SearchUiState.Success -> if (state.cards.isEmpty()) {
+                        item {
+                            Text(
+                                "No cards match.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontStyle = FontStyle.Italic,
+                                modifier = Modifier.padding(top = 16.dp)
+                            )
+                        }
+                    } else {
                         items(state.cards, key = { it.id }) { card ->
                             CardResultRow(card = card, onClick = { onCardClick(card) })
                         }
@@ -182,88 +186,67 @@ fun SearchScreen(
             }
         }
     }
-
-    if (showFilters) {
-        ModalBottomSheet(
-            onDismissRequest = { showFilters = false },
-            sheetState = sheetState,
-            containerColor = Surface
-        ) {
-            SearchFiltersSheet(
-                initial = filters,
-                onApply = { viewModel.onFiltersChange(it); showFilters = false },
-                onClear = { viewModel.onFiltersChange(SearchFilters()); showFilters = false }
-            )
-        }
-    }
 }
 
+/** Filters shown inline under the search bar; each edit applies live (search auto-runs). */
 @Composable
-private fun SearchFiltersSheet(
-    initial: SearchFilters,
-    onApply: (SearchFilters) -> Unit,
+private fun InlineFilters(
+    filters: SearchFilters,
+    onChange: (SearchFilters) -> Unit,
     onClear: () -> Unit
 ) {
-    var draft by remember { mutableStateOf(initial) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, bottom = 32.dp),
+            .clip(RoundedCornerShape(6.dp))
+            .background(Surface)
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(6.dp))
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("FILTERS", style = MaterialTheme.typography.labelLarge, color = GoldLight)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("FILTERS", style = MaterialTheme.typography.labelLarge, color = GoldLight, modifier = Modifier.weight(1f))
+            TextButton(onClick = onClear) { Text("Clear all", color = TextMuted) }
+        }
 
-        FilterField("Type line", draft.typeLine, "e.g. legendary creature") { draft = draft.copy(typeLine = it) }
-        FilterField("Oracle text", draft.oracle, "e.g. draw a card") { draft = draft.copy(oracle = it) }
-        FilterField("Mana cost", draft.manaCost, "e.g. {2}{U}{U}") { draft = draft.copy(manaCost = it) }
-        FilterField("Sets", draft.sets, "set codes, e.g. MH3, LTR") { draft = draft.copy(sets = it) }
+        FilterField("Type line", filters.typeLine, "e.g. legendary creature") { onChange(filters.copy(typeLine = it)) }
+        FilterField("Oracle text", filters.oracle, "e.g. draw a card") { onChange(filters.copy(oracle = it)) }
+        FilterField("Mana cost", filters.manaCost, "e.g. {2}{U}{U}") { onChange(filters.copy(manaCost = it)) }
+        FilterField("Sets", filters.sets, "set codes, e.g. MH3, LTR") { onChange(filters.copy(sets = it)) }
 
         FilterLabel("Rarity")
         ChipRow(
             options = listOf("common", "uncommon", "rare", "mythic"),
-            selected = draft.rarities,
-            onToggle = { draft = draft.copy(rarities = draft.rarities.toggle(it)) }
+            selected = filters.rarities,
+            onToggle = { onChange(filters.copy(rarities = filters.rarities.toggle(it))) }
         )
 
         FilterLabel("Price (USD)")
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            NumberField("Min", draft.priceMin, Modifier.weight(1f)) { draft = draft.copy(priceMin = it) }
-            NumberField("Max", draft.priceMax, Modifier.weight(1f)) { draft = draft.copy(priceMax = it) }
+            NumberField("Min", filters.priceMin, Modifier.weight(1f)) { onChange(filters.copy(priceMin = it)) }
+            NumberField("Max", filters.priceMax, Modifier.weight(1f)) { onChange(filters.copy(priceMax = it)) }
         }
 
         FilterLabel("Power")
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            NumberField("Min", draft.powerMin, Modifier.weight(1f)) { draft = draft.copy(powerMin = it) }
-            NumberField("Max", draft.powerMax, Modifier.weight(1f)) { draft = draft.copy(powerMax = it) }
+            NumberField("Min", filters.powerMin, Modifier.weight(1f)) { onChange(filters.copy(powerMin = it)) }
+            NumberField("Max", filters.powerMax, Modifier.weight(1f)) { onChange(filters.copy(powerMax = it)) }
         }
 
         FilterLabel("Toughness")
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            NumberField("Min", draft.toughnessMin, Modifier.weight(1f)) { draft = draft.copy(toughnessMin = it) }
-            NumberField("Max", draft.toughnessMax, Modifier.weight(1f)) { draft = draft.copy(toughnessMax = it) }
+            NumberField("Min", filters.toughnessMin, Modifier.weight(1f)) { onChange(filters.copy(toughnessMin = it)) }
+            NumberField("Max", filters.toughnessMax, Modifier.weight(1f)) { onChange(filters.copy(toughnessMax = it)) }
         }
 
         FilterLabel("Finishes")
         ChipRow(
             options = listOf("nonfoil", "foil", "etched"),
-            selected = draft.finishes,
-            onToggle = { draft = draft.copy(finishes = draft.finishes.toggle(it)) }
+            selected = filters.finishes,
+            onToggle = { onChange(filters.copy(finishes = filters.finishes.toggle(it))) }
         )
 
-        FilterField("Artist", draft.artist, "e.g. Rebecca Guay") { draft = draft.copy(artist = it) }
-
-        Spacer(Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(onClick = { draft = SearchFilters(); onClear() }, modifier = Modifier.weight(1f)) {
-                Text("Clear all", color = TextMuted)
-            }
-            Button(
-                onClick = { onApply(draft) },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("Apply") }
-        }
+        FilterField("Artist", filters.artist, "e.g. Rebecca Guay") { onChange(filters.copy(artist = it)) }
     }
 }
 

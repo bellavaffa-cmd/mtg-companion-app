@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.GameMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,8 +36,8 @@ class DecksViewModel(
         }.toMap()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    fun createDeck(name: String, onCreated: (Deck) -> Unit) {
-        viewModelScope.launch { onCreated(repository.createDeck(name)) }
+    fun createDeck(name: String, gameMode: GameMode, onCreated: (Deck) -> Unit) {
+        viewModelScope.launch { onCreated(repository.createDeck(name, gameMode)) }
     }
 
     fun deleteDeck(deckId: String) {

@@ -49,7 +49,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -90,8 +92,9 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
             }
         } else {
             LazyVerticalGrid(
-                // Adaptive: as many ~160dp columns as fit — 2 on a phone, more on wider screens.
-                columns = GridCells.Adaptive(minSize = 160.dp),
+                // Adaptive with a small min size so 2 columns fit even on narrow phones
+                // (alongside the collapsed side rail), and more columns on wider screens.
+                columns = GridCells.Adaptive(minSize = 118.dp),
                 modifier = Modifier.fillMaxSize().background(Bg).padding(padding),
                 contentPadding = PaddingValues(20.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -109,9 +112,9 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
     if (showCreateDialog) {
         CreateDeckDialog(
             onDismiss = { showCreateDialog = false },
-            onConfirm = { name ->
+            onConfirm = { name, mode ->
                 showCreateDialog = false
-                viewModel.createDeck(name) { deck -> onDeckClick(deck.id) }
+                viewModel.createDeck(name, mode) { deck -> onDeckClick(deck.id) }
             }
         )
     }
@@ -184,30 +187,34 @@ private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CreateDeckDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun CreateDeckDialog(onDismiss: () -> Unit, onConfirm: (String, GameMode) -> Unit) {
     var name by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf(GameMode.DEFAULT) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface,
         title = { Text("New deck", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Deck name", color = GoldDim) },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Gold,
-                    unfocusedBorderColor = BorderColor,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary,
-                    cursorColor = Gold
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Deck name", color = GoldDim) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Gold
+                    )
                 )
-            )
+                GameModeDropdown(selected = mode, onSelect = { mode = it })
+            }
         },
         confirmButton = {
             Button(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), mode) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
             ) { Text("CREATE", color = Bg) }
         },

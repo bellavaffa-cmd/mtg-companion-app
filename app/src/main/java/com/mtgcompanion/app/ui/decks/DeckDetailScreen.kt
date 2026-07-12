@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Star
@@ -71,6 +73,8 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
+import com.mtgcompanion.app.data.GameMode
+import com.mtgcompanion.app.data.LegalityIssue
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
@@ -78,6 +82,7 @@ import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.theme.Bg
@@ -99,9 +104,10 @@ fun DeckDetailScreen(
     val analysis by viewModel.analysis.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val prices by viewModel.prices.collectAsState()
-    val pagerState = rememberPagerState(pageCount = { 3 })
+    val pagerState = rememberPagerState(pageCount = { 4 })
     val scope = rememberCoroutineScope()
     var menuOpen by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
     // Holds (source, key): source "card" -> deck card by scryfallId, "sugg" -> suggestion by id/name.
     var zoom by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -142,6 +148,10 @@ fun DeckDetailScreen(
                         modifier = Modifier.background(Surface)
                     ) {
                         DropdownMenuItem(
+                            text = { Text("Deck settings", color = TextPrimary) },
+                            onClick = { menuOpen = false; showSettings = true }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Import decklist", color = TextPrimary) },
                             onClick = { menuOpen = false; showImport = true }
                         )
@@ -163,7 +173,7 @@ fun DeckDetailScreen(
 
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             TabRow(selectedTabIndex = pagerState.currentPage, containerColor = Bg, contentColor = Gold) {
-                listOf("CARDS", "STATS", "ANALYSIS").forEachIndexed { index, label ->
+                listOf("CARDS", "STATS", "ANALYSIS", "LEGAL").forEachIndexed { index, label ->
                     Tab(
                         selected = pagerState.currentPage == index,
                         onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
@@ -182,7 +192,8 @@ fun DeckDetailScreen(
                 when (page) {
                     0 -> CardsTab(currentDeck, analysis, onZoomCard = { zoom = "card" to it }, viewModel)
                     1 -> StatsTab(analysis)
-                    else -> AnalysisTab(analysis, suggestions, onZoomSugg = { zoom = "sugg" to it })
+                    2 -> AnalysisTab(analysis, suggestions, onZoomSugg = { zoom = "sugg" to it })
+                    else -> LegalityTab(analysis)
                 }
             }
         }
@@ -214,6 +225,13 @@ fun DeckDetailScreen(
             AlternateArtDialog(name, onSelect = { viewModel.changePrinting(id, it) }, onDismiss = { artTarget = null })
         }
 
+        if (showSettings) {
+            DeckSettingsDialog(
+                current = currentDeck.mode,
+                onSelect = { viewModel.setGameMode(it) },
+                onDismiss = { showSettings = false }
+            )
+        }
         if (showImport) {
             ImportDialog(
                 onDismiss = { showImport = false },
@@ -322,6 +340,120 @@ private fun ExportDialog(decklist: String, onDismiss: () -> Unit) {
             TextButton(onClick = onDismiss) { Text("Close", color = TextMuted) }
         }
     )
+}
+
+@Composable
+private fun DeckSettingsDialog(
+    current: GameMode,
+    onSelect: (GameMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        containerColor = Surface,
+        onDismissRequest = onDismiss,
+        title = { Text("Deck settings", color = GoldLight) },
+        text = {
+            Column {
+                Text(
+                    "The game mode sets the legality rules checked in the Legal tab.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+                Spacer(Modifier.height(14.dp))
+                GameModeDropdown(selected = current, onSelect = onSelect)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("Done") }
+        }
+    )
+}
+
+@Composable
+private fun LegalityTab(analysis: DeckAnalysis) {
+    val report = analysis.legality
+    if (report == null) {
+        LoadingBox()
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val color = if (report.legal) Gold else Color(0xFFD3402F)
+                    Icon(
+                        if (report.legal) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                        contentDescription = null,
+                        tint = color
+                    )
+                    Column {
+                        Text(
+                            if (report.legal) "Legal for ${report.mode.label}" else "Not legal for ${report.mode.label}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = color
+                        )
+                        Text(
+                            "${report.totalCards} cards" +
+                                if (report.mode.exactSize) " · needs ${report.mode.deckSize}" else " · min ${report.mode.deckSize}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextMuted
+                        )
+                    }
+                }
+            }
+        }
+        if (report.legal) {
+            item {
+                Text(
+                    "No rule violations found for ${report.mode.label}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+            }
+        } else {
+            item {
+                Text(
+                    "${report.issues.size} issue${if (report.issues.size == 1) "" else "s"}",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            items(report.issues) { issue -> LegalityIssueRow(issue) }
+        }
+    }
+}
+
+@Composable
+private fun LegalityIssueRow(issue: LegalityIssue) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .background(Surface)
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .padding(12.dp)
+    ) {
+        Icon(
+            Icons.Filled.Cancel,
+            contentDescription = null,
+            tint = Color(0xFFD3402F),
+            modifier = Modifier.size(18.dp)
+        )
+        Column {
+            issue.card?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            }
+            Text(issue.reason, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+        }
+    }
 }
 
 @Composable

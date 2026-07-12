@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -82,8 +84,10 @@ private object Routes {
     fun collectionDetail(collectionId: String) = "collection/$collectionId"
 }
 
-// The deck detail keeps the side nav so you can jump straight to another tab from a deck.
-private val bottomNavRoutes = setOf(Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL)
+// Routes that show the side nav rail (so you can jump straight to another section).
+private val bottomNavRoutes = setOf(
+    Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SCAN, Routes.SETTINGS
+)
 
 @Composable
 fun MtgNavGraph(
@@ -109,9 +113,7 @@ fun MtgNavGraph(
                 val viewModel: SearchViewModel = viewModel()
                 SearchScreen(
                     viewModel = viewModel,
-                    onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
-                    onSettingsClick = { navController.navigate(Routes.SETTINGS) },
-                    onScanClick = { navController.navigate(Routes.SCAN) }
+                    onCardClick = { card -> navController.navigate(Routes.detail(card.name)) }
                 )
             }
 
@@ -235,6 +237,14 @@ private fun MtgNavRail(currentRoute: String?, navController: NavHostController) 
             currentRoute == Routes.DECKS || currentRoute == Routes.DECK_DETAIL
         ) {
             navController.navigateToTab(Routes.DECKS)
+        }
+        RailItem(Icons.Filled.CameraAlt, "Scan", expanded, currentRoute == Routes.SCAN) {
+            navController.navigateToTab(Routes.SCAN)
+        }
+        // Settings pinned to the bottom of the rail.
+        Spacer(Modifier.weight(1f))
+        RailItem(Icons.Filled.Settings, "Settings", expanded, currentRoute == Routes.SETTINGS) {
+            navController.navigateToTab(Routes.SETTINGS)
         }
     }
 }
