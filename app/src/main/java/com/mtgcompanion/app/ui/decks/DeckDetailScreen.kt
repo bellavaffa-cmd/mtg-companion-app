@@ -120,6 +120,8 @@ fun DeckDetailScreen(
     val moveTargets by viewModel.moveTargets.collectAsState()
     var showImport by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
+    // Result summary shown after an import completes ("Imported N; M couldn't be matched…").
+    var importResult by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         containerColor = Bg,
@@ -250,13 +252,60 @@ fun DeckDetailScreen(
         if (showImport) {
             ImportDialog(
                 onDismiss = { showImport = false },
-                onImport = { text -> viewModel.importDecklist(text) { _, _ -> }; showImport = false }
+                onImport = { text ->
+                    showImport = false
+                    importResult = IMPORTING
+                    viewModel.importDecklist(text) { added, failed ->
+                        importResult = importSummary(added, failed)
+                    }
+                }
             )
+        }
+        importResult?.let { message ->
+            ImportResultDialog(message = message, onDismiss = { importResult = null })
         }
         if (showExport) {
             ExportDialog(decklist = buildDecklist(currentDeck), onDismiss = { showExport = false })
         }
     }
+}
+
+private fun importSummary(added: Int, failed: List<String>): String = buildString {
+    append("Imported $added card${if (added == 1) "" else "s"}.")
+    if (failed.isNotEmpty()) {
+        append("\n\n${failed.size} line${if (failed.size == 1) "" else "s"} couldn't be matched:\n")
+        append(failed.take(25).joinToString("\n") { "• $it" })
+        if (failed.size > 25) append("\n…and ${failed.size - 25} more")
+    }
+}
+
+private const val IMPORTING = "Importing…"
+
+@Composable
+private fun ImportResultDialog(message: String, onDismiss: () -> Unit) {
+    val importing = message == IMPORTING
+    AlertDialog(
+        containerColor = Surface,
+        onDismissRequest = { if (!importing) onDismiss() },
+        title = { Text(if (importing) "Importing decklist…" else "Import complete", color = GoldLight) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(message, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            }
+        },
+        confirmButton = {
+            if (!importing) {
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+                ) { Text("OK", color = Bg) }
+            }
+        }
+    )
 }
 
 /** Builds a plain-text decklist ("1 Card Name" per line), commander first. */

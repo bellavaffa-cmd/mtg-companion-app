@@ -21,12 +21,14 @@ import com.mtgcompanion.app.ui.collection.fetchPrices
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.spellbook.Variant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 
 /** A deck card paired with its type category, for the type-grouped Cards tab. */
 data class TypeGroup(val type: String, val cards: List<DeckCardEntry>)
@@ -200,30 +202,53 @@ class DeckDetailViewModel(
     }
 
     /**
-     * Parse a pasted decklist ("1 Sol Ring" / "2x Brainstorm" / "Sol Ring") and add each card via
-     * Scryfall fuzzy lookup. Reports how many copies were added and which lines couldn't be matched.
+     * Parse a pasted decklist and add each card via Scryfall fuzzy lookup. Handles the common export
+     * formats — "1 Sol Ring", "2x Brainstorm", "Sol Ring", and lines with a trailing set/collector
+     * ("1 Sol Ring (LTC) 285") or foil marker ("*F*") — skips section headers/comments, and reports
+     * how many copies were added and which lines couldn't be matched.
      */
     fun importDecklist(text: String, onResult: (added: Int, failed: List<String>) -> Unit) {
         viewModelScope.launch {
             var added = 0
             val failed = mutableListOf<String>()
-            val lineRegex = Regex("^(\\d+)\\s*[xX]?\\s+(.+)$")
-            text.lines().forEach { raw ->
-                val line = raw.trim().removePrefix("#").trim()
-                if (line.isEmpty()) return@forEach
-                val match = lineRegex.find(line)
+            val qtyRegex = Regex("^(?:(\\d+)\\s*[xX]?\\s+)?(.+)$")
+            for (raw in text.lines()) {
+                val line = raw.trim()
+                if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) continue
+                if (isSectionHeader(line)) continue
+                val match = qtyRegex.find(line)
                 val qty = (match?.groupValues?.get(1)?.toIntOrNull() ?: 1).coerceIn(1, 99)
-                val name = match?.groupValues?.get(2)?.trim() ?: line
-                try {
-                    val card = cardRepository.getByFuzzyName(name)
-                    repeat(qty) { repository.addCardToDeck(deckId, card) }
+                val name = cleanCardName(match?.groupValues?.get(2) ?: line)
+                if (name.isBlank()) continue
+                val card = lookupCard(name)
+                if (card != null) {
+                    repository.addEntry(
+                        deckId,
+                        DeckCardEntry(card.id, card.name, card.displayImageUrl, qty, card.canBeCommander)
+                    )
                     added += qty
-                } catch (e: Exception) {
+                } else {
                     failed += name
                 }
+                delay(60) // stay under Scryfall's rate limit across a long list
             }
             onResult(added, failed)
         }
+    }
+
+    /** Fuzzy lookup with a couple of retries so a transient error or rate-limit doesn't drop a card. */
+    private suspend fun lookupCard(name: String): ScryfallCard? {
+        repeat(4) { attempt ->
+            try {
+                return cardRepository.getByFuzzyName(name)
+            } catch (e: HttpException) {
+                if (e.code() == 429) delay(600L * (attempt + 1)) // rate limited — back off and retry
+                else return null // 404 = genuine no match
+            } catch (e: Exception) {
+                delay(300) // transient network error — retry
+            }
+        }
+        return null
     }
 
     class Factory(
@@ -235,6 +260,24 @@ class DeckDetailViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             DeckDetailViewModel(deckId, repository, collectionRepository) as T
     }
+}
+
+private val SECTION_WORDS = setOf(
+    "deck", "commander", "companion", "sideboard", "maybeboard", "tokens", "about", "name"
+)
+
+/** Skip non-card lines: bare section words and category headers like "Creatures (30)". */
+private fun isSectionHeader(line: String): Boolean {
+    if (line.lowercase().trim() in SECTION_WORDS) return true
+    return Regex("^[A-Za-z][^\\d]*\\(\\d+\\)\\s*$").matches(line)
+}
+
+/** Strip export cruft so fuzzy match sees just the name: foil markers and trailing (SET)/[SET] + number. */
+private fun cleanCardName(raw: String): String {
+    return raw.trim()
+        .replace(Regex("\\*[A-Za-z]\\*"), " ")
+        .replace(Regex("\\s*[\\(\\[][A-Za-z0-9]{2,6}[\\)\\]].*$"), "")
+        .trim()
 }
 
 private val typeSortOrder = listOf(

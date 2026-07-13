@@ -26,8 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -36,7 +34,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
@@ -55,13 +52,10 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    viewModel: SettingsViewModel,
     syncManager: DriveSyncManager,
     updateManager: UpdateManager,
     onBack: () -> Unit
 ) {
-    val state by viewModel.uiState.collectAsState()
-
     Scaffold(
         containerColor = Bg,
         topBar = {
@@ -90,54 +84,6 @@ fun SettingsScreen(
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
             AppUpdatesSection(updateManager)
-
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-
-            Text("TCGPlayer API".uppercase(), style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Optional. Get a client ID/secret from TCGPlayer's own developer program " +
-                    "(docs.tcgplayer.com) to show live marketplace pricing instead of Scryfall's " +
-                    "bundled TCGPlayer price snapshot. Stored only on this device.",
-                style = MaterialTheme.typography.bodySmall
-            )
-
-            OutlinedTextField(
-                value = state.clientId,
-                onValueChange = viewModel::onClientIdChange,
-                label = { Text("Client ID", color = GoldDim) },
-                singleLine = true,
-                shape = RoundedCornerShape(2.dp),
-                colors = fieldColors(),
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = state.clientSecret,
-                onValueChange = viewModel::onClientSecretChange,
-                label = { Text("Client Secret", color = GoldDim) },
-                singleLine = true,
-                shape = RoundedCornerShape(2.dp),
-                visualTransformation = PasswordVisualTransformation(),
-                colors = fieldColors(),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = viewModel::save,
-                    shape = RoundedCornerShape(2.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-                ) { Text("SAVE", style = MaterialTheme.typography.labelLarge, color = Bg) }
-                OutlinedButton(
-                    onClick = viewModel::clear,
-                    shape = RoundedCornerShape(2.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
-                ) { Text("CLEAR", style = MaterialTheme.typography.labelLarge) }
-            }
-
-            state.savedMessage?.let {
-                Text(it, color = Gold, style = MaterialTheme.typography.bodySmall)
-            }
         }
     }
 }
@@ -254,14 +200,3 @@ private fun DriveSyncSection(syncManager: DriveSyncManager) {
         Text(it, color = Gold, style = MaterialTheme.typography.bodySmall)
     }
 }
-
-@Composable
-private fun fieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = Gold,
-    unfocusedBorderColor = BorderColor,
-    focusedTextColor = TextPrimary,
-    unfocusedTextColor = TextPrimary,
-    cursorColor = Gold,
-    focusedContainerColor = Surface,
-    unfocusedContainerColor = Surface
-)

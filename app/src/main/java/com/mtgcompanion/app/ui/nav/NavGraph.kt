@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,9 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -27,6 +27,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,12 +68,13 @@ import com.mtgcompanion.app.ui.decks.DecksScreen
 import com.mtgcompanion.app.ui.decks.DecksViewModel
 import com.mtgcompanion.app.ui.detail.CardDetailScreen
 import com.mtgcompanion.app.ui.detail.CardDetailViewModel
+import com.mtgcompanion.app.ui.home.HomeScreen
+import com.mtgcompanion.app.ui.home.HomeViewModel
 import com.mtgcompanion.app.ui.scan.ScanScreen
 import com.mtgcompanion.app.ui.scan.ScanViewModel
 import com.mtgcompanion.app.ui.search.SearchScreen
 import com.mtgcompanion.app.ui.search.SearchViewModel
 import com.mtgcompanion.app.ui.settings.SettingsScreen
-import com.mtgcompanion.app.ui.settings.SettingsViewModel
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldLight
@@ -85,6 +89,7 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 private object Routes {
+    const val HOME = "home"
     const val SEARCH = "search"
     const val COLLECTION = "collection"
     const val DECKS = "decks"
@@ -98,11 +103,10 @@ private object Routes {
     fun collectionDetail(collectionId: String) = "collection/$collectionId"
 }
 
-// Routes that show the side nav rail (so you can jump straight to another section). Scan is
-// excluded so its full-screen camera stays centered rather than being squeezed beside the rail;
-// the scanner has its own back button to exit.
+// Routes that show the bottom nav bar. Scan is excluded so its camera runs full-screen (it has its
+// own back button); Settings shows the bar so you can jump to another tab from it.
 private val bottomNavRoutes = setOf(
-    Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS
+    Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS
 )
 
 @Composable
@@ -121,16 +125,32 @@ fun MtgNavGraph(
     LaunchedEffect(Unit) { updateManager.checkForUpdate() }
 
     Scaffold(
-        containerColor = Bg
-    ) { padding ->
-        Row(modifier = Modifier.padding(padding)) {
+        containerColor = Bg,
+        bottomBar = {
             if (currentRoute in bottomNavRoutes) {
-                MtgNavRail(currentRoute = currentRoute, navController = navController)
+                MtgBottomBar(currentRoute = currentRoute, navController = navController)
             }
-            NavHost(
-                navController = navController,
-                startDestination = Routes.SEARCH
-            ) {
+        }
+    ) { padding ->
+        NavHost(
+            navController = navController,
+            startDestination = Routes.HOME,
+            modifier = Modifier.padding(padding)
+        ) {
+            composable(Routes.HOME) {
+                val viewModel: HomeViewModel = viewModel(
+                    factory = HomeViewModel.Factory(deckRepository, collectionRepository)
+                )
+                HomeScreen(
+                    viewModel = viewModel,
+                    onOpenSearch = { navController.navigateToTab(Routes.SEARCH) },
+                    onOpenCollection = { navController.navigateToTab(Routes.COLLECTION) },
+                    onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
+                    onOpenScan = { navController.navigateToTab(Routes.SCAN) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) }
+                )
+            }
+
             composable(Routes.SEARCH) {
                 val viewModel: SearchViewModel = viewModel()
                 SearchScreen(
@@ -215,16 +235,11 @@ fun MtgNavGraph(
             }
 
             composable(Routes.SETTINGS) {
-                val viewModel: SettingsViewModel = viewModel(
-                    factory = SettingsViewModel.Factory(settingsRepository)
-                )
                 SettingsScreen(
-                    viewModel = viewModel,
                     syncManager = driveSyncManager,
                     updateManager = updateManager,
                     onBack = { navController.popBackStack() }
                 )
-            }
             }
         }
     }
@@ -291,83 +306,50 @@ private fun UpdateDialog(
     )
 }
 
-// Thin icon-only rail that expands to show labels when the menu toggle is tapped.
 @Composable
-private fun MtgNavRail(currentRoute: String?, navController: NavHostController) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxHeight()
-            .background(Surface)
-            .width(if (expanded) 148.dp else 52.dp)
-            .animateContentSize()
-            .padding(vertical = 8.dp, horizontal = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        // Toggle collapse/expand.
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { expanded = !expanded }
-                .padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Filled.Menu, contentDescription = "Toggle menu", tint = Gold, modifier = Modifier.size(20.dp))
+private fun MtgBottomBar(currentRoute: String?, navController: NavHostController) {
+    NavigationBar(containerColor = Surface) {
+        BarItem(Icons.Filled.Home, "Home", currentRoute == Routes.HOME) {
+            navController.navigateToTab(Routes.HOME)
         }
-        RailItem(Icons.Filled.Search, "Search", expanded, currentRoute == Routes.SEARCH) {
+        BarItem(Icons.Filled.Search, "Search", currentRoute == Routes.SEARCH) {
             navController.navigateToTab(Routes.SEARCH)
         }
-        RailItem(Icons.Filled.Collections, "Collection", expanded, currentRoute == Routes.COLLECTION) {
+        BarItem(Icons.Filled.Collections, "Collection", currentRoute == Routes.COLLECTION) {
             navController.navigateToTab(Routes.COLLECTION)
         }
-        RailItem(
-            Icons.Filled.Style, "Decks", expanded,
+        BarItem(
+            Icons.Filled.Style, "Decks",
             currentRoute == Routes.DECKS || currentRoute == Routes.DECK_DETAIL
         ) {
             navController.navigateToTab(Routes.DECKS)
         }
-        RailItem(Icons.Filled.CameraAlt, "Scan", expanded, currentRoute == Routes.SCAN) {
+        BarItem(Icons.Filled.CameraAlt, "Scan", currentRoute == Routes.SCAN) {
             navController.navigateToTab(Routes.SCAN)
-        }
-        // Settings pinned to the bottom of the rail.
-        Spacer(Modifier.weight(1f))
-        RailItem(Icons.Filled.Settings, "Settings", expanded, currentRoute == Routes.SETTINGS) {
-            navController.navigateToTab(Routes.SETTINGS)
         }
     }
 }
 
 @Composable
-private fun RailItem(
-    icon: ImageVector,
-    label: String,
-    expanded: Boolean,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val tint = if (selected) Gold else TextDim
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Bg else Surface)
-            .clickable(onClick = onClick)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
-        if (expanded) {
-            Spacer(Modifier.width(12.dp))
-            Text(
-                label,
-                color = tint,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
+private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    NavigationBarItem(
+        selected = selected,
+        onClick = onClick,
+        icon = { Icon(icon, contentDescription = label) },
+        // Small single-line label so all five fit without wrapping.
+        label = { Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        colors = bottomItemColors()
+    )
 }
+
+@Composable
+private fun bottomItemColors() = NavigationBarItemDefaults.colors(
+    selectedIconColor = Gold,
+    selectedTextColor = Gold,
+    unselectedIconColor = TextDim,
+    unselectedTextColor = TextDim,
+    indicatorColor = Bg
+)
 
 private fun NavHostController.navigateToTab(route: String) {
     navigate(route) {
