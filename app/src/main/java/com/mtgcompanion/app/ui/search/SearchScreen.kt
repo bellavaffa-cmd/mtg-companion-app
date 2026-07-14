@@ -170,18 +170,38 @@ fun SearchScreen(
                             modifier = Modifier.padding(top = 16.dp)
                         )
                     }
-                    is SearchUiState.Success -> if (state.cards.isEmpty()) {
-                        item {
-                            Text(
-                                "No cards match.",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontStyle = FontStyle.Italic,
-                                modifier = Modifier.padding(top = 16.dp)
-                            )
+                    is SearchUiState.OfflineNoDatabase -> item {
+                        Text(
+                            "You're offline. Download the card database in Settings to search cards without a connection.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 16.dp)
+                        )
+                    }
+                    is SearchUiState.Success -> {
+                        if (state.offline) {
+                            item {
+                                Text(
+                                    "Offline — showing results from your downloaded card database.",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Gold,
+                                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                                )
+                            }
                         }
-                    } else {
-                        items(state.cards, key = { it.id }) { card ->
-                            CardResultRow(card = card, onClick = { onCardClick(card) })
+                        if (state.cards.isEmpty()) {
+                            item {
+                                Text(
+                                    "No cards match.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontStyle = FontStyle.Italic,
+                                    modifier = Modifier.padding(top = 16.dp)
+                                )
+                            }
+                        } else {
+                            items(state.cards, key = { it.id }) { card ->
+                                CardResultRow(card = card, onClick = { onCardClick(card) })
+                            }
                         }
                     }
                 }

@@ -11,6 +11,8 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.data.isOffline
+import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.data.TcgPlayerRepository
 import com.mtgcompanion.app.network.edhrec.EdhrecCardList
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
@@ -47,7 +49,8 @@ class CardDetailViewModel(
     private val comboRepository: ComboRepository,
     private val tcgPlayerRepository: TcgPlayerRepository,
     private val collectionRepository: CollectionRepository,
-    private val deckRepository: DeckRepository
+    private val deckRepository: DeckRepository,
+    private val offlineRepository: OfflineCardRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CardDetailUiState())
@@ -78,10 +81,21 @@ class CardDetailViewModel(
                 if (card.canBeCommander) loadEdhrec()
                 card.tcgplayerId?.let { loadTcgPrice(it) }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    loading = false,
-                    error = e.message ?: "Couldn't load this card from Scryfall."
-                )
+                // Offline: fall back to the locally downloaded card database if it's there.
+                val offlineCard = if (isOffline(e)) offlineRepository.getByName(cardName) else null
+                if (offlineCard != null) {
+                    _uiState.value = _uiState.value.copy(loading = false, card = offlineCard)
+                    loadPrints()
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        loading = false,
+                        error = if (isOffline(e)) {
+                            "You're offline and this card isn't in your downloaded database."
+                        } else {
+                            e.message ?: "Couldn't load this card from Scryfall."
+                        }
+                    )
+                }
             }
         }
     }
@@ -195,7 +209,8 @@ class CardDetailViewModel(
         private val cardName: String,
         private val settingsRepository: SettingsRepository,
         private val collectionRepository: CollectionRepository,
-        private val deckRepository: DeckRepository
+        private val deckRepository: DeckRepository,
+        private val offlineRepository: OfflineCardRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -206,7 +221,8 @@ class CardDetailViewModel(
                 comboRepository = ComboRepository(),
                 tcgPlayerRepository = TcgPlayerRepository(settingsRepository),
                 collectionRepository = collectionRepository,
-                deckRepository = deckRepository
+                deckRepository = deckRepository,
+                offlineRepository = offlineRepository
             ) as T
         }
     }

@@ -33,6 +33,9 @@ data class ScryfallCard(
     val set: String? = null,
     @Json(name = "set_name") val setName: String? = null,
     @Json(name = "collector_number") val collectorNumber: String? = null,
+    val rarity: String? = null,
+    val power: String? = null,
+    val toughness: String? = null,
     /** Format -> legality ("legal", "not_legal", "banned", "restricted"). */
     val legalities: Map<String, String>? = null
 ) {
@@ -91,4 +94,14 @@ data class ScryfallPurchaseUris(
     val tcgplayer: String? = null,
     val cardmarket: String? = null,
     val cardhoarder: String? = null
+)
+
+/** GET /bulk-data — the catalog of downloadable bulk card files. */
+data class BulkDataList(val data: List<BulkDataEntry> = emptyList())
+
+data class BulkDataEntry(
+    val type: String,
+    @Json(name = "download_uri") val downloadUri: String,
+    @Json(name = "updated_at") val updatedAt: String? = null,
+    val size: Long? = null
 )

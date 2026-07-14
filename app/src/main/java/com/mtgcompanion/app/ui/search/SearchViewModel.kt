@@ -1,8 +1,11 @@
 package com.mtgcompanion.app.ui.search
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.isOffline
+import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,8 +20,11 @@ import kotlinx.coroutines.launch
 sealed interface SearchUiState {
     data object Idle : SearchUiState
     data object Loading : SearchUiState
-    data class Success(val cards: List<ScryfallCard>) : SearchUiState
+    /** [offline] is true when the results came from the local database rather than Scryfall. */
+    data class Success(val cards: List<ScryfallCard>, val offline: Boolean = false) : SearchUiState
     data class Error(val message: String) : SearchUiState
+    /** Offline and no card database has been downloaded yet. */
+    data object OfflineNoDatabase : SearchUiState
 }
 
 /** Structured search filters, compiled into a Scryfall query alongside the free-text field. */
@@ -87,7 +93,10 @@ fun buildScryfallQuery(text: String, filters: SearchFilters): String {
 }
 
 @OptIn(FlowPreview::class)
-class SearchViewModel(private val repository: CardRepository = CardRepository()) : ViewModel() {
+class SearchViewModel(
+    private val offlineRepository: OfflineCardRepository,
+    private val repository: CardRepository = CardRepository()
+) : ViewModel() {
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -131,7 +140,27 @@ class SearchViewModel(private val repository: CardRepository = CardRepository())
         _uiState.value = try {
             SearchUiState.Success(repository.search(query))
         } catch (e: Exception) {
-            SearchUiState.Error(e.message ?: "Something went wrong searching Scryfall.")
+            if (isOffline(e)) {
+                // Fall back to the locally downloaded card database, if there is one.
+                if (offlineRepository.status.value.hasData) {
+                    SearchUiState.Success(
+                        offlineRepository.search(_query.value.trim(), _filters.value),
+                        offline = true
+                    )
+                } else {
+                    SearchUiState.OfflineNoDatabase
+                }
+            } else {
+                SearchUiState.Error(e.message ?: "Something went wrong searching Scryfall.")
+            }
         }
+    }
+
+    class Factory(
+        private val offlineRepository: OfflineCardRepository
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            SearchViewModel(offlineRepository) as T
     }
 }

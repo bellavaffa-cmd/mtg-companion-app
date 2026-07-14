@@ -39,6 +39,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.mtgcompanion.app.BuildConfig
 import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.update.UpdateManager
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -54,6 +55,7 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 fun SettingsScreen(
     syncManager: DriveSyncManager,
     updateManager: UpdateManager,
+    offlineCardRepository: OfflineCardRepository,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -83,8 +85,68 @@ fun SettingsScreen(
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
+            OfflineSearchSection(offlineCardRepository)
+
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
+
             AppUpdatesSection(updateManager)
         }
+    }
+}
+
+@Composable
+private fun OfflineSearchSection(offlineCardRepository: OfflineCardRepository) {
+    val status by offlineCardRepository.status.collectAsState()
+
+    Text("Offline Search".uppercase(), style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Download the full card database (~40 MB) so you can search any card — not just the ones " +
+            "you've viewed — without an internet connection.",
+        style = MaterialTheme.typography.bodySmall
+    )
+
+    if (status.hasData) {
+        val updated = if (status.updatedAt > 0) {
+            DateUtils.getRelativeTimeSpanString(status.updatedAt).toString()
+        } else {
+            "recently"
+        }
+        Text(
+            "${status.cardCount} cards • updated $updated",
+            style = MaterialTheme.typography.labelMedium,
+            color = GoldLight
+        )
+    }
+
+    val buttonLabel = if (status.hasData) "UPDATE DATABASE" else "DOWNLOAD DATABASE"
+    if (status.hasData) {
+        OutlinedButton(
+            onClick = { offlineCardRepository.downloadDatabase() },
+            enabled = !status.downloading,
+            shape = RoundedCornerShape(2.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
+        ) { DownloadButtonContent(status.downloading, buttonLabel, Gold) }
+    } else {
+        Button(
+            onClick = { offlineCardRepository.downloadDatabase() },
+            enabled = !status.downloading,
+            shape = RoundedCornerShape(2.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+        ) { DownloadButtonContent(status.downloading, buttonLabel, Bg) }
+    }
+
+    status.message?.let {
+        Text(it, color = Gold, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun DownloadButtonContent(downloading: Boolean, label: String, spinnerColor: androidx.compose.ui.graphics.Color) {
+    if (downloading) {
+        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = spinnerColor)
+    } else {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (spinnerColor == Bg) Bg else GoldLight)
     }
 }
 

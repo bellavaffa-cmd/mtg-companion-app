@@ -58,6 +58,7 @@ import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.DriveSyncManager
 import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
 import com.mtgcompanion.app.ui.collection.CollectionDetailViewModel
 import com.mtgcompanion.app.ui.collection.CollectionsScreen
@@ -115,7 +116,8 @@ fun MtgNavGraph(
     collectionRepository: CollectionRepository,
     deckRepository: DeckRepository,
     driveSyncManager: DriveSyncManager,
-    updateManager: UpdateManager
+    updateManager: UpdateManager,
+    offlineCardRepository: OfflineCardRepository
 ) {
     val navController = rememberNavController()
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
@@ -152,7 +154,9 @@ fun MtgNavGraph(
             }
 
             composable(Routes.SEARCH) {
-                val viewModel: SearchViewModel = viewModel()
+                val viewModel: SearchViewModel = viewModel(
+                    factory = SearchViewModel.Factory(offlineCardRepository)
+                )
                 SearchScreen(
                     viewModel = viewModel,
                     onCardClick = { card -> navController.navigate(Routes.detail(card.name)) }
@@ -225,7 +229,9 @@ fun MtgNavGraph(
                 val encodedName = backStackEntry.arguments?.getString("cardName").orEmpty()
                 val cardName = URLDecoder.decode(encodedName, StandardCharsets.UTF_8.name())
                 val viewModel: CardDetailViewModel = viewModel(
-                    factory = CardDetailViewModel.Factory(cardName, settingsRepository, collectionRepository, deckRepository)
+                    factory = CardDetailViewModel.Factory(
+                        cardName, settingsRepository, collectionRepository, deckRepository, offlineCardRepository
+                    )
                 )
                 CardDetailScreen(
                     viewModel = viewModel,
@@ -238,6 +244,7 @@ fun MtgNavGraph(
                 SettingsScreen(
                     syncManager = driveSyncManager,
                     updateManager = updateManager,
+                    offlineCardRepository = offlineCardRepository,
                     onBack = { navController.popBackStack() }
                 )
             }

@@ -27,4 +27,8 @@ interface ScryfallApi {
 
     @POST("cards/collection")
     suspend fun getCollection(@Body body: ScryfallCollectionRequest): ScryfallSearchResponse
+
+    /** Catalog of bulk-data files; we use the "oracle_cards" entry's download_uri for offline search. */
+    @GET("bulk-data")
+    suspend fun getBulkData(): BulkDataList
 }

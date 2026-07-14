@@ -18,8 +18,8 @@ android {
         minSdk 26
         targetSdk 34
         // versionCode scheme: major*10000 + minor*100 + patch (e.g. 1.8.0 -> 10800). Bump both per release.
-        versionCode 11500
-        versionName '1.15.0'
+        versionCode 11600
+        versionName '1.16.0'
     }
 
     signingConfigs {
