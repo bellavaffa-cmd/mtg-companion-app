@@ -91,7 +91,7 @@ class OfflineCardRepository(context: Context) {
     private fun downloadAndStore(url: String): Int {
         val request = Request.Builder().url(url).build()
         // Use the non-caching client so the ~35 MB body doesn't evict the small JSON HTTP cache.
-        NetworkModule.imageOkHttpClient.newCall(request).execute().use { response ->
+        NetworkModule.noCacheOkHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} downloading card data")
             val body = response.body ?: throw IOException("Empty response downloading card data")
 

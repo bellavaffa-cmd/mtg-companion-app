@@ -2,6 +2,8 @@ package com.mtgcompanion.app.update
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.mtgcompanion.app.BuildConfig
 import com.mtgcompanion.app.network.NetworkModule
@@ -32,11 +34,14 @@ data class UpdateUiState(
 /**
  * Over-the-air updates for the GitHub-distributed build: checks the repo's latest Release, and if it
  * names a newer version than [BuildConfig.VERSION_NAME], downloads its APK asset and hands it to the
- * system package installer. Reuses the app's OkHttp client (which sets the User-Agent GitHub requires).
+ * system package installer.
+ *
+ * Uses the non-caching client: a release check served from an HTTP cache would keep reporting the
+ * old version after a release, and the APK is far too big to push through the shared JSON cache.
  */
 class UpdateManager(
     private val context: Context,
-    private val http: OkHttpClient = NetworkModule.okHttpClient
+    private val http: OkHttpClient = NetworkModule.noCacheOkHttpClient
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(UpdateUiState())
@@ -111,6 +116,21 @@ class UpdateManager(
     }
 
     private fun install(apk: File) {
+        // Sideloaded installs need a one-time per-app "install unknown apps" grant. Without this
+        // check the system just shows a generic refusal and the update quietly goes nowhere, so
+        // send the user straight to this app's toggle instead.
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            _state.value = _state.value.copy(
+                message = "Allow MTG Companion to install apps, then tap Update again."
+            )
+            val settings = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:${context.packageName}")
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(settings) }
+            return
+        }
+
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")

@@ -39,7 +39,7 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
             // Scryfall's card image CDN, like its API, rejects requests with a default
             // HTTP-library User-Agent (400 generic_user_agent) - use the client that sets a
             // custom one. This client leaves caching to Coil's DiskCache below.
-            .okHttpClient(NetworkModule.imageOkHttpClient)
+            .okHttpClient(NetworkModule.noCacheOkHttpClient)
             // Mana symbols are served by Scryfall as SVGs.
             .components { add(SvgDecoder.Factory()) }
             // A generous, persistent disk cache so card art you've viewed stays available

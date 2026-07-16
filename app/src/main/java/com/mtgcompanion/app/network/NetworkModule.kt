@@ -61,10 +61,14 @@ object NetworkModule {
 
     /**
      * API client with an on-disk HTTP cache so card data fetched while online is still available
-     * offline. GET responses are made cacheable for a day (see network interceptor); when the
-     * device is offline, requests are rewritten to serve a cached copy even if stale rather than
-     * failing outright. (POST endpoints like /cards/collection aren't HTTP-cacheable, so features
-     * relying on them degrade gracefully offline.)
+     * offline. Freshness is left to the origin — Scryfall already sends generous max-age values —
+     * and when the device is offline requests are rewritten to serve a cached copy even if stale
+     * rather than failing outright. (POST endpoints like /cards/collection aren't HTTP-cacheable,
+     * so features relying on them degrade gracefully offline.)
+     *
+     * Don't rewrite response Cache-Control here: an earlier blanket "max-age=1 day" pinned every
+     * origin's policy, which held GitHub's release check (max-age=60) stale for a day and broke
+     * in-app updates.
      */
     val okHttpClient: OkHttpClient by lazy {
         baseBuilder()
@@ -79,21 +83,15 @@ object NetworkModule {
                 }
                 chain.proceed(request)
             }
-            .addNetworkInterceptor { chain ->
-                chain.proceed(chain.request()).newBuilder()
-                    .removeHeader("Pragma")
-                    .header("Cache-Control", "public, max-age=${60 * 60 * 24}")
-                    .build()
-            }
             .build()
     }
 
     /**
-     * Image client: carries the User-Agent Scryfall's CDN requires but leaves caching to Coil's own
-     * DiskCache (see MtgCompanionApplication), which stores full images rather than sharing the
-     * small JSON HTTP cache.
+     * Carries the User-Agent Scryfall's CDN requires but has no response cache. For requests that
+     * shouldn't touch the small JSON cache: images (Coil keeps its own DiskCache), large downloads
+     * (bulk card data, update APKs), and checks that must always be fresh.
      */
-    val imageOkHttpClient: OkHttpClient by lazy { baseBuilder().build() }
+    val noCacheOkHttpClient: OkHttpClient by lazy { baseBuilder().build() }
 
     private fun retrofitFor(baseUrl: String): Retrofit = Retrofit.Builder()
         .baseUrl(baseUrl)
