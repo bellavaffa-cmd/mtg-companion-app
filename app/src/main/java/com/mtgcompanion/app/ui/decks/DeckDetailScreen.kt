@@ -44,6 +44,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -120,8 +121,8 @@ fun DeckDetailScreen(
     val moveTargets by viewModel.moveTargets.collectAsState()
     var showImport by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
-    // Result summary shown after an import completes ("Imported N; M couldn't be matched…").
-    var importResult by remember { mutableStateOf<String?>(null) }
+    // Progress while an import runs, then its summary ("Imported N; M couldn't be matched…").
+    var importState by remember { mutableStateOf<ImportState?>(null) }
 
     Scaffold(
         containerColor = Bg,
@@ -254,15 +255,21 @@ fun DeckDetailScreen(
                 onDismiss = { showImport = false },
                 onImport = { text ->
                     showImport = false
-                    importResult = IMPORTING
-                    viewModel.importDecklist(text) { added, failed ->
-                        importResult = importSummary(added, failed)
-                    }
+                    importState = ImportState()
+                    viewModel.importDecklist(
+                        text = text,
+                        onProgress = { done, total ->
+                            importState = ImportState(done = done, total = total)
+                        },
+                        onResult = { added, failed ->
+                            importState = ImportState(summary = importSummary(added, failed))
+                        }
+                    )
                 }
             )
         }
-        importResult?.let { message ->
-            ImportResultDialog(message = message, onDismiss = { importResult = null })
+        importState?.let { state ->
+            ImportResultDialog(state = state, onDismiss = { importState = null })
         }
         if (showExport) {
             ExportDialog(decklist = buildDecklist(currentDeck), onDismiss = { showExport = false })
@@ -279,26 +286,58 @@ private fun importSummary(added: Int, failed: List<String>): String = buildStrin
     }
 }
 
-private const val IMPORTING = "Importing…"
+/** Import progress, or the final [summary] once it finishes. */
+private data class ImportState(
+    val done: Int = 0,
+    val total: Int = 0,
+    val summary: String? = null
+)
 
 @Composable
-private fun ImportResultDialog(message: String, onDismiss: () -> Unit) {
-    val importing = message == IMPORTING
+private fun ImportResultDialog(state: ImportState, onDismiss: () -> Unit) {
+    val summary = state.summary
     AlertDialog(
         containerColor = Surface,
-        onDismissRequest = { if (!importing) onDismiss() },
-        title = { Text(if (importing) "Importing decklist…" else "Import complete", color = GoldLight) },
+        onDismissRequest = { if (summary != null) onDismiss() },
+        title = {
+            Text(if (summary == null) "Importing decklist…" else "Import complete", color = GoldLight)
+        },
         text = {
             Column(
                 modifier = Modifier
                     .heightIn(max = 320.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                Text(message, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                if (summary == null) {
+                    if (state.total > 0) {
+                        LinearProgressIndicator(
+                            progress = { state.done.toFloat() / state.total },
+                            color = Gold,
+                            trackColor = BorderColor,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "${state.done} of ${state.total} cards",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            color = Gold,
+                            trackColor = BorderColor,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text("Reading list…", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    }
+                } else {
+                    Text(summary, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                }
             }
         },
         confirmButton = {
-            if (!importing) {
+            if (summary != null) {
                 Button(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)

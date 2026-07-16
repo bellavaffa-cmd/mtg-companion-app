@@ -19,6 +19,7 @@ import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.ui.collection.fetchPrices
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.network.scryfall.ScryfallCollectionResponse
 import com.mtgcompanion.app.network.scryfall.ScryfallIdentifier
 import com.mtgcompanion.app.network.spellbook.Variant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -208,22 +209,26 @@ class DeckDetailViewModel(
      * ("1 Sol Ring (LTC) 285") or foil marker ("*F*") — skips section headers/comments, and reports
      * how many copies were added and which lines couldn't be matched.
      */
-    fun importDecklist(text: String, onResult: (added: Int, failed: List<String>) -> Unit) {
+    fun importDecklist(
+        text: String,
+        onProgress: (done: Int, total: Int) -> Unit,
+        onResult: (added: Int, failed: List<String>) -> Unit
+    ) {
         viewModelScope.launch {
             val lines = text.lines().mapNotNull { parseDecklistLine(it) }
-            var added = 0
-            val failed = mutableListOf<String>()
+            val total = lines.size
+            val resolved = mutableListOf<DeckCardEntry>()
             val unresolved = mutableListOf<ParsedLine>()
+            val failed = mutableListOf<String>()
+            var done = 0
+            var added = 0
+            onProgress(0, total)
 
             // Resolve in batches through /cards/collection (75 per request). Looking each line up
             // via /cards/named instead gets rate-limited (429) partway through a long list, which
             // silently dropped most of the deck.
             for (chunk in lines.chunked(75)) {
-                val response = try {
-                    cardRepository.getCollection(chunk.map { it.toIdentifier() })
-                } catch (e: Exception) {
-                    null
-                }
+                val response = fetchCollection(chunk.map { it.toIdentifier() })
                 if (response == null) {
                     unresolved += chunk
                     continue
@@ -231,12 +236,14 @@ class DeckDetailViewModel(
                 for (line in chunk) {
                     val card = response.data.firstOrNull { it.matches(line) }
                     if (card != null) {
-                        addImportedCard(card, line.quantity)
+                        resolved += line.toEntry(card)
                         added += line.quantity
+                        done++
                     } else {
                         unresolved += line
                     }
                 }
+                onProgress(done, total)
             }
 
             // Anything the batch missed (bad/unknown set+number, or a name-only line that isn't an
@@ -244,23 +251,35 @@ class DeckDetailViewModel(
             for (line in unresolved) {
                 val card = lookupCard(line.name)
                 if (card != null) {
-                    addImportedCard(card, line.quantity)
+                    resolved += line.toEntry(card)
                     added += line.quantity
                 } else {
                     failed += line.name
                 }
+                done++
+                onProgress(done, total)
                 delay(120)
             }
 
+            // One write for the whole import: writing per card would re-trigger the deck analysis
+            // (and its Scryfall lookup) on every single card.
+            repository.addEntries(deckId, resolved)
             onResult(added, failed)
         }
     }
 
-    private suspend fun addImportedCard(card: ScryfallCard, quantity: Int) {
-        repository.addEntry(
-            deckId,
-            DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander)
-        )
+    /** A /cards/collection batch, retrying past a rate-limit rather than dropping 75 lines to fuzzy. */
+    private suspend fun fetchCollection(identifiers: List<ScryfallIdentifier>): ScryfallCollectionResponse? {
+        repeat(4) { attempt ->
+            try {
+                return cardRepository.getCollection(identifiers)
+            } catch (e: HttpException) {
+                if (e.code() == 429) delay(700L * (attempt + 1)) else return null
+            } catch (e: Exception) {
+                delay(300)
+            }
+        }
+        return null
     }
 
     /** Fuzzy lookup with a couple of retries so a transient error or rate-limit doesn't drop a card. */
@@ -303,6 +322,9 @@ private data class ParsedLine(
         } else {
             ScryfallIdentifier(name = name)
         }
+
+    fun toEntry(card: ScryfallCard): DeckCardEntry =
+        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander)
 }
 
 private fun ScryfallCard.matches(line: ParsedLine): Boolean =

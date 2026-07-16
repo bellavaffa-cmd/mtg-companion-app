@@ -117,6 +117,35 @@ class DeckRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Add many entries in a single write, merging into existing copies. Used by decklist import:
+     * calling [addEntry] per card would emit the deck list once per card, and every emission makes
+     * observers (deck analysis) re-query Scryfall — enough to rate-limit the app mid-import.
+     */
+    suspend fun addEntries(deckId: String, entries: List<DeckCardEntry>) {
+        if (entries.isEmpty()) return
+        update { decks ->
+            decks.map { deck ->
+                if (deck.id != deckId) return@map deck
+                var cards = deck.cards
+                entries.forEach { entry ->
+                    cards = if (cards.any { it.scryfallId == entry.scryfallId }) {
+                        cards.map {
+                            if (it.scryfallId == entry.scryfallId) {
+                                it.copy(quantity = it.quantity + entry.quantity)
+                            } else {
+                                it
+                            }
+                        }
+                    } else {
+                        cards + entry
+                    }
+                }
+                deck.copy(cards = cards)
+            }
+        }
+    }
+
     /** Overwrite the whole deck list — used when restoring/pulling from Drive sync. */
     suspend fun replaceAll(decks: List<Deck>) {
         update { decks }
