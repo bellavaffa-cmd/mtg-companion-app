@@ -3,6 +3,7 @@ package com.mtgcompanion.app.data
 import com.mtgcompanion.app.network.NetworkModule
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.ScryfallCollectionRequest
+import com.mtgcompanion.app.network.scryfall.ScryfallCollectionResponse
 import com.mtgcompanion.app.network.scryfall.ScryfallIdentifier
 import retrofit2.HttpException
 
@@ -42,10 +43,17 @@ class CardRepository {
         if (ids.isEmpty()) return emptyList()
         return ids.distinct().chunked(75).flatMap { chunk ->
             try {
-                api.getCollection(ScryfallCollectionRequest(chunk.map { ScryfallIdentifier(it) })).data
+                api.getCollection(ScryfallCollectionRequest(chunk.map { ScryfallIdentifier(id = it) })).data
             } catch (e: Exception) {
                 emptyList()
             }
         }
     }
+
+    /**
+     * One /cards/collection request (max 75 identifiers). Use this instead of many /cards/named
+     * calls for bulk work — Scryfall rate-limits (429) a rapid series of single-card requests.
+     */
+    suspend fun getCollection(identifiers: List<ScryfallIdentifier>): ScryfallCollectionResponse =
+        api.getCollection(ScryfallCollectionRequest(identifiers))
 }

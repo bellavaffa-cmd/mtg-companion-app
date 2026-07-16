@@ -19,6 +19,7 @@ import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.ui.collection.fetchPrices
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.network.scryfall.ScryfallIdentifier
 import com.mtgcompanion.app.network.spellbook.Variant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -209,31 +210,57 @@ class DeckDetailViewModel(
      */
     fun importDecklist(text: String, onResult: (added: Int, failed: List<String>) -> Unit) {
         viewModelScope.launch {
+            val lines = text.lines().mapNotNull { parseDecklistLine(it) }
             var added = 0
             val failed = mutableListOf<String>()
-            val qtyRegex = Regex("^(?:(\\d+)\\s*[xX]?\\s+)?(.+)$")
-            for (raw in text.lines()) {
-                val line = raw.trim()
-                if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) continue
-                if (isSectionHeader(line)) continue
-                val match = qtyRegex.find(line)
-                val qty = (match?.groupValues?.get(1)?.toIntOrNull() ?: 1).coerceIn(1, 99)
-                val name = cleanCardName(match?.groupValues?.get(2) ?: line)
-                if (name.isBlank()) continue
-                val card = lookupCard(name)
-                if (card != null) {
-                    repository.addEntry(
-                        deckId,
-                        DeckCardEntry(card.id, card.name, card.displayImageUrl, qty, card.canBeCommander)
-                    )
-                    added += qty
-                } else {
-                    failed += name
+            val unresolved = mutableListOf<ParsedLine>()
+
+            // Resolve in batches through /cards/collection (75 per request). Looking each line up
+            // via /cards/named instead gets rate-limited (429) partway through a long list, which
+            // silently dropped most of the deck.
+            for (chunk in lines.chunked(75)) {
+                val response = try {
+                    cardRepository.getCollection(chunk.map { it.toIdentifier() })
+                } catch (e: Exception) {
+                    null
                 }
-                delay(60) // stay under Scryfall's rate limit across a long list
+                if (response == null) {
+                    unresolved += chunk
+                    continue
+                }
+                for (line in chunk) {
+                    val card = response.data.firstOrNull { it.matches(line) }
+                    if (card != null) {
+                        addImportedCard(card, line.quantity)
+                        added += line.quantity
+                    } else {
+                        unresolved += line
+                    }
+                }
             }
+
+            // Anything the batch missed (bad/unknown set+number, or a name-only line that isn't an
+            // exact match) gets one fuzzy lookup each — few enough not to hit the rate limit.
+            for (line in unresolved) {
+                val card = lookupCard(line.name)
+                if (card != null) {
+                    addImportedCard(card, line.quantity)
+                    added += line.quantity
+                } else {
+                    failed += line.name
+                }
+                delay(120)
+            }
+
             onResult(added, failed)
         }
+    }
+
+    private suspend fun addImportedCard(card: ScryfallCard, quantity: Int) {
+        repository.addEntry(
+            deckId,
+            DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander)
+        )
     }
 
     /** Fuzzy lookup with a couple of retries so a transient error or rate-limit doesn't drop a card. */
@@ -260,6 +287,55 @@ class DeckDetailViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             DeckDetailViewModel(deckId, repository, collectionRepository) as T
     }
+}
+
+/** One decklist line: how many copies, the card name, and the printing if the export named one. */
+private data class ParsedLine(
+    val quantity: Int,
+    val name: String,
+    val set: String?,
+    val collectorNumber: String?
+) {
+    /** Address the exact printing when the line gave one; otherwise fall back to the name. */
+    fun toIdentifier(): ScryfallIdentifier =
+        if (set != null && collectorNumber != null) {
+            ScryfallIdentifier(set = set.lowercase(), collectorNumber = collectorNumber)
+        } else {
+            ScryfallIdentifier(name = name)
+        }
+}
+
+private fun ScryfallCard.matches(line: ParsedLine): Boolean =
+    if (line.set != null && line.collectorNumber != null) {
+        set.equals(line.set, ignoreCase = true) && collectorNumber == line.collectorNumber
+    } else {
+        name.equals(line.name, ignoreCase = true)
+    }
+
+private val QTY_REGEX = Regex("^(?:(\\d+)\\s*[xX]?\\s+)?(.+)$")
+
+/** Trailing printing reference in exports, e.g. "(SLD) 1962" or "[MH3] 285". */
+private val SET_NUMBER_REGEX = Regex("[\\(\\[]([A-Za-z0-9]{2,6})[\\)\\]]\\s+([A-Za-z0-9\\-★]+)")
+
+/** Parse one line into a [ParsedLine], or null for blanks, comments and section headers. */
+private fun parseDecklistLine(raw: String): ParsedLine? {
+    val line = raw.trim()
+    if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) return null
+    if (isSectionHeader(line)) return null
+
+    val match = QTY_REGEX.find(line) ?: return null
+    val quantity = (match.groupValues[1].toIntOrNull() ?: 1).coerceIn(1, 99)
+    val rest = match.groupValues[2]
+    val printing = SET_NUMBER_REGEX.find(rest)
+    val name = cleanCardName(rest)
+    if (name.isBlank()) return null
+
+    return ParsedLine(
+        quantity = quantity,
+        name = name,
+        set = printing?.groupValues?.get(1),
+        collectorNumber = printing?.groupValues?.get(2)
+    )
 }
 
 private val SECTION_WORDS = setOf(

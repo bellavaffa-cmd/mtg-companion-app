@@ -11,7 +11,23 @@ data class ScryfallSearchResponse(
 /** POST /cards/collection body: look up many cards at once (max 75 identifiers per request). */
 data class ScryfallCollectionRequest(val identifiers: List<ScryfallIdentifier>)
 
-data class ScryfallIdentifier(val id: String)
+/**
+ * One entry of a /cards/collection lookup. Exactly one addressing mode should be set: by Scryfall
+ * [id], by exact [name], or by [set] + [collectorNumber] for a specific printing. Moshi omits the
+ * null fields, so only the intended key is sent.
+ */
+data class ScryfallIdentifier(
+    val id: String? = null,
+    val name: String? = null,
+    val set: String? = null,
+    @Json(name = "collector_number") val collectorNumber: String? = null
+)
+
+/** POST /cards/collection response: [data] holds the matches, [notFound] the identifiers that missed. */
+data class ScryfallCollectionResponse(
+    val data: List<ScryfallCard> = emptyList(),
+    @Json(name = "not_found") val notFound: List<ScryfallIdentifier> = emptyList()
+)
 
 data class ScryfallCard(
     val id: String,
