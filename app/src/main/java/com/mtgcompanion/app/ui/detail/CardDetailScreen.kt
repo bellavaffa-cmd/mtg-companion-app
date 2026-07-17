@@ -62,7 +62,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ManaCost
+import com.mtgcompanion.app.ui.common.ZoomCard
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.network.edhrec.EdhrecCardList
@@ -82,21 +84,25 @@ import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 import kotlinx.coroutines.delay
 
-private const val TILES_PER_SECTION = 12
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CardDetailScreen(
     viewModel: CardDetailViewModel,
-    onBack: () -> Unit,
-    onCardClick: (String) -> Unit = {}
+    onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
     val collections by viewModel.collections.collectAsState()
+    val owned by viewModel.ownedByName.collectAsState()
     val context = LocalContext.current
     var showDeckPicker by remember { mutableStateOf(false) }
     var showCollectionPicker by remember { mutableStateOf(false) }
+    // Key of the suggested card being enlarged, if any.
+    var zoomKey by remember { mutableStateOf<String?>(null) }
+    // Card the binder/deck pickers will add — this page's card, or one of its suggestions.
+    var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
+    // Set when the add button on an enlarged card needs a binder-or-deck choice first.
+    var chooseDestinationFor by remember { mutableStateOf<ScryfallCard?>(null) }
 
     LaunchedEffect(state.addedToCollectionMessage, state.addedToDeckMessage) {
         if (state.addedToCollectionMessage != null || state.addedToDeckMessage != null) {
@@ -133,6 +139,10 @@ fun CardDetailScreen(
             state.card != null -> {
                 val card = state.card!!
                 val sections = state.cardEdhrecLists?.filter { it.cardviews.isNotEmpty() }.orEmpty()
+                // Every tile on screen, flattened, so the overlay can swipe across sections.
+                val zoomable = sections.flatMap { section ->
+                    section.cardviews.take(TILES_PER_SECTION).map { view -> section.tileKey(view) to view }
+                }
 
                 LazyVerticalGrid(
                     // Adaptive: as many ~104dp card tiles as fit — 3 on a phone, more on wider screens.
@@ -155,8 +165,8 @@ fun CardDetailScreen(
                     fullSpanItem {
                         CollectionAndDeckActions(
                             state = state,
-                            onAddToCollection = { showCollectionPicker = true },
-                            onAddToDeck = { showDeckPicker = true }
+                            onAddToCollection = { addTarget = card; showCollectionPicker = true },
+                            onAddToDeck = { addTarget = card; showDeckPicker = true }
                         )
                     }
                     fullSpanItem { PricesSection(state, onOpenTcgplayer = {
@@ -178,45 +188,107 @@ fun CardDetailScreen(
                             )
                         }
                     } else {
-                        sections.forEach { section -> edhrecSection(section, onCardClick) }
+                        sections.forEach { section -> edhrecSection(section) { zoomKey = it } }
                     }
 
                     fullSpanItem { SectionHeader("Combos · Commander Spellbook") }
                     fullSpanItem { CombosSection(state) }
                 }
+
+                zoomKey?.let { key ->
+                    CardZoomDialog(
+                        cards = zoomable.map { (_, view) ->
+                            val resolved = state.suggestionCards[view.name.lowercase()]
+                            ZoomCard(
+                                imageUrl = view.scryfallImageUrl,
+                                priceUsd = resolved?.prices?.usd?.toDoubleOrNull(),
+                                quantity = owned[view.name.lowercase()] ?: 0,
+                                // Only offer to add once we know which Scryfall printing it is.
+                                onAdd = resolved?.let { card ->
+                                    { zoomKey = null; chooseDestinationFor = card }
+                                }
+                            )
+                        },
+                        initialIndex = zoomable.indexOfFirst { (k, _) -> k == key }.coerceAtLeast(0)
+                    ) { zoomKey = null }
+                }
             }
         }
     }
 
+    chooseDestinationFor?.let { card ->
+        AddDestinationDialog(
+            cardName = card.name,
+            onDismiss = { chooseDestinationFor = null },
+            onBinder = { chooseDestinationFor = null; addTarget = card; showCollectionPicker = true },
+            onDeck = { chooseDestinationFor = null; addTarget = card; showDeckPicker = true }
+        )
+    }
+
     if (showDeckPicker) {
+        val target = addTarget
         DeckPickerDialog(
             decks = decks,
             onDismiss = { showDeckPicker = false },
             onPickDeck = { deckId ->
                 showDeckPicker = false
-                viewModel.addToDeck(deckId)
+                target?.let { viewModel.addToDeck(deckId, it) }
             },
             onCreateDeck = { name ->
                 showDeckPicker = false
-                viewModel.createDeckAndAdd(name)
+                target?.let { viewModel.createDeckAndAdd(name, it) }
             }
         )
     }
 
     if (showCollectionPicker) {
+        val target = addTarget
         CollectionPickerDialog(
             collections = collections,
             onDismiss = { showCollectionPicker = false },
             onPickCollection = { collectionId ->
                 showCollectionPicker = false
-                viewModel.addToCollection(collectionId)
+                target?.let { viewModel.addToCollection(collectionId, it) }
             },
             onCreateCollection = { name ->
                 showCollectionPicker = false
-                viewModel.createCollectionAndAdd(name)
+                target?.let { viewModel.createCollectionAndAdd(name, it) }
             }
         )
     }
+}
+
+/** Binder or deck? Asked when adding straight from an enlarged suggested card. */
+@Composable
+private fun AddDestinationDialog(
+    cardName: String,
+    onDismiss: () -> Unit,
+    onBinder: () -> Unit,
+    onDeck: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = { Text("Add $cardName to…", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column {
+                Text(
+                    "Binder",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary,
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onBinder).padding(vertical = 12.dp)
+                )
+                Text(
+                    "Deck",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary,
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onDeck).padding(vertical = 12.dp)
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) } }
+    )
 }
 
 @Composable
@@ -280,14 +352,17 @@ private fun androidx.compose.foundation.lazy.grid.LazyGridScope.fullSpanItem(
     content: @Composable () -> Unit
 ) = item(span = { GridItemSpan(maxLineSpan) }) { content() }
 
+/** Identifies a tile across the grid and the zoom overlay — the same card can appear in two sections. */
+private fun EdhrecCardList.tileKey(view: EdhrecCardView): String = "$tag-${view.id ?: view.name}"
+
 /** One EDHREC section: a full-width header followed by a grid of card tiles. */
 private fun androidx.compose.foundation.lazy.grid.LazyGridScope.edhrecSection(
     section: EdhrecCardList,
-    onCardClick: (String) -> Unit
+    onZoom: (String) -> Unit
 ) {
     fullSpanItem { SectionHeader(section.header ?: "") }
-    items(section.cardviews.take(TILES_PER_SECTION), key = { "${section.tag}-${it.id ?: it.name}" }) { view ->
-        EdhrecTile(view, onClick = { onCardClick(view.name) })
+    items(section.cardviews.take(TILES_PER_SECTION), key = { section.tileKey(it) }) { view ->
+        EdhrecTile(view, onClick = { onZoom(section.tileKey(view)) })
     }
 }
 

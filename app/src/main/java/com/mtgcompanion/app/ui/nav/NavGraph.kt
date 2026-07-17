@@ -235,8 +235,7 @@ fun MtgNavGraph(
                 )
                 CardDetailScreen(
                     viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                    onCardClick = { name -> navController.navigate(Routes.detail(name)) }
+                    onBack = { navController.popBackStack() }
                 )
             }
 

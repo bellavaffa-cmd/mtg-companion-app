@@ -92,8 +92,15 @@ class DeckDetailViewModel(
         } catch (e: Exception) {
             null
         } ?: return@mapLatest null
+        // EDHREC's top cards for a commander are mostly staples the deck probably already runs;
+        // suggesting those wastes the list, so only offer cards the deck doesn't have.
+        val inDeck = (d.cards.map { it.name } + listOfNotNull(d.commander?.name))
+            .flatMap { cardNameKeys(it) }
+            .toSet()
         (lists.firstOrNull { it.tag == "topcards" } ?: lists.firstOrNull { it.cardviews.isNotEmpty() })
-            ?.cardviews?.take(12)
+            ?.cardviews
+            ?.filterNot { view -> cardNameKeys(view.name).any { it in inDeck } }
+            ?.take(12)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private suspend fun buildAnalysis(d: Deck): DeckAnalysis {
@@ -306,6 +313,16 @@ class DeckDetailViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             DeckDetailViewModel(deckId, repository, collectionRepository) as T
     }
+}
+
+/**
+ * Keys for comparing a card name across sources. Includes the front face on its own because a
+ * double-faced card is "Adventurous Eater // Have a Bite" to Scryfall but often just
+ * "Adventurous Eater" to EDHREC, and the two should still count as the same card.
+ */
+private fun cardNameKeys(name: String): Set<String> {
+    val full = name.trim().lowercase()
+    return setOf(full, full.substringBefore(" // ").trim())
 }
 
 /** One decklist line: how many copies, the card name, and the printing if the export named one. */

@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Remove
@@ -54,7 +55,8 @@ data class CardSource(val kind: SourceKind, val name: String, val quantity: Int)
 /**
  * One card in the enlarged-card overlay. [quantity] null hides the quantity/total row (e.g. for a
  * suggested card that isn't owned); providing [onIncrement]/[onDecrement] turns the count into an
- * editable stepper. [sources], when set, lists the binders/decks the card is in.
+ * editable stepper. [onAdd], for a card not yet in a deck/binder, offers to put it in one.
+ * [sources], when set, lists the binders/decks the card is in.
  */
 data class ZoomCard(
     val imageUrl: String?,
@@ -64,6 +66,7 @@ data class ZoomCard(
     val onDecrement: (() -> Unit)? = null,
     val onChangeArt: (() -> Unit)? = null,
     val onMove: (() -> Unit)? = null,
+    val onAdd: (() -> Unit)? = null,
     val sources: List<CardSource> = emptyList()
 )
 
@@ -105,7 +108,9 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                                 .clip(RoundedCornerShape(14.dp))
                         )
                     }
-                    if (card.priceUsd != null || card.quantity != null || card.onChangeArt != null) {
+                    if (card.priceUsd != null || card.quantity != null ||
+                        card.onChangeArt != null || card.onAdd != null
+                    ) {
                         CardInfoBar(card)
                     }
                     if (card.sources.isNotEmpty()) {
@@ -131,11 +136,17 @@ private fun CardInfoBar(card: ZoomCard) {
             card.priceUsd?.let { price ->
                 InfoStat("VALUE", "$" + "%,.2f".format(price))
             }
-            if (card.priceUsd != null && card.quantity != null) {
+            // A total is only meaningful once you own a copy — otherwise it's just "$0.00".
+            if (card.priceUsd != null && card.quantity != null && card.quantity > 0) {
                 InfoStat("TOTAL", "$" + "%,.2f".format(card.priceUsd * card.quantity))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            card.onAdd?.let { add ->
+                IconButton(onClick = add) {
+                    Icon(Icons.Filled.AddCircle, contentDescription = "Add to binder or deck", tint = Gold)
+                }
+            }
             card.onMove?.let { move ->
                 IconButton(onClick = move) {
                     Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move card", tint = Gold)

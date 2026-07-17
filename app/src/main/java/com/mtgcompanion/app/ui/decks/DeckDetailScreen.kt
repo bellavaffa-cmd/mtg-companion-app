@@ -111,6 +111,7 @@ fun DeckDetailScreen(
     val scope = rememberCoroutineScope()
     var menuOpen by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
     // Holds (source, key): source "card" -> deck card by scryfallId, "sugg" -> suggestion by id/name.
     var zoom by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -169,7 +170,7 @@ fun DeckDetailScreen(
                         )
                         DropdownMenuItem(
                             text = { Text("Delete deck", color = Color(0xFFD3402F)) },
-                            onClick = { menuOpen = false; viewModel.deleteDeck(onBack) }
+                            onClick = { menuOpen = false; confirmDelete = true }
                         )
                     }
                 },
@@ -271,6 +272,14 @@ fun DeckDetailScreen(
         importState?.let { state ->
             ImportResultDialog(state = state, onDismiss = { importState = null })
         }
+        if (confirmDelete) {
+            DeleteDeckDialog(
+                deckName = currentDeck.name,
+                cardCount = currentDeck.cards.sumOf { it.quantity },
+                onConfirm = { confirmDelete = false; viewModel.deleteDeck(onBack) },
+                onDismiss = { confirmDelete = false }
+            )
+        }
         if (showExport) {
             ExportDialog(decklist = buildDecklist(currentDeck), onDismiss = { showExport = false })
         }
@@ -284,6 +293,38 @@ private fun importSummary(added: Int, failed: List<String>): String = buildStrin
         append(failed.take(25).joinToString("\n") { "• $it" })
         if (failed.size > 25) append("\n…and ${failed.size - 25} more")
     }
+}
+
+/** Deleting a deck throws away its whole card list and can't be undone, so make it deliberate. */
+@Composable
+private fun DeleteDeckDialog(
+    deckName: String,
+    cardCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        containerColor = Surface,
+        onDismissRequest = onDismiss,
+        title = { Text("Delete deck?", color = GoldLight) },
+        text = {
+            Text(
+                "\"$deckName\" and its $cardCount card${if (cardCount == 1) "" else "s"} will be " +
+                    "permanently deleted. This can't be undone.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextPrimary
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD3402F), contentColor = Bg)
+            ) { Text("DELETE", color = Bg) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+        }
+    )
 }
 
 /** Import progress, or the final [summary] once it finishes. */

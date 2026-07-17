@@ -16,14 +16,19 @@ import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.data.TcgPlayerRepository
 import com.mtgcompanion.app.network.edhrec.EdhrecCardList
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.network.scryfall.ScryfallIdentifier
 import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.network.tcgplayer.TcgPriceResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** How many EDHREC tiles each section shows — also what gets resolved for prices. */
+internal const val TILES_PER_SECTION = 12
 
 data class CardDetailUiState(
     val loading: Boolean = true,
@@ -33,6 +38,8 @@ data class CardDetailUiState(
     val edhrecLoading: Boolean = false,
     val cardEdhrecLists: List<EdhrecCardList>? = null,
     val cardEdhrecLoading: Boolean = false,
+    /** Suggested cards resolved on Scryfall, keyed by lowercase name (and front face), for prices. */
+    val suggestionCards: Map<String, ScryfallCard> = emptyMap(),
     val combos: List<Variant> = emptyList(),
     val combosLoading: Boolean = false,
     val tcgPrices: List<TcgPriceResult>? = null,
@@ -63,6 +70,31 @@ class CardDetailViewModel(
     val collections: StateFlow<List<Collection>> = collectionRepository.collectionsFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
+
+    /**
+     * Copies owned of each card name, across every binder and deck — shown on the enlarged card.
+     * Counted under the front face as well as the full name, since a double-faced card is
+     * "Tony Stark // The Invincible Iron Man" here but just "Tony Stark" to EDHREC.
+     */
+    val ownedByName: StateFlow<Map<String, Int>> = combine(
+        collectionRepository.collectionsFlow,
+        deckRepository.decksFlow
+    ) { colls, decks ->
+        buildMap<String, Int> {
+            fun count(name: String, quantity: Int) {
+                val full = name.lowercase()
+                merge(full, quantity) { a, b -> a + b }
+                val front = full.substringBefore(" // ")
+                if (front != full) merge(front, quantity) { a, b -> a + b }
+            }
+            colls.forEach { collection ->
+                collection.entries.forEach { entry -> count(entry.name, entry.quantity + entry.foilQuantity) }
+            }
+            decks.forEach { deck ->
+                deck.cards.forEach { entry -> count(entry.name, entry.quantity) }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     init {
         loadCard()
@@ -121,6 +153,38 @@ class CardDetailViewModel(
                 null
             }
             _uiState.value = _uiState.value.copy(cardEdhrecLoading = false, cardEdhrecLists = lists)
+            lists?.let { loadSuggestionCards(it) }
+        }
+    }
+
+    /**
+     * Resolve the suggested cards on Scryfall so the enlarged card can show a price and be added to
+     * a deck/binder. EDHREC only gives us names, so batch them through /cards/collection rather than
+     * looking each one up (which would hit the rate limit).
+     */
+    private fun loadSuggestionCards(lists: List<EdhrecCardList>) {
+        viewModelScope.launch {
+            val names = lists
+                .flatMap { it.cardviews.take(TILES_PER_SECTION) }
+                .map { it.name }
+                .distinct()
+            if (names.isEmpty()) return@launch
+            val cards = try {
+                names.chunked(75).flatMap { chunk ->
+                    cardRepository.getCollection(chunk.map { ScryfallIdentifier(name = it) }).data
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+            // Key on the front face too: EDHREC names a double-faced card by either half.
+            val byName = buildMap {
+                cards.forEach { card ->
+                    val full = card.name.lowercase()
+                    put(full, card)
+                    put(full.substringBefore(" // "), card)
+                }
+            }
+            _uiState.value = _uiState.value.copy(suggestionCards = byName)
         }
     }
 
@@ -167,37 +231,37 @@ class CardDetailViewModel(
         }
     }
 
-    fun addToCollection(collectionId: String) {
-        val card = _uiState.value.card ?: return
+    // [card] is passed in rather than read from the state: the enlarged card can add a suggested
+    // card, which isn't the one the page is about.
+    fun addToCollection(collectionId: String, card: ScryfallCard) {
         viewModelScope.launch {
             collectionRepository.addCard(collectionId, card)
-            _uiState.value = _uiState.value.copy(addedToCollectionMessage = "Added to binder.")
+            _uiState.value = _uiState.value.copy(addedToCollectionMessage = "Added ${card.name} to binder.")
         }
     }
 
-    fun createCollectionAndAdd(name: String) {
-        val card = _uiState.value.card ?: return
+    fun createCollectionAndAdd(name: String, card: ScryfallCard) {
         viewModelScope.launch {
             val collection = collectionRepository.createCollection(name)
             collectionRepository.addCard(collection.id, card)
-            _uiState.value = _uiState.value.copy(addedToCollectionMessage = "Added to \"${collection.name}\".")
+            _uiState.value = _uiState.value.copy(
+                addedToCollectionMessage = "Added ${card.name} to \"${collection.name}\"."
+            )
         }
     }
 
-    fun addToDeck(deckId: String) {
-        val card = _uiState.value.card ?: return
+    fun addToDeck(deckId: String, card: ScryfallCard) {
         viewModelScope.launch {
             deckRepository.addCardToDeck(deckId, card)
-            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added to deck.")
+            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added ${card.name} to deck.")
         }
     }
 
-    fun createDeckAndAdd(name: String) {
-        val card = _uiState.value.card ?: return
+    fun createDeckAndAdd(name: String, card: ScryfallCard) {
         viewModelScope.launch {
             val deck = deckRepository.createDeck(name)
             deckRepository.addCardToDeck(deck.id, card)
-            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added to \"${deck.name}\".")
+            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added ${card.name} to \"${deck.name}\".")
         }
     }
 
