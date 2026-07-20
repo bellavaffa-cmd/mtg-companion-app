@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
@@ -60,8 +61,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -81,6 +84,7 @@ fun SearchScreen(
     val query by viewModel.query.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val filters by viewModel.filters.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
     var showFilters by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -197,6 +201,10 @@ fun SearchScreen(
                                     fontStyle = FontStyle.Italic,
                                     modifier = Modifier.padding(top = 16.dp)
                                 )
+                            }
+                        } else if (viewMode == CardViewMode.GRID) {
+                            cardGrid(state.cards, key = { it.id }) { card ->
+                                CardResultTile(card = card, onClick = { onCardClick(card) })
                             }
                         } else {
                             items(state.cards, key = { it.id }) { card ->
@@ -381,5 +389,25 @@ private fun CardResultRow(card: ScryfallCard, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis
             )
         }
+    }
+}
+
+@Composable
+private fun CardResultTile(card: ScryfallCard, onClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        AsyncImage(
+            model = card.displayImageUrl,
+            contentDescription = card.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+        )
+        Text(
+            card.name,
+            style = MaterialTheme.typography.labelMedium,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }

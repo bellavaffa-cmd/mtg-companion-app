@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -75,6 +76,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
+import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.GameMode
@@ -87,6 +89,7 @@ import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
+import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -611,6 +614,7 @@ private fun CardsTab(
 ) {
     var query by remember { mutableStateOf("") }
     val trimmed = query.trim()
+    val viewMode by viewModel.viewMode.collectAsState()
 
     // Grouped by type once analysis has loaded; otherwise a flat list so cards show immediately.
     // The commander is shown in its own pinned section, so exclude it from the list to avoid a duplicate.
@@ -690,17 +694,23 @@ private fun CardsTab(
                         modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
                     )
                 }
-                items(group.cards, key = { it.scryfallId }) { card ->
-                    DeckCardRow(
-                        card = card,
-                        isCommander = deck.commander?.scryfallId == card.scryfallId,
-                        onClick = { onZoomCard(card.scryfallId) },
-                        onToggleCommander = {
-                            viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
-                        },
-                        onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
-                        onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
-                    )
+                if (viewMode == CardViewMode.GRID) {
+                    cardGrid(group.cards, key = { it.scryfallId }) { card ->
+                        DeckCardTile(card = card, onClick = { onZoomCard(card.scryfallId) })
+                    }
+                } else {
+                    items(group.cards, key = { it.scryfallId }) { card ->
+                        DeckCardRow(
+                            card = card,
+                            isCommander = deck.commander?.scryfallId == card.scryfallId,
+                            onClick = { onZoomCard(card.scryfallId) },
+                            onToggleCommander = {
+                                viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
+                            },
+                            onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
+                            onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
+                        )
+                    }
                 }
             }
         }
@@ -1029,5 +1039,38 @@ private fun DeckCardRow(
                 Icon(Icons.Filled.Add, contentDescription = "Add a copy", tint = Gold, modifier = Modifier.size(18.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun DeckCardTile(card: DeckCardEntry, onClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Box {
+            AsyncImage(
+                model = card.imageUrl,
+                contentDescription = card.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+            )
+            Text(
+                "×${card.quantity}",
+                style = MaterialTheme.typography.labelMedium,
+                color = GoldLight,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+        Text(
+            card.name,
+            style = MaterialTheme.typography.labelMedium,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }

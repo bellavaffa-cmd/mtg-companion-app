@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.ComboRepository
@@ -13,6 +14,7 @@ import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.LegalityReport
+import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.evaluateLegality
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
@@ -57,6 +59,7 @@ class DeckDetailViewModel(
     private val deckId: String,
     private val repository: DeckRepository,
     private val collectionRepository: CollectionRepository,
+    private val settingsRepository: SettingsRepository,
     private val cardRepository: CardRepository = CardRepository(),
     private val comboRepository: ComboRepository = ComboRepository(),
     private val edhrecRepository: EdhrecRepository = EdhrecRepository()
@@ -65,6 +68,10 @@ class DeckDetailViewModel(
     val deck: StateFlow<Deck?> = repository.deckFlow(deckId).stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), null
     )
+
+    /** List or grid, as set in Settings > Card Display. */
+    val viewMode: StateFlow<CardViewMode> = settingsRepository.deckViewMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
 
     /** Other decks and all binders this deck's cards can be moved into. */
     val moveTargets: StateFlow<List<MoveTarget>> =
@@ -307,11 +314,12 @@ class DeckDetailViewModel(
     class Factory(
         private val deckId: String,
         private val repository: DeckRepository,
-        private val collectionRepository: CollectionRepository
+        private val collectionRepository: CollectionRepository,
+        private val settingsRepository: SettingsRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DeckDetailViewModel(deckId, repository, collectionRepository) as T
+            DeckDetailViewModel(deckId, repository, collectionRepository, settingsRepository) as T
     }
 }
 

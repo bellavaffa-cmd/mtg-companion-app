@@ -4,17 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.CardViewMode
+import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 sealed interface SearchUiState {
@@ -95,8 +99,13 @@ fun buildScryfallQuery(text: String, filters: SearchFilters): String {
 @OptIn(FlowPreview::class)
 class SearchViewModel(
     private val offlineRepository: OfflineCardRepository,
+    private val settingsRepository: SettingsRepository,
     private val repository: CardRepository = CardRepository()
 ) : ViewModel() {
+
+    /** List or grid, as set in Settings > Card Display. */
+    val viewMode: StateFlow<CardViewMode> = settingsRepository.searchViewMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -157,10 +166,11 @@ class SearchViewModel(
     }
 
     class Factory(
-        private val offlineRepository: OfflineCardRepository
+        private val offlineRepository: OfflineCardRepository,
+        private val settingsRepository: SettingsRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SearchViewModel(offlineRepository) as T
+            SearchViewModel(offlineRepository, settingsRepository) as T
     }
 }

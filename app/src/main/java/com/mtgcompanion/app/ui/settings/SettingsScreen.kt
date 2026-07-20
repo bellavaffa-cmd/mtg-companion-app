@@ -18,10 +18,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,9 +42,13 @@ import androidx.compose.ui.unit.dp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.mtgcompanion.app.BuildConfig
+import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.update.UpdateManager
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -48,6 +56,7 @@ import com.mtgcompanion.app.ui.theme.GoldDim
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
+import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +65,7 @@ fun SettingsScreen(
     syncManager: DriveSyncManager,
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
+    settingsRepository: SettingsRepository,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -85,11 +95,80 @@ fun SettingsScreen(
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
+            CardDisplaySection(settingsRepository)
+
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
+
             OfflineSearchSection(offlineCardRepository)
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
             AppUpdatesSection(updateManager)
+        }
+    }
+}
+
+@Composable
+private fun CardDisplaySection(settingsRepository: SettingsRepository) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    Text("Card Display".uppercase(), style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Choose list (detailed rows) or grid (compact card art) for each tab.",
+        style = MaterialTheme.typography.bodySmall
+    )
+
+    CardViewModeRow(
+        label = "Search results",
+        modeFlow = settingsRepository.searchViewMode,
+        onSelect = { mode -> scope.launch { settingsRepository.setSearchViewMode(mode) } }
+    )
+    CardViewModeRow(
+        label = "Binder cards",
+        modeFlow = settingsRepository.collectionViewMode,
+        onSelect = { mode -> scope.launch { settingsRepository.setCollectionViewMode(mode) } }
+    )
+    CardViewModeRow(
+        label = "Deck cards",
+        modeFlow = settingsRepository.deckViewMode,
+        onSelect = { mode -> scope.launch { settingsRepository.setDeckViewMode(mode) } }
+    )
+}
+
+@Composable
+private fun CardViewModeRow(label: String, modeFlow: Flow<CardViewMode>, onSelect: (CardViewMode) -> Unit) {
+    val mode by modeFlow.collectAsState(initial = CardViewMode.DEFAULT)
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+        FilterChip(
+            selected = mode == CardViewMode.LIST,
+            onClick = { onSelect(CardViewMode.LIST) },
+            leadingIcon = { Icon(Icons.Filled.ViewList, contentDescription = null, modifier = Modifier.size(16.dp)) },
+            label = { Text("List", style = MaterialTheme.typography.labelMedium) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = Gold,
+                selectedLabelColor = Bg,
+                selectedLeadingIconColor = Bg,
+                labelColor = TextMuted,
+                iconColor = TextMuted,
+                containerColor = Bg
+            )
+        )
+        Box(modifier = Modifier.padding(start = 8.dp)) {
+            FilterChip(
+                selected = mode == CardViewMode.GRID,
+                onClick = { onSelect(CardViewMode.GRID) },
+                leadingIcon = { Icon(Icons.Filled.GridView, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                label = { Text("Grid", style = MaterialTheme.typography.labelMedium) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Gold,
+                    selectedLabelColor = Bg,
+                    selectedLeadingIconColor = Bg,
+                    labelColor = TextMuted,
+                    iconColor = TextMuted,
+                    containerColor = Bg
+                )
+            )
         }
     }
 }

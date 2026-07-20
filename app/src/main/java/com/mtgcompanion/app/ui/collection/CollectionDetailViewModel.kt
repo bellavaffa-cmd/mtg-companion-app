@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,8 +28,13 @@ class CollectionDetailViewModel(
     private val collectionId: String,
     private val repository: CollectionRepository,
     private val deckRepository: DeckRepository,
+    private val settingsRepository: SettingsRepository,
     private val cardRepository: CardRepository = CardRepository()
 ) : ViewModel() {
+
+    /** List or grid, as set in Settings > Card Display. */
+    val viewMode: StateFlow<CardViewMode> = settingsRepository.collectionViewMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
 
     /** Decks and other binders this binder's cards can be moved into. */
     val moveTargets: StateFlow<List<MoveTarget>> =
@@ -100,10 +107,11 @@ class CollectionDetailViewModel(
     class Factory(
         private val collectionId: String,
         private val repository: CollectionRepository,
-        private val deckRepository: DeckRepository
+        private val deckRepository: DeckRepository,
+        private val settingsRepository: SettingsRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            CollectionDetailViewModel(collectionId, repository, deckRepository) as T
+            CollectionDetailViewModel(collectionId, repository, deckRepository, settingsRepository) as T
     }
 }

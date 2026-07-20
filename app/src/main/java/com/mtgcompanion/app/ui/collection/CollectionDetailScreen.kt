@@ -5,9 +5,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -44,12 +46,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
+import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -71,6 +75,7 @@ fun CollectionDetailScreen(
     val query by viewModel.query.collectAsState()
     val dashboard by viewModel.dashboard.collectAsState()
     val prices by viewModel.prices.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
     val moveTargets by viewModel.moveTargets.collectAsState()
     // The card whose move-destination picker is open.
     var moveTarget by remember { mutableStateOf<CollectionEntry?>(null) }
@@ -147,13 +152,19 @@ fun CollectionDetailScreen(
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
                     }
-                    items(entries, key = { it.scryfallId }) { entry ->
-                        CollectionCardRow(
-                            entry = entry,
-                            onClick = { zoomId = entry.scryfallId },
-                            onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
-                            onRemove = { viewModel.remove(entry) }
-                        )
+                    if (viewMode == CardViewMode.GRID) {
+                        cardGrid(entries, key = { it.scryfallId }) { entry ->
+                            CollectionCardTile(entry = entry, onClick = { zoomId = entry.scryfallId })
+                        }
+                    } else {
+                        items(entries, key = { it.scryfallId }) { entry ->
+                            CollectionCardRow(
+                                entry = entry,
+                                onClick = { zoomId = entry.scryfallId },
+                                onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
+                                onRemove = { viewModel.remove(entry) }
+                            )
+                        }
                     }
                 }
             }
@@ -233,5 +244,39 @@ private fun CollectionCardRow(
                 Icon(Icons.Filled.Close, contentDescription = "Remove from binder", tint = TextDim)
             }
         }
+    }
+}
+
+@Composable
+private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit) {
+    val totalQty = entry.quantity + entry.foilQuantity
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Box {
+            AsyncImage(
+                model = entry.imageUrl,
+                contentDescription = entry.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+            )
+            Text(
+                "×$totalQty",
+                style = MaterialTheme.typography.labelMedium,
+                color = GoldLight,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+        Text(
+            entry.name,
+            style = MaterialTheme.typography.labelMedium,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
