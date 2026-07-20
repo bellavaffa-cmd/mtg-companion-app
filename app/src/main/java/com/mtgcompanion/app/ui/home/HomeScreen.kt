@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
@@ -53,6 +54,7 @@ fun HomeScreen(
     onOpenCollection: () -> Unit,
     onOpenDecks: () -> Unit,
     onOpenScan: () -> Unit,
+    onOpenRules: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val deckCount by viewModel.deckCount.collectAsState()
@@ -89,6 +91,7 @@ fun HomeScreen(
             HomeTile(Icons.Filled.Collections, "Collection", "Your owned cards and binders", onOpenCollection)
             HomeTile(Icons.Filled.Style, "Decks", "Build, analyze, and check legality", onOpenDecks)
             HomeTile(Icons.Filled.CameraAlt, "Scan", "Add cards with your camera", onOpenScan)
+            HomeTile(Icons.Filled.MenuBook, "Rules", "Keyword glossary and card rulings", onOpenRules)
         }
     }
 }

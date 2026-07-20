@@ -153,6 +153,7 @@ fun MtgNavGraph(
                     onOpenCollection = { navController.navigateToTab(Routes.COLLECTION) },
                     onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
                     onOpenScan = { navController.navigateToTab(Routes.SCAN) },
+                    onOpenRules = { navController.navigateToTab(Routes.RULES) },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS) }
                 )
             }
