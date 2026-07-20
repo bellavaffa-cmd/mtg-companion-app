@@ -8,7 +8,7 @@ import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
-import com.mtgcompanion.app.data.GridSize
+import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.SourceKind
@@ -37,11 +37,11 @@ class CollectionsViewModel(
     private val cardRepository: CardRepository = CardRepository()
 ) : ViewModel() {
 
-    /** List or grid for the All Cards tab, and the shared grid tile size, from Settings > Card Display. */
+    /** List or grid for the All Cards tab, and the shared grid column count, from Settings > Card Display. */
     val viewMode: StateFlow<CardViewMode> = settingsRepository.allCardsViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
-    val gridSize: StateFlow<GridSize> = settingsRepository.gridSize
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GridSize.DEFAULT)
+    val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)
 
     val collections: StateFlow<List<Collection>> = repository.collectionsFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()

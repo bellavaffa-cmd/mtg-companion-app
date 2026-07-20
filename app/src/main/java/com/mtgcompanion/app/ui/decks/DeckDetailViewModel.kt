@@ -13,7 +13,7 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.GameMode
-import com.mtgcompanion.app.data.GridSize
+import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.LegalityReport
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.evaluateLegality
@@ -78,9 +78,9 @@ class DeckDetailViewModel(
     val recViewMode: StateFlow<CardViewMode> = settingsRepository.recViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
 
-    /** Shared grid tile size for both tabs above, when either is in Grid mode. */
-    val gridSize: StateFlow<GridSize> = settingsRepository.gridSize
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GridSize.DEFAULT)
+    /** Shared grid column count for both tabs above, when either is in Grid mode. */
+    val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)
 
     /** Other decks and all binders this deck's cards can be moved into. */
     val moveTargets: StateFlow<List<MoveTarget>> =

@@ -2,6 +2,7 @@ package com.mtgcompanion.app.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -20,15 +21,9 @@ enum class CardViewMode {
     }
 }
 
-/** How large grid tiles are, wherever a screen is in Grid mode. */
-enum class GridSize {
-    SMALL, MEDIUM, LARGE;
-
-    companion object {
-        val DEFAULT = MEDIUM
-        fun fromName(name: String?): GridSize = entries.firstOrNull { it.name == name } ?: DEFAULT
-    }
-}
+/** Valid range for the shared grid column count, and its default. */
+val GRID_COLUMNS_RANGE = 3..10
+const val GRID_COLUMNS_DEFAULT = 4
 
 class SettingsRepository(private val context: Context) {
 
@@ -39,8 +34,7 @@ class SettingsRepository(private val context: Context) {
     private val deckViewModeKey = stringPreferencesKey("deck_view_mode")
     private val allCardsViewModeKey = stringPreferencesKey("allcards_view_mode")
     private val recViewModeKey = stringPreferencesKey("rec_view_mode")
-    private val gridSizeKey = stringPreferencesKey("grid_size")
-    private val cardDetailGridSizeKey = stringPreferencesKey("card_detail_grid_size")
+    private val gridColumnsKey = intPreferencesKey("grid_columns")
 
     val tcgPlayerClientId: Flow<String?> = context.dataStore.data.map { it[clientIdKey] }
     val tcgPlayerClientSecret: Flow<String?> = context.dataStore.data.map { it[clientSecretKey] }
@@ -51,11 +45,10 @@ class SettingsRepository(private val context: Context) {
     val allCardsViewMode: Flow<CardViewMode> = context.dataStore.data.map { CardViewMode.fromName(it[allCardsViewModeKey]) }
     val recViewMode: Flow<CardViewMode> = context.dataStore.data.map { CardViewMode.fromName(it[recViewModeKey]) }
 
-    /** Shared tile size for every row-grid tab (Search/Binder/Deck/All Cards/REC). */
-    val gridSize: Flow<GridSize> = context.dataStore.data.map { GridSize.fromName(it[gridSizeKey]) }
-
-    /** Separate size for the card-detail page's suggestion grid, which is always a grid (no list mode). */
-    val cardDetailGridSize: Flow<GridSize> = context.dataStore.data.map { GridSize.fromName(it[cardDetailGridSizeKey]) }
+    /** Shared column count for every grid — the 5 row-grid tabs and the card-detail suggestion grid. */
+    val gridColumns: Flow<Int> = context.dataStore.data.map {
+        (it[gridColumnsKey] ?: GRID_COLUMNS_DEFAULT).coerceIn(GRID_COLUMNS_RANGE)
+    }
 
     suspend fun setSearchViewMode(mode: CardViewMode) {
         context.dataStore.edit { it[searchViewModeKey] = mode.name }
@@ -77,12 +70,8 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[recViewModeKey] = mode.name }
     }
 
-    suspend fun setGridSize(size: GridSize) {
-        context.dataStore.edit { it[gridSizeKey] = size.name }
-    }
-
-    suspend fun setCardDetailGridSize(size: GridSize) {
-        context.dataStore.edit { it[cardDetailGridSizeKey] = size.name }
+    suspend fun setGridColumns(columns: Int) {
+        context.dataStore.edit { it[gridColumnsKey] = columns.coerceIn(GRID_COLUMNS_RANGE) }
     }
 
     suspend fun currentCredentials(): Pair<String, String>? {

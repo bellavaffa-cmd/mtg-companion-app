@@ -55,7 +55,6 @@ import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
-import com.mtgcompanion.app.ui.common.columns
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -78,7 +77,7 @@ fun CollectionDetailScreen(
     val dashboard by viewModel.dashboard.collectAsState()
     val prices by viewModel.prices.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
-    val gridSize by viewModel.gridSize.collectAsState()
+    val gridColumns by viewModel.gridColumns.collectAsState()
     val moveTargets by viewModel.moveTargets.collectAsState()
     // The card whose move-destination picker is open.
     var moveTarget by remember { mutableStateOf<CollectionEntry?>(null) }
@@ -159,7 +158,7 @@ fun CollectionDetailScreen(
                         )
                     }
                     if (viewMode == CardViewMode.GRID) {
-                        cardGrid(entries, columns = gridSize.columns(), key = { it.scryfallId }) { entry ->
+                        cardGrid(entries, columns = gridColumns, key = { it.scryfallId }) { entry ->
                             CollectionCardTile(entry = entry, onClick = { zoomId = entry.scryfallId })
                         }
                     } else {

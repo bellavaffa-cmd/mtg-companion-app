@@ -65,7 +65,6 @@ import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.cardGrid
-import com.mtgcompanion.app.ui.common.columns
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -86,7 +85,7 @@ fun SearchScreen(
     val uiState by viewModel.uiState.collectAsState()
     val filters by viewModel.filters.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
-    val gridSize by viewModel.gridSize.collectAsState()
+    val gridColumns by viewModel.gridColumns.collectAsState()
     var showFilters by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -195,7 +194,7 @@ fun SearchScreen(
                                 )
                             }
                         } else if (viewMode == CardViewMode.GRID) {
-                            cardGrid(state.cards, columns = gridSize.columns(), key = { it.id }) { card ->
+                            cardGrid(state.cards, columns = gridColumns, key = { it.id }) { card ->
                                 CardResultTile(card = card, onClick = { onCardClick(card) })
                             }
                         } else {

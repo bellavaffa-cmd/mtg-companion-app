@@ -90,7 +90,6 @@ import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.cardGrid
-import com.mtgcompanion.app.ui.common.columns
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
@@ -602,7 +601,7 @@ private fun CardsTab(
     var query by remember { mutableStateOf("") }
     val trimmed = query.trim()
     val viewMode by viewModel.viewMode.collectAsState()
-    val gridSize by viewModel.gridSize.collectAsState()
+    val gridColumns by viewModel.gridColumns.collectAsState()
 
     // Grouped by type once analysis has loaded; otherwise a flat list so cards show immediately.
     // The commander is shown in its own pinned section, so exclude it from the list to avoid a duplicate.
@@ -683,7 +682,7 @@ private fun CardsTab(
                     )
                 }
                 if (viewMode == CardViewMode.GRID) {
-                    cardGrid(group.cards, columns = gridSize.columns(), key = { it.scryfallId }) { card ->
+                    cardGrid(group.cards, columns = gridColumns, key = { it.scryfallId }) { card ->
                         DeckCardTile(card = card, onClick = { onZoomCard(card.scryfallId) })
                     }
                 } else {
@@ -795,7 +794,7 @@ private fun AnalysisTab(
         return
     }
     val viewMode by viewModel.recViewMode.collectAsState()
-    val gridSize by viewModel.gridSize.collectAsState()
+    val gridColumns by viewModel.gridColumns.collectAsState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -820,7 +819,7 @@ private fun AnalysisTab(
             }
             sug.isEmpty() -> item { Text("No suggestions found.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
             viewMode == CardViewMode.GRID -> {
-                cardGrid(sug, columns = gridSize.columns(), key = { it.id ?: it.name }) { view ->
+                cardGrid(sug, columns = gridColumns, key = { it.id ?: it.name }) { view ->
                     SuggestionTile(view, onClick = { onZoomSugg(view.id ?: view.name) })
                 }
             }

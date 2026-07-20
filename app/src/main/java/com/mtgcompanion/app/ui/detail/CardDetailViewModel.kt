@@ -10,7 +10,7 @@ import com.mtgcompanion.app.data.ComboRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
-import com.mtgcompanion.app.data.GridSize
+import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
@@ -65,9 +65,9 @@ class CardDetailViewModel(
     private val _uiState = MutableStateFlow(CardDetailUiState())
     val uiState: StateFlow<CardDetailUiState> = _uiState.asStateFlow()
 
-    /** Tile size for this page's suggestion grid — always a grid, so no list/grid toggle. */
-    val gridSize: StateFlow<GridSize> = settingsRepository.cardDetailGridSize
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GridSize.DEFAULT)
+    /** Column count for this page's suggestion grid — the same shared count used by every grid tab. */
+    val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)
 
     val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()

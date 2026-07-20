@@ -3,11 +3,14 @@ package com.mtgcompanion.app.ui.settings
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,20 +35,29 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.mtgcompanion.app.BuildConfig
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.DriveSyncManager
-import com.mtgcompanion.app.data.GridSize
+import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
+import com.mtgcompanion.app.data.GRID_COLUMNS_RANGE
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.update.UpdateManager
@@ -58,6 +71,7 @@ import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,14 +124,13 @@ fun SettingsScreen(
 
 @Composable
 private fun CardDisplaySection(settingsRepository: SettingsRepository) {
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
 
     val searchMode by settingsRepository.searchViewMode.collectAsState(initial = CardViewMode.DEFAULT)
     val collectionMode by settingsRepository.collectionViewMode.collectAsState(initial = CardViewMode.DEFAULT)
     val deckMode by settingsRepository.deckViewMode.collectAsState(initial = CardViewMode.DEFAULT)
     val allCardsMode by settingsRepository.allCardsViewMode.collectAsState(initial = CardViewMode.DEFAULT)
     val recMode by settingsRepository.recViewMode.collectAsState(initial = CardViewMode.DEFAULT)
-    val anyGrid = CardViewMode.GRID in listOf(searchMode, collectionMode, deckMode, allCardsMode, recMode)
 
     Text("Card Display".uppercase(), style = MaterialTheme.typography.titleMedium)
     Text(
@@ -151,28 +164,17 @@ private fun CardDisplaySection(settingsRepository: SettingsRepository) {
         onSelect = { mode -> scope.launch { settingsRepository.setRecViewMode(mode) } }
     )
 
-    if (anyGrid) {
-        val gridSize by settingsRepository.gridSize.collectAsState(initial = GridSize.DEFAULT)
-        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(BorderColor))
-        GridSizeRow(
-            label = "Grid tile size",
-            size = gridSize,
-            onSelect = { size -> scope.launch { settingsRepository.setGridSize(size) } }
-        )
-    }
-
+    val storedColumns by settingsRepository.gridColumns.collectAsState(initial = GRID_COLUMNS_DEFAULT)
     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(BorderColor))
-    val cardDetailGridSize by settingsRepository.cardDetailGridSize.collectAsState(initial = GridSize.DEFAULT)
-    GridSizeRow(
-        label = "Card detail suggestions size",
-        size = cardDetailGridSize,
-        onSelect = { size -> scope.launch { settingsRepository.setCardDetailGridSize(size) } }
+    GridColumnsSlider(
+        storedColumns = storedColumns,
+        onChangeFinished = { columns -> scope.launch { settingsRepository.setGridColumns(columns) } }
     )
 }
 
 @Composable
 private fun CardViewModeRow(label: String, mode: CardViewMode, onSelect: (CardViewMode) -> Unit) {
-    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
         FilterChip(
             selected = mode == CardViewMode.LIST,
@@ -207,26 +209,55 @@ private fun CardViewModeRow(label: String, mode: CardViewMode, onSelect: (CardVi
     }
 }
 
+/**
+ * Slider from [GRID_COLUMNS_RANGE].first to .last columns, with a live preview row of placeholder
+ * tiles that resizes as the thumb drags. The DataStore write only happens once the drag finishes,
+ * so dragging doesn't spam writes — [sliderValue] alone drives the preview in the meantime.
+ */
 @Composable
-private fun GridSizeRow(label: String, size: GridSize, onSelect: (GridSize) -> Unit) {
+private fun GridColumnsSlider(storedColumns: Int, onChangeFinished: (Int) -> Unit) {
+    var sliderValue by remember(storedColumns) { mutableFloatStateOf(storedColumns.toFloat()) }
+    val previewColumns = sliderValue.roundToInt()
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-        Row(
-            modifier = Modifier.padding(top = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf(GridSize.SMALL to "Small", GridSize.MEDIUM to "Medium", GridSize.LARGE to "Large").forEach { (value, text) ->
-                FilterChip(
-                    selected = size == value,
-                    onClick = { onSelect(value) },
-                    label = { Text(text, style = MaterialTheme.typography.labelMedium) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Gold,
-                        selectedLabelColor = Bg,
-                        labelColor = TextMuted,
-                        containerColor = Bg
-                    )
-                )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("Grid tile size", style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+            Text("$previewColumns columns", style = MaterialTheme.typography.labelMedium, color = GoldLight)
+        }
+
+        GridColumnsPreview(columns = previewColumns, modifier = Modifier.padding(top = 10.dp))
+
+        Slider(
+            value = sliderValue,
+            onValueChange = { sliderValue = it },
+            onValueChangeFinished = { onChangeFinished(sliderValue.roundToInt()) },
+            valueRange = GRID_COLUMNS_RANGE.first.toFloat()..GRID_COLUMNS_RANGE.last.toFloat(),
+            steps = (GRID_COLUMNS_RANGE.last - GRID_COLUMNS_RANGE.first - 1).coerceAtLeast(0),
+            colors = SliderDefaults.colors(
+                thumbColor = Gold,
+                activeTrackColor = Gold,
+                inactiveTrackColor = BorderColor
+            ),
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+/** A row of [columns] card-shaped placeholder tiles, sized exactly as the real grids size theirs. */
+@Composable
+private fun GridColumnsPreview(columns: Int, modifier: Modifier = Modifier) {
+    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        repeat(columns) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(0.72f)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Surface)
+                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Style, contentDescription = null, tint = GoldDim, modifier = Modifier.size(16.dp))
             }
         }
     }

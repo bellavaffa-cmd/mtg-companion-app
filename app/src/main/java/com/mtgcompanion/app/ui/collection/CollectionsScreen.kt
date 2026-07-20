@@ -59,13 +59,11 @@ import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
-import com.mtgcompanion.app.data.GridSize
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
-import com.mtgcompanion.app.ui.common.columns
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -87,7 +85,7 @@ fun CollectionsScreen(
     val dashboard by viewModel.dashboard.collectAsState()
     val prices by viewModel.prices.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
-    val gridSize by viewModel.gridSize.collectAsState()
+    val gridColumns by viewModel.gridColumns.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     // Page 0 = All Cards (left), page 1 = Binders (right). Swipe or tap the tabs to switch.
     val pagerState = rememberPagerState(pageCount = { 2 })
@@ -134,7 +132,7 @@ fun CollectionsScreen(
                         dashboard = dashboard,
                         prices = prices,
                         viewMode = viewMode,
-                        gridSize = gridSize
+                        gridColumns = gridColumns
                     )
                 } else {
                     CollectionsTab(
@@ -205,7 +203,7 @@ private fun AllCardsTab(
     dashboard: CollectionDashboard?,
     prices: Map<String, Double>,
     viewMode: CardViewMode,
-    gridSize: GridSize
+    gridColumns: Int
 ) {
     // Search filters the visible card list only; the dashboard still reflects the whole collection.
     var query by remember { mutableStateOf("") }
@@ -264,7 +262,7 @@ private fun AllCardsTab(
                 }
             } else {
                 if (viewMode == CardViewMode.GRID) {
-                    cardGrid(filtered, columns = gridSize.columns(), key = { it.scryfallId }) { card ->
+                    cardGrid(filtered, columns = gridColumns, key = { it.scryfallId }) { card ->
                         AllCardTile(card = card, onClick = { zoomId = card.scryfallId })
                     }
                 } else {
