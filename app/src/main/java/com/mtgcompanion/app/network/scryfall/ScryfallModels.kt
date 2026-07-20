@@ -112,6 +112,15 @@ data class ScryfallPurchaseUris(
     val cardhoarder: String? = null
 )
 
+/** GET /cards/{id}/rulings — official rulings for a card. */
+data class ScryfallRulingsResponse(val data: List<ScryfallRuling> = emptyList())
+
+data class ScryfallRuling(
+    val source: String? = null,
+    @Json(name = "published_at") val publishedAt: String? = null,
+    val comment: String
+)
+
 /** GET /bulk-data — the catalog of downloadable bulk card files. */
 data class BulkDataList(val data: List<BulkDataEntry> = emptyList())
 

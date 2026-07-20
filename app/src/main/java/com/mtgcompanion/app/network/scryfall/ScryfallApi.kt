@@ -31,4 +31,8 @@ interface ScryfallApi {
     /** Catalog of bulk-data files; we use the "oracle_cards" entry's download_uri for offline search. */
     @GET("bulk-data")
     suspend fun getBulkData(): BulkDataList
+
+    /** Official rulings for a card, by its Scryfall id. */
+    @GET("cards/{id}/rulings")
+    suspend fun getRulings(@Path("id") id: String): ScryfallRulingsResponse
 }

@@ -5,6 +5,7 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.ScryfallCollectionRequest
 import com.mtgcompanion.app.network.scryfall.ScryfallCollectionResponse
 import com.mtgcompanion.app.network.scryfall.ScryfallIdentifier
+import com.mtgcompanion.app.network.scryfall.ScryfallRuling
 import retrofit2.HttpException
 
 class CardRepository {
@@ -56,4 +57,11 @@ class CardRepository {
      */
     suspend fun getCollection(identifiers: List<ScryfallIdentifier>): ScryfallCollectionResponse =
         api.getCollection(ScryfallCollectionRequest(identifiers))
+
+    /** Resolve a card by (fuzzy) name and fetch its official rulings. */
+    suspend fun getRulings(cardName: String): Pair<ScryfallCard, List<ScryfallRuling>> {
+        val card = api.getCardByFuzzyName(cardName)
+        val rulings = api.getRulings(card.id).data
+        return card to rulings
+    }
 }

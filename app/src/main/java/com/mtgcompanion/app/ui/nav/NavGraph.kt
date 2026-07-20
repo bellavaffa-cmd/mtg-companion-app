@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.AlertDialog
@@ -71,6 +72,8 @@ import com.mtgcompanion.app.ui.detail.CardDetailScreen
 import com.mtgcompanion.app.ui.detail.CardDetailViewModel
 import com.mtgcompanion.app.ui.home.HomeScreen
 import com.mtgcompanion.app.ui.home.HomeViewModel
+import com.mtgcompanion.app.ui.rules.RulesScreen
+import com.mtgcompanion.app.ui.rules.RulesViewModel
 import com.mtgcompanion.app.ui.scan.ScanScreen
 import com.mtgcompanion.app.ui.scan.ScanViewModel
 import com.mtgcompanion.app.ui.search.SearchScreen
@@ -96,6 +99,7 @@ private object Routes {
     const val DECKS = "decks"
     const val SETTINGS = "settings"
     const val SCAN = "scan"
+    const val RULES = "rules"
     const val DETAIL = "detail/{cardName}"
     const val DECK_DETAIL = "deck/{deckId}"
     const val COLLECTION_DETAIL = "collection/{collectionId}"
@@ -107,7 +111,7 @@ private object Routes {
 // Routes that show the bottom nav bar. Scan is excluded so its camera runs full-screen (it has its
 // own back button); Settings shows the bar so you can jump to another tab from it.
 private val bottomNavRoutes = setOf(
-    Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS
+    Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.RULES
 )
 
 @Composable
@@ -239,6 +243,11 @@ fun MtgNavGraph(
                 )
             }
 
+            composable(Routes.RULES) {
+                val viewModel: RulesViewModel = viewModel()
+                RulesScreen(viewModel = viewModel)
+            }
+
             composable(Routes.SETTINGS) {
                 SettingsScreen(
                     syncManager = driveSyncManager,
@@ -332,6 +341,9 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
         }
         BarItem(Icons.Filled.CameraAlt, "Scan", currentRoute == Routes.SCAN) {
             navController.navigateToTab(Routes.SCAN)
+        }
+        BarItem(Icons.Filled.MenuBook, "Rules", currentRoute == Routes.RULES) {
+            navController.navigateToTab(Routes.RULES)
         }
     }
 }

@@ -31,8 +31,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.AlertDialog
@@ -607,52 +609,99 @@ private fun CardsTab(
     onZoomCard: (String) -> Unit,
     viewModel: DeckDetailViewModel
 ) {
+    var query by remember { mutableStateOf("") }
+    val trimmed = query.trim()
+
     // Grouped by type once analysis has loaded; otherwise a flat list so cards show immediately.
     // The commander is shown in its own pinned section, so exclude it from the list to avoid a duplicate.
     val commanderId = deck.commander?.scryfallId
     val groups = (if (analysis.byType.isNotEmpty()) analysis.byType else listOf(TypeGroup("Cards", deck.cards)))
         .mapNotNull { group ->
             val cards = group.cards.filterNot { it.scryfallId == commanderId }
+                .filter { trimmed.isBlank() || it.name.contains(trimmed, ignoreCase = true) }
             if (cards.isEmpty()) null else group.copy(cards = cards)
         }
+    val commanderMatches = deck.commander?.name?.contains(trimmed, ignoreCase = true) == true
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        if (deck.commander != null) {
-            item { CommanderSection(deck, onClick = { deck.commander?.let { onZoomCard(it.scryfallId) } }) }
-        }
-        if (deck.cards.isEmpty()) {
-            item {
-                Text(
-                    "No cards yet. Add cards to this deck from a card's detail page.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            return@LazyColumn
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (deck.cards.isNotEmpty() || deck.commander != null) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Search this deck", color = TextDim) },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear search", tint = TextMuted)
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(2.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Gold,
+                    unfocusedBorderColor = BorderColor,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    cursorColor = Gold,
+                    focusedContainerColor = Surface,
+                    unfocusedContainerColor = Surface
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 20.dp, top = 16.dp)
+            )
         }
 
-        groups.forEach { group ->
-            item {
-                Text(
-                    "${group.type.uppercase()} (${group.cards.sumOf { it.quantity }})",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
-                )
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (deck.commander != null && (trimmed.isBlank() || commanderMatches)) {
+                item { CommanderSection(deck, onClick = { deck.commander?.let { onZoomCard(it.scryfallId) } }) }
             }
-            items(group.cards, key = { it.scryfallId }) { card ->
-                DeckCardRow(
-                    card = card,
-                    isCommander = deck.commander?.scryfallId == card.scryfallId,
-                    onClick = { onZoomCard(card.scryfallId) },
-                    onToggleCommander = {
-                        viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
-                    },
-                    onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
-                    onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
-                )
+            if (deck.cards.isEmpty()) {
+                item {
+                    Text(
+                        "No cards yet. Add cards to this deck from a card's detail page.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                return@LazyColumn
+            }
+            if (groups.isEmpty() && !(deck.commander != null && commanderMatches)) {
+                item {
+                    Text(
+                        "No cards match \"$trimmed\".",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
+                    )
+                }
+                return@LazyColumn
+            }
+
+            groups.forEach { group ->
+                item {
+                    Text(
+                        "${group.type.uppercase()} (${group.cards.sumOf { it.quantity }})",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+                    )
+                }
+                items(group.cards, key = { it.scryfallId }) { card ->
+                    DeckCardRow(
+                        card = card,
+                        isCommander = deck.commander?.scryfallId == card.scryfallId,
+                        onClick = { onZoomCard(card.scryfallId) },
+                        onToggleCommander = {
+                            viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
+                        },
+                        onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
+                        onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
+                    )
+                }
             }
         }
     }
