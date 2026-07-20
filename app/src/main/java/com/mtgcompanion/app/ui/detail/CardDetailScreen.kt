@@ -67,6 +67,7 @@ import com.mtgcompanion.app.ui.common.ManaCost
 import com.mtgcompanion.app.ui.common.ZoomCard
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.GridSize
 import com.mtgcompanion.app.network.edhrec.EdhrecCardList
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
@@ -94,6 +95,7 @@ fun CardDetailScreen(
     val decks by viewModel.decks.collectAsState()
     val collections by viewModel.collections.collectAsState()
     val owned by viewModel.ownedByName.collectAsState()
+    val gridSize by viewModel.gridSize.collectAsState()
     val context = LocalContext.current
     var showDeckPicker by remember { mutableStateOf(false) }
     var showCollectionPicker by remember { mutableStateOf(false) }
@@ -145,8 +147,9 @@ fun CardDetailScreen(
                 }
 
                 LazyVerticalGrid(
-                    // Adaptive: as many ~104dp card tiles as fit — 3 on a phone, more on wider screens.
-                    columns = GridCells.Adaptive(minSize = 104.dp),
+                    // Adaptive: as many tiles as fit at the chosen size — 3 on a phone at Medium,
+                    // more with Small, fewer (bigger art) with Large.
+                    columns = GridCells.Adaptive(minSize = gridSize.minTileSize()),
                     modifier = Modifier.fillMaxSize().background(Bg).padding(padding),
                     contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -345,6 +348,13 @@ private fun CollectionPickerDialog(
             TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
         }
     )
+}
+
+/** Minimum tile width for each [GridSize], driving how many columns the adaptive grid fits. */
+private fun GridSize.minTileSize() = when (this) {
+    GridSize.SMALL -> 84.dp
+    GridSize.MEDIUM -> 104.dp
+    GridSize.LARGE -> 140.dp
 }
 
 /** Adds a single full-width row inside the grid. */

@@ -8,6 +8,14 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mtgcompanion.app.data.GridSize
+
+/** How many tile columns a row-grid uses for each [GridSize]. */
+fun GridSize.columns(): Int = when (this) {
+    GridSize.SMALL -> 4
+    GridSize.MEDIUM -> 3
+    GridSize.LARGE -> 2
+}
 
 /**
  * Lays [items] out as a card grid inside a [LazyListScope] — a fixed column count, wrapped into

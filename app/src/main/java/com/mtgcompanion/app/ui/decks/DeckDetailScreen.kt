@@ -90,6 +90,8 @@ import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.columns
+import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -206,7 +208,7 @@ fun DeckDetailScreen(
                 when (page) {
                     0 -> CardsTab(currentDeck, analysis, onZoomCard = { zoom = "card" to it }, viewModel)
                     1 -> StatsTab(analysis)
-                    2 -> AnalysisTab(analysis, suggestions, onZoomSugg = { zoom = "sugg" to it })
+                    2 -> AnalysisTab(analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel)
                     else -> LegalityTab(analysis)
                 }
             }
@@ -308,27 +310,12 @@ private fun DeleteDeckDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
-        containerColor = Surface,
-        onDismissRequest = onDismiss,
-        title = { Text("Delete deck?", color = GoldLight) },
-        text = {
-            Text(
-                "\"$deckName\" and its $cardCount card${if (cardCount == 1) "" else "s"} will be " +
-                    "permanently deleted. This can't be undone.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextPrimary
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD3402F), contentColor = Bg)
-            ) { Text("DELETE", color = Bg) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
-        }
+    ConfirmDeleteDialog(
+        title = "Delete deck?",
+        message = "\"$deckName\" and its $cardCount card${if (cardCount == 1) "" else "s"} will be " +
+            "permanently deleted. This can't be undone.",
+        onConfirm = onConfirm,
+        onDismiss = onDismiss
     )
 }
 
@@ -615,6 +602,7 @@ private fun CardsTab(
     var query by remember { mutableStateOf("") }
     val trimmed = query.trim()
     val viewMode by viewModel.viewMode.collectAsState()
+    val gridSize by viewModel.gridSize.collectAsState()
 
     // Grouped by type once analysis has loaded; otherwise a flat list so cards show immediately.
     // The commander is shown in its own pinned section, so exclude it from the list to avoid a duplicate.
@@ -695,7 +683,7 @@ private fun CardsTab(
                     )
                 }
                 if (viewMode == CardViewMode.GRID) {
-                    cardGrid(group.cards, key = { it.scryfallId }) { card ->
+                    cardGrid(group.cards, columns = gridSize.columns(), key = { it.scryfallId }) { card ->
                         DeckCardTile(card = card, onClick = { onZoomCard(card.scryfallId) })
                     }
                 } else {
@@ -799,12 +787,16 @@ private fun StatsTab(analysis: DeckAnalysis) {
 private fun AnalysisTab(
     analysis: DeckAnalysis,
     suggestions: List<EdhrecCardView>?,
-    onZoomSugg: (String) -> Unit
+    onZoomSugg: (String) -> Unit,
+    viewModel: DeckDetailViewModel
 ) {
     if (analysis.loading) {
         LoadingBox()
         return
     }
+    val viewMode by viewModel.recViewMode.collectAsState()
+    val gridSize by viewModel.gridSize.collectAsState()
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -827,6 +819,11 @@ private fun AnalysisTab(
                 )
             }
             sug.isEmpty() -> item { Text("No suggestions found.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
+            viewMode == CardViewMode.GRID -> {
+                cardGrid(sug, columns = gridSize.columns(), key = { it.id ?: it.name }) { view ->
+                    SuggestionTile(view, onClick = { onZoomSugg(view.id ?: view.name) })
+                }
+            }
             else -> items(sug, key = { it.id ?: it.name }) { view ->
                 SuggestionRow(view, onClick = { onZoomSugg(view.id ?: view.name) })
             }
@@ -955,6 +952,32 @@ private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit) {
                 color = TextMuted
             )
         }
+    }
+}
+
+@Composable
+private fun SuggestionTile(view: EdhrecCardView, onClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        AsyncImage(
+            model = view.scryfallImageUrl,
+            contentDescription = view.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+        )
+        Text(
+            view.name,
+            style = MaterialTheme.typography.labelMedium,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        val pct = view.inclusionPercent
+        Text(
+            if (pct != null) "$pct%" else "${view.numDecks ?: 0}",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextMuted
+        )
     }
 }
 

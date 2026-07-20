@@ -170,7 +170,7 @@ fun MtgNavGraph(
 
             composable(Routes.COLLECTION) {
                 val viewModel: CollectionsViewModel = viewModel(
-                    factory = CollectionsViewModel.Factory(collectionRepository, deckRepository)
+                    factory = CollectionsViewModel.Factory(collectionRepository, deckRepository, settingsRepository)
                 )
                 CollectionsScreen(
                     viewModel = viewModel,

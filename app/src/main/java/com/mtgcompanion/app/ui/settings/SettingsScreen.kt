@@ -44,10 +44,10 @@ import com.google.android.gms.common.api.ApiException
 import com.mtgcompanion.app.BuildConfig
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.GridSize
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.update.UpdateManager
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -112,6 +112,13 @@ fun SettingsScreen(
 private fun CardDisplaySection(settingsRepository: SettingsRepository) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
+    val searchMode by settingsRepository.searchViewMode.collectAsState(initial = CardViewMode.DEFAULT)
+    val collectionMode by settingsRepository.collectionViewMode.collectAsState(initial = CardViewMode.DEFAULT)
+    val deckMode by settingsRepository.deckViewMode.collectAsState(initial = CardViewMode.DEFAULT)
+    val allCardsMode by settingsRepository.allCardsViewMode.collectAsState(initial = CardViewMode.DEFAULT)
+    val recMode by settingsRepository.recViewMode.collectAsState(initial = CardViewMode.DEFAULT)
+    val anyGrid = CardViewMode.GRID in listOf(searchMode, collectionMode, deckMode, allCardsMode, recMode)
+
     Text("Card Display".uppercase(), style = MaterialTheme.typography.titleMedium)
     Text(
         "Choose list (detailed rows) or grid (compact card art) for each tab.",
@@ -120,24 +127,51 @@ private fun CardDisplaySection(settingsRepository: SettingsRepository) {
 
     CardViewModeRow(
         label = "Search results",
-        modeFlow = settingsRepository.searchViewMode,
+        mode = searchMode,
         onSelect = { mode -> scope.launch { settingsRepository.setSearchViewMode(mode) } }
     )
     CardViewModeRow(
         label = "Binder cards",
-        modeFlow = settingsRepository.collectionViewMode,
+        mode = collectionMode,
         onSelect = { mode -> scope.launch { settingsRepository.setCollectionViewMode(mode) } }
     )
     CardViewModeRow(
         label = "Deck cards",
-        modeFlow = settingsRepository.deckViewMode,
+        mode = deckMode,
         onSelect = { mode -> scope.launch { settingsRepository.setDeckViewMode(mode) } }
+    )
+    CardViewModeRow(
+        label = "All Cards",
+        mode = allCardsMode,
+        onSelect = { mode -> scope.launch { settingsRepository.setAllCardsViewMode(mode) } }
+    )
+    CardViewModeRow(
+        label = "Deck suggestions (REC)",
+        mode = recMode,
+        onSelect = { mode -> scope.launch { settingsRepository.setRecViewMode(mode) } }
+    )
+
+    if (anyGrid) {
+        val gridSize by settingsRepository.gridSize.collectAsState(initial = GridSize.DEFAULT)
+        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(BorderColor))
+        GridSizeRow(
+            label = "Grid tile size",
+            size = gridSize,
+            onSelect = { size -> scope.launch { settingsRepository.setGridSize(size) } }
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(BorderColor))
+    val cardDetailGridSize by settingsRepository.cardDetailGridSize.collectAsState(initial = GridSize.DEFAULT)
+    GridSizeRow(
+        label = "Card detail suggestions size",
+        size = cardDetailGridSize,
+        onSelect = { size -> scope.launch { settingsRepository.setCardDetailGridSize(size) } }
     )
 }
 
 @Composable
-private fun CardViewModeRow(label: String, modeFlow: Flow<CardViewMode>, onSelect: (CardViewMode) -> Unit) {
-    val mode by modeFlow.collectAsState(initial = CardViewMode.DEFAULT)
+private fun CardViewModeRow(label: String, mode: CardViewMode, onSelect: (CardViewMode) -> Unit) {
     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
         FilterChip(
@@ -169,6 +203,31 @@ private fun CardViewModeRow(label: String, modeFlow: Flow<CardViewMode>, onSelec
                     containerColor = Bg
                 )
             )
+        }
+    }
+}
+
+@Composable
+private fun GridSizeRow(label: String, size: GridSize, onSelect: (GridSize) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+        Row(
+            modifier = Modifier.padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(GridSize.SMALL to "Small", GridSize.MEDIUM to "Medium", GridSize.LARGE to "Large").forEach { (value, text) ->
+                FilterChip(
+                    selected = size == value,
+                    onClick = { onSelect(value) },
+                    label = { Text(text, style = MaterialTheme.typography.labelMedium) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Gold,
+                        selectedLabelColor = Bg,
+                        labelColor = TextMuted,
+                        containerColor = Bg
+                    )
+                )
+            }
         }
     }
 }

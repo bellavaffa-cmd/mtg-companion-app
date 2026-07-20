@@ -65,6 +65,7 @@ import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.columns
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -85,6 +86,7 @@ fun SearchScreen(
     val uiState by viewModel.uiState.collectAsState()
     val filters by viewModel.filters.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
+    val gridSize by viewModel.gridSize.collectAsState()
     var showFilters by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -141,16 +143,6 @@ fun SearchScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                if (showFilters) {
-                    item {
-                        InlineFilters(
-                            filters = filters,
-                            onChange = viewModel::onFiltersChange,
-                            onClear = { viewModel.onFiltersChange(SearchFilters()) }
-                        )
-                    }
-                }
-
                 when (val state = uiState) {
                     is SearchUiState.Idle -> item {
                         Text(
@@ -203,7 +195,7 @@ fun SearchScreen(
                                 )
                             }
                         } else if (viewMode == CardViewMode.GRID) {
-                            cardGrid(state.cards, key = { it.id }) { card ->
+                            cardGrid(state.cards, columns = gridSize.columns(), key = { it.id }) { card ->
                                 CardResultTile(card = card, onClick = { onCardClick(card) })
                             }
                         } else {
@@ -216,9 +208,23 @@ fun SearchScreen(
             }
         }
     }
+
+    if (showFilters) {
+        ModalBottomSheet(
+            onDismissRequest = { showFilters = false },
+            containerColor = Bg,
+            sheetState = rememberModalBottomSheetState()
+        ) {
+            InlineFilters(
+                filters = filters,
+                onChange = viewModel::onFiltersChange,
+                onClear = { viewModel.onFiltersChange(SearchFilters()) }
+            )
+        }
+    }
 }
 
-/** Filters shown inline under the search bar; each edit applies live (search auto-runs). */
+/** Filters shown in an overlay sheet over the search bar; each edit applies live (search auto-runs). */
 @Composable
 private fun InlineFilters(
     filters: SearchFilters,
@@ -228,10 +234,9 @@ private fun InlineFilters(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(6.dp))
-            .padding(16.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

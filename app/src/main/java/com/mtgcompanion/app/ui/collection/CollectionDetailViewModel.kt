@@ -10,6 +10,7 @@ import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.GridSize
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
@@ -35,6 +36,10 @@ class CollectionDetailViewModel(
     /** List or grid, as set in Settings > Card Display. */
     val viewMode: StateFlow<CardViewMode> = settingsRepository.collectionViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
+
+    /** Grid tile size, when [viewMode] is Grid. */
+    val gridSize: StateFlow<GridSize> = settingsRepository.gridSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GridSize.DEFAULT)
 
     /** Decks and other binders this binder's cards can be moved into. */
     val moveTargets: StateFlow<List<MoveTarget>> =

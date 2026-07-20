@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.CardViewMode
+import com.mtgcompanion.app.data.GridSize
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
@@ -106,6 +107,10 @@ class SearchViewModel(
     /** List or grid, as set in Settings > Card Display. */
     val viewMode: StateFlow<CardViewMode> = settingsRepository.searchViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
+
+    /** Grid tile size, when [viewMode] is Grid. */
+    val gridSize: StateFlow<GridSize> = settingsRepository.gridSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GridSize.DEFAULT)
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()

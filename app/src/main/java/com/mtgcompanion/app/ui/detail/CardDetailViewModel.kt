@@ -10,6 +10,7 @@ import com.mtgcompanion.app.data.ComboRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
+import com.mtgcompanion.app.data.GridSize
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
@@ -57,11 +58,16 @@ class CardDetailViewModel(
     private val tcgPlayerRepository: TcgPlayerRepository,
     private val collectionRepository: CollectionRepository,
     private val deckRepository: DeckRepository,
-    private val offlineRepository: OfflineCardRepository
+    private val offlineRepository: OfflineCardRepository,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CardDetailUiState())
     val uiState: StateFlow<CardDetailUiState> = _uiState.asStateFlow()
+
+    /** Tile size for this page's suggestion grid — always a grid, so no list/grid toggle. */
+    val gridSize: StateFlow<GridSize> = settingsRepository.cardDetailGridSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GridSize.DEFAULT)
 
     val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
@@ -286,7 +292,8 @@ class CardDetailViewModel(
                 tcgPlayerRepository = TcgPlayerRepository(settingsRepository),
                 collectionRepository = collectionRepository,
                 deckRepository = deckRepository,
-                offlineRepository = offlineRepository
+                offlineRepository = offlineRepository,
+                settingsRepository = settingsRepository
             ) as T
         }
     }

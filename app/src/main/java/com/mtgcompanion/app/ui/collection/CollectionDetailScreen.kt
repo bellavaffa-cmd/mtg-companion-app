@@ -51,9 +51,11 @@ import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.columns
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -76,6 +78,7 @@ fun CollectionDetailScreen(
     val dashboard by viewModel.dashboard.collectAsState()
     val prices by viewModel.prices.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
+    val gridSize by viewModel.gridSize.collectAsState()
     val moveTargets by viewModel.moveTargets.collectAsState()
     // The card whose move-destination picker is open.
     var moveTarget by remember { mutableStateOf<CollectionEntry?>(null) }
@@ -83,6 +86,9 @@ fun CollectionDetailScreen(
     var zoomId by remember { mutableStateOf<String?>(null) }
     // Alternate-art target while the printing picker is open: (current scryfallId, card name).
     var artTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // The card pending a remove-confirmation, if any.
+    var removeTarget by remember { mutableStateOf<CollectionEntry?>(null) }
+    var confirmDeleteBinder by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = Bg,
@@ -95,7 +101,7 @@ fun CollectionDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.deleteCollection(onBack) }) {
+                    IconButton(onClick = { confirmDeleteBinder = true }) {
                         Icon(Icons.Filled.Delete, contentDescription = "Delete binder", tint = TextDim)
                     }
                 },
@@ -153,7 +159,7 @@ fun CollectionDetailScreen(
                         )
                     }
                     if (viewMode == CardViewMode.GRID) {
-                        cardGrid(entries, key = { it.scryfallId }) { entry ->
+                        cardGrid(entries, columns = gridSize.columns(), key = { it.scryfallId }) { entry ->
                             CollectionCardTile(entry = entry, onClick = { zoomId = entry.scryfallId })
                         }
                     } else {
@@ -162,7 +168,7 @@ fun CollectionDetailScreen(
                                 entry = entry,
                                 onClick = { zoomId = entry.scryfallId },
                                 onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
-                                onRemove = { viewModel.remove(entry) }
+                                onRemove = { removeTarget = entry }
                             )
                         }
                     }
@@ -197,6 +203,28 @@ fun CollectionDetailScreen(
 
     artTarget?.let { (id, name) ->
         AlternateArtDialog(name, onSelect = { viewModel.changePrinting(id, it) }, onDismiss = { artTarget = null })
+    }
+
+    removeTarget?.let { entry ->
+        val qty = entry.quantity + entry.foilQuantity
+        ConfirmDeleteDialog(
+            title = "Remove card?",
+            message = "Remove ${entry.name} ($qty cop${if (qty == 1) "y" else "ies"}) from this binder?",
+            confirmLabel = "REMOVE",
+            onConfirm = { viewModel.remove(entry); removeTarget = null },
+            onDismiss = { removeTarget = null }
+        )
+    }
+
+    if (confirmDeleteBinder) {
+        val name = collection?.name ?: "this binder"
+        val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
+        ConfirmDeleteDialog(
+            title = "Delete binder?",
+            message = "\"$name\" and its $total card${if (total == 1) "" else "s"} will be permanently deleted. This can't be undone.",
+            onConfirm = { confirmDeleteBinder = false; viewModel.deleteCollection(onBack) },
+            onDismiss = { confirmDeleteBinder = false }
+        )
     }
 }
 

@@ -4,9 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.GridSize
+import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.SourceKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -30,8 +33,15 @@ data class AllCardEntry(
 class CollectionsViewModel(
     private val repository: CollectionRepository,
     deckRepository: DeckRepository,
+    private val settingsRepository: SettingsRepository,
     private val cardRepository: CardRepository = CardRepository()
 ) : ViewModel() {
+
+    /** List or grid for the All Cards tab, and the shared grid tile size, from Settings > Card Display. */
+    val viewMode: StateFlow<CardViewMode> = settingsRepository.allCardsViewMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
+    val gridSize: StateFlow<GridSize> = settingsRepository.gridSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GridSize.DEFAULT)
 
     val collections: StateFlow<List<Collection>> = repository.collectionsFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
@@ -90,10 +100,11 @@ class CollectionsViewModel(
 
     class Factory(
         private val repository: CollectionRepository,
-        private val deckRepository: DeckRepository
+        private val deckRepository: DeckRepository,
+        private val settingsRepository: SettingsRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            CollectionsViewModel(repository, deckRepository) as T
+            CollectionsViewModel(repository, deckRepository, settingsRepository) as T
     }
 }

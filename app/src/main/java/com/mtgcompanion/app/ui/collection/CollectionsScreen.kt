@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -56,10 +57,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.GridSize
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
+import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.columns
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -80,6 +86,8 @@ fun CollectionsScreen(
     val allCards by viewModel.allCards.collectAsState()
     val dashboard by viewModel.dashboard.collectAsState()
     val prices by viewModel.prices.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
+    val gridSize by viewModel.gridSize.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     // Page 0 = All Cards (left), page 1 = Binders (right). Swipe or tap the tabs to switch.
     val pagerState = rememberPagerState(pageCount = { 2 })
@@ -121,7 +129,13 @@ fun CollectionsScreen(
 
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 if (page == 0) {
-                    AllCardsTab(allCards = allCards, dashboard = dashboard, prices = prices)
+                    AllCardsTab(
+                        allCards = allCards,
+                        dashboard = dashboard,
+                        prices = prices,
+                        viewMode = viewMode,
+                        gridSize = gridSize
+                    )
                 } else {
                     CollectionsTab(
                         collections = collections,
@@ -150,6 +164,9 @@ private fun CollectionsTab(
     onCollectionClick: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
+    // Binder pending a delete-confirmation, if any.
+    var confirmDelete by remember { mutableStateOf<Collection?>(null) }
+
     if (collections.isEmpty()) {
         Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
             Text("No binders yet. Tap + to create one.", style = MaterialTheme.typography.bodySmall)
@@ -164,10 +181,21 @@ private fun CollectionsTab(
                 CollectionRow(
                     collection = collection,
                     onClick = { onCollectionClick(collection.id) },
-                    onDelete = { onDelete(collection.id) }
+                    onDelete = { confirmDelete = collection }
                 )
             }
         }
+    }
+
+    confirmDelete?.let { collection ->
+        val total = collection.entries.sumOf { it.quantity + it.foilQuantity }
+        ConfirmDeleteDialog(
+            title = "Delete binder?",
+            message = "\"${collection.name}\" and its $total card${if (total == 1) "" else "s"} will be " +
+                "permanently deleted. This can't be undone.",
+            onConfirm = { onDelete(collection.id); confirmDelete = null },
+            onDismiss = { confirmDelete = null }
+        )
     }
 }
 
@@ -175,7 +203,9 @@ private fun CollectionsTab(
 private fun AllCardsTab(
     allCards: List<AllCardEntry>,
     dashboard: CollectionDashboard?,
-    prices: Map<String, Double>
+    prices: Map<String, Double>,
+    viewMode: CardViewMode,
+    gridSize: GridSize
 ) {
     // Search filters the visible card list only; the dashboard still reflects the whole collection.
     var query by remember { mutableStateOf("") }
@@ -233,8 +263,14 @@ private fun AllCardsTab(
                     Text("No cards match \"$query\".", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 }
             } else {
-                items(filtered, key = { it.scryfallId }) { card ->
-                    AllCardRow(card = card, onClick = { zoomId = card.scryfallId })
+                if (viewMode == CardViewMode.GRID) {
+                    cardGrid(filtered, columns = gridSize.columns(), key = { it.scryfallId }) { card ->
+                        AllCardTile(card = card, onClick = { zoomId = card.scryfallId })
+                    }
+                } else {
+                    items(filtered, key = { it.scryfallId }) { card ->
+                        AllCardRow(card = card, onClick = { zoomId = card.scryfallId })
+                    }
                 }
             }
         }
@@ -276,6 +312,39 @@ private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit) {
                 color = TextMuted
             )
         }
+    }
+}
+
+@Composable
+private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Box {
+            AsyncImage(
+                model = card.imageUrl,
+                contentDescription = card.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+            )
+            Text(
+                "×${card.total}",
+                style = MaterialTheme.typography.labelMedium,
+                color = GoldLight,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+        Text(
+            card.name,
+            style = MaterialTheme.typography.labelMedium,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
 
