@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -28,11 +29,13 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -87,6 +90,8 @@ import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.ui.common.AlternateArtDialog
+import com.mtgcompanion.app.ui.common.CardActionSheet
+import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.cardGrid
@@ -107,7 +112,8 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 @Composable
 fun DeckDetailScreen(
     viewModel: DeckDetailViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onViewDetails: (String) -> Unit
 ) {
     val deck by viewModel.deck.collectAsState()
     val analysis by viewModel.analysis.collectAsState()
@@ -126,6 +132,12 @@ fun DeckDetailScreen(
     // The card whose move-destination picker is open.
     var moveTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     val moveTargets by viewModel.moveTargets.collectAsState()
+    // The card whose long-press quick-action menu is open.
+    var cardMenuTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
+    // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this deck).
+    var copyTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
+    // The card pending a remove-confirmation, if any.
+    var removeCardTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     var showImport by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
     // Progress while an import runs, then its summary ("Imported N; M couldn't be matched…").
@@ -205,7 +217,13 @@ fun DeckDetailScreen(
 
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 when (page) {
-                    0 -> CardsTab(currentDeck, analysis, onZoomCard = { zoom = "card" to it }, viewModel)
+                    0 -> CardsTab(
+                        currentDeck,
+                        analysis,
+                        onZoomCard = { zoom = "card" to it },
+                        onLongPressCard = { cardMenuTarget = it },
+                        viewModel
+                    )
                     1 -> StatsTab(analysis)
                     2 -> AnalysisTab(analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel)
                     else -> LegalityTab(analysis)
@@ -247,6 +265,38 @@ fun DeckDetailScreen(
                 targets = moveTargets,
                 onPick = { target -> viewModel.moveCard(entry, target); moveTarget = null },
                 onDismiss = { moveTarget = null }
+            )
+        }
+
+        cardMenuTarget?.let { entry ->
+            CardActionSheet(
+                cardName = entry.name,
+                actions = listOf(
+                    CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { copyTarget = entry },
+                    CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { moveTarget = entry },
+                    CardMenuAction("Remove from deck", Icons.Filled.Close, destructive = true) { removeCardTarget = entry },
+                    CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
+                ),
+                onDismiss = { cardMenuTarget = null }
+            )
+        }
+
+        copyTarget?.let { entry ->
+            MoveTargetDialog(
+                cardName = entry.name,
+                targets = moveTargets,
+                onPick = { target -> viewModel.copyCard(entry, target); copyTarget = null },
+                onDismiss = { copyTarget = null }
+            )
+        }
+
+        removeCardTarget?.let { entry ->
+            ConfirmDeleteDialog(
+                title = "Remove card?",
+                message = "Remove ${entry.name} (${entry.quantity} cop${if (entry.quantity == 1) "y" else "ies"}) from this deck?",
+                confirmLabel = "REMOVE",
+                onConfirm = { viewModel.removeCard(entry.scryfallId); removeCardTarget = null },
+                onDismiss = { removeCardTarget = null }
             )
         }
 
@@ -596,6 +646,7 @@ private fun CardsTab(
     deck: Deck,
     analysis: DeckAnalysis,
     onZoomCard: (String) -> Unit,
+    onLongPressCard: (DeckCardEntry) -> Unit,
     viewModel: DeckDetailViewModel
 ) {
     var query by remember { mutableStateOf("") }
@@ -683,7 +734,11 @@ private fun CardsTab(
                 }
                 if (viewMode == CardViewMode.GRID) {
                     cardGrid(group.cards, columns = gridColumns, key = { it.scryfallId }) { card ->
-                        DeckCardTile(card = card, onClick = { onZoomCard(card.scryfallId) })
+                        DeckCardTile(
+                            card = card,
+                            onClick = { onZoomCard(card.scryfallId) },
+                            onLongClick = { onLongPressCard(card) }
+                        )
                     }
                 } else {
                     items(group.cards, key = { it.scryfallId }) { card ->
@@ -691,6 +746,7 @@ private fun CardsTab(
                             card = card,
                             isCommander = deck.commander?.scryfallId == card.scryfallId,
                             onClick = { onZoomCard(card.scryfallId) },
+                            onLongClick = { onLongPressCard(card) },
                             onToggleCommander = {
                                 viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
                             },
@@ -1007,11 +1063,13 @@ private fun CommanderSection(deck: Deck, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DeckCardRow(
     card: DeckCardEntry,
     isCommander: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onToggleCommander: () -> Unit,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit
@@ -1024,7 +1082,7 @@ private fun DeckCardRow(
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(12.dp)
     ) {
         AsyncImage(
@@ -1064,9 +1122,10 @@ private fun DeckCardRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DeckCardTile(card: DeckCardEntry, onClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+private fun DeckCardTile(card: DeckCardEntry, onClick: () -> Unit, onLongClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Box {
             AsyncImage(
                 model = card.imageUrl,

@@ -1,9 +1,11 @@
 package com.mtgcompanion.app.ui.search
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
@@ -64,6 +68,9 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.ui.common.CardActionSheet
+import com.mtgcompanion.app.ui.common.CardMenuAction
+import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -86,7 +93,12 @@ fun SearchScreen(
     val filters by viewModel.filters.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
+    val addTargets by viewModel.addTargets.collectAsState()
     var showFilters by remember { mutableStateOf(false) }
+    // The card whose long-press quick-action menu is open.
+    var menuTarget by remember { mutableStateOf<ScryfallCard?>(null) }
+    // The card whose "Add to…" binder/deck picker is open.
+    var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
 
     Scaffold(
         containerColor = Bg,
@@ -195,11 +207,19 @@ fun SearchScreen(
                             }
                         } else if (viewMode == CardViewMode.GRID) {
                             cardGrid(state.cards, columns = gridColumns, key = { it.id }) { card ->
-                                CardResultTile(card = card, onClick = { onCardClick(card) })
+                                CardResultTile(
+                                    card = card,
+                                    onClick = { onCardClick(card) },
+                                    onLongClick = { menuTarget = card }
+                                )
                             }
                         } else {
                             items(state.cards, key = { it.id }) { card ->
-                                CardResultRow(card = card, onClick = { onCardClick(card) })
+                                CardResultRow(
+                                    card = card,
+                                    onClick = { onCardClick(card) },
+                                    onLongClick = { menuTarget = card }
+                                )
                             }
                         }
                     }
@@ -220,6 +240,26 @@ fun SearchScreen(
                 onClear = { viewModel.onFiltersChange(SearchFilters()) }
             )
         }
+    }
+
+    menuTarget?.let { card ->
+        CardActionSheet(
+            cardName = card.name,
+            actions = listOf(
+                CardMenuAction("Add to binder/deck", Icons.Filled.Add) { addTarget = card },
+                CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onCardClick(card) }
+            ),
+            onDismiss = { menuTarget = null }
+        )
+    }
+
+    addTarget?.let { card ->
+        MoveTargetDialog(
+            cardName = card.name,
+            targets = addTargets,
+            onPick = { target -> viewModel.addToTarget(card, target); addTarget = null },
+            onDismiss = { addTarget = null }
+        )
     }
 }
 
@@ -364,8 +404,9 @@ private fun GoldDivider() {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CardResultRow(card: ScryfallCard, onClick: () -> Unit) {
+private fun CardResultRow(card: ScryfallCard, onClick: () -> Unit, onLongClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -374,7 +415,7 @@ private fun CardResultRow(card: ScryfallCard, onClick: () -> Unit) {
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(12.dp)
     ) {
         AsyncImage(
@@ -396,9 +437,10 @@ private fun CardResultRow(card: ScryfallCard, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CardResultTile(card: ScryfallCard, onClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+private fun CardResultTile(card: ScryfallCard, onClick: () -> Unit, onLongClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         AsyncImage(
             model = card.displayImageUrl,
             contentDescription = card.name,

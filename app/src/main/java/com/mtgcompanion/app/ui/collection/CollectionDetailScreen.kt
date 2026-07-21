@@ -1,9 +1,11 @@
 package com.mtgcompanion.app.ui.collection
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,10 +20,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,6 +54,8 @@ import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.AlternateArtDialog
+import com.mtgcompanion.app.ui.common.CardActionSheet
+import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
@@ -69,7 +75,8 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 @Composable
 fun CollectionDetailScreen(
     viewModel: CollectionDetailViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onViewDetails: (String) -> Unit
 ) {
     val collection by viewModel.collection.collectAsState()
     val entries by viewModel.entries.collectAsState()
@@ -88,6 +95,10 @@ fun CollectionDetailScreen(
     // The card pending a remove-confirmation, if any.
     var removeTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     var confirmDeleteBinder by remember { mutableStateOf(false) }
+    // The card whose long-press quick-action menu is open.
+    var menuTarget by remember { mutableStateOf<CollectionEntry?>(null) }
+    // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this binder).
+    var copyTarget by remember { mutableStateOf<CollectionEntry?>(null) }
 
     Scaffold(
         containerColor = Bg,
@@ -159,13 +170,18 @@ fun CollectionDetailScreen(
                     }
                     if (viewMode == CardViewMode.GRID) {
                         cardGrid(entries, columns = gridColumns, key = { it.scryfallId }) { entry ->
-                            CollectionCardTile(entry = entry, onClick = { zoomId = entry.scryfallId })
+                            CollectionCardTile(
+                                entry = entry,
+                                onClick = { zoomId = entry.scryfallId },
+                                onLongClick = { menuTarget = entry }
+                            )
                         }
                     } else {
                         items(entries, key = { it.scryfallId }) { entry ->
                             CollectionCardRow(
                                 entry = entry,
                                 onClick = { zoomId = entry.scryfallId },
+                                onLongClick = { menuTarget = entry },
                                 onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
                                 onRemove = { removeTarget = entry }
                             )
@@ -225,12 +241,36 @@ fun CollectionDetailScreen(
             onDismiss = { confirmDeleteBinder = false }
         )
     }
+
+    menuTarget?.let { entry ->
+        CardActionSheet(
+            cardName = entry.name,
+            actions = listOf(
+                CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { copyTarget = entry },
+                CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { moveTarget = entry },
+                CardMenuAction("Remove from binder", Icons.Filled.Close, destructive = true) { removeTarget = entry },
+                CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
+            ),
+            onDismiss = { menuTarget = null }
+        )
+    }
+
+    copyTarget?.let { entry ->
+        MoveTargetDialog(
+            cardName = entry.name,
+            targets = moveTargets,
+            onPick = { target -> viewModel.copyEntry(entry, target); copyTarget = null },
+            onDismiss = { copyTarget = null }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CollectionCardRow(
     entry: CollectionEntry,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onQuantityChange: (Int, Int) -> Unit,
     onRemove: () -> Unit
 ) {
@@ -242,7 +282,7 @@ private fun CollectionCardRow(
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(12.dp)
     ) {
         AsyncImage(
@@ -274,10 +314,11 @@ private fun CollectionCardRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit) {
+private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, onLongClick: () -> Unit) {
     val totalQty = entry.quantity + entry.foilQuantity
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Column(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Box {
             AsyncImage(
                 model = entry.imageUrl,

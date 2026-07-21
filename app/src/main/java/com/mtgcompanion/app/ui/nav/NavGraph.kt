@@ -160,7 +160,7 @@ fun MtgNavGraph(
 
             composable(Routes.SEARCH) {
                 val viewModel: SearchViewModel = viewModel(
-                    factory = SearchViewModel.Factory(offlineCardRepository, settingsRepository)
+                    factory = SearchViewModel.Factory(offlineCardRepository, settingsRepository, collectionRepository, deckRepository)
                 )
                 SearchScreen(
                     viewModel = viewModel,
@@ -188,7 +188,8 @@ fun MtgNavGraph(
                 )
                 CollectionDetailScreen(
                     viewModel = viewModel,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
                 )
             }
 
@@ -212,7 +213,8 @@ fun MtgNavGraph(
                 )
                 DeckDetailScreen(
                     viewModel = viewModel,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
                 )
             }
 

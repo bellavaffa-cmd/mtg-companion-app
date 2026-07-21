@@ -208,14 +208,23 @@ class DeckDetailViewModel(
     /** Move a card (all its copies) out of this deck into [target] deck or binder. */
     fun moveCard(entry: DeckCardEntry, target: MoveTarget) {
         viewModelScope.launch {
-            when (target.kind) {
-                SourceKind.DECK -> repository.addEntry(target.id, entry)
-                SourceKind.BINDER -> collectionRepository.addEntry(
-                    target.id,
-                    CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity, foilQuantity = 0)
-                )
-            }
+            addCopyTo(entry, target)
             repository.removeCardFromDeck(deckId, entry.scryfallId)
+        }
+    }
+
+    /** Add a copy of this card into [target], leaving it in this deck too (unlike [moveCard]). */
+    fun copyCard(entry: DeckCardEntry, target: MoveTarget) {
+        viewModelScope.launch { addCopyTo(entry, target) }
+    }
+
+    private suspend fun addCopyTo(entry: DeckCardEntry, target: MoveTarget) {
+        when (target.kind) {
+            SourceKind.DECK -> repository.addEntry(target.id, entry)
+            SourceKind.BINDER -> collectionRepository.addEntry(
+                target.id,
+                CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity, foilQuantity = 0)
+            )
         }
     }
 

@@ -5,11 +5,15 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.CardViewMode
+import com.mtgcompanion.app.data.CollectionRepository
+import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.ui.common.MoveTarget
+import com.mtgcompanion.app.ui.common.SourceKind
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -101,6 +105,8 @@ fun buildScryfallQuery(text: String, filters: SearchFilters): String {
 class SearchViewModel(
     private val offlineRepository: OfflineCardRepository,
     private val settingsRepository: SettingsRepository,
+    private val collectionRepository: CollectionRepository,
+    private val deckRepository: DeckRepository,
     private val repository: CardRepository = CardRepository()
 ) : ViewModel() {
 
@@ -111,6 +117,14 @@ class SearchViewModel(
     /** Grid column count, when [viewMode] is Grid. */
     val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)
+
+    /** Every binder and deck, for the long-press "Add to…" picker. */
+    val addTargets: StateFlow<List<MoveTarget>> = combine(
+        deckRepository.decksFlow, collectionRepository.collectionsFlow
+    ) { decks, collections ->
+        decks.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
+            collections.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -170,12 +184,24 @@ class SearchViewModel(
         }
     }
 
+    /** Add [card] straight into [target], for the long-press "Add to…" action. */
+    fun addToTarget(card: ScryfallCard, target: MoveTarget) {
+        viewModelScope.launch {
+            when (target.kind) {
+                SourceKind.DECK -> deckRepository.addCardToDeck(target.id, card)
+                SourceKind.BINDER -> collectionRepository.addCard(target.id, card)
+            }
+        }
+    }
+
     class Factory(
         private val offlineRepository: OfflineCardRepository,
-        private val settingsRepository: SettingsRepository
+        private val settingsRepository: SettingsRepository,
+        private val collectionRepository: CollectionRepository,
+        private val deckRepository: DeckRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SearchViewModel(offlineRepository, settingsRepository) as T
+            SearchViewModel(offlineRepository, settingsRepository, collectionRepository, deckRepository) as T
     }
 }
