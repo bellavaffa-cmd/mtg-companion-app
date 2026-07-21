@@ -8,6 +8,9 @@ data class ScryfallSearchResponse(
     val data: List<ScryfallCard> = emptyList()
 )
 
+/** GET /cards/autocomplete response: a plain list of matching card names. */
+data class ScryfallCatalog(val data: List<String> = emptyList())
+
 /** POST /cards/collection body: look up many cards at once (max 75 identifiers per request). */
 data class ScryfallCollectionRequest(val identifiers: List<ScryfallIdentifier>)
 

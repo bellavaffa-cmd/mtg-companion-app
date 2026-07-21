@@ -11,16 +11,29 @@ import retrofit2.HttpException
 class CardRepository {
     private val api = NetworkModule.scryfallApi
 
-    suspend fun search(query: String): List<ScryfallCard> {
+    suspend fun search(query: String, order: String? = null, dir: String? = null): List<ScryfallCard> {
         if (query.isBlank()) return emptyList()
         return try {
-            api.searchCards(query).data
+            api.searchCards(query, order = order, dir = dir).data
         } catch (e: HttpException) {
             // Scryfall returns 404 when a (possibly partial, as-you-type) query matches
             // no cards — treat that as an empty result rather than an error.
             if (e.code() == 404) emptyList() else throw e
         }
     }
+
+    /** Name suggestions for as-you-type search. Empty on a blank query or any failure. */
+    suspend fun autocomplete(query: String): List<String> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            api.autocomplete(query).data
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** A random card, for the Search tab's discovery button. */
+    suspend fun getRandom(): ScryfallCard = api.getRandomCard()
 
     /** Every printing of a card (unique arts/sets), newest first, for alternate-art selection. */
     suspend fun getPrintings(cardName: String): List<ScryfallCard> {

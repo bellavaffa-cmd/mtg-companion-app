@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -91,6 +93,8 @@ fun SearchScreen(
     val query by viewModel.query.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val filters by viewModel.filters.collectAsState()
+    val sortBy by viewModel.sortBy.collectAsState()
+    val suggestions by viewModel.suggestions.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val addTargets by viewModel.addTargets.collectAsState()
@@ -138,6 +142,9 @@ fun SearchScreen(
                     ),
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = { viewModel.randomCard(onCardClick) }) {
+                    Icon(Icons.Filled.Shuffle, contentDescription = "Random card", tint = TextMuted)
+                }
                 IconButton(onClick = { showFilters = !showFilters }) {
                     Box(contentAlignment = Alignment.TopEnd) {
                         Icon(Icons.Filled.Tune, contentDescription = "Filters", tint = if (filters.isActive || showFilters) Gold else TextMuted)
@@ -148,6 +155,10 @@ fun SearchScreen(
                         }
                     }
                 }
+            }
+
+            if (suggestions.isNotEmpty()) {
+                SuggestionsDropdown(suggestions, onPick = viewModel::pickSuggestion)
             }
 
             LazyColumn(
@@ -237,7 +248,9 @@ fun SearchScreen(
             InlineFilters(
                 filters = filters,
                 onChange = viewModel::onFiltersChange,
-                onClear = { viewModel.onFiltersChange(SearchFilters()) }
+                onClear = { viewModel.onFiltersChange(SearchFilters()) },
+                sortBy = sortBy,
+                onSortChange = viewModel::onSortChange
             )
         }
     }
@@ -263,12 +276,41 @@ fun SearchScreen(
     }
 }
 
+/** Name suggestions below the search bar, from Scryfall's autocomplete endpoint. */
+@Composable
+private fun SuggestionsDropdown(suggestions: List<String>, onPick: (String) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(Surface)
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+    ) {
+        suggestions.forEach { name ->
+            Text(
+                name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(name) }
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+            )
+        }
+    }
+}
+
 /** Filters shown in an overlay sheet over the search bar; each edit applies live (search auto-runs). */
 @Composable
 private fun InlineFilters(
     filters: SearchFilters,
     onChange: (SearchFilters) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    sortBy: SortOption,
+    onSortChange: (SortOption) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -281,6 +323,23 @@ private fun InlineFilters(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("FILTERS", style = MaterialTheme.typography.labelLarge, color = GoldLight, modifier = Modifier.weight(1f))
             TextButton(onClick = onClear) { Text("Clear all", color = TextMuted) }
+        }
+
+        FilterLabel("Sort by")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            SortOption.entries.forEach { option ->
+                FilterChip(
+                    selected = sortBy == option,
+                    onClick = { onSortChange(option) },
+                    label = { Text(option.label, style = MaterialTheme.typography.labelMedium) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Gold,
+                        selectedLabelColor = Bg,
+                        labelColor = TextMuted,
+                        containerColor = Bg
+                    )
+                )
+            }
         }
 
         FilterField("Type line", filters.typeLine, "e.g. legendary creature") { onChange(filters.copy(typeLine = it)) }
@@ -434,6 +493,9 @@ private fun CardResultRow(card: ScryfallCard, onClick: () -> Unit, onLongClick: 
                 overflow = TextOverflow.Ellipsis
             )
         }
+        card.prices?.usd?.let { usd ->
+            Text("$$usd", style = MaterialTheme.typography.bodyMedium, color = GoldLight)
+        }
     }
 }
 
@@ -441,12 +503,27 @@ private fun CardResultRow(card: ScryfallCard, onClick: () -> Unit, onLongClick: 
 @Composable
 private fun CardResultTile(card: ScryfallCard, onClick: () -> Unit, onLongClick: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
-        AsyncImage(
-            model = card.displayImageUrl,
-            contentDescription = card.name,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
-        )
+        Box {
+            AsyncImage(
+                model = card.displayImageUrl,
+                contentDescription = card.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+            )
+            card.prices?.usd?.let { usd ->
+                Text(
+                    "$$usd",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = GoldLight,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
         Text(
             card.name,
             style = MaterialTheme.typography.labelMedium,

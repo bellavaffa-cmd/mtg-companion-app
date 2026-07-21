@@ -36,6 +36,15 @@ sealed interface SearchUiState {
     data object OfflineNoDatabase : SearchUiState
 }
 
+/** How results are ordered. [order]/[dir] map straight to Scryfall's `order`/`dir` query params. */
+enum class SortOption(val label: String, val order: String?, val dir: String?) {
+    RELEVANCE("Relevance", null, null),
+    NAME("Name", "name", "asc"),
+    PRICE_LOW("Price: Low to High", "usd", "asc"),
+    PRICE_HIGH("Price: High to Low", "usd", "desc"),
+    NEWEST("Newest", "released", "desc")
+}
+
 /** Structured search filters, compiled into a Scryfall query alongside the free-text field. */
 data class SearchFilters(
     val typeLine: String = "",
@@ -132,17 +141,31 @@ class SearchViewModel(
     private val _filters = MutableStateFlow(SearchFilters())
     val filters: StateFlow<SearchFilters> = _filters.asStateFlow()
 
+    private val _sortBy = MutableStateFlow(SortOption.RELEVANCE)
+    val sortBy: StateFlow<SortOption> = _sortBy.asStateFlow()
+
     private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Idle)
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
+    /** As-you-type name suggestions, shown above results until a real search replaces them. */
+    private val _suggestions = MutableStateFlow<List<String>>(emptyList())
+    val suggestions: StateFlow<List<String>> = _suggestions.asStateFlow()
+
     init {
-        // Search as the user types or changes filters: debounce so we don't fire on every keystroke,
-        // and collectLatest cancels an in-flight request when the query changes again.
+        // Search as the user types or changes filters/sort: debounce so we don't fire on every
+        // keystroke, and collectLatest cancels an in-flight request when the query changes again.
         viewModelScope.launch {
-            combine(_query, _filters) { q, f -> buildScryfallQuery(q.trim(), f) }
+            combine(_query, _filters, _sortBy) { q, f, sort -> Triple(q, f, sort) }
                 .debounce(300)
                 .distinctUntilChanged()
-                .collectLatest { q -> runSearch(q) }
+                .collectLatest { (q, f, sort) -> runSearch(buildScryfallQuery(q.trim(), f), sort) }
+        }
+        // A separate, shorter-debounced pipeline for the autocomplete dropdown — it's a lightweight
+        // endpoint meant for exactly this, so it can react faster than the real search.
+        viewModelScope.launch {
+            _query.debounce(150).distinctUntilChanged().collectLatest { q ->
+                _suggestions.value = if (q.isBlank()) emptyList() else repository.autocomplete(q.trim())
+            }
         }
     }
 
@@ -154,19 +177,43 @@ class SearchViewModel(
         _filters.value = filters
     }
 
-    /** Immediate search (e.g. from the search icon / keyboard action), bypassing the debounce. */
-    fun search() {
-        viewModelScope.launch { runSearch(buildScryfallQuery(_query.value.trim(), _filters.value)) }
+    fun onSortChange(sort: SortOption) {
+        _sortBy.value = sort
     }
 
-    private suspend fun runSearch(query: String) {
+    /** Fill the query with [name] and search immediately — the autocomplete dropdown's tap action. */
+    fun pickSuggestion(name: String) {
+        _suggestions.value = emptyList()
+        _query.value = name
+        search()
+    }
+
+    /** Immediate search (e.g. from the search icon / keyboard action), bypassing the debounce. */
+    fun search() {
+        viewModelScope.launch { runSearch(buildScryfallQuery(_query.value.trim(), _filters.value), _sortBy.value) }
+    }
+
+    /** Fetch one random card, for the Search tab's discovery button. */
+    fun randomCard(onResult: (ScryfallCard) -> Unit) {
+        viewModelScope.launch {
+            val card = try {
+                repository.getRandom()
+            } catch (e: Exception) {
+                null
+            }
+            card?.let { onResult(it) }
+        }
+    }
+
+    private suspend fun runSearch(query: String, sort: SortOption) {
+        _suggestions.value = emptyList()
         if (query.isBlank()) {
             _uiState.value = SearchUiState.Idle
             return
         }
         _uiState.value = SearchUiState.Loading
         _uiState.value = try {
-            SearchUiState.Success(repository.search(query))
+            SearchUiState.Success(repository.search(query, sort.order, sort.dir))
         } catch (e: Exception) {
             if (isOffline(e)) {
                 // Fall back to the locally downloaded card database, if there is one.

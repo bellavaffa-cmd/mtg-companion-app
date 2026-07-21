@@ -12,8 +12,17 @@ interface ScryfallApi {
         @Query("q") query: String,
         @Query("page") page: Int = 1,
         @Query("unique") unique: String? = null,
-        @Query("order") order: String? = null
+        @Query("order") order: String? = null,
+        @Query("dir") dir: String? = null
     ): ScryfallSearchResponse
+
+    /** Card-name suggestions for as-you-type search, e.g. "sol r" -> ["Sol Ring"]. */
+    @GET("cards/autocomplete")
+    suspend fun autocomplete(@Query("q") query: String): ScryfallCatalog
+
+    /** A single random card, optionally constrained by a search query. */
+    @GET("cards/random")
+    suspend fun getRandomCard(@Query("q") query: String? = null): ScryfallCard
 
     @GET("cards/named")
     suspend fun getCardByExactName(@Query("exact") name: String): ScryfallCard
