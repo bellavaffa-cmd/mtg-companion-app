@@ -928,13 +928,21 @@ private fun ManaCurveChart(curve: List<Pair<String, Int>>) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("$count", style = MaterialTheme.typography.labelMedium, color = GoldLight)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.7f)
-                        .height((6 + 92 * count / max).dp)
-                        .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                        .background(if (count > 0) Gold else BorderColor)
-                )
+                // The bar lives in whatever space is left after both text labels, so its height is
+                // always a fraction of that leftover — never a fixed dp value. A hardcoded bar
+                // height could add up with the labels to more than the Row's fixed height, pushing
+                // the tallest bars' bucket labels out of the chart entirely (out of line with the
+                // rest); sizing by fraction of the remaining space makes overflow impossible and
+                // keeps every bucket label bottom-aligned at the same height.
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.7f)
+                            .fillMaxHeight(0.06f + 0.94f * count / max)
+                            .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                            .background(if (count > 0) Gold else BorderColor)
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(bucket, style = MaterialTheme.typography.labelMedium, color = TextMuted)
             }
