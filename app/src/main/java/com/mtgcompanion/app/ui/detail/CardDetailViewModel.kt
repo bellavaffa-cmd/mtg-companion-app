@@ -39,6 +39,8 @@ data class CardDetailUiState(
     val edhrecLoading: Boolean = false,
     val cardEdhrecLists: List<EdhrecCardList>? = null,
     val cardEdhrecLoading: Boolean = false,
+    /** When the card can be a commander: show its commander-page recs (true) or its card-page recs (false). */
+    val viewAsCommander: Boolean = true,
     /** Suggested cards resolved on Scryfall, keyed by lowercase name (and front face), for prices. */
     val suggestionCards: Map<String, ScryfallCard> = emptyMap(),
     val combos: List<Variant> = emptyList(),
@@ -147,6 +149,7 @@ class CardDetailViewModel(
                 null
             }
             _uiState.value = _uiState.value.copy(edhrecLoading = false, edhrecLists = lists)
+            lists?.let { loadSuggestionCards(it) }
         }
     }
 
@@ -161,6 +164,11 @@ class CardDetailViewModel(
             _uiState.value = _uiState.value.copy(cardEdhrecLoading = false, cardEdhrecLists = lists)
             lists?.let { loadSuggestionCards(it) }
         }
+    }
+
+    /** Switch between "as commander" and "as a regular card" EDHREC recommendations. */
+    fun setViewAsCommander(asCommander: Boolean) {
+        _uiState.value = _uiState.value.copy(viewAsCommander = asCommander)
     }
 
     /**
@@ -190,7 +198,9 @@ class CardDetailViewModel(
                     put(full.substringBefore(" // "), card)
                 }
             }
-            _uiState.value = _uiState.value.copy(suggestionCards = byName)
+            // Merge rather than replace: the commander-page and card-page lists load independently
+            // and both need their resolved cards available regardless of which view is active.
+            _uiState.value = _uiState.value.copy(suggestionCards = _uiState.value.suggestionCards + byName)
         }
     }
 

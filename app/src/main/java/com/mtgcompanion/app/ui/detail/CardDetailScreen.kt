@@ -35,6 +35,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -139,7 +141,12 @@ fun CardDetailScreen(
 
             state.card != null -> {
                 val card = state.card!!
-                val sections = state.cardEdhrecLists?.filter { it.cardviews.isNotEmpty() }.orEmpty()
+                // A legendary creature has two distinct EDHREC datasets: recs for building around it
+                // as a commander, vs. recs for it as an inclusion in someone else's deck.
+                val showingCommanderView = card.canBeCommander && state.viewAsCommander
+                val activeLists = if (showingCommanderView) state.edhrecLists else state.cardEdhrecLists
+                val activeLoading = if (showingCommanderView) state.edhrecLoading else state.cardEdhrecLoading
+                val sections = activeLists?.filter { it.cardviews.isNotEmpty() }.orEmpty()
                 // Every tile on screen, flattened, so the overlay can swipe across sections.
                 val zoomable = sections.flatMap { section ->
                     section.cardviews.take(TILES_PER_SECTION).map { view -> section.tileKey(view) to view }
@@ -174,7 +181,16 @@ fun CardDetailScreen(
                         card.purchaseUris?.tcgplayer?.let { openUrl(context, it) }
                     }) }
 
-                    if (state.cardEdhrecLoading) {
+                    if (card.canBeCommander) {
+                        fullSpanItem {
+                            CommanderViewToggle(
+                                asCommander = state.viewAsCommander,
+                                onChange = viewModel::setViewAsCommander
+                            )
+                        }
+                    }
+
+                    if (activeLoading) {
                         fullSpanItem {
                             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(color = Gold)
@@ -532,6 +548,28 @@ private fun CollectionAndDeckActions(
         }
         (state.addedToCollectionMessage ?: state.addedToDeckMessage)?.let {
             Text(it, color = Gold, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+/** Legendary creatures can be viewed as a commander (build-around recs) or as a regular card (inclusion recs). */
+@Composable
+private fun CommanderViewToggle(asCommander: Boolean, onChange: (Boolean) -> Unit) {
+    Column {
+        SectionHeader("EDHREC Recommendations")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = asCommander,
+                onClick = { onChange(true) },
+                label = { Text("As Commander") },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Gold, selectedLabelColor = Bg)
+            )
+            FilterChip(
+                selected = !asCommander,
+                onClick = { onChange(false) },
+                label = { Text("As a Card") },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Gold, selectedLabelColor = Bg)
+            )
         }
     }
 }
