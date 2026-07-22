@@ -3,12 +3,15 @@ package com.mtgcompanion.app.ui.settings
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.ViewList
@@ -44,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -102,22 +108,57 @@ fun SettingsScreen(
                 .background(Bg)
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(20.dp)
         ) {
-            DriveSyncSection(syncManager)
+            SettingsCategory("Google Drive Sync") { DriveSyncSection(syncManager) }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
-            CardDisplaySection(settingsRepository)
+            SettingsCategory("Card Display") { CardDisplaySection(settingsRepository) }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
-            OfflineSearchSection(offlineCardRepository)
+            SettingsCategory("Offline Search") { OfflineSearchSection(offlineCardRepository) }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
-            AppUpdatesSection(updateManager)
+            SettingsCategory("App Updates") { AppUpdatesSection(updateManager) }
+        }
+    }
+}
+
+/** One collapsible settings category: a tap-to-expand header with a chevron, collapsed by default. */
+@Composable
+private fun SettingsCategory(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp)
+        ) {
+            Text(
+                title.uppercase(),
+                style = MaterialTheme.typography.titleMedium,
+                color = GoldLight,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = GoldDim
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.padding(top = 10.dp)
+            ) { content() }
         }
     }
 }
@@ -132,7 +173,6 @@ private fun CardDisplaySection(settingsRepository: SettingsRepository) {
     val allCardsMode by settingsRepository.allCardsViewMode.collectAsState(initial = CardViewMode.DEFAULT)
     val recMode by settingsRepository.recViewMode.collectAsState(initial = CardViewMode.DEFAULT)
 
-    Text("Card Display".uppercase(), style = MaterialTheme.typography.titleMedium)
     Text(
         "Choose list (detailed rows) or grid (compact card art) for each tab.",
         style = MaterialTheme.typography.bodySmall
@@ -267,7 +307,6 @@ private fun GridColumnsPreview(columns: Int, modifier: Modifier = Modifier) {
 private fun OfflineSearchSection(offlineCardRepository: OfflineCardRepository) {
     val status by offlineCardRepository.status.collectAsState()
 
-    Text("Offline Search".uppercase(), style = MaterialTheme.typography.titleMedium)
     Text(
         "Download the full card database (~40 MB) so you can search any card — not just the ones " +
             "you've viewed — without an internet connection.",
@@ -323,7 +362,6 @@ private fun DownloadButtonContent(downloading: Boolean, label: String, spinnerCo
 private fun AppUpdatesSection(updateManager: UpdateManager) {
     val state by updateManager.state.collectAsState()
 
-    Text("App Updates".uppercase(), style = MaterialTheme.typography.titleMedium)
     Text(
         "You're on version ${BuildConfig.VERSION_NAME}. Updates are delivered straight from the " +
             "project's GitHub releases.",
@@ -380,7 +418,6 @@ private fun DriveSyncSection(syncManager: DriveSyncManager) {
         syncManager.reportSignIn(result0.getOrNull(), result0.exceptionOrNull())
     }
 
-    Text("Google Drive Sync".uppercase(), style = MaterialTheme.typography.titleMedium)
     Text(
         "Back up your decks and collection to your Google Drive and keep them in sync across " +
             "devices. Once connected, changes sync automatically.",
