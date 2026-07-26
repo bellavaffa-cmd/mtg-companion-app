@@ -61,6 +61,7 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardActionSheet
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
@@ -97,6 +98,8 @@ fun SearchScreen(
     var menuTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // The card whose "Add to…" binder/deck picker is open.
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
+    // The card whose alternate-art picker is open, from the zoom overlay's "Change art" button.
+    var artTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // Index (within the current results) of the card enlarged by a tap, if any.
     var zoomIndex by remember { mutableStateOf<Int?>(null) }
     val resultCards = (uiState as? SearchUiState.Success)?.cards.orEmpty()
@@ -309,6 +312,16 @@ fun SearchScreen(
         )
     }
 
+    artTarget?.let { card ->
+        AlternateArtDialog(
+            cardName = card.name,
+            // Picking a printing here goes straight into the normal add flow, so choosing art and
+            // saving it to a binder/deck is one motion instead of two separate pickers.
+            onSelect = { chosen -> artTarget = null; addTarget = chosen },
+            onDismiss = { artTarget = null }
+        )
+    }
+
     zoomIndex?.let { index ->
         CardZoomDialog(
             cards = resultCards.map { card ->
@@ -316,6 +329,7 @@ fun SearchScreen(
                     imageUrl = card.displayImageUrl,
                     priceUsd = card.prices?.usd?.toDoubleOrNull(),
                     onAdd = { zoomIndex = null; addTarget = card },
+                    onChangeArt = { zoomIndex = null; artTarget = card },
                     onViewDetails = { zoomIndex = null; onCardClick(card) }
                 )
             },
