@@ -196,7 +196,8 @@ fun MtgNavGraph(
                 )
                 CollectionsScreen(
                     viewModel = viewModel,
-                    onCollectionClick = { id -> navController.navigate(Routes.collectionDetail(id)) }
+                    onCollectionClick = { id -> navController.navigate(Routes.collectionDetail(id)) },
+                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
                 )
             }
 
@@ -264,7 +265,8 @@ fun MtgNavGraph(
                 )
                 CardDetailScreen(
                     viewModel = viewModel,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
                 )
             }
 

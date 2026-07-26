@@ -78,7 +78,8 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 @Composable
 fun CollectionsScreen(
     viewModel: CollectionsViewModel,
-    onCollectionClick: (String) -> Unit
+    onCollectionClick: (String) -> Unit,
+    onViewDetails: (String) -> Unit
 ) {
     val collections by viewModel.collections.collectAsState()
     val allCards by viewModel.allCards.collectAsState()
@@ -132,7 +133,8 @@ fun CollectionsScreen(
                         dashboard = dashboard,
                         prices = prices,
                         viewMode = viewMode,
-                        gridColumns = gridColumns
+                        gridColumns = gridColumns,
+                        onViewDetails = onViewDetails
                     )
                 } else {
                     CollectionsTab(
@@ -203,7 +205,8 @@ private fun AllCardsTab(
     dashboard: CollectionDashboard?,
     prices: Map<String, Double>,
     viewMode: CardViewMode,
-    gridColumns: Int
+    gridColumns: Int,
+    onViewDetails: (String) -> Unit
 ) {
     // Search filters the visible card list only; the dashboard still reflects the whole collection.
     var query by remember { mutableStateOf("") }
@@ -277,7 +280,13 @@ private fun AllCardsTab(
     zoomId?.let { id ->
         // Owned cards across all binders/decks: show value, total, and which binders/decks hold it.
         val zoomCards = filtered.map { c ->
-            ZoomCard(imageUrl = c.imageUrl, priceUsd = prices[c.scryfallId], quantity = c.total, sources = c.sources)
+            ZoomCard(
+                imageUrl = c.imageUrl,
+                priceUsd = prices[c.scryfallId],
+                quantity = c.total,
+                sources = c.sources,
+                onViewDetails = { zoomId = null; onViewDetails(c.name) }
+            )
         }
         CardZoomDialog(zoomCards, filtered.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
     }

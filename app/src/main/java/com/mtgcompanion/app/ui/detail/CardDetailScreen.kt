@@ -90,7 +90,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun CardDetailScreen(
     viewModel: CardDetailViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onViewDetails: (String) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
@@ -223,7 +224,8 @@ fun CardDetailScreen(
                                 // Only offer to add once we know which Scryfall printing it is.
                                 onAdd = resolved?.let { card ->
                                     { zoomKey = null; chooseDestinationFor = card }
-                                }
+                                },
+                                onViewDetails = { zoomKey = null; onViewDetails(view.name) }
                             )
                         },
                         initialIndex = zoomable.indexOfFirst { (k, _) -> k == key }.coerceAtLeast(0)
