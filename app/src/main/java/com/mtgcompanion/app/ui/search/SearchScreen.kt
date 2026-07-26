@@ -26,10 +26,13 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -84,6 +87,8 @@ fun SearchScreen(
     val query by viewModel.query.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val filters by viewModel.filters.collectAsState()
+    val sortBy by viewModel.sortBy.collectAsState()
+    val sortDirection by viewModel.sortDirection.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
@@ -136,6 +141,59 @@ fun SearchScreen(
                 )
                 IconButton(onClick = { viewModel.randomCard(onCardClick) }) {
                     Icon(Icons.Filled.Shuffle, contentDescription = "Random card", tint = TextMuted)
+                }
+                Box {
+                    var sortMenuOpen by remember { mutableStateOf(false) }
+                    IconButton(onClick = { sortMenuOpen = true }) {
+                        Icon(
+                            Icons.Filled.Sort,
+                            contentDescription = "Sort",
+                            tint = if (sortBy != SortOption.RELEVANCE) Gold else TextMuted
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = sortMenuOpen,
+                        onDismissRequest = { sortMenuOpen = false },
+                        modifier = Modifier.background(Surface)
+                    ) {
+                        Text(
+                            "DIRECTION",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextMuted,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                        SortDirection.entries.forEach { direction ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        direction.label,
+                                        color = if (direction == sortDirection) Gold else TextPrimary,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                },
+                                onClick = { viewModel.onSortDirectionChange(direction) }
+                            )
+                        }
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
+                        Text(
+                            "SORT BY",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextMuted,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                        SortOption.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        option.label,
+                                        color = if (option == sortBy) Gold else TextPrimary,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                },
+                                onClick = { viewModel.onSortChange(option); sortMenuOpen = false }
+                            )
+                        }
+                    }
                 }
                 IconButton(onClick = onOpenFilters) {
                     Box(contentAlignment = Alignment.TopEnd) {
@@ -257,7 +315,8 @@ fun SearchScreen(
                 ZoomCard(
                     imageUrl = card.displayImageUrl,
                     priceUsd = card.prices?.usd?.toDoubleOrNull(),
-                    onAdd = { zoomIndex = null; addTarget = card }
+                    onAdd = { zoomIndex = null; addTarget = card },
+                    onViewDetails = { zoomIndex = null; onCardClick(card) }
                 )
             },
             initialIndex = index,

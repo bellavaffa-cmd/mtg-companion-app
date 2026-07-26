@@ -181,15 +181,9 @@ fun MtgNavGraph(
                     factory = SearchViewModel.Factory(offlineCardRepository, settingsRepository, collectionRepository, deckRepository)
                 )
                 val filters by viewModel.filters.collectAsState()
-                val sortBy by viewModel.sortBy.collectAsState()
-                val sortDirection by viewModel.sortDirection.collectAsState()
                 SearchFiltersScreen(
                     filters = filters,
-                    sortBy = sortBy,
-                    sortDirection = sortDirection,
                     onChange = viewModel::onFiltersChange,
-                    onSortChange = viewModel::onSortChange,
-                    onSortDirectionChange = viewModel::onSortDirectionChange,
                     onClear = { viewModel.onFiltersChange(SearchFilters()) },
                     onSearch = { viewModel.search(); navController.popBackStack() },
                     onBack = { navController.popBackStack() }

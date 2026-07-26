@@ -244,13 +244,19 @@ fun DeckDetailScreen(
                         onIncrement = { viewModel.setCardQuantity(entry.scryfallId, entry.quantity + 1) },
                         onDecrement = { viewModel.setCardQuantity(entry.scryfallId, (entry.quantity - 1).coerceAtLeast(1)) },
                         onChangeArt = { artTarget = entry.scryfallId to entry.name },
-                        onMove = { zoom = null; moveTarget = entry }
+                        onMove = { zoom = null; moveTarget = entry },
+                        onViewDetails = { zoom = null; onViewDetails(entry.name) }
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
             } else {
                 val sug = suggestions.orEmpty()
-                val zoomCards = sug.map { ZoomCard(imageUrl = it.scryfallImageUrl) }
+                val zoomCards = sug.map { suggestion ->
+                    ZoomCard(
+                        imageUrl = suggestion.scryfallImageUrl,
+                        onViewDetails = { zoom = null; onViewDetails(suggestion.name) }
+                    )
+                }
                 CardZoomDialog(zoomCards, sug.indexOfFirst { (it.id ?: it.name) == key }.coerceAtLeast(0)) { zoom = null }
             }
         }

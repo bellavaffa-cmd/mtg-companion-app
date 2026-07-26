@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.Icon
@@ -67,6 +68,7 @@ data class ZoomCard(
     val onChangeArt: (() -> Unit)? = null,
     val onMove: (() -> Unit)? = null,
     val onAdd: (() -> Unit)? = null,
+    val onViewDetails: (() -> Unit)? = null,
     val sources: List<CardSource> = emptyList()
 )
 
@@ -109,7 +111,7 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                         )
                     }
                     if (card.priceUsd != null || card.quantity != null ||
-                        card.onChangeArt != null || card.onAdd != null
+                        card.onChangeArt != null || card.onAdd != null || card.onViewDetails != null
                     ) {
                         CardInfoBar(card)
                     }
@@ -142,6 +144,11 @@ private fun CardInfoBar(card: ZoomCard) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            card.onViewDetails?.let { viewDetails ->
+                IconButton(onClick = viewDetails) {
+                    Icon(Icons.Filled.Info, contentDescription = "View details", tint = Gold)
+                }
+            }
             card.onAdd?.let { add ->
                 IconButton(onClick = add) {
                     Icon(Icons.Filled.AddCircle, contentDescription = "Add to binder or deck", tint = Gold)

@@ -201,7 +201,8 @@ fun CollectionDetailScreen(
                 onIncrement = { viewModel.setQuantity(entry, entry.quantity + 1, entry.foilQuantity) },
                 onDecrement = { viewModel.setQuantity(entry, (entry.quantity - 1).coerceAtLeast(0), entry.foilQuantity) },
                 onChangeArt = { artTarget = entry.scryfallId to entry.name },
-                onMove = { zoomId = null; moveTarget = entry }
+                onMove = { zoomId = null; moveTarget = entry },
+                onViewDetails = { zoomId = null; onViewDetails(entry.name) }
             )
         }
         CardZoomDialog(zoomCards, entries.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }

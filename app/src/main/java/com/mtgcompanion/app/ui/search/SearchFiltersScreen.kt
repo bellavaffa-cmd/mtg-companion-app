@@ -24,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -71,11 +70,7 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 @Composable
 fun SearchFiltersScreen(
     filters: SearchFilters,
-    sortBy: SortOption,
-    sortDirection: SortDirection,
     onChange: (SearchFilters) -> Unit,
-    onSortChange: (SortOption) -> Unit,
-    onSortDirectionChange: (SortDirection) -> Unit,
     onClear: () -> Unit,
     onSearch: () -> Unit,
     onBack: () -> Unit
@@ -100,72 +95,13 @@ fun SearchFiltersScreen(
                     .fillMaxWidth()
                     .background(Bg)
                     .border(BorderStroke(1.dp, BorderColor))
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(16.dp)
             ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    var sortMenuOpen by remember { mutableStateOf(false) }
-                    OutlinedButton(
-                        onClick = { sortMenuOpen = true },
-                        shape = RoundedCornerShape(2.dp),
-                        border = BorderStroke(1.dp, BorderColor),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("SORT", style = MaterialTheme.typography.labelLarge)
-                    }
-                    DropdownMenu(
-                        expanded = sortMenuOpen,
-                        onDismissRequest = { sortMenuOpen = false },
-                        modifier = Modifier.background(Surface)
-                    ) {
-                        Text(
-                            "DIRECTION",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = TextMuted,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                        )
-                        SortDirection.entries.forEach { direction ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        direction.label,
-                                        color = if (direction == sortDirection) Gold else TextPrimary,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                },
-                                onClick = { onSortDirectionChange(direction) }
-                            )
-                        }
-                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-                        Text(
-                            "SORT BY",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = TextMuted,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                        )
-                        SortOption.entries.forEach { option ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        option.label,
-                                        color = if (option == sortBy) Gold else TextPrimary,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                },
-                                onClick = { onSortChange(option); sortMenuOpen = false }
-                            )
-                        }
-                    }
-                }
                 Button(
                     onClick = onSearch,
                     shape = RoundedCornerShape(2.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
-                    modifier = Modifier.weight(1.4f)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Filled.Search, contentDescription = null, tint = Bg, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
