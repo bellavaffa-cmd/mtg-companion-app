@@ -25,6 +25,26 @@ enum class CardViewMode {
 val GRID_COLUMNS_RANGE = 3..10
 const val GRID_COLUMNS_DEFAULT = 4
 
+/** Overall light/dark luminance of the app's theme. */
+enum class AppBrightness {
+    DARK, LIGHT;
+
+    companion object {
+        val DEFAULT = DARK
+        fun fromName(name: String?): AppBrightness = entries.firstOrNull { it.name == name } ?: DEFAULT
+    }
+}
+
+/** Accent color, themed on Magic's five colors of mana. */
+enum class AccentTheme(val label: String) {
+    GOLD("Gold"), SAPPHIRE("Sapphire"), AMETHYST("Amethyst"), RUBY("Ruby"), EMERALD("Emerald");
+
+    companion object {
+        val DEFAULT = GOLD
+        fun fromName(name: String?): AccentTheme = entries.firstOrNull { it.name == name } ?: DEFAULT
+    }
+}
+
 class SettingsRepository(private val context: Context) {
 
     private val clientIdKey = stringPreferencesKey("tcgplayer_client_id")
@@ -35,6 +55,8 @@ class SettingsRepository(private val context: Context) {
     private val allCardsViewModeKey = stringPreferencesKey("allcards_view_mode")
     private val recViewModeKey = stringPreferencesKey("rec_view_mode")
     private val gridColumnsKey = intPreferencesKey("grid_columns")
+    private val appBrightnessKey = stringPreferencesKey("app_brightness")
+    private val accentThemeKey = stringPreferencesKey("accent_theme")
 
     val tcgPlayerClientId: Flow<String?> = context.dataStore.data.map { it[clientIdKey] }
     val tcgPlayerClientSecret: Flow<String?> = context.dataStore.data.map { it[clientSecretKey] }
@@ -49,6 +71,9 @@ class SettingsRepository(private val context: Context) {
     val gridColumns: Flow<Int> = context.dataStore.data.map {
         (it[gridColumnsKey] ?: GRID_COLUMNS_DEFAULT).coerceIn(GRID_COLUMNS_RANGE)
     }
+
+    val appBrightness: Flow<AppBrightness> = context.dataStore.data.map { AppBrightness.fromName(it[appBrightnessKey]) }
+    val accentTheme: Flow<AccentTheme> = context.dataStore.data.map { AccentTheme.fromName(it[accentThemeKey]) }
 
     suspend fun setSearchViewMode(mode: CardViewMode) {
         context.dataStore.edit { it[searchViewModeKey] = mode.name }
@@ -72,6 +97,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setGridColumns(columns: Int) {
         context.dataStore.edit { it[gridColumnsKey] = columns.coerceIn(GRID_COLUMNS_RANGE) }
+    }
+
+    suspend fun setAppBrightness(brightness: AppBrightness) {
+        context.dataStore.edit { it[appBrightnessKey] = brightness.name }
+    }
+
+    suspend fun setAccentTheme(theme: AccentTheme) {
+        context.dataStore.edit { it[accentThemeKey] = theme.name }
     }
 
     suspend fun currentCredentials(): Pair<String, String>? {

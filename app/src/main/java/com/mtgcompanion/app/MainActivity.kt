@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
         val app = application as MtgCompanionApplication
 
         setContent {
-            MtgCompanionTheme {
+            MtgCompanionTheme(settingsRepository = app.settingsRepository) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     MtgNavGraph(
                         settingsRepository = app.settingsRepository,

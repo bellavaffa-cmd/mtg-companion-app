@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -60,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.mtgcompanion.app.BuildConfig
+import com.mtgcompanion.app.data.AccentTheme
+import com.mtgcompanion.app.data.AppBrightness
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.DriveSyncManager
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
@@ -77,6 +81,7 @@ import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
+import com.mtgcompanion.app.ui.theme.accentPreviewColor
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,6 +115,10 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
+            SettingsCategory("Appearance") { AppearanceSection(settingsRepository) }
+
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
+
             SettingsCategory("Google Drive Sync") { DriveSyncSection(syncManager) }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
@@ -160,6 +169,84 @@ private fun SettingsCategory(
                 modifier = Modifier.padding(top = 10.dp)
             ) { content() }
         }
+    }
+}
+
+@Composable
+private fun AppearanceSection(settingsRepository: SettingsRepository) {
+    val scope = rememberCoroutineScope()
+    val brightness by settingsRepository.appBrightness.collectAsState(initial = AppBrightness.DEFAULT)
+    val accent by settingsRepository.accentTheme.collectAsState(initial = AccentTheme.DEFAULT)
+
+    Text(
+        "Choose a brightness mode and an accent color, themed on Magic's five colors of mana.",
+        style = MaterialTheme.typography.bodySmall
+    )
+
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text("Brightness", style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+        FilterChip(
+            selected = brightness == AppBrightness.DARK,
+            onClick = { scope.launch { settingsRepository.setAppBrightness(AppBrightness.DARK) } },
+            label = { Text("Dark", style = MaterialTheme.typography.labelMedium) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = Gold,
+                selectedLabelColor = Bg,
+                labelColor = TextMuted,
+                containerColor = Bg
+            )
+        )
+        Box(modifier = Modifier.padding(start = 8.dp)) {
+            FilterChip(
+                selected = brightness == AppBrightness.LIGHT,
+                onClick = { scope.launch { settingsRepository.setAppBrightness(AppBrightness.LIGHT) } },
+                label = { Text("Light", style = MaterialTheme.typography.labelMedium) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Gold,
+                    selectedLabelColor = Bg,
+                    labelColor = TextMuted,
+                    containerColor = Bg
+                )
+            )
+        }
+    }
+
+    Column {
+        Text("Accent color", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            AccentTheme.entries.forEach { theme ->
+                AccentSwatch(
+                    theme = theme,
+                    selected = theme == accent,
+                    onClick = { scope.launch { settingsRepository.setAccentTheme(theme) } }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccentSwatch(theme: AccentTheme, selected: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(accentPreviewColor(theme))
+                .border(
+                    BorderStroke(if (selected) 2.dp else 1.dp, if (selected) TextPrimary else BorderColor),
+                    CircleShape
+                )
+        )
+        Text(
+            theme.label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) GoldLight else TextMuted,
+            modifier = Modifier.padding(top = 6.dp)
+        )
     }
 }
 

@@ -112,13 +112,16 @@ fun DashboardPanel(dashboard: CollectionDashboard?) {
 @Composable
 private fun TypePieChart(typeCounts: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
     val total = typeCounts.sumOf { it.second }.coerceAtLeast(1).toFloat()
+    // Bg is a @Composable property (theme-dependent) — read it here, since the Canvas draw
+    // block below is a plain DrawScope lambda, not a composable context.
+    val bg = Bg
     Canvas(modifier = modifier) {
         var startAngle = -90f
         typeCounts.forEach { (type, count) ->
             val sweep = count / total * 360f
             drawArc(color = typeColor(type), startAngle = startAngle, sweepAngle = sweep, useCenter = true)
             // Thin separator between slices for definition.
-            drawArc(color = Bg, startAngle = startAngle, sweepAngle = sweep, useCenter = true, style = Stroke(width = 2f))
+            drawArc(color = bg, startAngle = startAngle, sweepAngle = sweep, useCenter = true, style = Stroke(width = 2f))
             startAngle += sweep
         }
     }

@@ -76,6 +76,8 @@ import com.mtgcompanion.app.ui.rules.RulesScreen
 import com.mtgcompanion.app.ui.rules.RulesViewModel
 import com.mtgcompanion.app.ui.scan.ScanScreen
 import com.mtgcompanion.app.ui.scan.ScanViewModel
+import com.mtgcompanion.app.ui.search.SearchFilters
+import com.mtgcompanion.app.ui.search.SearchFiltersScreen
 import com.mtgcompanion.app.ui.search.SearchScreen
 import com.mtgcompanion.app.ui.search.SearchViewModel
 import com.mtgcompanion.app.ui.settings.SettingsScreen
@@ -95,6 +97,7 @@ import java.nio.charset.StandardCharsets
 private object Routes {
     const val HOME = "home"
     const val SEARCH = "search"
+    const val SEARCH_FILTERS = "search_filters"
     const val COLLECTION = "collection"
     const val DECKS = "decks"
     const val SETTINGS = "settings"
@@ -164,7 +167,28 @@ fun MtgNavGraph(
                 )
                 SearchScreen(
                     viewModel = viewModel,
-                    onCardClick = { card -> navController.navigate(Routes.detail(card.name)) }
+                    onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
+                    onOpenFilters = { navController.navigate(Routes.SEARCH_FILTERS) }
+                )
+            }
+
+            composable(Routes.SEARCH_FILTERS) { backStackEntry ->
+                // Shares the Search tab's ViewModel (via its still-live back-stack entry) so filter
+                // edits here apply to the same search the user came from.
+                val parentEntry = remember(backStackEntry) { navController.getBackStackEntry(Routes.SEARCH) }
+                val viewModel: SearchViewModel = viewModel(
+                    viewModelStoreOwner = parentEntry,
+                    factory = SearchViewModel.Factory(offlineCardRepository, settingsRepository, collectionRepository, deckRepository)
+                )
+                val filters by viewModel.filters.collectAsState()
+                val sortBy by viewModel.sortBy.collectAsState()
+                SearchFiltersScreen(
+                    filters = filters,
+                    sortBy = sortBy,
+                    onChange = viewModel::onFiltersChange,
+                    onSortChange = viewModel::onSortChange,
+                    onClear = { viewModel.onFiltersChange(SearchFilters()) },
+                    onBack = { navController.popBackStack() }
                 )
             }
 

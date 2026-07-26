@@ -45,11 +45,15 @@ enum class SortOption(val label: String, val order: String?, val dir: String?) {
     NEWEST("Newest", "released", "desc")
 }
 
+/** Canonical mana-color order, used both for the color pickers and for stable query strings. */
+val WUBRG = listOf('W', 'U', 'B', 'R', 'G')
+
 /** Structured search filters, compiled into a Scryfall query alongside the free-text field. */
 data class SearchFilters(
     val typeLine: String = "",
     val oracle: String = "",
-    val manaCost: String = "",
+    val colors: Set<Char> = emptySet(),           // card's own colors, e.g. {W, U}
+    val colorIdentity: Set<Char> = emptySet(),    // commander color identity a card must fit within
     val sets: String = "",
     val rarities: Set<String> = emptySet(),      // common, uncommon, rare, mythic
     val priceMin: String = "",
@@ -62,11 +66,14 @@ data class SearchFilters(
     val artist: String = ""
 ) {
     val isActive: Boolean
-        get() = typeLine.isNotBlank() || oracle.isNotBlank() || manaCost.isNotBlank() ||
-            sets.isNotBlank() || rarities.isNotEmpty() || priceMin.isNotBlank() || priceMax.isNotBlank() ||
+        get() = typeLine.isNotBlank() || oracle.isNotBlank() || colors.isNotEmpty() ||
+            colorIdentity.isNotEmpty() || sets.isNotBlank() || rarities.isNotEmpty() ||
+            priceMin.isNotBlank() || priceMax.isNotBlank() ||
             powerMin.isNotBlank() || powerMax.isNotBlank() || toughnessMin.isNotBlank() ||
             toughnessMax.isNotBlank() || finishes.isNotEmpty() || artist.isNotBlank()
 }
+
+private fun Set<Char>.toScryfallColors(): String = sortedBy { WUBRG.indexOf(it) }.joinToString("") { it.lowercaseChar().toString() }
 
 private fun quoteIfNeeded(value: String): String =
     if (value.any { it.isWhitespace() }) "\"$value\"" else value
@@ -84,7 +91,8 @@ fun buildScryfallQuery(text: String, filters: SearchFilters): String {
         .forEach { parts += "type:${it.lowercase()}" }
 
     if (filters.oracle.isNotBlank()) parts += "oracle:${quoteIfNeeded(filters.oracle.trim())}"
-    if (filters.manaCost.isNotBlank()) parts += "mana:${filters.manaCost.trim().replace(" ", "")}"
+    if (filters.colors.isNotEmpty()) parts += "c>=${filters.colors.toScryfallColors()}"
+    if (filters.colorIdentity.isNotEmpty()) parts += "id<=${filters.colorIdentity.toScryfallColors()}"
 
     val sets = filters.sets.split(Regex("[,\\s]+")).filter { it.isNotBlank() }.map { it.lowercase() }
     if (sets.size == 1) parts += "set:${sets[0]}"
