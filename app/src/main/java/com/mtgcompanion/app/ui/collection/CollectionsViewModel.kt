@@ -10,6 +10,7 @@ import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.SourceKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -32,7 +33,7 @@ data class AllCardEntry(
 @OptIn(ExperimentalCoroutinesApi::class)
 class CollectionsViewModel(
     private val repository: CollectionRepository,
-    deckRepository: DeckRepository,
+    private val deckRepository: DeckRepository,
     private val settingsRepository: SettingsRepository,
     private val cardRepository: CardRepository = CardRepository()
 ) : ViewModel() {
@@ -44,6 +45,10 @@ class CollectionsViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)
 
     val collections: StateFlow<List<Collection>> = repository.collectionsFlow.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
+
+    private val decks: StateFlow<List<com.mtgcompanion.app.data.Deck>> = deckRepository.decksFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
@@ -89,6 +94,26 @@ class CollectionsViewModel(
     val prices: StateFlow<Map<String, Double>> = allCards.mapLatest { entries ->
         fetchPrices(cardRepository, entries.map { it.scryfallId })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /**
+     * An All Cards entry is one exact printing shared by every binder/deck listed in its
+     * [AllCardEntry.sources], so re-arting it means updating that printing everywhere it's held,
+     * not just one place.
+     */
+    fun changePrintingEverywhere(oldScryfallId: String, newCard: ScryfallCard) {
+        viewModelScope.launch {
+            collections.value.forEach { collection ->
+                if (collection.entries.any { it.scryfallId == oldScryfallId }) {
+                    repository.changeEntryPrinting(collection.id, oldScryfallId, newCard)
+                }
+            }
+            decks.value.forEach { deck ->
+                if (deck.cards.any { it.scryfallId == oldScryfallId }) {
+                    deckRepository.changeCardPrinting(deck.id, oldScryfallId, newCard)
+                }
+            }
+        }
+    }
 
     fun createCollection(name: String, onCreated: (Collection) -> Unit) {
         viewModelScope.launch { onCreated(repository.createCollection(name)) }
