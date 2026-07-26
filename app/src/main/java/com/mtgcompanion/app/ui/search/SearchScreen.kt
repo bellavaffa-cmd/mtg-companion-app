@@ -60,7 +60,9 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardActionSheet
 import com.mtgcompanion.app.ui.common.CardMenuAction
+import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
+import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -90,6 +92,9 @@ fun SearchScreen(
     var menuTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // The card whose "Add to…" binder/deck picker is open.
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
+    // Index (within the current results) of the card enlarged by a tap, if any.
+    var zoomIndex by remember { mutableStateOf<Int?>(null) }
+    val resultCards = (uiState as? SearchUiState.Success)?.cards.orEmpty()
 
     Scaffold(
         containerColor = Bg,
@@ -207,7 +212,7 @@ fun SearchScreen(
                             cardGrid(state.cards, columns = gridColumns, key = { it.id }) { card ->
                                 CardResultTile(
                                     card = card,
-                                    onClick = { onCardClick(card) },
+                                    onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
                                     onLongClick = { menuTarget = card }
                                 )
                             }
@@ -215,7 +220,7 @@ fun SearchScreen(
                             items(state.cards, key = { it.id }) { card ->
                                 CardResultRow(
                                     card = card,
-                                    onClick = { onCardClick(card) },
+                                    onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
                                     onLongClick = { menuTarget = card }
                                 )
                             }
@@ -243,6 +248,20 @@ fun SearchScreen(
             targets = addTargets,
             onPick = { target -> viewModel.addToTarget(card, target); addTarget = null },
             onDismiss = { addTarget = null }
+        )
+    }
+
+    zoomIndex?.let { index ->
+        CardZoomDialog(
+            cards = resultCards.map { card ->
+                ZoomCard(
+                    imageUrl = card.displayImageUrl,
+                    priceUsd = card.prices?.usd?.toDoubleOrNull(),
+                    onAdd = { zoomIndex = null; addTarget = card }
+                )
+            },
+            initialIndex = index,
+            onDismiss = { zoomIndex = null }
         )
     }
 }

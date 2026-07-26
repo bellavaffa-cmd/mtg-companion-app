@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +23,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
@@ -33,6 +37,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -67,9 +72,12 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 fun SearchFiltersScreen(
     filters: SearchFilters,
     sortBy: SortOption,
+    sortDirection: SortDirection,
     onChange: (SearchFilters) -> Unit,
     onSortChange: (SortOption) -> Unit,
+    onSortDirectionChange: (SortDirection) -> Unit,
     onClear: () -> Unit,
+    onSearch: () -> Unit,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -85,6 +93,85 @@ fun SearchFiltersScreen(
                 actions = { TextButton(onClick = onClear) { Text("Clear all", color = TextMuted) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )
+        },
+        bottomBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Bg)
+                    .border(BorderStroke(1.dp, BorderColor))
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    var sortMenuOpen by remember { mutableStateOf(false) }
+                    OutlinedButton(
+                        onClick = { sortMenuOpen = true },
+                        shape = RoundedCornerShape(2.dp),
+                        border = BorderStroke(1.dp, BorderColor),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("SORT", style = MaterialTheme.typography.labelLarge)
+                    }
+                    DropdownMenu(
+                        expanded = sortMenuOpen,
+                        onDismissRequest = { sortMenuOpen = false },
+                        modifier = Modifier.background(Surface)
+                    ) {
+                        Text(
+                            "DIRECTION",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextMuted,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                        SortDirection.entries.forEach { direction ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        direction.label,
+                                        color = if (direction == sortDirection) Gold else TextPrimary,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                },
+                                onClick = { onSortDirectionChange(direction) }
+                            )
+                        }
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
+                        Text(
+                            "SORT BY",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextMuted,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                        SortOption.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        option.label,
+                                        color = if (option == sortBy) Gold else TextPrimary,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                },
+                                onClick = { onSortChange(option); sortMenuOpen = false }
+                            )
+                        }
+                    }
+                }
+                Button(
+                    onClick = onSearch,
+                    shape = RoundedCornerShape(2.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
+                    modifier = Modifier.weight(1.4f)
+                ) {
+                    Icon(Icons.Filled.Search, contentDescription = null, tint = Bg, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("SEARCH", style = MaterialTheme.typography.labelLarge, color = Bg)
+                }
+            }
         }
     ) { padding ->
         Column(
@@ -96,28 +183,6 @@ fun SearchFiltersScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Column {
-                FilterLabel("Sort by")
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState())
-                ) {
-                    SortOption.entries.forEach { option ->
-                        FilterChip(
-                            selected = sortBy == option,
-                            onClick = { onSortChange(option) },
-                            label = { Text(option.label, style = MaterialTheme.typography.labelMedium) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Gold,
-                                selectedLabelColor = Bg,
-                                labelColor = TextMuted,
-                                containerColor = Bg
-                            )
-                        )
-                    }
-                }
-            }
-
             FilterField("Type line", filters.typeLine, "e.g. legendary creature") { onChange(filters.copy(typeLine = it)) }
             FilterField("Oracle text", filters.oracle, "e.g. draw a card") { onChange(filters.copy(oracle = it)) }
             FilterField("Sets", filters.sets, "set codes, e.g. MH3, LTR") { onChange(filters.copy(sets = it)) }
