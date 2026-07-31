@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,8 +53,6 @@ import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.AlternateArtDialog
-import com.mtgcompanion.app.ui.common.CardActionSheet
-import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -77,8 +77,6 @@ fun SearchResultsScreen(
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val addTargets by viewModel.addTargets.collectAsState()
-    // The card whose long-press quick-action menu is open.
-    var menuTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // The card whose "Add to…" binder/deck picker is open.
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // The card whose alternate-art picker is open, from the zoom overlay's "Change art" button.
@@ -175,7 +173,8 @@ fun SearchResultsScreen(
                             CardResultTile(
                                 card = card,
                                 onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
-                                onLongClick = { menuTarget = card }
+                                onAddToTarget = { addTarget = card },
+                                onViewDetails = { onCardClick(card) }
                             )
                         }
                     } else {
@@ -183,7 +182,8 @@ fun SearchResultsScreen(
                             CardResultRow(
                                 card = card,
                                 onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
-                                onLongClick = { menuTarget = card }
+                                onAddToTarget = { addTarget = card },
+                                onViewDetails = { onCardClick(card) }
                             )
                         }
                     }
@@ -198,17 +198,6 @@ fun SearchResultsScreen(
                 }
             }
         }
-    }
-
-    menuTarget?.let { card ->
-        CardActionSheet(
-            cardName = card.name,
-            actions = listOf(
-                CardMenuAction("Add to binder/deck", Icons.Filled.Add) { addTarget = card },
-                CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onCardClick(card) }
-            ),
-            onDismiss = { menuTarget = null }
-        )
     }
 
     addTarget?.let { card ->
@@ -249,72 +238,126 @@ fun SearchResultsScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CardResultRow(card: ScryfallCard, onClick: () -> Unit, onLongClick: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(12.dp)
-    ) {
-        AsyncImage(
-            model = card.displayImageUrl.toArtCropUrl(),
-            contentDescription = card.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            Text(
-                (card.typeLine ?: "").uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                color = TextMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+private fun CardResultRow(
+    card: ScryfallCard,
+    onClick: () -> Unit,
+    onAddToTarget: () -> Unit,
+    onViewDetails: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(4.dp))
+                .background(Surface)
+                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true })
+                .padding(12.dp)
+        ) {
+            AsyncImage(
+                model = card.displayImageUrl.toArtCropUrl(),
+                contentDescription = card.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
             )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                Text(
+                    (card.typeLine ?: "").uppercase(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            card.prices?.usd?.let { usd ->
+                Text("$$usd", style = MaterialTheme.typography.bodyMedium, color = GoldLight)
+            }
         }
-        card.prices?.usd?.let { usd ->
-            Text("$$usd", style = MaterialTheme.typography.bodyMedium, color = GoldLight)
-        }
+        CardActionMenu(
+            expanded = menuExpanded,
+            onDismiss = { menuExpanded = false },
+            onAddToTarget = onAddToTarget,
+            onViewDetails = onViewDetails
+        )
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CardResultTile(card: ScryfallCard, onClick: () -> Unit, onLongClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
-        Box {
-            AsyncImage(
-                model = card.displayImageUrl,
-                contentDescription = card.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
-            )
-            card.prices?.usd?.let { usd ->
-                Text(
-                    "$$usd",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = GoldLight,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+private fun CardResultTile(
+    card: ScryfallCard,
+    onClick: () -> Unit,
+    onAddToTarget: () -> Unit,
+    onViewDetails: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Box {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true })
+        ) {
+            Box {
+                AsyncImage(
+                    model = card.displayImageUrl,
+                    contentDescription = card.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
                 )
+                card.prices?.usd?.let { usd ->
+                    Text(
+                        "$$usd",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = GoldLight,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(6.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
             }
+            Text(
+                card.name,
+                style = MaterialTheme.typography.labelMedium,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
-        Text(
-            card.name,
-            style = MaterialTheme.typography.labelMedium,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp)
+        CardActionMenu(
+            expanded = menuExpanded,
+            onDismiss = { menuExpanded = false },
+            onAddToTarget = onAddToTarget,
+            onViewDetails = onViewDetails
+        )
+    }
+}
+
+/** Long-press quick-action menu, anchored directly to the card it was pressed on. */
+@Composable
+private fun CardActionMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onAddToTarget: () -> Unit,
+    onViewDetails: () -> Unit
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.background(Surface)) {
+        DropdownMenuItem(
+            text = { Text("Add to binder/deck", color = TextPrimary, style = MaterialTheme.typography.bodyMedium) },
+            leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, tint = Gold) },
+            onClick = { onDismiss(); onAddToTarget() }
+        )
+        DropdownMenuItem(
+            text = { Text("View details (EDHREC)", color = TextPrimary, style = MaterialTheme.typography.bodyMedium) },
+            leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = Gold) },
+            onClick = { onDismiss(); onViewDetails() }
         )
     }
 }
