@@ -76,8 +76,7 @@ import com.mtgcompanion.app.ui.rules.RulesScreen
 import com.mtgcompanion.app.ui.rules.RulesViewModel
 import com.mtgcompanion.app.ui.scan.ScanScreen
 import com.mtgcompanion.app.ui.scan.ScanViewModel
-import com.mtgcompanion.app.ui.search.SearchFilters
-import com.mtgcompanion.app.ui.search.SearchFiltersScreen
+import com.mtgcompanion.app.ui.search.SearchResultsScreen
 import com.mtgcompanion.app.ui.search.SearchScreen
 import com.mtgcompanion.app.ui.search.SearchViewModel
 import com.mtgcompanion.app.ui.settings.SettingsScreen
@@ -97,7 +96,7 @@ import java.nio.charset.StandardCharsets
 private object Routes {
     const val HOME = "home"
     const val SEARCH = "search"
-    const val SEARCH_FILTERS = "search_filters"
+    const val SEARCH_RESULTS = "search_results"
     const val COLLECTION = "collection"
     const val DECKS = "decks"
     const val SETTINGS = "settings"
@@ -168,24 +167,21 @@ fun MtgNavGraph(
                 SearchScreen(
                     viewModel = viewModel,
                     onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
-                    onOpenFilters = { navController.navigate(Routes.SEARCH_FILTERS) }
+                    onOpenResults = { navController.navigate(Routes.SEARCH_RESULTS) }
                 )
             }
 
-            composable(Routes.SEARCH_FILTERS) { backStackEntry ->
-                // Shares the Search tab's ViewModel (via its still-live back-stack entry) so filter
-                // edits here apply to the same search the user came from.
+            composable(Routes.SEARCH_RESULTS) { backStackEntry ->
+                // Shares the Search tab's ViewModel (via its still-live back-stack entry) so this
+                // shows results for the same query/filters the user just built.
                 val parentEntry = remember(backStackEntry) { navController.getBackStackEntry(Routes.SEARCH) }
                 val viewModel: SearchViewModel = viewModel(
                     viewModelStoreOwner = parentEntry,
                     factory = SearchViewModel.Factory(offlineCardRepository, settingsRepository, collectionRepository, deckRepository)
                 )
-                val filters by viewModel.filters.collectAsState()
-                SearchFiltersScreen(
-                    filters = filters,
-                    onChange = viewModel::onFiltersChange,
-                    onClear = { viewModel.onFiltersChange(SearchFilters()) },
-                    onSearch = { viewModel.search(); navController.popBackStack() },
+                SearchResultsScreen(
+                    viewModel = viewModel,
+                    onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
                     onBack = { navController.popBackStack() }
                 )
             }
