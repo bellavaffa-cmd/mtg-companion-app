@@ -52,7 +52,6 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
-import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -79,8 +78,6 @@ fun SearchResultsScreen(
     val addTargets by viewModel.addTargets.collectAsState()
     // The card whose "Add to…" binder/deck picker is open.
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
-    // The card whose alternate-art picker is open, from the zoom overlay's "Change art" button.
-    var artTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // Index (within the current results) of the card enlarged by a tap, if any.
     var zoomIndex by remember { mutableStateOf<Int?>(null) }
     val resultCards = (uiState as? SearchUiState.Success)?.cards.orEmpty()
@@ -209,24 +206,17 @@ fun SearchResultsScreen(
         )
     }
 
-    artTarget?.let { card ->
-        AlternateArtDialog(
-            cardName = card.name,
-            // Picking a printing here goes straight into the normal add flow, so choosing art and
-            // saving it to a binder/deck is one motion instead of two separate pickers.
-            onSelect = { chosen -> artTarget = null; addTarget = chosen },
-            onDismiss = { artTarget = null }
-        )
-    }
-
     zoomIndex?.let { index ->
         CardZoomDialog(
             cards = resultCards.map { card ->
                 ZoomCard(
                     imageUrl = card.displayImageUrl,
+                    cardName = card.name,
                     priceUsd = card.prices?.usd?.toDoubleOrNull(),
                     onAdd = { zoomIndex = null; addTarget = card },
-                    onChangeArt = { zoomIndex = null; artTarget = card },
+                    // Picking a printing here goes straight into the normal add flow, so choosing
+                    // art and saving it to a binder/deck is one motion instead of two pickers.
+                    onSelectPrinting = { chosen -> zoomIndex = null; addTarget = chosen },
                     onViewDetails = { zoomIndex = null; onCardClick(card) }
                 )
             },
@@ -301,34 +291,11 @@ private fun CardResultTile(
                 .fillMaxWidth()
                 .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true })
         ) {
-            Box {
-                AsyncImage(
-                    model = card.displayImageUrl,
-                    contentDescription = card.name,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
-                )
-                card.prices?.usd?.let { usd ->
-                    Text(
-                        "$$usd",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = GoldLight,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(6.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-            Text(
-                card.name,
-                style = MaterialTheme.typography.labelMedium,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp)
+            AsyncImage(
+                model = card.displayImageUrl,
+                contentDescription = card.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
             )
         }
         CardActionMenu(

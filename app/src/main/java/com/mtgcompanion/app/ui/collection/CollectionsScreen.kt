@@ -60,7 +60,6 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
-import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -219,8 +218,6 @@ private fun AllCardsTab(
     }
     // Tapping a card enlarges it (swipeable through the filtered list) with value/total.
     var zoomId by remember { mutableStateOf<String?>(null) }
-    // The entry whose alternate-art picker is open, from the zoom overlay's "Change art" button.
-    var artTarget by remember { mutableStateOf<AllCardEntry?>(null) }
 
     if (allCards.isEmpty()) {
         Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
@@ -287,24 +284,17 @@ private fun AllCardsTab(
         val zoomCards = filtered.map { c ->
             ZoomCard(
                 imageUrl = c.imageUrl,
+                cardName = c.name,
                 priceUsd = prices[c.scryfallId],
                 quantity = c.total,
                 sources = c.sources,
-                onChangeArt = { zoomId = null; artTarget = c },
+                // This entry is one printing shared by every binder/deck in its sources, so
+                // re-arting it updates the printing everywhere it's held, not just one place.
+                onSelectPrinting = { chosen -> viewModel.changePrintingEverywhere(c.scryfallId, chosen) },
                 onViewDetails = { zoomId = null; onViewDetails(c.name) }
             )
         }
         CardZoomDialog(zoomCards, filtered.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
-    }
-
-    artTarget?.let { entry ->
-        AlternateArtDialog(
-            cardName = entry.name,
-            // This entry is one printing shared by every binder/deck in its sources, so re-arting
-            // it updates the printing everywhere it's held, not just one place.
-            onSelect = { chosen -> artTarget = null; viewModel.changePrintingEverywhere(entry.scryfallId, chosen) },
-            onDismiss = { artTarget = null }
-        )
     }
 }
 

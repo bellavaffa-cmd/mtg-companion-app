@@ -135,9 +135,6 @@ fun buildScryfallQuery(text: String, filters: SearchFilters): String {
     return parts.joinToString(" ")
 }
 
-/** Bundles the four inputs a live search reacts to, for a single combined debounce/collect. */
-private data class SearchParams(val query: String, val filters: SearchFilters, val sort: SortOption, val direction: SortDirection)
-
 @OptIn(FlowPreview::class)
 class SearchViewModel(
     private val offlineRepository: OfflineCardRepository,
@@ -189,16 +186,11 @@ class SearchViewModel(
     private var currentDirection = SortDirection.ASCENDING
 
     init {
-        // Search as the user types or changes filters/sort: debounce so we don't fire on every
-        // keystroke, and collectLatest cancels an in-flight request when the query changes again.
-        viewModelScope.launch {
-            combine(_query, _filters, _sortBy, _sortDirection) { q, f, sort, dir -> SearchParams(q, f, sort, dir) }
-                .debounce(300)
-                .distinctUntilChanged()
-                .collectLatest { params -> runSearch(buildScryfallQuery(params.query.trim(), params.filters), params.sort, params.direction) }
-        }
-        // A separate, shorter-debounced pipeline for the autocomplete dropdown — it's a lightweight
-        // endpoint meant for exactly this, so it can react faster than the real search.
+        // Search only ever runs explicitly now (the Search button, or picking a suggestion) — the
+        // front page is just a form, so there's no live auto-search on every keystroke here.
+        // This pipeline is just the autocomplete dropdown, a lightweight endpoint meant for exactly
+        // that: debounced so it doesn't fire on every keystroke, collectLatest so a stale request
+        // can't land after a newer one.
         viewModelScope.launch {
             _query.debounce(150).distinctUntilChanged().collectLatest { q ->
                 _suggestions.value = if (q.isBlank()) emptyList() else repository.autocomplete(q.trim())

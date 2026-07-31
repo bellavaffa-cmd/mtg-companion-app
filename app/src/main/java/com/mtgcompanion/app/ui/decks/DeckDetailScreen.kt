@@ -89,7 +89,6 @@ import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.network.spellbook.Variant
-import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardActionSheet
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
@@ -127,8 +126,6 @@ fun DeckDetailScreen(
     // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
     // Holds (source, key): source "card" -> deck card by scryfallId, "sugg" -> suggestion by id/name.
     var zoom by remember { mutableStateOf<Pair<String, String>?>(null) }
-    // Alternate-art target while the printing picker is open: (current scryfallId, card name).
-    var artTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     // The card whose move-destination picker is open.
     var moveTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     val moveTargets by viewModel.moveTargets.collectAsState()
@@ -239,11 +236,12 @@ fun DeckDetailScreen(
                 val zoomCards = flatCards.map { entry ->
                     ZoomCard(
                         imageUrl = entry.imageUrl,
+                        cardName = entry.name,
                         priceUsd = prices[entry.scryfallId],
                         quantity = entry.quantity,
                         onIncrement = { viewModel.setCardQuantity(entry.scryfallId, entry.quantity + 1) },
                         onDecrement = { viewModel.setCardQuantity(entry.scryfallId, (entry.quantity - 1).coerceAtLeast(1)) },
-                        onChangeArt = { artTarget = entry.scryfallId to entry.name },
+                        onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                         onMove = { zoom = null; moveTarget = entry },
                         onViewDetails = { zoom = null; onViewDetails(entry.name) }
                     )
@@ -259,10 +257,6 @@ fun DeckDetailScreen(
                 }
                 CardZoomDialog(zoomCards, sug.indexOfFirst { (it.id ?: it.name) == key }.coerceAtLeast(0)) { zoom = null }
             }
-        }
-
-        artTarget?.let { (id, name) ->
-            AlternateArtDialog(name, onSelect = { viewModel.changePrinting(id, it) }, onDismiss = { artTarget = null })
         }
 
         moveTarget?.let { entry ->

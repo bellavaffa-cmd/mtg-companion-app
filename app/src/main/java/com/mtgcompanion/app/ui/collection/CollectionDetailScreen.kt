@@ -53,7 +53,6 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
-import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardActionSheet
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
@@ -90,8 +89,6 @@ fun CollectionDetailScreen(
     var moveTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
     var zoomId by remember { mutableStateOf<String?>(null) }
-    // Alternate-art target while the printing picker is open: (current scryfallId, card name).
-    var artTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     // The card pending a remove-confirmation, if any.
     var removeTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     var confirmDeleteBinder by remember { mutableStateOf(false) }
@@ -196,11 +193,12 @@ fun CollectionDetailScreen(
         val zoomCards = entries.map { entry ->
             ZoomCard(
                 imageUrl = entry.imageUrl,
+                cardName = entry.name,
                 priceUsd = prices[entry.scryfallId],
                 quantity = entry.quantity,
                 onIncrement = { viewModel.setQuantity(entry, entry.quantity + 1, entry.foilQuantity) },
                 onDecrement = { viewModel.setQuantity(entry, (entry.quantity - 1).coerceAtLeast(0), entry.foilQuantity) },
-                onChangeArt = { artTarget = entry.scryfallId to entry.name },
+                onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                 onMove = { zoomId = null; moveTarget = entry },
                 onViewDetails = { zoomId = null; onViewDetails(entry.name) }
             )
@@ -215,10 +213,6 @@ fun CollectionDetailScreen(
             onPick = { target -> viewModel.moveEntry(entry, target); moveTarget = null },
             onDismiss = { moveTarget = null }
         )
-    }
-
-    artTarget?.let { (id, name) ->
-        AlternateArtDialog(name, onSelect = { viewModel.changePrinting(id, it) }, onDismiss = { artTarget = null })
     }
 
     removeTarget?.let { entry ->

@@ -3,34 +3,42 @@ package com.mtgcompanion.app.ui.common
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Collections
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldLight
@@ -57,17 +67,20 @@ data class CardSource(val kind: SourceKind, val name: String, val quantity: Int)
  * One card in the enlarged-card overlay. [quantity] null hides the quantity/total row (e.g. for a
  * suggested card that isn't owned); providing [onIncrement]/[onDecrement] turns the count into an
  * editable stepper. [onAdd], for a card not yet in a deck/binder, offers to put it in one.
- * [sources], when set, lists the binders/decks the card is in.
+ * [sources], when set, lists the binders/decks the card is in. [cardName] + [onSelectPrinting]
+ * together show every alternate printing of the card as a strip below the art — tapping one calls
+ * [onSelectPrinting] with that printing.
  */
 data class ZoomCard(
     val imageUrl: String?,
+    val cardName: String? = null,
     val priceUsd: Double? = null,
     val quantity: Int? = null,
     val onIncrement: (() -> Unit)? = null,
     val onDecrement: (() -> Unit)? = null,
-    val onChangeArt: (() -> Unit)? = null,
     val onMove: (() -> Unit)? = null,
     val onAdd: (() -> Unit)? = null,
+    val onSelectPrinting: ((ScryfallCard) -> Unit)? = null,
     val onViewDetails: (() -> Unit)? = null,
     val sources: List<CardSource> = emptyList()
 )
@@ -110,8 +123,11 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                                 .clip(RoundedCornerShape(14.dp))
                         )
                     }
+                    if (card.cardName != null && card.onSelectPrinting != null) {
+                        AlternatePrintingsStrip(cardName = card.cardName, onSelect = card.onSelectPrinting)
+                    }
                     if (card.priceUsd != null || card.quantity != null ||
-                        card.onChangeArt != null || card.onAdd != null || card.onViewDetails != null
+                        card.onAdd != null || card.onViewDetails != null
                     ) {
                         CardInfoBar(card)
                     }
@@ -159,11 +175,6 @@ private fun CardInfoBar(card: ZoomCard) {
                     Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move card", tint = Gold)
                 }
             }
-            card.onChangeArt?.let { changeArt ->
-                IconButton(onClick = changeArt) {
-                    Icon(Icons.Filled.Image, contentDescription = "Change art", tint = Gold)
-                }
-            }
             card.quantity?.let { qty ->
                 if (card.onIncrement != null || card.onDecrement != null) {
                     IconButton(onClick = { card.onDecrement?.invoke() }) {
@@ -175,6 +186,54 @@ private fun CardInfoBar(card: ZoomCard) {
                     }
                 } else {
                     InfoStat("QTY", "$qty")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Every alternate printing of [cardName], as a horizontally scrollable strip. Fetched on demand
+ * (Scryfall has no bulk-by-name-list endpoint cheap enough to do this for a whole result list up
+ * front) and only shown once there's more than one printing to choose between.
+ */
+@Composable
+private fun AlternatePrintingsStrip(cardName: String, onSelect: (ScryfallCard) -> Unit) {
+    val repository = remember { CardRepository() }
+    var prints by remember(cardName) { mutableStateOf<List<ScryfallCard>?>(null) }
+    LaunchedEffect(cardName) {
+        prints = try {
+            repository.getPrintings(cardName)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    when (val current = prints) {
+        null -> Box(
+            modifier = Modifier.fillMaxWidth().background(Surface).padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) { CircularProgressIndicator(color = Gold, modifier = Modifier.size(20.dp)) }
+        else -> if (current.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Surface)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                current.forEach { print ->
+                    AsyncImage(
+                        model = print.displayImageUrl,
+                        contentDescription = print.printingLabel,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .width(64.dp)
+                            .aspectRatio(0.72f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onSelect(print) }
+                    )
                 }
             }
         }

@@ -64,7 +64,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mtgcompanion.app.ui.common.AlternateArtDialog
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ManaCost
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -108,8 +107,6 @@ fun CardDetailScreen(
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // Set when the add button on an enlarged card needs a binder-or-deck choice first.
     var chooseDestinationFor by remember { mutableStateOf<ScryfallCard?>(null) }
-    // Name of the suggested card whose alternate-art picker is open, if any.
-    var artTargetName by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.addedToCollectionMessage, state.addedToDeckMessage) {
         if (state.addedToCollectionMessage != null || state.addedToDeckMessage != null) {
@@ -222,13 +219,16 @@ fun CardDetailScreen(
                             val resolved = state.suggestionCards[view.name.lowercase()]
                             ZoomCard(
                                 imageUrl = view.scryfallImageUrl,
+                                cardName = view.name,
                                 priceUsd = resolved?.prices?.usd?.toDoubleOrNull(),
                                 quantity = owned[view.name.lowercase()] ?: 0,
                                 // Only offer to add once we know which Scryfall printing it is.
                                 onAdd = resolved?.let { card ->
                                     { zoomKey = null; chooseDestinationFor = card }
                                 },
-                                onChangeArt = { zoomKey = null; artTargetName = view.name },
+                                // Picking a printing here goes straight into the binder-or-deck
+                                // choice, so choosing art and saving it is one motion, not two.
+                                onSelectPrinting = { chosen -> zoomKey = null; chooseDestinationFor = chosen },
                                 onViewDetails = { zoomKey = null; onViewDetails(view.name) }
                             )
                         },
@@ -245,16 +245,6 @@ fun CardDetailScreen(
             onDismiss = { chooseDestinationFor = null },
             onBinder = { chooseDestinationFor = null; addTarget = card; showCollectionPicker = true },
             onDeck = { chooseDestinationFor = null; addTarget = card; showDeckPicker = true }
-        )
-    }
-
-    artTargetName?.let { name ->
-        AlternateArtDialog(
-            cardName = name,
-            // Picking a printing here goes straight into the binder-or-deck choice, so choosing art
-            // and saving it is one motion instead of two separate pickers.
-            onSelect = { chosen -> artTargetName = null; chooseDestinationFor = chosen },
-            onDismiss = { artTargetName = null }
         )
     }
 
