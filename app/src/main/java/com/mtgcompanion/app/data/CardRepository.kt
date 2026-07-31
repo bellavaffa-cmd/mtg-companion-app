@@ -8,17 +8,22 @@ import com.mtgcompanion.app.network.scryfall.ScryfallIdentifier
 import com.mtgcompanion.app.network.scryfall.ScryfallRuling
 import retrofit2.HttpException
 
+/** One page of search results, plus whether Scryfall has more beyond it. */
+data class SearchPage(val cards: List<ScryfallCard>, val hasMore: Boolean)
+
 class CardRepository {
     private val api = NetworkModule.scryfallApi
 
-    suspend fun search(query: String, order: String? = null, dir: String? = null): List<ScryfallCard> {
-        if (query.isBlank()) return emptyList()
+    /** [page] is 1-indexed, matching Scryfall's own paging — 175 cards per page. */
+    suspend fun search(query: String, order: String? = null, dir: String? = null, page: Int = 1): SearchPage {
+        if (query.isBlank()) return SearchPage(emptyList(), hasMore = false)
         return try {
-            api.searchCards(query, order = order, dir = dir).data
+            val response = api.searchCards(query, page = page, order = order, dir = dir)
+            SearchPage(response.data, response.hasMore)
         } catch (e: HttpException) {
             // Scryfall returns 404 when a (possibly partial, as-you-type) query matches
             // no cards — treat that as an empty result rather than an error.
-            if (e.code() == 404) emptyList() else throw e
+            if (e.code() == 404) SearchPage(emptyList(), hasMore = false) else throw e
         }
     }
 

@@ -29,8 +29,17 @@ import kotlinx.coroutines.launch
 sealed interface SearchUiState {
     data object Idle : SearchUiState
     data object Loading : SearchUiState
-    /** [offline] is true when the results came from the local database rather than Scryfall. */
-    data class Success(val cards: List<ScryfallCard>, val offline: Boolean = false) : SearchUiState
+    /**
+     * [offline] is true when the results came from the local database rather than Scryfall.
+     * [hasMore]/[loadingMore] drive infinite-scroll — Scryfall paginates at 175 cards per page,
+     * so a broad query needs more than one request to surface every match.
+     */
+    data class Success(
+        val cards: List<ScryfallCard>,
+        val offline: Boolean = false,
+        val hasMore: Boolean = false,
+        val loadingMore: Boolean = false
+    ) : SearchUiState
     data class Error(val message: String) : SearchUiState
     /** Offline and no card database has been downloaded yet. */
     data object OfflineNoDatabase : SearchUiState
@@ -173,6 +182,12 @@ class SearchViewModel(
     private val _suggestions = MutableStateFlow<List<String>>(emptyList())
     val suggestions: StateFlow<List<String>> = _suggestions.asStateFlow()
 
+    // The exact request behind the current results, so loadMore() can fetch the next page of it.
+    private var currentPage = 1
+    private var currentQueryString = ""
+    private var currentSort = SortOption.RELEVANCE
+    private var currentDirection = SortDirection.ASCENDING
+
     init {
         // Search as the user types or changes filters/sort: debounce so we don't fire on every
         // keystroke, and collectLatest cancels an in-flight request when the query changes again.
@@ -239,10 +254,15 @@ class SearchViewModel(
             _uiState.value = SearchUiState.Idle
             return
         }
+        currentPage = 1
+        currentQueryString = query
+        currentSort = sort
+        currentDirection = direction
         _uiState.value = SearchUiState.Loading
         _uiState.value = try {
             val dir = if (sort.order != null) direction.dir else null
-            SearchUiState.Success(repository.search(query, sort.order, dir))
+            val page = repository.search(query, sort.order, dir, page = 1)
+            SearchUiState.Success(page.cards, hasMore = page.hasMore)
         } catch (e: Exception) {
             if (isOffline(e)) {
                 // Fall back to the locally downloaded card database, if there is one.
@@ -256,6 +276,28 @@ class SearchViewModel(
                 }
             } else {
                 SearchUiState.Error(e.message ?: "Something went wrong searching Scryfall.")
+            }
+        }
+    }
+
+    /** Fetch the next page of the current search and append it, for infinite-scroll in the results list. */
+    fun loadMore() {
+        val state = _uiState.value
+        if (state !is SearchUiState.Success || state.offline || !state.hasMore || state.loadingMore) return
+        viewModelScope.launch {
+            _uiState.value = state.copy(loadingMore = true)
+            val nextPage = currentPage + 1
+            try {
+                val dir = if (currentSort.order != null) currentDirection.dir else null
+                val page = repository.search(currentQueryString, currentSort.order, dir, page = nextPage)
+                currentPage = nextPage
+                val latest = _uiState.value
+                if (latest is SearchUiState.Success) {
+                    _uiState.value = latest.copy(cards = latest.cards + page.cards, hasMore = page.hasMore, loadingMore = false)
+                }
+            } catch (e: Exception) {
+                val latest = _uiState.value
+                if (latest is SearchUiState.Success) _uiState.value = latest.copy(loadingMore = false)
             }
         }
     }

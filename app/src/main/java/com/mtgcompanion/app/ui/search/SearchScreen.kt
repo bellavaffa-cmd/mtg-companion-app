@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -44,11 +45,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -103,6 +106,19 @@ fun SearchScreen(
     // Index (within the current results) of the card enlarged by a tap, if any.
     var zoomIndex by remember { mutableStateOf<Int?>(null) }
     val resultCards = (uiState as? SearchUiState.Success)?.cards.orEmpty()
+    val listState = rememberLazyListState()
+
+    // Scryfall paginates at 175 cards per page — fetch the next page once the user scrolls near
+    // the bottom, so a broad query doesn't silently stop at the first page.
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo }
+            .collect { layoutInfo ->
+                val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@collect
+                if (layoutInfo.totalItemsCount > 0 && lastVisible >= layoutInfo.totalItemsCount - 4) {
+                    viewModel.loadMore()
+                }
+            }
+    }
 
     Scaffold(
         containerColor = Bg,
@@ -215,6 +231,7 @@ fun SearchScreen(
             }
 
             LazyColumn(
+                state = listState,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -284,6 +301,14 @@ fun SearchScreen(
                                     onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
                                     onLongClick = { menuTarget = card }
                                 )
+                            }
+                        }
+                        if (state.loadingMore) {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) { CircularProgressIndicator(color = Gold) }
                             }
                         }
                     }
