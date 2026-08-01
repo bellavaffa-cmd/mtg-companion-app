@@ -92,9 +92,7 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
             }
         } else {
             LazyVerticalGrid(
-                // Adaptive with a small min size so 2 columns fit even on narrow phones
-                // (alongside the collapsed side rail), and more columns on wider screens.
-                columns = GridCells.Adaptive(minSize = 118.dp),
+                columns = GridCells.Fixed(4),
                 modifier = Modifier.fillMaxSize().background(Bg).padding(padding),
                 contentPadding = PaddingValues(20.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

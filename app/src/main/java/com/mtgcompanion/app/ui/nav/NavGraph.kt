@@ -151,7 +151,10 @@ fun MtgNavGraph(
         ) {
             composable(Routes.HOME) {
                 val viewModel: HomeViewModel = viewModel(
-                    factory = HomeViewModel.Factory(deckRepository, collectionRepository)
+                    factory = HomeViewModel.Factory(
+                        deckRepository, collectionRepository, settingsRepository,
+                        offlineCardRepository, driveSyncManager
+                    )
                 )
                 HomeScreen(
                     viewModel = viewModel,
@@ -160,7 +163,9 @@ fun MtgNavGraph(
                     onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
                     onOpenScan = { navController.navigateToTab(Routes.SCAN) },
                     onOpenRules = { navController.navigateToTab(Routes.RULES) },
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) }
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onOpenDeck = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
+                    onViewCard = { name -> navController.navigate(Routes.detail(name)) }
                 )
             }
 
@@ -234,6 +239,8 @@ fun MtgNavGraph(
                 val viewModel: DeckDetailViewModel = viewModel(
                     factory = DeckDetailViewModel.Factory(deckId, deckRepository, collectionRepository, settingsRepository)
                 )
+                // Remembered for Home's "continue where you left off" tile.
+                LaunchedEffect(deckId) { settingsRepository.setLastOpenedDeckId(deckId) }
                 DeckDetailScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },

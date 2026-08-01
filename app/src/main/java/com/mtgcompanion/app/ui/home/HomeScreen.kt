@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,8 +39,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.ui.common.AnimatedUsdText
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -56,10 +65,17 @@ fun HomeScreen(
     onOpenDecks: () -> Unit,
     onOpenScan: () -> Unit,
     onOpenRules: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenDeck: (String) -> Unit,
+    onViewCard: (String) -> Unit
 ) {
     val deckCount by viewModel.deckCount.collectAsState()
     val binderCount by viewModel.binderCount.collectAsState()
+    val collectionValue by viewModel.collectionValue.collectAsState()
+    val lastOpenedDeck by viewModel.lastOpenedDeck.collectAsState()
+    val matchSummary by viewModel.matchSummary.collectAsState()
+    val cardOfDay by viewModel.cardOfDay.collectAsState()
+    val alert by viewModel.alert.collectAsState()
 
     Scaffold(
         containerColor = Bg,
@@ -84,10 +100,41 @@ fun HomeScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = TextMuted
             )
+
+            alert?.let { message ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Surface)
+                        .border(BorderStroke(1.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
+                        .padding(12.dp)
+                ) {
+                    Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = Gold, modifier = Modifier.size(20.dp))
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = TextPrimary)
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatCard("DECKS", "$deckCount", Modifier.weight(1f))
                 StatCard("BINDERS", "$binderCount", Modifier.weight(1f))
+                ValueStatCard(collectionValue, Modifier.weight(1f))
             }
+
+            if (matchSummary.total > 0) {
+                MatchSummaryCard(matchSummary)
+            }
+
+            lastOpenedDeck?.let { deck ->
+                ContinueDeckTile(deck, onClick = { onOpenDeck(deck.id) })
+            }
+
+            cardOfDay?.let { card ->
+                CardOfDayTile(card, onClick = { onViewCard(card.name) })
+            }
+
             HomeTile(Icons.Filled.Search, "Search", "Find any card on Scryfall", onOpenSearch)
             HomeTile(Icons.Filled.Collections, "Collection", "Your owned cards and binders", onOpenCollection)
             HomeTile(Icons.Filled.Style, "Decks", "Build, analyze, and check legality", onOpenDecks, iconSize = 34.dp)
@@ -108,6 +155,103 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
     ) {
         Text(value, style = MaterialTheme.typography.titleLarge, color = GoldLight)
         Text(label, style = MaterialTheme.typography.labelMedium, color = TextMuted)
+    }
+}
+
+@Composable
+private fun ValueStatCard(value: Double?, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Surface)
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .padding(16.dp)
+    ) {
+        if (value != null) {
+            AnimatedUsdText(value, style = MaterialTheme.typography.titleLarge, color = GoldLight)
+        } else {
+            Text("—", style = MaterialTheme.typography.titleLarge, color = GoldLight)
+        }
+        Text("VALUE", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+    }
+}
+
+@Composable
+private fun MatchSummaryCard(summary: MatchSummary) {
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Surface)
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .padding(16.dp)
+    ) {
+        Text(
+            "${summary.wins}-${summary.losses}" + if (summary.draws > 0) "-${summary.draws}" else "",
+            style = MaterialTheme.typography.titleMedium,
+            color = GoldLight
+        )
+        Text(
+            "record across all decks (${(summary.wins * 100 / summary.total)}% win rate)",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextMuted
+        )
+    }
+}
+
+@Composable
+private fun ContinueDeckTile(deck: Deck, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Surface)
+            .border(BorderStroke(1.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp)
+    ) {
+        AsyncImage(
+            model = deck.commander?.imageUrl.toArtCropUrl(),
+            contentDescription = deck.commander?.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(width = 64.dp, height = 46.dp).clip(RoundedCornerShape(4.dp))
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text("CONTINUE", style = MaterialTheme.typography.labelMedium, color = TextDim)
+            Text(deck.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextDim)
+    }
+}
+
+@Composable
+private fun CardOfDayTile(card: CardOfDay, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Surface)
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp)
+    ) {
+        AsyncImage(
+            model = card.imageUrl,
+            contentDescription = card.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.width(44.dp).aspectRatio(0.72f).clip(RoundedCornerShape(4.dp))
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text("CARD OF THE DAY", style = MaterialTheme.typography.labelMedium, color = TextDim)
+            Text(card.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextDim)
     }
 }
 

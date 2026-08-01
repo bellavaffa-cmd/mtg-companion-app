@@ -57,6 +57,10 @@ class SettingsRepository(private val context: Context) {
     private val gridColumnsKey = intPreferencesKey("grid_columns")
     private val appBrightnessKey = stringPreferencesKey("app_brightness")
     private val accentThemeKey = stringPreferencesKey("accent_theme")
+    private val lastOpenedDeckIdKey = stringPreferencesKey("last_opened_deck_id")
+    private val cardOfDayDateKey = stringPreferencesKey("card_of_day_date")
+    private val cardOfDayNameKey = stringPreferencesKey("card_of_day_name")
+    private val cardOfDayImageUrlKey = stringPreferencesKey("card_of_day_image_url")
 
     val tcgPlayerClientId: Flow<String?> = context.dataStore.data.map { it[clientIdKey] }
     val tcgPlayerClientSecret: Flow<String?> = context.dataStore.data.map { it[clientSecretKey] }
@@ -74,6 +78,14 @@ class SettingsRepository(private val context: Context) {
 
     val appBrightness: Flow<AppBrightness> = context.dataStore.data.map { AppBrightness.fromName(it[appBrightnessKey]) }
     val accentTheme: Flow<AccentTheme> = context.dataStore.data.map { AccentTheme.fromName(it[accentThemeKey]) }
+
+    /** The deck a user most recently opened, for Home's "continue where you left off" tile. */
+    val lastOpenedDeckId: Flow<String?> = context.dataStore.data.map { it[lastOpenedDeckIdKey] }
+
+    /** Home's "card of the day" spotlight, re-rolled once per calendar day. */
+    val cardOfDayDate: Flow<String?> = context.dataStore.data.map { it[cardOfDayDateKey] }
+    val cardOfDayName: Flow<String?> = context.dataStore.data.map { it[cardOfDayNameKey] }
+    val cardOfDayImageUrl: Flow<String?> = context.dataStore.data.map { it[cardOfDayImageUrlKey] }
 
     suspend fun setSearchViewMode(mode: CardViewMode) {
         context.dataStore.edit { it[searchViewModeKey] = mode.name }
@@ -105,6 +117,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAccentTheme(theme: AccentTheme) {
         context.dataStore.edit { it[accentThemeKey] = theme.name }
+    }
+
+    suspend fun setLastOpenedDeckId(deckId: String) {
+        context.dataStore.edit { it[lastOpenedDeckIdKey] = deckId }
+    }
+
+    suspend fun setCardOfDay(date: String, name: String, imageUrl: String?) {
+        context.dataStore.edit {
+            it[cardOfDayDateKey] = date
+            it[cardOfDayNameKey] = name
+            if (imageUrl != null) it[cardOfDayImageUrlKey] = imageUrl else it.remove(cardOfDayImageUrlKey)
+        }
     }
 
     suspend fun currentCredentials(): Pair<String, String>? {
