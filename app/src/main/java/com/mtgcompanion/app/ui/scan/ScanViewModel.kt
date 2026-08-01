@@ -51,8 +51,16 @@ class ScanViewModel(
     //  - lastLookedUp:  the title we last sent to Scryfall, so a card lingering in frame
     //                   isn't looked up again and again.
     //  - nameCache:     titles already resolved this session, to skip the network entirely.
+    //  - lastAddedCard: the card we most recently added from THIS card sitting in frame — cleared
+    //                   once the frame goes title-less (card removed). OCR isn't pixel-stable
+    //                   frame to frame, so a lingering card can occasionally read as a slightly
+    //                   different string (a stray misread character); comparing new candidates
+    //                   against this via looksLikeSameCard catches that case so the same physical
+    //                   card doesn't silently get re-added (bumping its count) just because the
+    //                   exact OCR string flickered while it never actually left view.
     private var lastCandidate: String? = null
     private var lastLookedUp: String? = null
+    private var lastAddedCard: ScryfallCard? = null
     private val nameCache = HashMap<String, ScryfallCard>()
 
     // A camera-shutter click played on each successful scan.
@@ -89,10 +97,23 @@ class ScanViewModel(
             // No title in view (e.g. between cards) — reset so the next card reads as fresh.
             lastCandidate = null
             lastLookedUp = null
+            lastAddedCard = null
             busy.set(false)
             onProcessed()
             return
         }
+
+        // Still the same physical card sitting in frame, even if this frame's OCR came out
+        // slightly different from the exact string we last looked up — don't re-add it.
+        lastAddedCard?.let { last ->
+            if (looksLikeSameCard(candidate, last.name)) {
+                lastCandidate = candidate.lowercase()
+                busy.set(false)
+                onProcessed()
+                return
+            }
+        }
+
         val normalized = candidate.lowercase()
         // Require the same title on two consecutive frames before spending a lookup — this
         // rejects blurry mid-motion misreads — and don't re-look-up a title still in frame.
@@ -112,6 +133,7 @@ class ScanViewModel(
 
         nameCache[cacheKey]?.let { cached ->
             addScannedCard(cached)
+            lastAddedCard = cached
             busy.set(false)
             onProcessed()
             return
@@ -122,6 +144,7 @@ class ScanViewModel(
                 val card = resolveCard(candidate, printing)
                 nameCache[cacheKey] = card
                 addScannedCard(card)
+                lastAddedCard = card
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(status = "Didn't recognize \"$candidate\" — keep scanning…")
             } finally {
