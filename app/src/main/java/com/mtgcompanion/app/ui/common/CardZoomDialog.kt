@@ -140,10 +140,12 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                             onConfirm = { chosen -> onSelectPrinting(chosen); previewed = null }
                         )
                     }
-                    if (card.priceUsd != null || card.quantity != null ||
+                    // While a printing is previewed, show its own price instead of the original's.
+                    val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd
+                    if (effectivePrice != null || card.quantity != null ||
                         card.onAdd != null || card.onViewDetails != null
                     ) {
-                        CardInfoBar(card)
+                        CardInfoBar(card, effectivePrice)
                     }
                     if (card.sources.isNotEmpty()) {
                         SourcesSection(card.sources)
@@ -155,7 +157,7 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
 }
 
 @Composable
-private fun CardInfoBar(card: ZoomCard) {
+private fun CardInfoBar(card: ZoomCard, priceUsd: Double?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -165,12 +167,12 @@ private fun CardInfoBar(card: ZoomCard) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            card.priceUsd?.let { price ->
+            priceUsd?.let { price ->
                 InfoStat("VALUE", "$" + "%,.2f".format(price))
             }
             // A total is only meaningful once you own a copy — otherwise it's just "$0.00".
-            if (card.priceUsd != null && card.quantity != null && card.quantity > 0) {
-                InfoStat("TOTAL", "$" + "%,.2f".format(card.priceUsd * card.quantity))
+            if (priceUsd != null && card.quantity != null && card.quantity > 0) {
+                InfoStat("TOTAL", "$" + "%,.2f".format(priceUsd * card.quantity))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
