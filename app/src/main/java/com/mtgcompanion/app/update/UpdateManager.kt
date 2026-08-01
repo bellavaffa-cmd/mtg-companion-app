@@ -27,6 +27,10 @@ data class UpdateUiState(
     val checking: Boolean = false,
     val available: UpdateInfo? = null,
     val downloading: Boolean = false,
+    // 0f..1f while the download's total size is known; null while unknown (indeterminate) or idle.
+    val downloadProgress: Float? = null,
+    // Brief handoff to the system package installer, after the download finishes.
+    val installing: Boolean = false,
     val message: String? = null,
     val dismissed: Boolean = false
 )
@@ -76,13 +80,16 @@ class UpdateManager(
     fun startUpdate() {
         val info = _state.value.available ?: return
         scope.launch {
-            _state.value = _state.value.copy(downloading = true, message = "Downloading ${info.versionName}…")
+            _state.value = _state.value.copy(
+                downloading = true, downloadProgress = null, installing = false,
+                message = "Downloading ${info.versionName}…"
+            )
             try {
                 val apk = withContext(Dispatchers.IO) { download(info) }
-                _state.value = _state.value.copy(downloading = false, message = "Starting installer…")
+                _state.value = _state.value.copy(downloading = false, downloadProgress = null, installing = true, message = "Starting installer…")
                 install(apk)
             } catch (e: Exception) {
-                _state.value = _state.value.copy(downloading = false, message = "Download failed: ${e.message}")
+                _state.value = _state.value.copy(downloading = false, downloadProgress = null, installing = false, message = "Download failed: ${e.message}")
             }
         }
     }
@@ -103,6 +110,7 @@ class UpdateManager(
         }
     }
 
+    /** Streams the APK to disk in chunks, reporting [UpdateUiState.downloadProgress] as it goes. */
     private fun download(info: UpdateInfo): File {
         val dest = File(context.getExternalFilesDir(null), "mtg-companion-update.apk")
         if (dest.exists()) dest.delete()
@@ -110,7 +118,29 @@ class UpdateManager(
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw IOException("Download failed (${resp.code})")
             val body = resp.body ?: throw IOException("Empty download")
-            dest.outputStream().use { out -> body.byteStream().copyTo(out) }
+            val total = body.contentLength().takeIf { it > 0 }
+            var bytesRead = 0L
+            var lastPercent = -1
+            body.byteStream().use { input ->
+                dest.outputStream().use { out ->
+                    val buffer = ByteArray(16 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read == -1) break
+                        out.write(buffer, 0, read)
+                        bytesRead += read
+                        if (total != null) {
+                            // Only push a state update when the whole percent changes, so a fast
+                            // connection doesn't flood the StateFlow with a recomposition per chunk.
+                            val percent = ((bytesRead * 100) / total).toInt().coerceIn(0, 100)
+                            if (percent != lastPercent) {
+                                lastPercent = percent
+                                _state.value = _state.value.copy(downloadProgress = percent / 100f)
+                            }
+                        }
+                    }
+                }
+            }
         }
         return dest
     }
@@ -121,6 +151,7 @@ class UpdateManager(
         // send the user straight to this app's toggle instead.
         if (!context.packageManager.canRequestPackageInstalls()) {
             _state.value = _state.value.copy(
+                installing = false,
                 message = "Allow MTG Companion to install apps, then tap Update again."
             )
             val settings = Intent(

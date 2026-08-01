@@ -39,6 +39,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -464,14 +465,32 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
         )
         Button(
             onClick = { updateManager.startUpdate() },
-            enabled = !state.downloading,
+            enabled = !state.downloading && !state.installing,
             shape = RoundedCornerShape(2.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
         ) {
-            if (state.downloading) {
+            if (state.downloading || state.installing) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Bg)
             } else {
                 Text("DOWNLOAD & INSTALL", style = MaterialTheme.typography.labelLarge, color = Bg)
+            }
+        }
+        if (state.downloading) {
+            val progress = state.downloadProgress
+            if (progress != null) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    color = Gold,
+                    trackColor = BorderColor,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "${(progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted
+                )
+            } else {
+                LinearProgressIndicator(color = Gold, trackColor = BorderColor, modifier = Modifier.fillMaxWidth())
             }
         }
     } else {

@@ -27,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -46,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -82,6 +84,7 @@ import com.mtgcompanion.app.ui.search.SearchScreen
 import com.mtgcompanion.app.ui.search.SearchViewModel
 import com.mtgcompanion.app.ui.settings.SettingsScreen
 import com.mtgcompanion.app.ui.theme.Bg
+import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
@@ -289,6 +292,9 @@ fun MtgNavGraph(
         UpdateDialog(
             info = update,
             downloading = updateState.downloading,
+            downloadProgress = updateState.downloadProgress,
+            installing = updateState.installing,
+            message = updateState.message,
             onUpdate = { updateManager.startUpdate() },
             onDismiss = { updateManager.dismiss() }
         )
@@ -299,11 +305,14 @@ fun MtgNavGraph(
 private fun UpdateDialog(
     info: UpdateInfo,
     downloading: Boolean,
+    downloadProgress: Float?,
+    installing: Boolean,
+    message: String?,
     onUpdate: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = { if (!downloading) onDismiss() },
+        onDismissRequest = { if (!downloading && !installing) onDismiss() },
         containerColor = Surface,
         title = { Text("Update available", color = GoldLight) },
         text = {
@@ -325,23 +334,48 @@ private fun UpdateDialog(
                 }
                 if (downloading) {
                     Spacer(Modifier.height(14.dp))
+                    if (downloadProgress != null) {
+                        LinearProgressIndicator(
+                            progress = { downloadProgress },
+                            color = Gold,
+                            trackColor = BorderColor,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Downloading… ${(downloadProgress * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted
+                        )
+                    } else {
+                        LinearProgressIndicator(color = Gold, trackColor = BorderColor, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(6.dp))
+                        Text("Downloading…", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    }
+                } else if (installing && message != null) {
+                    // Brief handoff to the installer — the actual install screen after this is the
+                    // system package installer's own UI, outside the app's control.
+                    Spacer(Modifier.height(14.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Gold)
                         Spacer(Modifier.width(10.dp))
-                        Text("Downloading…", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                        Text(message, style = MaterialTheme.typography.bodySmall, color = TextMuted)
                     }
+                } else if (message != null) {
+                    Spacer(Modifier.height(14.dp))
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = Color(0xFFD3402F))
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = onUpdate,
-                enabled = !downloading,
+                enabled = !downloading && !installing,
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
             ) { Text("UPDATE", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !downloading) { Text("LATER", color = TextMuted) }
+            TextButton(onClick = onDismiss, enabled = !downloading && !installing) { Text("LATER", color = TextMuted) }
         }
     )
 }
