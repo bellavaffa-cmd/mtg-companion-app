@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,7 +65,7 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
+fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrowsePrecons: () -> Unit) {
     val decks by viewModel.decks.collectAsState()
     val commanderColors by viewModel.commanderColors.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -75,6 +76,9 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit) {
             TopAppBar(
                 title = { Text("DECKS", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
                 actions = {
+                    IconButton(onClick = onBrowsePrecons) {
+                        Icon(Icons.Filled.Style, contentDescription = "Browse precons", tint = Gold)
+                    }
                     IconButton(onClick = { showCreateDialog = true }) {
                         Icon(Icons.Filled.Add, contentDescription = "New deck", tint = Gold)
                     }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.mtgcompanion.app.network.edhrec.EdhrecApi
+import com.mtgcompanion.app.network.mtgjson.MtgJsonApi
 import com.mtgcompanion.app.network.scryfall.ScryfallApi
 import com.mtgcompanion.app.network.spellbook.SpellbookApi
 import com.mtgcompanion.app.network.tcgplayer.TcgPlayerApi
@@ -113,5 +114,10 @@ object NetworkModule {
 
     val tcgPlayerApi: TcgPlayerApi by lazy {
         retrofitFor("https://api.tcgplayer.com/").create(TcgPlayerApi::class.java)
+    }
+
+    /** MTGJSON's static precon/theme-deck data — exact decklists (cards + quantities + Scryfall ids). */
+    val mtgJsonApi: MtgJsonApi by lazy {
+        retrofitFor("https://mtgjson.com/api/v5/").create(MtgJsonApi::class.java)
     }
 }

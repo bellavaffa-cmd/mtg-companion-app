@@ -71,6 +71,8 @@ import com.mtgcompanion.app.ui.decks.DeckDetailScreen
 import com.mtgcompanion.app.ui.decks.DeckDetailViewModel
 import com.mtgcompanion.app.ui.decks.DecksScreen
 import com.mtgcompanion.app.ui.decks.DecksViewModel
+import com.mtgcompanion.app.ui.decks.PreconsScreen
+import com.mtgcompanion.app.ui.decks.PreconsViewModel
 import com.mtgcompanion.app.ui.detail.CardDetailScreen
 import com.mtgcompanion.app.ui.detail.CardDetailViewModel
 import com.mtgcompanion.app.ui.home.HomeScreen
@@ -103,6 +105,7 @@ private object Routes {
     const val SEARCH_RESULTS = "search_results"
     const val COLLECTION = "collection"
     const val DECKS = "decks"
+    const val PRECONS = "precons"
     const val SETTINGS = "settings"
     const val SCAN = "scan"
     const val RULES = "rules"
@@ -227,7 +230,21 @@ fun MtgNavGraph(
                 )
                 DecksScreen(
                     viewModel = viewModel,
-                    onDeckClick = { deckId -> navController.navigate(Routes.deckDetail(deckId)) }
+                    onDeckClick = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
+                    onBrowsePrecons = { navController.navigate(Routes.PRECONS) }
+                )
+            }
+
+            composable(Routes.PRECONS) {
+                val viewModel: PreconsViewModel = viewModel(
+                    factory = PreconsViewModel.Factory(deckRepository)
+                )
+                PreconsScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onImported = { deckId ->
+                        navController.navigate(Routes.deckDetail(deckId)) { popUpTo(Routes.DECKS) }
+                    }
                 )
             }
 
