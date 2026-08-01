@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -359,7 +360,8 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
         }
         BarItem(
             Icons.Filled.Style, "Decks",
-            currentRoute == Routes.DECKS || currentRoute == Routes.DECK_DETAIL
+            currentRoute == Routes.DECKS || currentRoute == Routes.DECK_DETAIL,
+            iconSize = 30.dp
         ) {
             navController.navigateToTab(Routes.DECKS)
         }
@@ -373,11 +375,17 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
 }
 
 @Composable
-private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+private fun RowScope.BarItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    iconSize: Dp = 24.dp,
+    onClick: () -> Unit
+) {
     NavigationBarItem(
         selected = selected,
         onClick = onClick,
-        icon = { Icon(icon, contentDescription = label) },
+        icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize)) },
         // Small single-line label so all five fit without wrapping.
         label = { Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         colors = bottomItemColors()
