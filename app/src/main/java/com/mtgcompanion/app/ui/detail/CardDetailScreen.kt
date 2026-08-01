@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.ManaCost
 import com.mtgcompanion.app.ui.common.ZoomCard
 import coil.compose.AsyncImage
@@ -439,9 +440,9 @@ private fun SectionHeader(text: String) {
 }
 
 @Composable
-private fun GoldPanel(content: @Composable ColumnScope.() -> Unit) {
+private fun GoldPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
@@ -625,14 +626,20 @@ private fun CombosSection(state: CardDetailUiState) {
             Text("No known combos using this card.", style = MaterialTheme.typography.bodySmall)
         }
         else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            state.combos.take(5).forEach { variant -> ComboRow(variant) }
+            state.combos.take(5).forEach { variant ->
+                var showCombo by remember { mutableStateOf(false) }
+                ComboRow(variant, onClick = { showCombo = true })
+                if (showCombo) {
+                    ComboDetailDialog(combo = variant, onDismiss = { showCombo = false })
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ComboRow(variant: Variant) {
-    GoldPanel {
+private fun ComboRow(variant: Variant, onClick: () -> Unit) {
+    GoldPanel(modifier = Modifier.clickable(onClick = onClick)) {
         Text(
             variant.uses.joinToString(" + ") { it.card.name },
             style = MaterialTheme.typography.bodyMedium,

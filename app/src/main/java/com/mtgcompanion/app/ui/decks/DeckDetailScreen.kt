@@ -103,6 +103,7 @@ import com.mtgcompanion.app.ui.common.AnimatedUsdText
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.StaggeredEntrance
 import com.mtgcompanion.app.ui.common.cardGrid
@@ -1124,7 +1125,13 @@ private fun AnalysisTab(
         if (analysis.combos.isEmpty()) {
             item { Text("No complete combos detected in this deck.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
         } else {
-            items(analysis.combos.take(10), key = { it.id }) { combo -> ComboRow(combo) }
+            items(analysis.combos.take(10), key = { it.id }) { combo ->
+                var showCombo by remember { mutableStateOf(false) }
+                ComboRow(combo, onClick = { showCombo = true })
+                if (showCombo) {
+                    ComboDetailDialog(combo = combo, onDismiss = { showCombo = false })
+                }
+            }
         }
         item { SectionLabel("EDHREC SUGGESTIONS") }
         val sug = suggestions
@@ -1231,13 +1238,14 @@ private fun StatBar(label: String, count: Int, max: Int) {
 }
 
 @Composable
-private fun ComboRow(combo: Variant) {
+private fun ComboRow(combo: Variant, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
         Text(combo.uses.joinToString(" + ") { it.card.name }, style = MaterialTheme.typography.bodyMedium, color = GoldLight)
