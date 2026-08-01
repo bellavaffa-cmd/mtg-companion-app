@@ -252,7 +252,16 @@ fun DeckDetailScreen(
                         analysis,
                         onZoomCard = { zoom = "card" to it },
                         cardActions = { entry ->
-                            deckCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeCardTarget = it })
+                            deckCardActions(
+                                entry = entry,
+                                mode = currentDeck.mode,
+                                isCommander = currentDeck.commander?.scryfallId == entry.scryfallId,
+                                onViewDetails = onViewDetails,
+                                onCopy = { copyTarget = it },
+                                onMove = { moveTarget = it },
+                                onRemove = { removeCardTarget = it },
+                                onSetCommander = { viewModel.setCommander(it) }
+                            )
                         },
                         viewModel
                     )
@@ -1462,13 +1471,25 @@ private fun DeckCardTile(card: DeckCardEntry, onClick: () -> Unit, actions: List
 
 private fun deckCardActions(
     entry: DeckCardEntry,
+    mode: GameMode,
+    isCommander: Boolean,
     onViewDetails: (String) -> Unit,
     onCopy: (DeckCardEntry) -> Unit,
     onMove: (DeckCardEntry) -> Unit,
-    onRemove: (DeckCardEntry) -> Unit
-) = listOf(
-    CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { onCopy(entry) },
-    CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { onMove(entry) },
-    CardMenuAction("Remove from deck", Icons.Filled.Close, destructive = true) { onRemove(entry) },
-    CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
-)
+    onRemove: (DeckCardEntry) -> Unit,
+    onSetCommander: (DeckCardEntry?) -> Unit
+): List<CardMenuAction> {
+    val actions = mutableListOf<CardMenuAction>()
+    if (entry.canBeCommander && mode == GameMode.COMMANDER) {
+        actions += if (isCommander) {
+            CardMenuAction("Remove as commander", Icons.Filled.Star) { onSetCommander(null) }
+        } else {
+            CardMenuAction("Set as commander", Icons.Outlined.Star) { onSetCommander(entry) }
+        }
+    }
+    actions += CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { onCopy(entry) }
+    actions += CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { onMove(entry) }
+    actions += CardMenuAction("Remove from deck", Icons.Filled.Close, destructive = true) { onRemove(entry) }
+    actions += CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
+    return actions
+}
