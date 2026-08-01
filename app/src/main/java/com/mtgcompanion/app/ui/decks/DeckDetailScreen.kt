@@ -750,10 +750,8 @@ private fun CardsTab(
     val cardGroups by viewModel.cardGroups.collectAsState()
 
     // Grouped by type instantly from cached data, refined once analysis resolves from Scryfall;
-    // only falls back to one flat list for entries with no type info at all yet. The commander is
-    // just another entry in deck.cards, so it's shown inline in its type group like any other card
-    // (isCommander marks it with a star) rather than pinned in its own separate-looking section.
-    val groups = (
+    // only falls back to one flat list for entries with no type info at all yet.
+    val typeGroups = (
         when {
             analysis.byType.isNotEmpty() -> analysis.byType
             cardGroups.isNotEmpty() -> cardGroups
@@ -764,6 +762,20 @@ private fun CardsTab(
             val cards = group.cards.filter { trimmed.isBlank() || it.name.contains(trimmed, ignoreCase = true) }
             if (cards.isEmpty()) null else group.copy(cards = cards)
         }
+
+    // The commander renders with the same full-card DeckCardRow/DeckCardTile as everything else,
+    // but pulled out of its type group into its own pinned section at the top of the list.
+    val commanderId = deck.commander?.scryfallId
+    var commanderEntry: DeckCardEntry? = null
+    val otherGroups = typeGroups.mapNotNull { group ->
+        val rest = group.cards.filter { card ->
+            val isCommander = card.scryfallId == commanderId
+            if (isCommander) commanderEntry = card
+            !isCommander
+        }
+        if (rest.isEmpty()) null else group.copy(cards = rest)
+    }
+    val groups = commanderEntry?.let { listOf(TypeGroup("Commander", listOf(it))) + otherGroups } ?: otherGroups
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (deck.cards.isNotEmpty() || deck.commander != null) {

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
@@ -55,7 +57,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
@@ -63,6 +67,8 @@ import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.ui.common.CardActionMenu
+import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.StaggeredEntrance
@@ -275,12 +281,12 @@ private fun AllCardsTab(
             } else {
                 if (viewMode == CardViewMode.GRID) {
                     cardGrid(filtered, columns = gridColumns, key = { it.scryfallId }) { card ->
-                        AllCardTile(card = card, onClick = { zoomId = card.scryfallId })
+                        AllCardTile(card = card, onClick = { zoomId = card.scryfallId }, onViewDetails = { onViewDetails(card.name) })
                     }
                 } else {
                     itemsIndexed(filtered, key = { _, it -> it.scryfallId }) { index, card ->
                         StaggeredEntrance(index) {
-                            AllCardRow(card = card, onClick = { zoomId = card.scryfallId })
+                            AllCardRow(card = card, onClick = { zoomId = card.scryfallId }, onViewDetails = { onViewDetails(card.name) })
                         }
                     }
                 }
@@ -307,109 +313,154 @@ private fun AllCardsTab(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit) {
+private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit, onViewDetails: () -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .pressScale(interactionSource)
-            .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .clickable(interactionSource = interactionSource, indication = androidx.compose.foundation.LocalIndication.current, onClick = onClick)
-            .padding(12.dp)
-    ) {
-        AsyncImage(
-            model = card.imageUrl.toArtCropUrl(),
-            contentDescription = card.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            Text(
-                "${card.total} total",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextMuted
-            )
-        }
-    }
-}
-
-@Composable
-private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit) {
-    val interactionSource = remember { MutableInteractionSource() }
-    Column(
-        modifier = Modifier.fillMaxWidth().pressScale(interactionSource)
-            .clickable(interactionSource = interactionSource, indication = androidx.compose.foundation.LocalIndication.current, onClick = onClick)
-    ) {
-        Box {
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .pressScale(interactionSource)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Surface)
+                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
+                    onClick = onClick,
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                )
+                .padding(12.dp)
+        ) {
             AsyncImage(
-                model = card.imageUrl,
+                model = card.imageUrl.toArtCropUrl(),
                 contentDescription = card.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
             )
-            Text(
-                "×${card.total}",
-                style = MaterialTheme.typography.labelMedium,
-                color = GoldLight,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                Text(
+                    "${card.total} total",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted
+                )
+            }
         }
-        Text(
-            card.name,
-            style = MaterialTheme.typography.labelMedium,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp)
+        CardActionMenu(
+            expanded = menuExpanded,
+            onDismiss = { menuExpanded = false },
+            actions = listOf(CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails() })
         )
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit, onViewDetails: () -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    Box {
+        Column(
+            modifier = Modifier.fillMaxWidth().pressScale(interactionSource)
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
+                    onClick = onClick,
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                )
+        ) {
+            Box {
+                AsyncImage(
+                    model = card.imageUrl,
+                    contentDescription = card.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+                )
+                Text(
+                    "×${card.total}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = GoldLight,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+            Text(
+                card.name,
+                style = MaterialTheme.typography.labelMedium,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        CardActionMenu(
+            expanded = menuExpanded,
+            onDismiss = { menuExpanded = false },
+            actions = listOf(CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails() })
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete: () -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .pressScale(interactionSource)
-            .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .clickable(interactionSource = interactionSource, indication = androidx.compose.foundation.LocalIndication.current, onClick = onClick)
-            .padding(12.dp)
-    ) {
-        Icon(
-            if (collection.kind == CollectionType.WISHLIST) Icons.Filled.Star else Icons.Filled.Collections,
-            contentDescription = null,
-            tint = GoldDim,
-            modifier = Modifier.size(40.dp)
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(collection.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            val total = collection.entries.sumOf { it.quantity + it.foilQuantity }
-            val label = if (collection.kind == CollectionType.WISHLIST) "WISHLIST · " else ""
-            Text(
-                "$label$total cards · ${collection.entries.size} unique",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextMuted
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .pressScale(interactionSource)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Surface)
+                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
+                    onClick = onClick,
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                )
+                .padding(12.dp)
+        ) {
+            Icon(
+                if (collection.kind == CollectionType.WISHLIST) Icons.Filled.Star else Icons.Filled.Collections,
+                contentDescription = null,
+                tint = GoldDim,
+                modifier = Modifier.size(40.dp)
             )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(collection.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                val total = collection.entries.sumOf { it.quantity + it.foilQuantity }
+                val label = if (collection.kind == CollectionType.WISHLIST) "WISHLIST · " else ""
+                Text(
+                    "$label$total cards · ${collection.entries.size} unique",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Filled.Delete, contentDescription = "Delete binder", tint = TextDim)
+            }
         }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = "Delete binder", tint = TextDim)
-        }
+        CardActionMenu(
+            expanded = menuExpanded,
+            onDismiss = { menuExpanded = false },
+            actions = listOf(CardMenuAction("Delete binder", Icons.Filled.Delete, destructive = true) { onDelete() })
+        )
     }
 }
 
