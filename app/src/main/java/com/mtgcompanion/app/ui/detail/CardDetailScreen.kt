@@ -44,6 +44,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -84,7 +86,6 @@ import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,16 +108,19 @@ fun CardDetailScreen(
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // Set when the add button on an enlarged card needs a binder-or-deck choice first.
     var chooseDestinationFor by remember { mutableStateOf<ScryfallCard?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.addedToCollectionMessage, state.addedToDeckMessage) {
-        if (state.addedToCollectionMessage != null || state.addedToDeckMessage != null) {
-            delay(2000)
+        val message = state.addedToCollectionMessage ?: state.addedToDeckMessage
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
             viewModel.clearMessages()
         }
     }
 
     Scaffold(
         containerColor = Bg,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(state.card?.name ?: "Card", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
@@ -173,7 +177,6 @@ fun CardDetailScreen(
                     }
                     fullSpanItem {
                         CollectionAndDeckActions(
-                            state = state,
                             onAddToCollection = { addTarget = card; showCollectionPicker = true },
                             onAddToDeck = { addTarget = card; showDeckPicker = true }
                         )
@@ -524,36 +527,30 @@ private fun CardHeader(card: ScryfallCard) {
 
 @Composable
 private fun CollectionAndDeckActions(
-    state: CardDetailUiState,
     onAddToCollection: () -> Unit,
     onAddToDeck: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    Column {
-        Box {
-            Button(
-                onClick = { menuOpen = true },
-                shape = RoundedCornerShape(2.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("ADD TO…", style = MaterialTheme.typography.labelLarge, color = Bg) }
-            DropdownMenu(
-                expanded = menuOpen,
-                onDismissRequest = { menuOpen = false },
-                modifier = Modifier.background(Surface)
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Binder", style = MaterialTheme.typography.bodyMedium, color = TextPrimary) },
-                    onClick = { menuOpen = false; onAddToCollection() }
-                )
-                DropdownMenuItem(
-                    text = { Text("Deck", style = MaterialTheme.typography.bodyMedium, color = TextPrimary) },
-                    onClick = { menuOpen = false; onAddToDeck() }
-                )
-            }
-        }
-        (state.addedToCollectionMessage ?: state.addedToDeckMessage)?.let {
-            Text(it, color = Gold, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+    Box {
+        Button(
+            onClick = { menuOpen = true },
+            shape = RoundedCornerShape(2.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("ADD TO…", style = MaterialTheme.typography.labelLarge, color = Bg) }
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false },
+            modifier = Modifier.background(Surface)
+        ) {
+            DropdownMenuItem(
+                text = { Text("Binder", style = MaterialTheme.typography.bodyMedium, color = TextPrimary) },
+                onClick = { menuOpen = false; onAddToCollection() }
+            )
+            DropdownMenuItem(
+                text = { Text("Deck", style = MaterialTheme.typography.bodyMedium, color = TextPrimary) },
+                onClick = { menuOpen = false; onAddToDeck() }
+            )
         }
     }
 }

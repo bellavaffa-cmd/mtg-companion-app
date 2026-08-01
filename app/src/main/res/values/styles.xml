@@ -4,4 +4,11 @@
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
     </style>
+
+    <!-- Shown by the OS the instant the app icon is tapped, before any Activity code runs. -->
+    <style name="Theme.MtgCompanionApp.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.MtgCompanionApp</item>
+    </style>
 </resources>

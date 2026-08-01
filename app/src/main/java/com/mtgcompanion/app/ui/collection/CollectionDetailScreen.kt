@@ -47,13 +47,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
-import com.mtgcompanion.app.ui.common.CardActionSheet
+import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
@@ -92,8 +94,6 @@ fun CollectionDetailScreen(
     // The card pending a remove-confirmation, if any.
     var removeTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     var confirmDeleteBinder by remember { mutableStateOf(false) }
-    // The card whose long-press quick-action menu is open.
-    var menuTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this binder).
     var copyTarget by remember { mutableStateOf<CollectionEntry?>(null) }
 
@@ -170,7 +170,7 @@ fun CollectionDetailScreen(
                             CollectionCardTile(
                                 entry = entry,
                                 onClick = { zoomId = entry.scryfallId },
-                                onLongClick = { menuTarget = entry }
+                                actions = collectionCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeTarget = it })
                             )
                         }
                     } else {
@@ -178,7 +178,7 @@ fun CollectionDetailScreen(
                             CollectionCardRow(
                                 entry = entry,
                                 onClick = { zoomId = entry.scryfallId },
-                                onLongClick = { menuTarget = entry },
+                                actions = collectionCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeTarget = it }),
                                 onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
                                 onRemove = { removeTarget = entry }
                             )
@@ -237,19 +237,6 @@ fun CollectionDetailScreen(
         )
     }
 
-    menuTarget?.let { entry ->
-        CardActionSheet(
-            cardName = entry.name,
-            actions = listOf(
-                CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { copyTarget = entry },
-                CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { moveTarget = entry },
-                CardMenuAction("Remove from binder", Icons.Filled.Close, destructive = true) { removeTarget = entry },
-                CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
-            ),
-            onDismiss = { menuTarget = null }
-        )
-    }
-
     copyTarget?.let { entry ->
         MoveTargetDialog(
             cardName = entry.name,
@@ -265,81 +252,112 @@ fun CollectionDetailScreen(
 private fun CollectionCardRow(
     entry: CollectionEntry,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    actions: List<CardMenuAction>,
     onQuantityChange: (Int, Int) -> Unit,
     onRemove: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(12.dp)
-    ) {
-        AsyncImage(
-            model = entry.imageUrl.toArtCropUrl(),
-            contentDescription = entry.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            Text(
-                "Normal: ${entry.quantity}" + if (entry.foilQuantity > 0) " · Foil: ${entry.foilQuantity}" else "",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextMuted
+    var menuExpanded by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(4.dp))
+                .background(Surface)
+                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                )
+                .padding(12.dp)
+        ) {
+            AsyncImage(
+                model = entry.imageUrl.toArtCropUrl(),
+                contentDescription = entry.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
             )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                Text(
+                    "Normal: ${entry.quantity}" + if (entry.foilQuantity > 0) " · Foil: ${entry.foilQuantity}" else "",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { onQuantityChange((entry.quantity - 1).coerceAtLeast(0), entry.foilQuantity) }) {
+                    Icon(Icons.Filled.Remove, contentDescription = "Decrease quantity", tint = Gold)
+                }
+                Text("${entry.quantity}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                IconButton(onClick = { onQuantityChange(entry.quantity + 1, entry.foilQuantity) }) {
+                    Icon(Icons.Filled.Add, contentDescription = "Increase quantity", tint = Gold)
+                }
+                IconButton(onClick = onRemove) {
+                    Icon(Icons.Filled.Close, contentDescription = "Remove from binder", tint = TextDim)
+                }
+            }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onQuantityChange((entry.quantity - 1).coerceAtLeast(0), entry.foilQuantity) }) {
-                Icon(Icons.Filled.Remove, contentDescription = "Decrease quantity", tint = Gold)
-            }
-            Text("${entry.quantity}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            IconButton(onClick = { onQuantityChange(entry.quantity + 1, entry.foilQuantity) }) {
-                Icon(Icons.Filled.Add, contentDescription = "Increase quantity", tint = Gold)
-            }
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Filled.Close, contentDescription = "Remove from binder", tint = TextDim)
-            }
-        }
+        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = actions)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, actions: List<CardMenuAction>) {
     val totalQty = entry.quantity + entry.foilQuantity
-    Column(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
-        Box {
-            AsyncImage(
-                model = entry.imageUrl,
-                contentDescription = entry.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+    var menuExpanded by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    Box {
+        Column(
+            modifier = Modifier.fillMaxWidth().combinedClickable(
+                onClick = onClick,
+                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
             )
+        ) {
+            Box {
+                AsyncImage(
+                    model = entry.imageUrl,
+                    contentDescription = entry.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+                )
+                Text(
+                    "×$totalQty",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = GoldLight,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
             Text(
-                "×$totalQty",
+                entry.name,
                 style = MaterialTheme.typography.labelMedium,
-                color = GoldLight,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
-        Text(
-            entry.name,
-            style = MaterialTheme.typography.labelMedium,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp)
-        )
+        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = actions)
     }
 }
+
+private fun collectionCardActions(
+    entry: CollectionEntry,
+    onViewDetails: (String) -> Unit,
+    onCopy: (CollectionEntry) -> Unit,
+    onMove: (CollectionEntry) -> Unit,
+    onRemove: (CollectionEntry) -> Unit
+) = listOf(
+    CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { onCopy(entry) },
+    CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { onMove(entry) },
+    CardMenuAction("Remove from binder", Icons.Filled.Close, destructive = true) { onRemove(entry) },
+    CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
+)

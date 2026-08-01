@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,14 +23,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -44,14 +49,19 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.ui.common.CardActionMenu
+import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -116,11 +126,9 @@ fun SearchResultsScreen(
         ) {
             when (val state = uiState) {
                 is SearchUiState.Idle -> item {
-                    Text(
-                        "Search a card name, or use Scryfall syntax like “is:commander c:g”.",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontStyle = FontStyle.Italic,
-                        modifier = Modifier.padding(top = 16.dp)
+                    EmptyState(
+                        icon = Icons.Filled.SearchOff,
+                        title = "Search a card name, or use Scryfall syntax like “is:commander c:g”."
                     )
                 }
                 is SearchUiState.Loading -> item {
@@ -130,19 +138,17 @@ fun SearchResultsScreen(
                     ) { CircularProgressIndicator(color = Gold) }
                 }
                 is SearchUiState.Error -> item {
-                    Text(
-                        state.message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 16.dp)
+                    EmptyState(
+                        icon = Icons.Filled.ErrorOutline,
+                        title = state.message,
+                        actionLabel = "RETRY",
+                        onAction = { viewModel.search() }
                     )
                 }
                 is SearchUiState.OfflineNoDatabase -> item {
-                    Text(
-                        "You're offline. Download the card database in Settings to search cards without a connection.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 16.dp)
+                    EmptyState(
+                        icon = Icons.Filled.CloudOff,
+                        title = "You're offline. Download the card database in Settings to search cards without a connection."
                     )
                 }
                 is SearchUiState.Success -> {
@@ -158,12 +164,7 @@ fun SearchResultsScreen(
                     }
                     if (state.cards.isEmpty()) {
                         item {
-                            Text(
-                                "No cards match.",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontStyle = FontStyle.Italic,
-                                modifier = Modifier.padding(top = 16.dp)
-                            )
+                            EmptyState(icon = Icons.Filled.SearchOff, title = "No cards match.")
                         }
                     } else if (viewMode == CardViewMode.GRID) {
                         cardGrid(state.cards, columns = gridColumns, key = { it.id }) { card ->
@@ -235,6 +236,7 @@ private fun CardResultRow(
     onViewDetails: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
     Box {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -244,7 +246,10 @@ private fun CardResultRow(
                 .clip(RoundedCornerShape(4.dp))
                 .background(Surface)
                 .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true })
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                )
                 .padding(12.dp)
         ) {
             AsyncImage(
@@ -267,12 +272,7 @@ private fun CardResultRow(
                 Text("$$usd", style = MaterialTheme.typography.bodyMedium, color = GoldLight)
             }
         }
-        CardActionMenu(
-            expanded = menuExpanded,
-            onDismiss = { menuExpanded = false },
-            onAddToTarget = onAddToTarget,
-            onViewDetails = onViewDetails
-        )
+        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = resultCardActions(onAddToTarget, onViewDetails))
     }
 }
 
@@ -285,11 +285,15 @@ private fun CardResultTile(
     onViewDetails: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
     Box {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .combinedClickable(onClick = onClick, onLongClick = { menuExpanded = true })
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                )
         ) {
             AsyncImage(
                 model = card.displayImageUrl,
@@ -298,33 +302,43 @@ private fun CardResultTile(
                 modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
             )
         }
-        CardActionMenu(
-            expanded = menuExpanded,
-            onDismiss = { menuExpanded = false },
-            onAddToTarget = onAddToTarget,
-            onViewDetails = onViewDetails
-        )
+        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = resultCardActions(onAddToTarget, onViewDetails))
     }
 }
 
-/** Long-press quick-action menu, anchored directly to the card it was pressed on. */
+private fun resultCardActions(onAddToTarget: () -> Unit, onViewDetails: () -> Unit) = listOf(
+    CardMenuAction("Add to binder/deck", Icons.Filled.Add, onClick = onAddToTarget),
+    CardMenuAction("View details (EDHREC)", Icons.Filled.Info, onClick = onViewDetails)
+)
+
+/** A friendlier stand-in for a bare line of text — used for empty results, errors, and offline notices. */
 @Composable
-private fun CardActionMenu(
-    expanded: Boolean,
-    onDismiss: () -> Unit,
-    onAddToTarget: () -> Unit,
-    onViewDetails: () -> Unit
+private fun EmptyState(
+    icon: ImageVector,
+    title: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.background(Surface)) {
-        DropdownMenuItem(
-            text = { Text("Add to binder/deck", color = TextPrimary, style = MaterialTheme.typography.bodyMedium) },
-            leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, tint = Gold) },
-            onClick = { onDismiss(); onAddToTarget() }
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = null, tint = TextMuted, modifier = Modifier.size(40.dp))
+        Spacer(Modifier.height(12.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)
         )
-        DropdownMenuItem(
-            text = { Text("View details (EDHREC)", color = TextPrimary, style = MaterialTheme.typography.bodyMedium) },
-            leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = Gold) },
-            onClick = { onDismiss(); onViewDetails() }
-        )
+        if (actionLabel != null && onAction != null) {
+            Spacer(Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = onAction,
+                border = BorderStroke(1.dp, BorderColor),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)
+            ) { Text(actionLabel) }
+        }
     }
 }

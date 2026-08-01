@@ -52,5 +52,7 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
                     .build()
             }
             .respectCacheHeaders(false)
+            // Smooths out every card image loading in, instead of popping in abruptly.
+            .crossfade(true)
             .build()
 }

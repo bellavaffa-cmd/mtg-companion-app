@@ -70,6 +70,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -89,7 +91,7 @@ import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.network.spellbook.Variant
-import com.mtgcompanion.app.ui.common.CardActionSheet
+import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
@@ -129,8 +131,6 @@ fun DeckDetailScreen(
     // The card whose move-destination picker is open.
     var moveTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     val moveTargets by viewModel.moveTargets.collectAsState()
-    // The card whose long-press quick-action menu is open.
-    var cardMenuTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this deck).
     var copyTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     // The card pending a remove-confirmation, if any.
@@ -218,7 +218,9 @@ fun DeckDetailScreen(
                         currentDeck,
                         analysis,
                         onZoomCard = { zoom = "card" to it },
-                        onLongPressCard = { cardMenuTarget = it },
+                        cardActions = { entry ->
+                            deckCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeCardTarget = it })
+                        },
                         viewModel
                     )
                     1 -> StatsTab(analysis)
@@ -265,19 +267,6 @@ fun DeckDetailScreen(
                 targets = moveTargets,
                 onPick = { target -> viewModel.moveCard(entry, target); moveTarget = null },
                 onDismiss = { moveTarget = null }
-            )
-        }
-
-        cardMenuTarget?.let { entry ->
-            CardActionSheet(
-                cardName = entry.name,
-                actions = listOf(
-                    CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { copyTarget = entry },
-                    CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { moveTarget = entry },
-                    CardMenuAction("Remove from deck", Icons.Filled.Close, destructive = true) { removeCardTarget = entry },
-                    CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
-                ),
-                onDismiss = { cardMenuTarget = null }
             )
         }
 
@@ -646,7 +635,7 @@ private fun CardsTab(
     deck: Deck,
     analysis: DeckAnalysis,
     onZoomCard: (String) -> Unit,
-    onLongPressCard: (DeckCardEntry) -> Unit,
+    cardActions: (DeckCardEntry) -> List<CardMenuAction>,
     viewModel: DeckDetailViewModel
 ) {
     var query by remember { mutableStateOf("") }
@@ -737,7 +726,7 @@ private fun CardsTab(
                         DeckCardTile(
                             card = card,
                             onClick = { onZoomCard(card.scryfallId) },
-                            onLongClick = { onLongPressCard(card) }
+                            actions = cardActions(card)
                         )
                     }
                 } else {
@@ -746,7 +735,7 @@ private fun CardsTab(
                             card = card,
                             isCommander = deck.commander?.scryfallId == card.scryfallId,
                             onClick = { onZoomCard(card.scryfallId) },
-                            onLongClick = { onLongPressCard(card) },
+                            actions = cardActions(card),
                             onToggleCommander = {
                                 viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
                             },
@@ -1077,89 +1066,120 @@ private fun DeckCardRow(
     card: DeckCardEntry,
     isCommander: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    actions: List<CardMenuAction>,
     onToggleCommander: () -> Unit,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(12.dp)
-    ) {
-        AsyncImage(
-            model = card.imageUrl.toArtCropUrl(),
-            contentDescription = card.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
-        )
-        Text(
-            card.name,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextPrimary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        if (card.canBeCommander) {
-            IconButton(onClick = onToggleCommander, modifier = Modifier.size(30.dp)) {
-                Icon(
-                    if (isCommander) Icons.Filled.Star else Icons.Outlined.Star,
-                    contentDescription = "Set as commander",
-                    tint = Gold,
-                    modifier = Modifier.size(18.dp)
+    var menuExpanded by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(4.dp))
+                .background(Surface)
+                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
                 )
+                .padding(12.dp)
+        ) {
+            AsyncImage(
+                model = card.imageUrl.toArtCropUrl(),
+                contentDescription = card.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
+            )
+            Text(
+                card.name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (card.canBeCommander) {
+                IconButton(onClick = onToggleCommander, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        if (isCommander) Icons.Filled.Star else Icons.Outlined.Star,
+                        contentDescription = "Set as commander",
+                        tint = Gold,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            // Compact quantity stepper on the right: − removes a copy (removes the card at 0), + adds one.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                IconButton(onClick = onDecrement, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Filled.Remove, contentDescription = "Remove a copy", tint = Gold, modifier = Modifier.size(18.dp))
+                }
+                Text("${card.quantity}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                IconButton(onClick = onIncrement, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add a copy", tint = Gold, modifier = Modifier.size(18.dp))
+                }
             }
         }
-        // Compact quantity stepper on the right: − removes a copy (removes the card at 0), + adds one.
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            IconButton(onClick = onDecrement, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Filled.Remove, contentDescription = "Remove a copy", tint = Gold, modifier = Modifier.size(18.dp))
-            }
-            Text("${card.quantity}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            IconButton(onClick = onIncrement, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = "Add a copy", tint = Gold, modifier = Modifier.size(18.dp))
-            }
-        }
+        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = actions)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DeckCardTile(card: DeckCardEntry, onClick: () -> Unit, onLongClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
-        Box {
-            AsyncImage(
-                model = card.imageUrl,
-                contentDescription = card.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+private fun DeckCardTile(card: DeckCardEntry, onClick: () -> Unit, actions: List<CardMenuAction>) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    Box {
+        Column(
+            modifier = Modifier.fillMaxWidth().combinedClickable(
+                onClick = onClick,
+                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
             )
+        ) {
+            Box {
+                AsyncImage(
+                    model = card.imageUrl,
+                    contentDescription = card.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+                )
+                Text(
+                    "×${card.quantity}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = GoldLight,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
             Text(
-                "×${card.quantity}",
+                card.name,
                 style = MaterialTheme.typography.labelMedium,
-                color = GoldLight,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
-        Text(
-            card.name,
-            style = MaterialTheme.typography.labelMedium,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp)
-        )
+        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = actions)
     }
 }
+
+private fun deckCardActions(
+    entry: DeckCardEntry,
+    onViewDetails: (String) -> Unit,
+    onCopy: (DeckCardEntry) -> Unit,
+    onMove: (DeckCardEntry) -> Unit,
+    onRemove: (DeckCardEntry) -> Unit
+) = listOf(
+    CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { onCopy(entry) },
+    CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { onMove(entry) },
+    CardMenuAction("Remove from deck", Icons.Filled.Close, destructive = true) { onRemove(entry) },
+    CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
+)

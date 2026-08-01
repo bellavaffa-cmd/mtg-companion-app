@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.common
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -47,7 +50,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -158,6 +163,7 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
 
 @Composable
 private fun CardInfoBar(card: ZoomCard, priceUsd: Double?) {
+    val haptic = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -182,12 +188,12 @@ private fun CardInfoBar(card: ZoomCard, priceUsd: Double?) {
                 }
             }
             card.onAdd?.let { add ->
-                IconButton(onClick = add) {
+                IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); add() }) {
                     Icon(Icons.Filled.AddCircle, contentDescription = "Add to binder or deck", tint = Gold)
                 }
             }
             card.onMove?.let { move ->
-                IconButton(onClick = move) {
+                IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); move() }) {
                     Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move card", tint = Gold)
                 }
             }
@@ -223,6 +229,7 @@ private fun AlternatePrintingsStrip(
     onConfirm: (ScryfallCard) -> Unit
 ) {
     val repository = remember { CardRepository() }
+    val haptic = LocalHapticFeedback.current
     var prints by remember(cardName) { mutableStateOf<List<ScryfallCard>?>(null) }
     LaunchedEffect(cardName) {
         prints = try {
@@ -265,25 +272,31 @@ private fun AlternatePrintingsStrip(
                     )
                 }
             }
-            previewed?.let { chosen ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Use ${chosen.printingLabel}?",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = { onPreview(null) }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Cancel preview", tint = TextMuted)
-                    }
-                    IconButton(onClick = { onConfirm(chosen) }) {
-                        Icon(Icons.Filled.Check, contentDescription = "Confirm this printing", tint = Gold)
+            AnimatedVisibility(visible = previewed != null, enter = fadeIn(), exit = fadeOut()) {
+                val chosen = previewed
+                if (chosen != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Use ${chosen.printingLabel}?",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { onPreview(null) }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Cancel preview", tint = TextMuted)
+                        }
+                        IconButton(onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onConfirm(chosen)
+                        }) {
+                            Icon(Icons.Filled.Check, contentDescription = "Confirm this printing", tint = Gold)
+                        }
                     }
                 }
             }
