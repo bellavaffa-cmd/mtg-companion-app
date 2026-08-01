@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -89,7 +90,7 @@ fun HomeScreen(
             }
             HomeTile(Icons.Filled.Search, "Search", "Find any card on Scryfall", onOpenSearch)
             HomeTile(Icons.Filled.Collections, "Collection", "Your owned cards and binders", onOpenCollection)
-            HomeTile(Icons.Filled.Style, "Decks", "Build, analyze, and check legality", onOpenDecks)
+            HomeTile(Icons.Filled.Style, "Decks", "Build, analyze, and check legality", onOpenDecks, iconSize = 34.dp)
             HomeTile(Icons.Filled.CameraAlt, "Scan", "Add cards with your camera", onOpenScan)
             HomeTile(Icons.Filled.MenuBook, "Rules", "Keyword glossary and card rulings", onOpenRules)
         }
@@ -111,7 +112,13 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun HomeTile(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+private fun HomeTile(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    iconSize: Dp = 26.dp
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -122,7 +129,7 @@ private fun HomeTile(icon: ImageVector, title: String, subtitle: String, onClick
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
-        Icon(icon, contentDescription = null, tint = Gold, modifier = Modifier.size(26.dp))
+        Icon(icon, contentDescription = null, tint = Gold, modifier = Modifier.size(iconSize))
         Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextMuted)

@@ -7,7 +7,6 @@ import com.mtgcompanion.app.data.localMoshi
 import com.mtgcompanion.app.network.NetworkModule
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.search.SearchFilters
-import com.squareup.moshi.JsonReader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.io.IOException
+import java.util.zip.GZIPInputStream
 
 /** Progress/state of the downloadable offline card database, surfaced in Settings. */
 data class OfflineDbStatus(
@@ -57,10 +57,11 @@ class OfflineCardRepository(context: Context) {
         scope.launch {
             _status.update { it.copy(downloading = true, progress = 0, message = "Fetching card list…") }
             try {
-                val entry = NetworkModule.scryfallApi.getBulkData().data
+                val downloadUri = NetworkModule.scryfallApi.getBulkData().data
                     .firstOrNull { it.type == "oracle_cards" }
+                    ?.downloadUri
                     ?: throw IllegalStateException("Scryfall has no oracle-cards file right now.")
-                val count = downloadAndStore(entry.downloadUri)
+                val count = downloadAndStore(downloadUri)
                 val now = System.currentTimeMillis()
                 prefs.edit().putLong(KEY_UPDATED, now).apply()
                 _status.update {
@@ -87,10 +88,16 @@ class OfflineCardRepository(context: Context) {
         }
     }
 
-    /** Stream the bulk JSON array into SQLite, replacing any existing rows. Returns the row count. */
+    /**
+     * Stream the bulk file into SQLite, replacing any existing rows. Returns the row count.
+     * Scryfall's `jsonl_download_uri` is gzip-compressed, newline-delimited JSON (one card object
+     * per line) rather than the single JSON array the old `download_uri` served, so this decompresses
+     * on the fly and parses line by line — a malformed line is skipped rather than aborting the
+     * whole import, since (unlike a shared JsonReader over one array) a bad line can't desync the rest.
+     */
     private fun downloadAndStore(url: String): Int {
         val request = Request.Builder().url(url).build()
-        // Use the non-caching client so the ~35 MB body doesn't evict the small JSON HTTP cache.
+        // Use the non-caching client so the ~25 MB body doesn't evict the small JSON HTTP cache.
         NetworkModule.noCacheOkHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} downloading card data")
             val body = response.body ?: throw IOException("Empty response downloading card data")
@@ -105,23 +112,24 @@ class OfflineCardRepository(context: Context) {
                         "(oracle_id,name,name_lower,type_lower,oracle_lower,cmc,colors,rarity,pow,tou,json) " +
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?)"
                 )
-                val reader = JsonReader.of(body.source())
-                reader.beginArray()
-                while (reader.hasNext()) {
-                    val card = try {
-                        cardAdapter.fromJson(reader)
-                    } catch (e: Exception) {
-                        // Stop on the first malformed element and keep what we have rather than
-                        // failing the whole import; the reader can't safely continue past it.
-                        break
-                    } ?: continue
-                    bindCard(insert, card)
-                    insert.executeInsert()
-                    n++
-                    if (n % 2000 == 0) {
-                        _status.update { it.copy(progress = n, message = "Importing cards… $n") }
+                // A 64KB inflate buffer instead of GZIPInputStream's default 512 bytes cuts the
+                // number of inflate/read cycles substantially over a ~25MB compressed body.
+                GZIPInputStream(body.byteStream(), 64 * 1024).bufferedReader().useLines { lines ->
+                    for (line in lines) {
+                        if (line.isBlank()) continue
+                        val card = runCatching { cardAdapter.fromJson(line) }.getOrNull() ?: continue
+                        bindCard(insert, card)
+                        insert.executeInsert()
+                        n++
+                        if (n % 2000 == 0) {
+                            _status.update { it.copy(progress = n, message = "Importing cards… $n") }
+                        }
                     }
                 }
+                // A run that parsed zero cards means something's systemically wrong (e.g. Scryfall
+                // changed the per-card schema too) — treat it as a failure rather than silently
+                // reporting success with an empty database.
+                if (n == 0) throw IllegalStateException("No cards could be parsed from the download.")
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()

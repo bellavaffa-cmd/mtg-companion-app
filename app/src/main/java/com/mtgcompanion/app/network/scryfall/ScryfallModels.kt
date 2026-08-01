@@ -128,9 +128,18 @@ data class ScryfallRuling(
 /** GET /bulk-data — the catalog of downloadable bulk card files. */
 data class BulkDataList(val data: List<BulkDataEntry> = emptyList())
 
+/**
+ * Scryfall retired the plain-JSON-array `download_uri` in favor of `jsonl_download_uri` — a
+ * gzip-compressed, newline-delimited JSON file (one card object per line) — so [downloadUri] maps
+ * to that field now (see [OfflineCardRepository.downloadAndStore][com.mtgcompanion.app.data.offline.OfflineCardRepository]
+ * for the matching gzip+JSONL read). [type] and [downloadUri] stay nullable rather than required:
+ * Moshi's default codegen throws for the WHOLE list the moment any single entry lacks a required
+ * field, which would take the entire offline-database download down even if only some unrelated
+ * entry (not "oracle_cards") were ever missing one.
+ */
 data class BulkDataEntry(
-    val type: String,
-    @Json(name = "download_uri") val downloadUri: String,
+    val type: String? = null,
+    @Json(name = "jsonl_download_uri") val downloadUri: String? = null,
     @Json(name = "updated_at") val updatedAt: String? = null,
     val size: Long? = null
 )
