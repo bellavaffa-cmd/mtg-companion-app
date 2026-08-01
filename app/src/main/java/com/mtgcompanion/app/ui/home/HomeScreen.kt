@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.home
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,11 +44,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.NewsItem
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.AnimatedUsdText
 import com.mtgcompanion.app.ui.theme.Bg
@@ -76,6 +82,8 @@ fun HomeScreen(
     val matchSummary by viewModel.matchSummary.collectAsState()
     val cardOfDay by viewModel.cardOfDay.collectAsState()
     val alert by viewModel.alert.collectAsState()
+    val news by viewModel.news.collectAsState()
+    val context = LocalContext.current
 
     Scaffold(
         containerColor = Bg,
@@ -140,6 +148,56 @@ fun HomeScreen(
             HomeTile(Icons.Filled.Style, "Decks", "Build, analyze, and check legality", onOpenDecks, iconSize = 34.dp)
             HomeTile(Icons.Filled.CameraAlt, "Scan", "Add cards with your camera", onOpenScan)
             HomeTile(Icons.Filled.MenuBook, "Rules", "Keyword glossary and card rulings", onOpenRules)
+
+            if (news.isNotEmpty()) {
+                NewsSection(news, onOpenArticle = { url ->
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                })
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewsSection(items: List<NewsItem>, onOpenArticle: (String) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Surface)
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .padding(vertical = 4.dp)
+    ) {
+        Text(
+            "LATEST MTG NEWS",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextDim,
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
+        )
+        items.take(6).forEachIndexed { index, item ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenArticle(item.link) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        item.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(item.source, style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                }
+                Icon(Icons.Filled.OpenInNew, contentDescription = "Open article", tint = TextDim, modifier = Modifier.size(16.dp))
+            }
+            if (index < items.take(6).size - 1) {
+                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(BorderColor))
+            }
         }
     }
 }

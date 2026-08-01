@@ -9,6 +9,8 @@ import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.NewsItem
+import com.mtgcompanion.app.data.NewsRepository
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.collection.computeDashboard
@@ -41,7 +43,8 @@ class HomeViewModel(
     private val cardRepository: CardRepository,
     private val settingsRepository: SettingsRepository,
     offlineCardRepository: OfflineCardRepository,
-    driveSyncManager: DriveSyncManager
+    driveSyncManager: DriveSyncManager,
+    private val newsRepository: NewsRepository = NewsRepository()
 ) : ViewModel() {
 
     private val decks: StateFlow<List<Deck>> = deckRepository.decksFlow
@@ -92,8 +95,12 @@ class HomeViewModel(
     private val _cardOfDay = MutableStateFlow<CardOfDay?>(null)
     val cardOfDay: StateFlow<CardOfDay?> = _cardOfDay
 
+    private val _news = MutableStateFlow<List<NewsItem>>(emptyList())
+    val news: StateFlow<List<NewsItem>> = _news
+
     init {
         viewModelScope.launch { loadCardOfDay() }
+        viewModelScope.launch { _news.value = newsRepository.fetchLatest() }
     }
 
     private suspend fun loadCardOfDay() {
