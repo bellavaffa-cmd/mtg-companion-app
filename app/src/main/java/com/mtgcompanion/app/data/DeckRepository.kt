@@ -32,6 +32,18 @@ class DeckRepository(private val context: Context) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(gameMode = gameMode.name) else it } }
     }
 
+    suspend fun setTags(deckId: String, tags: List<String>) {
+        update { decks -> decks.map { if (it.id == deckId) it.copy(tags = tags) else it } }
+    }
+
+    suspend fun addGameResult(deckId: String, result: GameResult) {
+        update { decks -> decks.map { if (it.id == deckId) it.copy(gameResults = it.gameResults + result) else it } }
+    }
+
+    suspend fun removeGameResult(deckId: String, resultId: String) {
+        update { decks -> decks.map { if (it.id == deckId) it.copy(gameResults = it.gameResults.filterNot { r -> r.id == resultId }) else it } }
+    }
+
     suspend fun deleteDeck(deckId: String) {
         update { decks -> decks.filterNot { it.id == deckId } }
     }

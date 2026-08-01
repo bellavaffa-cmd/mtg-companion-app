@@ -13,6 +13,7 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.GameMode
+import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.LegalityReport
 import com.mtgcompanion.app.data.SettingsRepository
@@ -30,11 +31,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
+import java.util.UUID
 
 /** A deck card paired with its type category, for the type-grouped Cards tab. */
 data class TypeGroup(val type: String, val cards: List<DeckCardEntry>)
@@ -48,6 +51,9 @@ data class DeckAnalysis(
     val colorCounts: List<Pair<String, Int>> = emptyList(),
     val typeCounts: List<Pair<String, Int>> = emptyList(),
     val totalUsd: Double = 0.0,
+    val deckSize: Int = 0,
+    val landCount: Int = 0,
+    val colorSourceCounts: List<Pair<String, Int>> = emptyList(),
     val bracket: Int = 0,
     val bracketName: String = "",
     val bracketReason: String = "",
@@ -147,10 +153,12 @@ class DeckDetailViewModel(
         // Mana curve (excludes lands), colours, types, value, game changers.
         val curveBuckets = linkedMapOf("0" to 0, "1" to 0, "2" to 0, "3" to 0, "4" to 0, "5" to 0, "6" to 0, "7+" to 0)
         val colorTotals = linkedMapOf("W" to 0, "U" to 0, "B" to 0, "R" to 0, "G" to 0, "Colorless" to 0)
+        val colorSourceTotals = linkedMapOf("W" to 0, "U" to 0, "B" to 0, "R" to 0, "G" to 0)
         val typeTotals = LinkedHashMap<String, Int>()
         var totalUsd = 0.0
         var cmcSum = 0.0
         var nonLandCount = 0
+        var landCount = 0
         val gameChangers = mutableListOf<String>()
 
         d.cards.forEach { entry ->
@@ -172,6 +180,9 @@ class DeckDetailViewModel(
                 nonLandCount += qty
                 val bucket = if (cmc >= 7) "7+" else cmc.toInt().toString()
                 curveBuckets[bucket] = (curveBuckets[bucket] ?: 0) + qty
+            } else {
+                landCount += qty
+                card?.producedMana?.forEach { c -> colorSourceTotals[c]?.let { colorSourceTotals[c] = it + qty } }
             }
         }
 
@@ -189,6 +200,9 @@ class DeckDetailViewModel(
             colorCounts = colorTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
             typeCounts = typeTotals.entries.sortedByDescending { it.value }.map { it.key to it.value },
             totalUsd = totalUsd,
+            deckSize = nonLandCount + landCount,
+            landCount = landCount,
+            colorSourceCounts = colorSourceTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
             bracket = bracket,
             bracketName = bracketName,
             bracketReason = reason,
@@ -220,6 +234,20 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.setGameMode(deckId, mode) }
     }
 
+    fun setTags(tags: List<String>) {
+        viewModelScope.launch { repository.setTags(deckId, tags) }
+    }
+
+    fun logGameResult(result: String, opponent: String?) {
+        viewModelScope.launch {
+            repository.addGameResult(deckId, GameResult(id = UUID.randomUUID().toString(), result = result, opponent = opponent?.takeIf { it.isNotBlank() }))
+        }
+    }
+
+    fun removeGameResult(resultId: String) {
+        viewModelScope.launch { repository.removeGameResult(deckId, resultId) }
+    }
+
     /** Move a card (all its copies) out of this deck into [target] deck or binder. */
     fun moveCard(entry: DeckCardEntry, target: MoveTarget) {
         viewModelScope.launch {
@@ -240,6 +268,39 @@ class DeckDetailViewModel(
                 target.id,
                 CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity, foilQuantity = 0)
             )
+        }
+    }
+
+    /**
+     * Builds a TCGPlayer "mass entry" cart URL for whichever of this deck's cards aren't already
+     * covered by the user's binders (by name+quantity, across all binders) — so they can buy just
+     * what they're missing instead of the whole deck. Null if nothing's missing, or the deck is empty.
+     */
+    fun buildMissingCardsUrl(onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            val d = deck.value
+            if (d == null || d.cards.isEmpty()) {
+                onResult(null)
+                return@launch
+            }
+            val ownedByName = mutableMapOf<String, Int>()
+            collectionRepository.collectionsFlow.first().forEach { collection ->
+                collection.entries.forEach { entry ->
+                    val key = entry.name.lowercase()
+                    ownedByName[key] = (ownedByName[key] ?: 0) + entry.quantity + entry.foilQuantity
+                }
+            }
+            val missing = d.cards.mapNotNull { entry ->
+                val owned = ownedByName[entry.name.lowercase()] ?: 0
+                val need = entry.quantity - owned
+                if (need > 0) entry.name to need else null
+            }
+            if (missing.isEmpty()) {
+                onResult(null)
+                return@launch
+            }
+            val cLines = missing.joinToString("||") { (name, qty) -> "$qty $name" }
+            onResult("https://store.tcgplayer.com/massentry?c=" + java.net.URLEncoder.encode(cLines, "UTF-8"))
         }
     }
 
@@ -441,6 +502,21 @@ private val typeSortOrder = listOf(
 )
 
 private fun typeOrder(type: String): Int = typeSortOrder.indexOf(type).let { if (it == -1) typeSortOrder.size else it }
+
+/** Hypergeometric P(at least one success) drawing [draws] cards from a [populationSize]-card deck with [successes] hits. */
+fun probabilityAtLeastOne(populationSize: Int, successes: Int, draws: Int): Double {
+    if (successes <= 0 || populationSize <= 0 || draws <= 0) return 0.0
+    if (successes >= populationSize) return 1.0
+    var probabilityOfZero = 1.0
+    val effectiveDraws = draws.coerceAtMost(populationSize)
+    for (i in 0 until effectiveDraws) {
+        val remainingPop = populationSize - i
+        val remainingMisses = (populationSize - successes) - i
+        if (remainingMisses < 0) return 1.0
+        probabilityOfZero *= remainingMisses.toDouble() / remainingPop.toDouble()
+    }
+    return 1.0 - probabilityOfZero
+}
 
 private fun primaryType(typeLine: String?): String {
     val line = typeLine ?: return "Other"

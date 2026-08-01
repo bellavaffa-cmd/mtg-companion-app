@@ -7,6 +7,7 @@ import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionRepository
+import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
@@ -67,7 +68,8 @@ class CollectionsViewModel(
                 acc.total += qty
                 acc.sources += source
             }
-            collections.forEach { collection ->
+            // Wishlist binders track cards not yet owned, so they don't count toward "owned" totals.
+            collections.filter { it.kind == CollectionType.OWNED }.forEach { collection ->
                 collection.entries.forEach {
                     val qty = it.quantity + it.foilQuantity
                     add(it.scryfallId, it.name, it.imageUrl, qty, CardSource(SourceKind.BINDER, collection.name, qty))
@@ -115,8 +117,8 @@ class CollectionsViewModel(
         }
     }
 
-    fun createCollection(name: String, onCreated: (Collection) -> Unit) {
-        viewModelScope.launch { onCreated(repository.createCollection(name)) }
+    fun createCollection(name: String, type: CollectionType = CollectionType.DEFAULT, onCreated: (Collection) -> Unit) {
+        viewModelScope.launch { onCreated(repository.createCollection(name, type)) }
     }
 
     fun deleteCollection(collectionId: String) {

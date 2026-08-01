@@ -168,6 +168,16 @@ private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit) {
                 .fillMaxWidth()
                 .padding(12.dp)
         ) {
+            if (deck.tags.isNotEmpty()) {
+                Text(
+                    deck.tags.joinToString(" · ") { it.uppercase() },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Gold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+            }
             Text(
                 deck.name,
                 style = MaterialTheme.typography.titleSmall,

@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -64,8 +66,11 @@ import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
+import com.mtgcompanion.app.ui.common.ShimmerPlaceholder
+import com.mtgcompanion.app.ui.common.StaggeredEntrance
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.pressScale
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -131,11 +136,20 @@ fun SearchResultsScreen(
                         title = "Search a card name, or use Scryfall syntax like “is:commander c:g”."
                     )
                 }
-                is SearchUiState.Loading -> item {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) { CircularProgressIndicator(color = Gold) }
+                is SearchUiState.Loading -> {
+                    items(6) { i ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                        ) {
+                            ShimmerPlaceholder(Modifier.size(width = 72.dp, height = 52.dp))
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                ShimmerPlaceholder(Modifier.fillMaxWidth(if (i % 2 == 0) 0.7f else 0.5f).height(14.dp))
+                                ShimmerPlaceholder(Modifier.fillMaxWidth(0.35f).height(10.dp))
+                            }
+                        }
+                    }
                 }
                 is SearchUiState.Error -> item {
                     EmptyState(
@@ -176,13 +190,15 @@ fun SearchResultsScreen(
                             )
                         }
                     } else {
-                        items(state.cards, key = { it.id }) { card ->
-                            CardResultRow(
-                                card = card,
-                                onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
-                                onAddToTarget = { addTarget = card },
-                                onViewDetails = { onCardClick(card) }
-                            )
+                        itemsIndexed(state.cards, key = { _, it -> it.id }) { index, card ->
+                            StaggeredEntrance(index) {
+                                CardResultRow(
+                                    card = card,
+                                    onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
+                                    onAddToTarget = { addTarget = card },
+                                    onViewDetails = { onCardClick(card) }
+                                )
+                            }
                         }
                     }
                     if (state.loadingMore) {
@@ -237,16 +253,20 @@ private fun CardResultRow(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
     Box {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier
                 .fillMaxWidth()
+                .pressScale(interactionSource)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Surface)
                 .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
                 .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
                 )
@@ -286,11 +306,15 @@ private fun CardResultTile(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
     Box {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .pressScale(interactionSource)
                 .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
                 )

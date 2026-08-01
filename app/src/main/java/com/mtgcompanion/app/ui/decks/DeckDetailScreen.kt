@@ -1,11 +1,15 @@
 package com.mtgcompanion.app.ui.decks
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -23,8 +27,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,6 +83,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,18 +99,22 @@ import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.network.spellbook.Variant
+import com.mtgcompanion.app.ui.common.AnimatedUsdText
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
+import com.mtgcompanion.app.ui.common.StaggeredEntrance
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
+import com.mtgcompanion.app.ui.common.pressScale
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
+import com.mtgcompanion.app.ui.theme.GoldDim
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
@@ -116,6 +128,7 @@ fun DeckDetailScreen(
     onBack: () -> Unit,
     onViewDetails: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val deck by viewModel.deck.collectAsState()
     val analysis by viewModel.analysis.collectAsState()
     val cardGroups by viewModel.cardGroups.collectAsState()
@@ -138,6 +151,7 @@ fun DeckDetailScreen(
     var removeCardTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     var showImport by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
+    var showGoldfish by remember { mutableStateOf(false) }
     // Progress while an import runs, then its summary ("Imported N; M couldn't be matched…").
     var importState by remember { mutableStateOf<ImportState?>(null) }
 
@@ -185,6 +199,23 @@ fun DeckDetailScreen(
                             onClick = { menuOpen = false; showExport = true }
                         )
                         DropdownMenuItem(
+                            text = { Text("Goldfish (playtest)", color = TextPrimary) },
+                            onClick = { menuOpen = false; showGoldfish = true }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Buy missing cards", color = TextPrimary) },
+                            onClick = {
+                                menuOpen = false
+                                viewModel.buildMissingCardsUrl { url ->
+                                    if (url == null) {
+                                        Toast.makeText(context, "You already own every card in this deck.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                    }
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Delete deck", color = Color(0xFFD3402F)) },
                             onClick = { menuOpen = false; confirmDelete = true }
                         )
@@ -224,7 +255,7 @@ fun DeckDetailScreen(
                         },
                         viewModel
                     )
-                    1 -> StatsTab(analysis)
+                    1 -> StatsTab(analysis, currentDeck, viewModel)
                     2 -> AnalysisTab(analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel)
                     else -> LegalityTab(analysis)
                 }
@@ -297,6 +328,8 @@ fun DeckDetailScreen(
             DeckSettingsDialog(
                 current = currentDeck.mode,
                 onSelect = { viewModel.setGameMode(it) },
+                tags = currentDeck.tags,
+                onTagsChange = { viewModel.setTags(it) },
                 onDismiss = { showSettings = false }
             )
         }
@@ -331,6 +364,9 @@ fun DeckDetailScreen(
         }
         if (showExport) {
             ExportDialog(decklist = buildDecklist(currentDeck), onDismiss = { showExport = false })
+        }
+        if (showGoldfish) {
+            GoldfishDialog(deck = currentDeck, onDismiss = { showGoldfish = false })
         }
     }
 }
@@ -524,8 +560,11 @@ private fun ExportDialog(decklist: String, onDismiss: () -> Unit) {
 private fun DeckSettingsDialog(
     current: GameMode,
     onSelect: (GameMode) -> Unit,
+    tags: List<String>,
+    onTagsChange: (List<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var tagInput by remember { mutableStateOf("") }
     AlertDialog(
         containerColor = Surface,
         onDismissRequest = onDismiss,
@@ -539,6 +578,58 @@ private fun DeckSettingsDialog(
                 )
                 Spacer(Modifier.height(14.dp))
                 GameModeDropdown(selected = current, onSelect = onSelect)
+                Spacer(Modifier.height(20.dp))
+                Text("Tags", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                Spacer(Modifier.height(8.dp))
+                if (tags.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    ) {
+                        tags.forEach { tag ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Bg)
+                                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(50))
+                                    .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                            ) {
+                                Text(tag, style = MaterialTheme.typography.labelMedium, color = TextPrimary)
+                                IconButton(
+                                    onClick = { onTagsChange(tags - tag) },
+                                    modifier = Modifier.size(20.dp)
+                                ) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Remove tag \"$tag\"", tint = TextMuted, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
+                OutlinedTextField(
+                    value = tagInput,
+                    onValueChange = { tagInput = it },
+                    placeholder = { Text("e.g. Budget, Combo, Aggro", color = TextDim) },
+                    singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            val trimmed = tagInput.trim()
+                            if (trimmed.isNotEmpty() && trimmed !in tags) onTagsChange(tags + trimmed)
+                            tagInput = ""
+                        }) {
+                            Icon(Icons.Filled.Add, contentDescription = "Add tag", tint = Gold)
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Gold
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
@@ -742,18 +833,20 @@ private fun CardsTab(
                         )
                     }
                 } else {
-                    items(group.cards, key = { it.scryfallId }) { card ->
-                        DeckCardRow(
-                            card = card,
-                            isCommander = deck.commander?.scryfallId == card.scryfallId,
-                            onClick = { onZoomCard(card.scryfallId) },
-                            actions = cardActions(card),
-                            onToggleCommander = {
-                                viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
-                            },
-                            onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
-                            onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
-                        )
+                    itemsIndexed(group.cards, key = { _, it -> it.scryfallId }) { index, card ->
+                        StaggeredEntrance(index) {
+                            DeckCardRow(
+                                card = card,
+                                isCommander = deck.commander?.scryfallId == card.scryfallId,
+                                onClick = { onZoomCard(card.scryfallId) },
+                                actions = cardActions(card),
+                                onToggleCommander = {
+                                    viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
+                                },
+                                onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
+                                onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
+                            )
+                        }
                     }
                 }
             }
@@ -762,16 +855,77 @@ private fun CardsTab(
 }
 
 @Composable
-private fun StatsTab(analysis: DeckAnalysis) {
+private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailViewModel) {
     if (analysis.loading) {
         LoadingBox()
         return
     }
+    var showLogResult by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item {
+            Panel {
+                val wins = deck.gameResults.count { it.result == "WIN" }
+                val losses = deck.gameResults.count { it.result == "LOSS" }
+                val draws = deck.gameResults.count { it.result == "DRAW" }
+                val total = deck.gameResults.size
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    SectionLabel("MATCH RECORD")
+                    TextButton(onClick = { showLogResult = true }) { Text("LOG RESULT", color = Gold, style = MaterialTheme.typography.labelMedium) }
+                }
+                if (total == 0) {
+                    Text(
+                        "No games logged yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("$wins-$losses" + if (draws > 0) "-$draws" else "", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            "${(wins * 100 / total)}% win rate over $total game${if (total == 1) "" else "s"}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = GoldLight,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        deck.gameResults.sortedByDescending { it.playedAt }.take(5).forEach { game ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    game.result,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = when (game.result) {
+                                        "WIN" -> Gold
+                                        "LOSS" -> Color(0xFFD3402F)
+                                        else -> TextMuted
+                                    }
+                                )
+                                Text(
+                                    game.opponent ?: "—",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = TextMuted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { viewModel.removeGameResult(game.id) }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Remove this result", tint = TextDim, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         item {
             Panel {
                 SectionLabel("COMMANDER BRACKET")
@@ -799,7 +953,7 @@ private fun StatsTab(analysis: DeckAnalysis) {
         item {
             Panel {
                 SectionLabel("TOTAL VALUE (USD)")
-                Text("$" + "%,.2f".format(analysis.totalUsd), style = MaterialTheme.typography.titleLarge)
+                AnimatedUsdText(analysis.totalUsd, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
             }
         }
         item {
@@ -827,6 +981,53 @@ private fun StatsTab(analysis: DeckAnalysis) {
                 }
             }
         }
+        if (analysis.landCount > 0) {
+            item {
+                Panel {
+                    SectionLabel("MANA BASE")
+                    Text(
+                        "${analysis.landCount} lands · ${analysis.deckSize} cards in library",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                    )
+                    if (analysis.colorSourceCounts.isEmpty()) {
+                        Text(
+                            "No color-producing lands detected in this deck's cached data.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextDim
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            analysis.colorSourceCounts.forEach { (color, sources) ->
+                                val openingHand = probabilityAtLeastOne(analysis.deckSize, sources, 7)
+                                val byTurn3 = probabilityAtLeastOne(analysis.deckSize, sources, 10)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    ManaSymbol(color, size = 16.dp)
+                                    Text(
+                                        "$sources sources",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextPrimary,
+                                        modifier = Modifier.width(78.dp)
+                                    )
+                                    Text(
+                                        "${(openingHand * 100).toInt()}% opening hand · ${(byTurn3 * 100).toInt()}% by turn 3",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = TextMuted
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Text(
+                        "Hypergeometric odds of drawing at least one source, on the draw.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextDim,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+        }
         item {
             Panel {
                 SectionLabel("CARD TYPES")
@@ -837,6 +1038,67 @@ private fun StatsTab(analysis: DeckAnalysis) {
             }
         }
     }
+
+    if (showLogResult) {
+        LogGameResultDialog(
+            onConfirm = { result, opponent -> viewModel.logGameResult(result, opponent); showLogResult = false },
+            onDismiss = { showLogResult = false }
+        )
+    }
+}
+
+@Composable
+private fun LogGameResultDialog(onConfirm: (String, String?) -> Unit, onDismiss: () -> Unit) {
+    var result by remember { mutableStateOf("WIN") }
+    var opponent by remember { mutableStateOf("") }
+    AlertDialog(
+        containerColor = Surface,
+        onDismissRequest = onDismiss,
+        title = { Text("Log game result", color = GoldLight) },
+        text = {
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("WIN", "LOSS", "DRAW").forEach { option ->
+                        val selected = result == option
+                        Text(
+                            option,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (selected) Bg else TextPrimary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (selected) Gold else Bg)
+                                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(50))
+                                .clickable { result = option }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = opponent,
+                    onValueChange = { opponent = it },
+                    label = { Text("Opponent (optional)", color = GoldDim) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Gold
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(result, opponent.trim()) },
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("LOG", color = Bg) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+        }
+    )
 }
 
 @Composable
@@ -1085,16 +1347,20 @@ private fun DeckCardRow(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
     Box {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
                 .fillMaxWidth()
+                .pressScale(interactionSource)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Surface)
                 .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
                 .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
                 )
@@ -1144,9 +1410,12 @@ private fun DeckCardRow(
 private fun DeckCardTile(card: DeckCardEntry, onClick: () -> Unit, actions: List<CardMenuAction>) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
     Box {
         Column(
-            modifier = Modifier.fillMaxWidth().combinedClickable(
+            modifier = Modifier.fillMaxWidth().pressScale(interactionSource).combinedClickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.foundation.LocalIndication.current,
                 onClick = onClick,
                 onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
             )

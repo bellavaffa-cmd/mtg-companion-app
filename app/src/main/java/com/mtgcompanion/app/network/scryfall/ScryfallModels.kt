@@ -42,6 +42,7 @@ data class ScryfallCard(
     @Json(name = "oracle_text") val oracleText: String? = null,
     val colors: List<String>? = null,
     @Json(name = "color_identity") val colorIdentity: List<String>? = null,
+    @Json(name = "produced_mana") val producedMana: List<String>? = null,
     @Json(name = "image_uris") val imageUris: ScryfallImageUris? = null,
     @Json(name = "card_faces") val cardFaces: List<ScryfallCardFace>? = null,
     val prices: ScryfallPrices? = null,

@@ -17,8 +17,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,11 +61,14 @@ import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
+import com.mtgcompanion.app.ui.common.StaggeredEntrance
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.pressScale
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -151,9 +156,9 @@ fun CollectionsScreen(
     if (showCreateDialog) {
         CreateCollectionDialog(
             onDismiss = { showCreateDialog = false },
-            onConfirm = { name ->
+            onConfirm = { name, type ->
                 showCreateDialog = false
-                viewModel.createCollection(name) { created -> onCollectionClick(created.id) }
+                viewModel.createCollection(name, type) { created -> onCollectionClick(created.id) }
             }
         )
     }
@@ -178,12 +183,14 @@ private fun CollectionsTab(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(collections, key = { it.id }) { collection ->
-                CollectionRow(
-                    collection = collection,
-                    onClick = { onCollectionClick(collection.id) },
-                    onDelete = { confirmDelete = collection }
-                )
+            itemsIndexed(collections, key = { _, it -> it.id }) { index, collection ->
+                StaggeredEntrance(index) {
+                    CollectionRow(
+                        collection = collection,
+                        onClick = { onCollectionClick(collection.id) },
+                        onDelete = { confirmDelete = collection }
+                    )
+                }
             }
         }
     }
@@ -271,8 +278,10 @@ private fun AllCardsTab(
                         AllCardTile(card = card, onClick = { zoomId = card.scryfallId })
                     }
                 } else {
-                    items(filtered, key = { it.scryfallId }) { card ->
-                        AllCardRow(card = card, onClick = { zoomId = card.scryfallId })
+                    itemsIndexed(filtered, key = { _, it -> it.scryfallId }) { index, card ->
+                        StaggeredEntrance(index) {
+                            AllCardRow(card = card, onClick = { zoomId = card.scryfallId })
+                        }
                     }
                 }
             }
@@ -300,15 +309,17 @@ private fun AllCardsTab(
 
 @Composable
 private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .pressScale(interactionSource)
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interactionSource, indication = androidx.compose.foundation.LocalIndication.current, onClick = onClick)
             .padding(12.dp)
     ) {
         AsyncImage(
@@ -330,7 +341,11 @@ private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit) {
 
 @Composable
 private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Column(
+        modifier = Modifier.fillMaxWidth().pressScale(interactionSource)
+            .clickable(interactionSource = interactionSource, indication = androidx.compose.foundation.LocalIndication.current, onClick = onClick)
+    ) {
         Box {
             AsyncImage(
                 model = card.imageUrl,
@@ -363,19 +378,21 @@ private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit) {
 
 @Composable
 private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .pressScale(interactionSource)
             .clip(RoundedCornerShape(4.dp))
             .background(Surface)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interactionSource, indication = androidx.compose.foundation.LocalIndication.current, onClick = onClick)
             .padding(12.dp)
     ) {
         Icon(
-            Icons.Filled.Collections,
+            if (collection.kind == CollectionType.WISHLIST) Icons.Filled.Star else Icons.Filled.Collections,
             contentDescription = null,
             tint = GoldDim,
             modifier = Modifier.size(40.dp)
@@ -383,8 +400,9 @@ private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete:
         Column(modifier = Modifier.weight(1f)) {
             Text(collection.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
             val total = collection.entries.sumOf { it.quantity + it.foilQuantity }
+            val label = if (collection.kind == CollectionType.WISHLIST) "WISHLIST · " else ""
             Text(
-                "$total cards · ${collection.entries.size} unique",
+                "$label$total cards · ${collection.entries.size} unique",
                 style = MaterialTheme.typography.labelMedium,
                 color = TextMuted
             )
@@ -396,30 +414,56 @@ private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete:
 }
 
 @Composable
-private fun CreateCollectionDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun CreateCollectionDialog(onDismiss: () -> Unit, onConfirm: (String, CollectionType) -> Unit) {
     var name by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf(CollectionType.OWNED) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface,
         title = { Text("New binder", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Binder name", color = GoldDim) },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Gold,
-                    unfocusedBorderColor = BorderColor,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary,
-                    cursorColor = Gold
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Binder name", color = GoldDim) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Gold
+                    )
                 )
-            )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(CollectionType.OWNED to "Owned", CollectionType.WISHLIST to "Wishlist").forEach { (option, label) ->
+                        val selected = type == option
+                        Text(
+                            label.uppercase(),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (selected) Bg else TextPrimary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (selected) Gold else Bg)
+                                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(50))
+                                .clickable { type = option }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+                if (type == CollectionType.WISHLIST) {
+                    Text(
+                        "Wishlist binders track cards you want — they're excluded from your owned totals and All Cards.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextMuted
+                    )
+                }
+            }
         },
         confirmButton = {
             Button(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), type) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
             ) { Text("CREATE", color = Bg) }
         },

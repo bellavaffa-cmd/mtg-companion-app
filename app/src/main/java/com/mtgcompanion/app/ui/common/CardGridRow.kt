@@ -20,11 +20,13 @@ fun <T> LazyListScope.cardGrid(
     key: (T) -> Any,
     itemContent: @Composable (T) -> Unit
 ) {
-    items.chunked(columns).forEach { row ->
+    items.chunked(columns).forEachIndexed { rowIndex, row ->
         item(key = row.joinToString("-") { key(it).toString() }) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { entry -> Box(modifier = Modifier.weight(1f)) { itemContent(entry) } }
-                repeat(columns - row.size) { Box(modifier = Modifier.weight(1f)) }
+            StaggeredEntrance(rowIndex) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { entry -> Box(modifier = Modifier.weight(1f)) { itemContent(entry) } }
+                    repeat(columns - row.size) { Box(modifier = Modifier.weight(1f)) }
+                }
             }
         }
     }

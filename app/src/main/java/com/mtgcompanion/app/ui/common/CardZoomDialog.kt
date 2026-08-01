@@ -1,6 +1,9 @@
 package com.mtgcompanion.app.ui.common
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -50,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -108,7 +112,22 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
         pageCount = { cards.size }
     )
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f))) {
+        // Pops the whole overlay in from a slight scale/fade rather than snapping into view instantly.
+        val entrance = remember { Animatable(0f) }
+        LaunchedEffect(Unit) {
+            entrance.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow))
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.9f * entrance.value.coerceIn(0f, 1f)))
+                .graphicsLayer {
+                    alpha = entrance.value.coerceIn(0f, 1f)
+                    val scale = 0.9f + 0.1f * entrance.value
+                    scaleX = scale
+                    scaleY = scale
+                }
+        ) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 val card = cards[page]
                 // A tapped alternate printing only swaps what's previewed here — it doesn't act on
@@ -133,6 +152,7 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                                 .fillMaxWidth(0.92f)
                                 .padding(horizontal = 24.dp, vertical = 16.dp)
                                 .clip(RoundedCornerShape(14.dp))
+                                .foilShine()
                         )
                     }
                     val cardName = card.cardName

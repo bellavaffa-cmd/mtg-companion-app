@@ -42,13 +42,23 @@ data class DeckCardEntry(
     val typeLine: String? = null
 )
 
+/** One logged game's outcome for a deck's match record. [result] is "WIN", "LOSS", or "DRAW". */
+data class GameResult(
+    val id: String,
+    val result: String,
+    val opponent: String? = null,
+    val playedAt: Long = System.currentTimeMillis()
+)
+
 data class Deck(
     val id: String,
     val name: String,
     val commander: DeckCardEntry? = null,
     val cards: List<DeckCardEntry> = emptyList(),
     val gameMode: String = GameMode.DEFAULT.name,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val tags: List<String> = emptyList(),
+    val gameResults: List<GameResult> = emptyList()
 ) {
     val mode: GameMode get() = GameMode.fromName(gameMode)
 }

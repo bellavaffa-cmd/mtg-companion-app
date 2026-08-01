@@ -24,8 +24,8 @@ class CollectionRepository(private val context: Context) {
     fun collectionFlow(collectionId: String): Flow<Collection?> =
         collectionsFlow.map { collections -> collections.find { it.id == collectionId } }
 
-    suspend fun createCollection(name: String): Collection {
-        val collection = Collection(id = UUID.randomUUID().toString(), name = name)
+    suspend fun createCollection(name: String, type: CollectionType = CollectionType.DEFAULT): Collection {
+        val collection = Collection(id = UUID.randomUUID().toString(), name = name, type = type.name)
         update { it + collection }
         return collection
     }

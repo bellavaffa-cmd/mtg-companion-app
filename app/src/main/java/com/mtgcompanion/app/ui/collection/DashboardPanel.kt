@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import com.mtgcompanion.app.ui.common.AnimatedUsdText
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -67,7 +68,7 @@ fun DashboardPanel(dashboard: CollectionDashboard?) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("$" + "%,.2f".format(dashboard.totalUsd), style = MaterialTheme.typography.titleLarge)
+                AnimatedUsdText(dashboard.totalUsd, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
                 Text(
                     "${dashboard.pricedCount} cards",
                     style = MaterialTheme.typography.labelMedium,

@@ -16,8 +16,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
@@ -60,8 +61,10 @@ import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
+import com.mtgcompanion.app.ui.common.StaggeredEntrance
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.pressScale
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -174,14 +177,16 @@ fun CollectionDetailScreen(
                             )
                         }
                     } else {
-                        items(entries, key = { it.scryfallId }) { entry ->
-                            CollectionCardRow(
-                                entry = entry,
-                                onClick = { zoomId = entry.scryfallId },
-                                actions = collectionCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeTarget = it }),
-                                onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
-                                onRemove = { removeTarget = entry }
-                            )
+                        itemsIndexed(entries, key = { _, it -> it.scryfallId }) { index, entry ->
+                            StaggeredEntrance(index) {
+                                CollectionCardRow(
+                                    entry = entry,
+                                    onClick = { zoomId = entry.scryfallId },
+                                    actions = collectionCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeTarget = it }),
+                                    onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
+                                    onRemove = { removeTarget = entry }
+                                )
+                            }
                         }
                     }
                 }
@@ -258,16 +263,20 @@ private fun CollectionCardRow(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
     Box {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier
                 .fillMaxWidth()
+                .pressScale(interactionSource)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Surface)
                 .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
                 .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
                 )
@@ -310,9 +319,12 @@ private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, acti
     val totalQty = entry.quantity + entry.foilQuantity
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
     Box {
         Column(
-            modifier = Modifier.fillMaxWidth().combinedClickable(
+            modifier = Modifier.fillMaxWidth().pressScale(interactionSource).combinedClickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.foundation.LocalIndication.current,
                 onClick = onClick,
                 onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
             )
