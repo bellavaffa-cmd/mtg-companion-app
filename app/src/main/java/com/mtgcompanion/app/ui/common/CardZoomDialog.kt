@@ -1,7 +1,9 @@
 package com.mtgcompanion.app.ui.common
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,6 +26,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
@@ -102,6 +106,9 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
         Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f))) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 val card = cards[page]
+                // A tapped alternate printing only swaps what's previewed here — it doesn't act on
+                // its own. Resets whenever the pager lands on a different card.
+                var previewed by remember(card) { mutableStateOf<ScryfallCard?>(null) }
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
@@ -114,7 +121,7 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                         contentAlignment = Alignment.Center
                     ) {
                         AsyncImage(
-                            model = card.imageUrl,
+                            model = previewed?.displayImageUrl ?: card.imageUrl,
                             contentDescription = null,
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
@@ -123,8 +130,15 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                                 .clip(RoundedCornerShape(14.dp))
                         )
                     }
-                    if (card.cardName != null && card.onSelectPrinting != null) {
-                        AlternatePrintingsStrip(cardName = card.cardName, onSelect = card.onSelectPrinting)
+                    val cardName = card.cardName
+                    val onSelectPrinting = card.onSelectPrinting
+                    if (cardName != null && onSelectPrinting != null) {
+                        AlternatePrintingsStrip(
+                            cardName = cardName,
+                            previewed = previewed,
+                            onPreview = { previewed = it },
+                            onConfirm = { chosen -> onSelectPrinting(chosen); previewed = null }
+                        )
                     }
                     if (card.priceUsd != null || card.quantity != null ||
                         card.onAdd != null || card.onViewDetails != null
@@ -195,10 +209,17 @@ private fun CardInfoBar(card: ZoomCard) {
 /**
  * Every alternate printing of [cardName], as a horizontally scrollable strip. Fetched on demand
  * (Scryfall has no bulk-by-name-list endpoint cheap enough to do this for a whole result list up
- * front) and only shown once there's more than one printing to choose between.
+ * front) and only shown once there's more than one printing to choose between. Tapping a printing
+ * just previews it in the main image above (via [onPreview]) — it takes no action on its own until
+ * confirmed via the checkmark, so browsing art never accidentally triggers add/move.
  */
 @Composable
-private fun AlternatePrintingsStrip(cardName: String, onSelect: (ScryfallCard) -> Unit) {
+private fun AlternatePrintingsStrip(
+    cardName: String,
+    previewed: ScryfallCard?,
+    onPreview: (ScryfallCard?) -> Unit,
+    onConfirm: (ScryfallCard) -> Unit
+) {
     val repository = remember { CardRepository() }
     var prints by remember(cardName) { mutableStateOf<List<ScryfallCard>?>(null) }
     LaunchedEffect(cardName) {
@@ -209,21 +230,23 @@ private fun AlternatePrintingsStrip(cardName: String, onSelect: (ScryfallCard) -
         }
     }
 
-    when (val current = prints) {
-        null -> Box(
+    val current = prints
+    if (current == null) {
+        Box(
             modifier = Modifier.fillMaxWidth().background(Surface).padding(16.dp),
             contentAlignment = Alignment.Center
         ) { CircularProgressIndicator(color = Gold, modifier = Modifier.size(20.dp)) }
-        else -> if (current.size > 1) {
+    } else if (current.size > 1) {
+        Column(modifier = Modifier.fillMaxWidth().background(Surface)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Surface)
                     .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 current.forEach { print ->
+                    val isPreviewed = previewed?.id == print.id
                     AsyncImage(
                         model = print.displayImageUrl,
                         contentDescription = print.printingLabel,
@@ -232,8 +255,34 @@ private fun AlternatePrintingsStrip(cardName: String, onSelect: (ScryfallCard) -
                             .width(64.dp)
                             .aspectRatio(0.72f)
                             .clip(RoundedCornerShape(6.dp))
-                            .clickable { onSelect(print) }
+                            .border(
+                                BorderStroke(if (isPreviewed) 2.dp else 1.dp, if (isPreviewed) Gold else BorderColor),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable { onPreview(if (isPreviewed) null else print) }
                     )
+                }
+            }
+            previewed?.let { chosen ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Use ${chosen.printingLabel}?",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { onPreview(null) }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Cancel preview", tint = TextMuted)
+                    }
+                    IconButton(onClick = { onConfirm(chosen) }) {
+                        Icon(Icons.Filled.Check, contentDescription = "Confirm this printing", tint = Gold)
+                    }
                 }
             }
         }
