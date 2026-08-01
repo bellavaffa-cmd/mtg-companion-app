@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -67,7 +66,6 @@ import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ShimmerPlaceholder
-import com.mtgcompanion.app.ui.common.StaggeredEntrance
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.pressScale
@@ -190,15 +188,13 @@ fun SearchResultsScreen(
                             )
                         }
                     } else {
-                        itemsIndexed(state.cards, key = { _, it -> it.id }) { index, card ->
-                            StaggeredEntrance(index) {
-                                CardResultRow(
-                                    card = card,
-                                    onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
-                                    onAddToTarget = { addTarget = card },
-                                    onViewDetails = { onCardClick(card) }
-                                )
-                            }
+                        items(state.cards, key = { it.id }) { card ->
+                            CardResultRow(
+                                card = card,
+                                onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
+                                onAddToTarget = { addTarget = card },
+                                onViewDetails = { onCardClick(card) }
+                            )
                         }
                     }
                     if (state.loadingMore) {

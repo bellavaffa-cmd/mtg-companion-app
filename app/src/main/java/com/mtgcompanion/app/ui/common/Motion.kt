@@ -1,6 +1,5 @@
 package com.mtgcompanion.app.ui.common
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -10,19 +9,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -33,7 +26,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.ui.theme.Surface
-import kotlinx.coroutines.delay
 
 /** Spring-based scale-down-on-press feedback. Pass the same [interactionSource] given to clickable/combinedClickable. */
 @Composable
@@ -90,25 +82,6 @@ fun AnimatedUsdText(value: Double, style: TextStyle, color: Color, modifier: Mod
         color = color,
         modifier = modifier
     )
-}
-
-/**
- * Wraps [content] so it fades + slides up into place the first time it's composed, delayed by
- * [index] — makes a LazyColumn/grid's items cascade in rather than popping in all at once.
- */
-@Composable
-fun StaggeredEntrance(index: Int, content: @Composable () -> Unit) {
-    var visible by remember(index) { mutableStateOf(false) }
-    LaunchedEffect(index) {
-        delay((index.coerceIn(0, 14) * 30).toLong())
-        visible = true
-    }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(260)) + slideInVertically(tween(260)) { it / 5 }
-    ) {
-        content()
-    }
 }
 
 /** A diagonal light sweep, like a holo-foil card catching the light. Chain onto an image's own modifiers, after any `.clip(...)`. */

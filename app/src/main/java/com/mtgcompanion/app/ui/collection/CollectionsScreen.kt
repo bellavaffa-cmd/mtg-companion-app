@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,7 +71,6 @@ import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
-import com.mtgcompanion.app.ui.common.StaggeredEntrance
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.pressScale
@@ -189,14 +188,12 @@ private fun CollectionsTab(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            itemsIndexed(collections, key = { _, it -> it.id }) { index, collection ->
-                StaggeredEntrance(index) {
-                    CollectionRow(
-                        collection = collection,
-                        onClick = { onCollectionClick(collection.id) },
-                        onDelete = { confirmDelete = collection }
-                    )
-                }
+            items(collections, key = { it.id }) { collection ->
+                CollectionRow(
+                    collection = collection,
+                    onClick = { onCollectionClick(collection.id) },
+                    onDelete = { confirmDelete = collection }
+                )
             }
         }
     }
@@ -284,10 +281,8 @@ private fun AllCardsTab(
                         AllCardTile(card = card, onClick = { zoomId = card.scryfallId }, onViewDetails = { onViewDetails(card.name) })
                     }
                 } else {
-                    itemsIndexed(filtered, key = { _, it -> it.scryfallId }) { index, card ->
-                        StaggeredEntrance(index) {
-                            AllCardRow(card = card, onClick = { zoomId = card.scryfallId }, onViewDetails = { onViewDetails(card.name) })
-                        }
+                    items(filtered, key = { it.scryfallId }) { card ->
+                        AllCardRow(card = card, onClick = { zoomId = card.scryfallId }, onViewDetails = { onViewDetails(card.name) })
                     }
                 }
             }

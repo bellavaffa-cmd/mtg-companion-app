@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -105,7 +104,6 @@ import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
-import com.mtgcompanion.app.ui.common.StaggeredEntrance
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.ManaSymbol
@@ -851,20 +849,18 @@ private fun CardsTab(
                         )
                     }
                 } else {
-                    itemsIndexed(group.cards, key = { _, it -> it.scryfallId }) { index, card ->
-                        StaggeredEntrance(index) {
-                            DeckCardRow(
-                                card = card,
-                                isCommander = deck.commander?.scryfallId == card.scryfallId,
-                                onClick = { onZoomCard(card.scryfallId) },
-                                actions = cardActions(card),
-                                onToggleCommander = {
-                                    viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
-                                },
-                                onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
-                                onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
-                            )
-                        }
+                    items(group.cards, key = { it.scryfallId }) { card ->
+                        DeckCardRow(
+                            card = card,
+                            isCommander = deck.commander?.scryfallId == card.scryfallId,
+                            onClick = { onZoomCard(card.scryfallId) },
+                            actions = cardActions(card),
+                            onToggleCommander = {
+                                viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
+                            },
+                            onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
+                            onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
+                        )
                     }
                 }
             }

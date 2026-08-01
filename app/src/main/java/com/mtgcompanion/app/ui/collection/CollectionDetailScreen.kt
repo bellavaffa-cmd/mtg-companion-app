@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
@@ -61,7 +61,6 @@ import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
-import com.mtgcompanion.app.ui.common.StaggeredEntrance
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.pressScale
@@ -177,16 +176,14 @@ fun CollectionDetailScreen(
                             )
                         }
                     } else {
-                        itemsIndexed(entries, key = { _, it -> it.scryfallId }) { index, entry ->
-                            StaggeredEntrance(index) {
-                                CollectionCardRow(
-                                    entry = entry,
-                                    onClick = { zoomId = entry.scryfallId },
-                                    actions = collectionCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeTarget = it }),
-                                    onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
-                                    onRemove = { removeTarget = entry }
-                                )
-                            }
+                        items(entries, key = { it.scryfallId }) { entry ->
+                            CollectionCardRow(
+                                entry = entry,
+                                onClick = { zoomId = entry.scryfallId },
+                                actions = collectionCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeTarget = it }),
+                                onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
+                                onRemove = { removeTarget = entry }
+                            )
                         }
                     }
                 }
