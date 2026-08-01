@@ -118,6 +118,7 @@ fun DeckDetailScreen(
 ) {
     val deck by viewModel.deck.collectAsState()
     val analysis by viewModel.analysis.collectAsState()
+    val cardGroups by viewModel.cardGroups.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val prices by viewModel.prices.collectAsState()
     val pagerState = rememberPagerState(pageCount = { 4 })
@@ -232,8 +233,11 @@ fun DeckDetailScreen(
 
         zoom?.let { (source, key) ->
             if (source == "card") {
-                val groups = if (analysis.byType.isNotEmpty()) analysis.byType
-                else listOf(TypeGroup("Cards", currentDeck.cards))
+                val groups = when {
+                    analysis.byType.isNotEmpty() -> analysis.byType
+                    cardGroups.isNotEmpty() -> cardGroups
+                    else -> listOf(TypeGroup("Cards", currentDeck.cards))
+                }
                 val flatCards = groups.flatMap { it.cards }
                 val zoomCards = flatCards.map { entry ->
                     ZoomCard(
@@ -642,11 +646,19 @@ private fun CardsTab(
     val trimmed = query.trim()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
+    val cardGroups by viewModel.cardGroups.collectAsState()
 
-    // Grouped by type once analysis has loaded; otherwise a flat list so cards show immediately.
+    // Grouped by type instantly from cached data, refined once analysis resolves from Scryfall;
+    // only falls back to one flat list for entries with no type info at all yet.
     // The commander is shown in its own pinned section, so exclude it from the list to avoid a duplicate.
     val commanderId = deck.commander?.scryfallId
-    val groups = (if (analysis.byType.isNotEmpty()) analysis.byType else listOf(TypeGroup("Cards", deck.cards)))
+    val groups = (
+        when {
+            analysis.byType.isNotEmpty() -> analysis.byType
+            cardGroups.isNotEmpty() -> cardGroups
+            else -> listOf(TypeGroup("Cards", deck.cards))
+        }
+        )
         .mapNotNull { group ->
             val cards = group.cards.filterNot { it.scryfallId == commanderId }
                 .filter { trimmed.isBlank() || it.name.contains(trimmed, ignoreCase = true) }

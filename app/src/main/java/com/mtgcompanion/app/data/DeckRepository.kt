@@ -44,7 +44,7 @@ class DeckRepository(private val context: Context) {
                 val newCards = if (existing != null) {
                     deck.cards.map { if (it.scryfallId == card.id) it.copy(quantity = it.quantity + 1) else it }
                 } else {
-                    deck.cards + DeckCardEntry(card.id, card.name, card.displayImageUrl, 1, card.canBeCommander)
+                    deck.cards + DeckCardEntry(card.id, card.name, card.displayImageUrl, 1, card.canBeCommander, card.typeLine)
                 }
                 deck.copy(cards = newCards)
             }
@@ -83,12 +83,12 @@ class DeckRepository(private val context: Context) {
                 if (deck.id != deckId) return@map deck
                 val newCards = deck.cards.map {
                     if (it.scryfallId == oldScryfallId)
-                        it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl)
+                        it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine)
                     else it
                 }
                 val newCommander = deck.commander
                     ?.takeIf { it.scryfallId == oldScryfallId }
-                    ?.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl)
+                    ?.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine)
                     ?: deck.commander
                 deck.copy(cards = newCards, commander = newCommander)
             }

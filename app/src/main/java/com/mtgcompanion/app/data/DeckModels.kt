@@ -36,7 +36,10 @@ data class DeckCardEntry(
     val name: String,
     val imageUrl: String?,
     val quantity: Int = 1,
-    val canBeCommander: Boolean = false
+    val canBeCommander: Boolean = false,
+    // Cached from Scryfall at add-time so the Cards tab can group by type instantly on open,
+    // without waiting on a network round-trip. Null for entries added before this field existed.
+    val typeLine: String? = null
 )
 
 data class Deck(

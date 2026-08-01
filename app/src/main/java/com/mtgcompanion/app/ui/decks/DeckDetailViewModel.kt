@@ -30,6 +30,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -88,6 +89,20 @@ class DeckDetailViewModel(
             decks.filter { it.id != deckId }.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
                 collections.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Cards grouped by type from data already cached on each [DeckCardEntry] — no network wait.
+     * [analysis]'s byType is authoritative once it resolves (and catches entries added before
+     * typeLine was cached, which land under "Other" here); this just avoids the flash of a single
+     * flat "Cards" list while that Scryfall round-trip is in flight.
+     */
+    val cardGroups: StateFlow<List<TypeGroup>> = deck.map { d ->
+        d?.cards.orEmpty()
+            .groupBy { primaryType(it.typeLine) }
+            .toList()
+            .sortedBy { typeOrder(it.first) }
+            .map { (type, cards) -> TypeGroup(type, cards.sortedBy { it.name.lowercase() }) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val analysis: StateFlow<DeckAnalysis> = deck.mapLatest { d ->
         if (d == null) return@mapLatest DeckAnalysis(loading = false)
@@ -367,7 +382,7 @@ private data class ParsedLine(
         }
 
     fun toEntry(card: ScryfallCard): DeckCardEntry =
-        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander)
+        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander, card.typeLine)
 }
 
 private fun ScryfallCard.matches(line: ParsedLine): Boolean =
