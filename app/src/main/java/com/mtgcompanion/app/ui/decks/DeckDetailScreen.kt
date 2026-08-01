@@ -750,9 +750,9 @@ private fun CardsTab(
     val cardGroups by viewModel.cardGroups.collectAsState()
 
     // Grouped by type instantly from cached data, refined once analysis resolves from Scryfall;
-    // only falls back to one flat list for entries with no type info at all yet.
-    // The commander is shown in its own pinned section, so exclude it from the list to avoid a duplicate.
-    val commanderId = deck.commander?.scryfallId
+    // only falls back to one flat list for entries with no type info at all yet. The commander is
+    // just another entry in deck.cards, so it's shown inline in its type group like any other card
+    // (isCommander marks it with a star) rather than pinned in its own separate-looking section.
     val groups = (
         when {
             analysis.byType.isNotEmpty() -> analysis.byType
@@ -761,11 +761,9 @@ private fun CardsTab(
         }
         )
         .mapNotNull { group ->
-            val cards = group.cards.filterNot { it.scryfallId == commanderId }
-                .filter { trimmed.isBlank() || it.name.contains(trimmed, ignoreCase = true) }
+            val cards = group.cards.filter { trimmed.isBlank() || it.name.contains(trimmed, ignoreCase = true) }
             if (cards.isEmpty()) null else group.copy(cards = cards)
         }
-    val commanderMatches = deck.commander?.name?.contains(trimmed, ignoreCase = true) == true
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (deck.cards.isNotEmpty() || deck.commander != null) {
@@ -803,9 +801,6 @@ private fun CardsTab(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (deck.commander != null && (trimmed.isBlank() || commanderMatches)) {
-                item { CommanderSection(deck, onClick = { deck.commander?.let { onZoomCard(it.scryfallId) } }) }
-            }
             if (deck.cards.isEmpty()) {
                 item {
                     Text(
@@ -815,7 +810,7 @@ private fun CardsTab(
                 }
                 return@LazyColumn
             }
-            if (groups.isEmpty() && !(deck.commander != null && commanderMatches)) {
+            if (groups.isEmpty()) {
                 item {
                     Text(
                         "No cards match \"$trimmed\".",
@@ -838,6 +833,7 @@ private fun CardsTab(
                     cardGrid(group.cards, columns = gridColumns, key = { it.scryfallId }) { card ->
                         DeckCardTile(
                             card = card,
+                            isCommander = deck.commander?.scryfallId == card.scryfallId,
                             onClick = { onZoomCard(card.scryfallId) },
                             actions = cardActions(card)
                         )
@@ -1324,33 +1320,6 @@ private fun SuggestionTile(view: EdhrecCardView, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun CommanderSection(deck: Deck, onClick: () -> Unit) {
-    val commander = deck.commander ?: return
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(4.dp))
-            .clickable(onClick = onClick)
-            .padding(12.dp)
-    ) {
-        AsyncImage(
-            model = commander.imageUrl.toArtCropUrl(),
-            contentDescription = commander.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 84.dp, height = 60.dp).clip(RoundedCornerShape(4.dp))
-        )
-        Column {
-            Text("COMMANDER", style = MaterialTheme.typography.labelMedium, color = TextDim)
-            Text(commander.name, style = MaterialTheme.typography.bodyMedium, color = GoldLight)
-        }
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DeckCardRow(
@@ -1424,7 +1393,7 @@ private fun DeckCardRow(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DeckCardTile(card: DeckCardEntry, onClick: () -> Unit, actions: List<CardMenuAction>) {
+private fun DeckCardTile(card: DeckCardEntry, isCommander: Boolean = false, onClick: () -> Unit, actions: List<CardMenuAction>) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -1455,6 +1424,20 @@ private fun DeckCardTile(card: DeckCardEntry, onClick: () -> Unit, actions: List
                         .background(Color.Black.copy(alpha = 0.6f))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+                if (isCommander) {
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription = "Commander",
+                        tint = Gold,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .padding(4.dp)
+                            .size(14.dp)
+                    )
+                }
             }
             Text(
                 card.name,
