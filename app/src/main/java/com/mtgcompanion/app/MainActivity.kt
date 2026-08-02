@@ -25,7 +25,8 @@ class MainActivity : ComponentActivity() {
                         deckRepository = app.deckRepository,
                         driveSyncManager = app.driveSyncManager,
                         updateManager = app.updateManager,
-                        offlineCardRepository = app.offlineCardRepository
+                        offlineCardRepository = app.offlineCardRepository,
+                        playerProfileRepository = app.playerProfileRepository
                     )
                 }
             }

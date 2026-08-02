@@ -1,13 +1,17 @@
 package com.mtgcompanion.app
 
 import android.app.Application
+import android.os.Build
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.decode.SvgDecoder
 import coil.disk.DiskCache
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.SyncStateRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
@@ -26,6 +30,7 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
     }
     val updateManager by lazy { UpdateManager(this) }
     val offlineCardRepository by lazy { OfflineCardRepository(this) }
+    val playerProfileRepository by lazy { PlayerProfileRepository(this) }
 
     override fun onCreate() {
         super.onCreate()
@@ -38,10 +43,15 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         ImageLoader.Builder(this)
             // Scryfall's card image CDN, like its API, rejects requests with a default
             // HTTP-library User-Agent (400 generic_user_agent) - use the client that sets a
-            // custom one. This client leaves caching to Coil's DiskCache below.
-            .okHttpClient(NetworkModule.noCacheOkHttpClient)
-            // Mana symbols are served by Scryfall as SVGs.
-            .components { add(SvgDecoder.Factory()) }
+            // custom one (but without forcing the JSON API's Accept header, since this client
+            // also fetches user-supplied image/GIF URLs from arbitrary hosts). This client
+            // leaves caching to Coil's DiskCache below.
+            .okHttpClient(NetworkModule.imageOkHttpClient)
+            .components {
+                add(SvgDecoder.Factory()) // Mana symbols are served by Scryfall as SVGs.
+                // Animated GIF support, for custom Life Counter background images.
+                if (Build.VERSION.SDK_INT >= 28) add(ImageDecoderDecoder.Factory()) else add(GifDecoder.Factory())
+            }
             // A generous, persistent disk cache so card art you've viewed stays available
             // offline. Scryfall image URLs are content-addressed (immutable), so we ignore
             // cache headers and never revalidate — a cached image is always current.

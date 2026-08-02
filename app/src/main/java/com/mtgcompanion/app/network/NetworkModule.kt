@@ -54,6 +54,18 @@ object NetworkModule {
         chain.proceed(request)
     }
 
+    // Same custom User-Agent (some image hosts, like Scryfall's own CDN, also reject the default
+    // OkHttp one) but WITHOUT forcing an "Accept: application/json" header, which the JSON-API
+    // interceptor above does — fine for Scryfall/MTGJSON/RSS (verified tolerant), but wrong for
+    // fetching an arbitrary image/GIF URL a user pastes in as a custom Life Counter background;
+    // some hosts serving static files honor Accept strictly and would reject the request.
+    private val imageUserAgentInterceptor = Interceptor { chain ->
+        val request = chain.request().newBuilder()
+            .header("User-Agent", "MtgCompanionApp/1.0 (Android; +https://github.com/mtgcompanion)")
+            .build()
+        chain.proceed(request)
+    }
+
     private fun baseBuilder(): OkHttpClient.Builder = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -93,6 +105,16 @@ object NetworkModule {
      * (bulk card data, update APKs), and checks that must always be fresh.
      */
     val noCacheOkHttpClient: OkHttpClient by lazy { baseBuilder().build() }
+
+    /** Coil's image client — card art, plus any arbitrary image/GIF URL a user supplies. */
+    val imageOkHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .addInterceptor(imageUserAgentInterceptor)
+            .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+            .build()
+    }
 
     private fun retrofitFor(baseUrl: String): Retrofit = Retrofit.Builder()
         .baseUrl(baseUrl)

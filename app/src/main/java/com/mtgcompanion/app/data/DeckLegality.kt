@@ -32,13 +32,22 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
     val issues = mutableListOf<LegalityIssue>()
     val totalCards = deck.cards.sumOf { it.quantity }
 
-    // Commander requirement + colour identity source.
+    // Commander requirement + colour identity source (union of both, if a partner is set).
     val commanderIdentity: Set<String>? = if (mode.usesCommander) {
         if (deck.commander == null) {
             issues += LegalityIssue(null, "No commander set — ${mode.label} needs a commander.")
             null
         } else {
-            cards[deck.commander.scryfallId]?.colorIdentity?.toSet() ?: emptySet()
+            val mainIdentity = cards[deck.commander.scryfallId]?.colorIdentity?.toSet() ?: emptySet()
+            val partner = deck.partnerCommander
+            if (partner != null) {
+                if (!partnersWith(deck.commander, partner)) {
+                    issues += LegalityIssue(null, "${deck.commander.name} and ${partner.name} don't have a valid Partner pairing.")
+                }
+                mainIdentity + (cards[partner.scryfallId]?.colorIdentity?.toSet() ?: emptySet())
+            } else {
+                mainIdentity
+            }
         }
     } else null
 
@@ -76,7 +85,8 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
         }
 
         // Commander colour identity.
-        if (commanderIdentity != null && card != null && entry.scryfallId != deck.commander?.scryfallId) {
+        val isCommanderCard = entry.scryfallId == deck.commander?.scryfallId || entry.scryfallId == deck.partnerCommander?.scryfallId
+        if (commanderIdentity != null && card != null && !isCommanderCard) {
             val cardIdentity = card.colorIdentity?.toSet() ?: emptySet()
             if (!commanderIdentity.containsAll(cardIdentity)) {
                 val outside = (cardIdentity - commanderIdentity).joinToString("")

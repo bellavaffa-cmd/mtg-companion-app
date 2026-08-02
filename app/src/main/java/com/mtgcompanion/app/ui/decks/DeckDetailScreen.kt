@@ -93,6 +93,7 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.LegalityIssue
+import com.mtgcompanion.app.data.partnersWith
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
@@ -255,11 +256,15 @@ fun DeckDetailScreen(
                                 entry = entry,
                                 mode = currentDeck.mode,
                                 isCommander = currentDeck.commander?.scryfallId == entry.scryfallId,
+                                hasCommander = currentDeck.commander != null,
+                                isPartnerCommander = currentDeck.partnerCommander?.scryfallId == entry.scryfallId,
+                                canPartnerWithCommander = currentDeck.commander?.let { partnersWith(it, entry) } ?: false,
                                 onViewDetails = onViewDetails,
                                 onCopy = { copyTarget = it },
                                 onMove = { moveTarget = it },
                                 onRemove = { removeCardTarget = it },
-                                onSetCommander = { viewModel.setCommander(it) }
+                                onSetCommander = { viewModel.setCommander(it) },
+                                onSetPartnerCommander = { viewModel.setPartnerCommander(it) }
                             )
                         },
                         viewModel
@@ -470,8 +475,10 @@ private fun ImportResultDialog(state: ImportState, onDismiss: () -> Unit) {
 /** Builds a plain-text decklist ("1 Card Name" per line), commander first. */
 private fun buildDecklist(deck: Deck): String = buildString {
     deck.commander?.let { appendLine("${it.quantity} ${it.name}") }
+    deck.partnerCommander?.let { appendLine("${it.quantity} ${it.name}") }
+    val commanderIds = setOfNotNull(deck.commander?.scryfallId, deck.partnerCommander?.scryfallId)
     deck.cards
-        .filter { it.scryfallId != deck.commander?.scryfallId }
+        .filterNot { it.scryfallId in commanderIds }
         .sortedBy { it.name.lowercase() }
         .forEach { appendLine("${it.quantity} ${it.name}") }
 }
@@ -760,19 +767,27 @@ private fun CardsTab(
             if (cards.isEmpty()) null else group.copy(cards = cards)
         }
 
-    // The commander renders with the same full-card DeckCardRow/DeckCardTile as everything else,
-    // but pulled out of its type group into its own pinned section at the top of the list.
-    val commanderId = deck.commander?.scryfallId
-    var commanderEntry: DeckCardEntry? = null
+    // The commander (and partner commander, if set) render with the same full-card
+    // DeckCardRow/DeckCardTile as everything else, but pulled out of their type groups into one
+    // pinned section at the top of the list.
+    val commanderIds = setOfNotNull(deck.commander?.scryfallId, deck.partnerCommander?.scryfallId)
+    val commanderEntries = mutableListOf<DeckCardEntry>()
     val otherGroups = typeGroups.mapNotNull { group ->
         val rest = group.cards.filter { card ->
-            val isCommander = card.scryfallId == commanderId
-            if (isCommander) commanderEntry = card
+            val isCommander = card.scryfallId in commanderIds
+            if (isCommander) commanderEntries += card
             !isCommander
         }
         if (rest.isEmpty()) null else group.copy(cards = rest)
     }
-    val groups = commanderEntry?.let { listOf(TypeGroup("Commander", listOf(it))) + otherGroups } ?: otherGroups
+    val groups = if (commanderEntries.isNotEmpty()) {
+        // Keep the main commander first, partner second, regardless of the order they were found in.
+        val ordered = listOfNotNull(
+            commanderEntries.find { it.scryfallId == deck.commander?.scryfallId },
+            commanderEntries.find { it.scryfallId == deck.partnerCommander?.scryfallId }
+        )
+        listOf(TypeGroup("Commander", ordered)) + otherGroups
+    } else otherGroups
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (deck.cards.isNotEmpty() || deck.commander != null) {
@@ -842,7 +857,7 @@ private fun CardsTab(
                     cardGrid(group.cards, columns = gridColumns, key = { it.scryfallId }) { card ->
                         DeckCardTile(
                             card = card,
-                            isCommander = deck.commander?.scryfallId == card.scryfallId,
+                            isCommander = card.scryfallId == deck.commander?.scryfallId || card.scryfallId == deck.partnerCommander?.scryfallId,
                             onClick = { onZoomCard(card.scryfallId) },
                             actions = cardActions(card)
                         )
@@ -851,7 +866,7 @@ private fun CardsTab(
                     items(group.cards, key = { it.scryfallId }) { card ->
                         DeckCardRow(
                             card = card,
-                            isCommander = deck.commander?.scryfallId == card.scryfallId,
+                            isCommander = card.scryfallId == deck.commander?.scryfallId || card.scryfallId == deck.partnerCommander?.scryfallId,
                             onClick = { onZoomCard(card.scryfallId) },
                             actions = cardActions(card),
                             onToggleCommander = {
@@ -1455,11 +1470,15 @@ private fun deckCardActions(
     entry: DeckCardEntry,
     mode: GameMode,
     isCommander: Boolean,
+    hasCommander: Boolean,
+    isPartnerCommander: Boolean,
+    canPartnerWithCommander: Boolean,
     onViewDetails: (String) -> Unit,
     onCopy: (DeckCardEntry) -> Unit,
     onMove: (DeckCardEntry) -> Unit,
     onRemove: (DeckCardEntry) -> Unit,
-    onSetCommander: (DeckCardEntry?) -> Unit
+    onSetCommander: (DeckCardEntry?) -> Unit,
+    onSetPartnerCommander: (DeckCardEntry?) -> Unit
 ): List<CardMenuAction> {
     val actions = mutableListOf<CardMenuAction>()
     if (entry.canBeCommander && mode == GameMode.COMMANDER) {
@@ -1467,6 +1486,15 @@ private fun deckCardActions(
             CardMenuAction("Remove as commander", Icons.Filled.Star) { onSetCommander(null) }
         } else {
             CardMenuAction("Set as commander", Icons.Outlined.Star) { onSetCommander(entry) }
+        }
+    }
+    // Only offered once a main commander exists, for a card that isn't it, and that actually has a
+    // valid Partner pairing with it (plain "Partner"+"Partner", or a matching "Partner with <name>").
+    if (mode == GameMode.COMMANDER && hasCommander && !isCommander && (isPartnerCommander || canPartnerWithCommander)) {
+        actions += if (isPartnerCommander) {
+            CardMenuAction("Remove as partner commander", Icons.Filled.Star) { onSetPartnerCommander(null) }
+        } else {
+            CardMenuAction("Set as partner commander", Icons.Outlined.Star) { onSetPartnerCommander(entry) }
         }
     }
     actions += CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { onCopy(entry) }

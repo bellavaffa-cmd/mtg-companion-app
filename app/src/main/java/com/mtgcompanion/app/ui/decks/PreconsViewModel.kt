@@ -58,7 +58,7 @@ class PreconsViewModel(
                 val deckEntries = all.mapNotNull { entry ->
                     val id = entry.scryfallId ?: return@mapNotNull null
                     val card = cardsById[id] ?: return@mapNotNull null
-                    DeckCardEntry(card.id, card.name, card.displayImageUrl, entry.quantity, card.canBeCommander, card.typeLine)
+                    DeckCardEntry(card.id, card.name, card.displayImageUrl, entry.quantity, card.canBeCommander, card.typeLine, card.partnerAbility)
                 }
                 if (deckEntries.isEmpty()) {
                     onError("None of this precon's cards could be found on Scryfall.")
@@ -66,8 +66,11 @@ class PreconsViewModel(
                 }
                 val deck = deckRepository.createDeck(precon.name, GameMode.COMMANDER)
                 deckRepository.addEntries(deck.id, deckEntries)
-                val commanderScryfallId = contents.commander.firstOrNull()?.scryfallId
-                deckEntries.firstOrNull { it.scryfallId == commanderScryfallId }?.let { deckRepository.setCommander(deck.id, it) }
+                // MTGJSON lists 2 commanders for a partner precon — set both when present.
+                val commanderScryfallIds = contents.commander.mapNotNull { it.scryfallId }
+                val commanderEntries = commanderScryfallIds.mapNotNull { id -> deckEntries.firstOrNull { it.scryfallId == id } }
+                commanderEntries.getOrNull(0)?.let { deckRepository.setCommander(deck.id, it) }
+                commanderEntries.getOrNull(1)?.let { deckRepository.setPartnerCommander(deck.id, it) }
                 onImported(deck.id)
             } catch (e: Exception) {
                 onError("Import failed: ${e.message ?: "unknown error"}")

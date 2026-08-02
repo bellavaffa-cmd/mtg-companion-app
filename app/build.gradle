@@ -18,8 +18,8 @@ android {
         minSdk 26
         targetSdk 34
         // versionCode scheme: major*10000 + minor*100 + patch (e.g. 1.8.0 -> 10800). Bump both per release.
-        versionCode 15400
-        versionName '1.54.0'
+        versionCode 15500
+        versionName '1.55.0'
     }
 
     signingConfigs {
@@ -88,6 +88,7 @@ dependencies {
 
     implementation 'io.coil-kt:coil-compose:2.6.0'
     implementation 'io.coil-kt:coil-svg:2.6.0'
+    implementation 'io.coil-kt:coil-gif:2.6.0'
 
     implementation 'androidx.datastore:datastore-preferences:1.1.1'
 

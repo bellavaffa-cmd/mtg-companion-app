@@ -56,7 +56,7 @@ class DeckRepository(private val context: Context) {
                 val newCards = if (existing != null) {
                     deck.cards.map { if (it.scryfallId == card.id) it.copy(quantity = it.quantity + 1) else it }
                 } else {
-                    deck.cards + DeckCardEntry(card.id, card.name, card.displayImageUrl, 1, card.canBeCommander, card.typeLine)
+                    deck.cards + DeckCardEntry(card.id, card.name, card.displayImageUrl, 1, card.canBeCommander, card.typeLine, card.partnerAbility)
                 }
                 deck.copy(cards = newCards)
             }
@@ -68,7 +68,8 @@ class DeckRepository(private val context: Context) {
             decks.map { deck ->
                 if (deck.id != deckId) return@map deck
                 val newCommander = deck.commander?.takeUnless { it.scryfallId == scryfallId }
-                deck.copy(cards = deck.cards.filterNot { it.scryfallId == scryfallId }, commander = newCommander)
+                val newPartner = deck.partnerCommander?.takeUnless { it.scryfallId == scryfallId }
+                deck.copy(cards = deck.cards.filterNot { it.scryfallId == scryfallId }, commander = newCommander, partnerCommander = newPartner)
             }
         }
     }
@@ -80,7 +81,8 @@ class DeckRepository(private val context: Context) {
                 if (deck.id != deckId) return@map deck
                 if (quantity <= 0) {
                     val newCommander = deck.commander?.takeUnless { it.scryfallId == scryfallId }
-                    deck.copy(cards = deck.cards.filterNot { it.scryfallId == scryfallId }, commander = newCommander)
+                    val newPartner = deck.partnerCommander?.takeUnless { it.scryfallId == scryfallId }
+                    deck.copy(cards = deck.cards.filterNot { it.scryfallId == scryfallId }, commander = newCommander, partnerCommander = newPartner)
                 } else {
                     deck.copy(cards = deck.cards.map { if (it.scryfallId == scryfallId) it.copy(quantity = quantity) else it })
                 }
@@ -88,27 +90,46 @@ class DeckRepository(private val context: Context) {
         }
     }
 
-    /** Swap a card to a different printing (art), keeping its quantity; updates the commander too. */
+    /** Swap a card to a different printing (art), keeping its quantity; updates the commander(s) too. */
     suspend fun changeCardPrinting(deckId: String, oldScryfallId: String, newCard: ScryfallCard) {
         update { decks ->
             decks.map { deck ->
                 if (deck.id != deckId) return@map deck
                 val newCards = deck.cards.map {
                     if (it.scryfallId == oldScryfallId)
-                        it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine)
+                        it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine, partnerAbility = newCard.partnerAbility)
                     else it
                 }
-                val newCommander = deck.commander
+                fun retarget(entry: DeckCardEntry?) = entry
                     ?.takeIf { it.scryfallId == oldScryfallId }
-                    ?.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine)
-                    ?: deck.commander
-                deck.copy(cards = newCards, commander = newCommander)
+                    ?.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine, partnerAbility = newCard.partnerAbility)
+                    ?: entry
+                deck.copy(cards = newCards, commander = retarget(deck.commander), partnerCommander = retarget(deck.partnerCommander))
             }
         }
     }
 
+    /**
+     * Sets the main commander. Clearing it (null) also clears any partner commander, since a
+     * partner pairing without a main commander is meaningless; setting a new one also drops the
+     * existing partner if it no longer has a valid Partner pairing with the new commander.
+     */
     suspend fun setCommander(deckId: String, card: DeckCardEntry?) {
-        update { decks -> decks.map { if (it.id == deckId) it.copy(commander = card) else it } }
+        update { decks ->
+            decks.map { deck ->
+                if (deck.id != deckId) return@map deck
+                val newPartner = when {
+                    card == null -> null
+                    deck.partnerCommander != null && !partnersWith(card, deck.partnerCommander) -> null
+                    else -> deck.partnerCommander
+                }
+                deck.copy(commander = card, partnerCommander = newPartner)
+            }
+        }
+    }
+
+    suspend fun setPartnerCommander(deckId: String, card: DeckCardEntry?) {
+        update { decks -> decks.map { if (it.id == deckId) it.copy(partnerCommander = card) else it } }
     }
 
     /** Add a card entry (with its quantity) to a deck, merging into an existing copy. For moves. */

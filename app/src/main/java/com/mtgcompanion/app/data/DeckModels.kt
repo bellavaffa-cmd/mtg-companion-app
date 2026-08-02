@@ -39,8 +39,21 @@ data class DeckCardEntry(
     val canBeCommander: Boolean = false,
     // Cached from Scryfall at add-time so the Cards tab can group by type instantly on open,
     // without waiting on a network round-trip. Null for entries added before this field existed.
-    val typeLine: String? = null
+    val typeLine: String? = null,
+    // Cached from ScryfallCard.partnerAbility — null (no partner ability), "Partner" (pairs with
+    // any other plain-partner card), or the exact "Partner with <Name>" target.
+    val partnerAbility: String? = null
 )
+
+/** Whether [a] and [b] can legally be co-commanders under the Partner mechanic. */
+fun partnersWith(a: DeckCardEntry, b: DeckCardEntry): Boolean {
+    val abilityA = a.partnerAbility ?: return false
+    val abilityB = b.partnerAbility ?: return false
+    if (abilityA == "Partner" && abilityB == "Partner") return true
+    if (abilityA.equals(b.name, ignoreCase = true)) return true
+    if (abilityB.equals(a.name, ignoreCase = true)) return true
+    return false
+}
 
 /** One logged game's outcome for a deck's match record. [result] is "WIN", "LOSS", or "DRAW". */
 data class GameResult(
@@ -54,6 +67,9 @@ data class Deck(
     val id: String,
     val name: String,
     val commander: DeckCardEntry? = null,
+    // A reference into [cards], same as [commander] — only meaningful when a Partner pairing with
+    // [commander] is valid; the repository clears it whenever that stops being true.
+    val partnerCommander: DeckCardEntry? = null,
     val cards: List<DeckCardEntry> = emptyList(),
     val gameMode: String = GameMode.DEFAULT.name,
     val createdAt: Long = System.currentTimeMillis(),

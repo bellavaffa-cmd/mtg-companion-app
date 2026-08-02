@@ -26,13 +26,14 @@ class DecksViewModel(
 
     /** deckId -> commander colour identity (e.g. ["U","B"]) for the mana pips on each deck tile. */
     val commanderColors: StateFlow<Map<String, List<String>>> = decks.mapLatest { deckList ->
-        val ids = deckList.mapNotNull { it.commander?.scryfallId }
+        val ids = deckList.flatMap { listOfNotNull(it.commander?.scryfallId, it.partnerCommander?.scryfallId) }
         if (ids.isEmpty()) return@mapLatest emptyMap()
         val byId = cardRepository.getCardsByIds(ids).associateBy { it.id }
         deckList.mapNotNull { deck ->
             val commanderId = deck.commander?.scryfallId ?: return@mapNotNull null
             val colors = byId[commanderId]?.colorIdentity ?: return@mapNotNull null
-            deck.id to colors
+            val partnerColors = deck.partnerCommander?.scryfallId?.let { byId[it]?.colorIdentity }.orEmpty()
+            deck.id to (colors + partnerColors).distinct()
         }.toMap()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 

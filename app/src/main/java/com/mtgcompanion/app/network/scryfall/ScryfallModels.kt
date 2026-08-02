@@ -77,6 +77,23 @@ data class ScryfallCard(
             val explicitlyAllowed = oracleText?.contains("can be your commander", ignoreCase = true) == true
             return isLegendaryCreature || explicitlyAllowed
         }
+
+    /**
+     * Null if this card has no partner ability. `"Partner"` for a plain partner card (pairs with
+     * any other plain-partner commander); otherwise the exact name from "Partner with <Name>"
+     * (pairs only with that specific card).
+     */
+    val partnerAbility: String?
+        get() {
+            val line = displayOracleText?.lineSequence()?.map { it.trim() }
+                ?.firstOrNull { it.startsWith("Partner", ignoreCase = true) } ?: return null
+            val withPrefix = "Partner with "
+            return if (line.startsWith(withPrefix, ignoreCase = true)) {
+                line.removePrefix(withPrefix).substringBefore(" (").trim()
+            } else {
+                "Partner"
+            }
+        }
 }
 
 data class ScryfallCardFace(

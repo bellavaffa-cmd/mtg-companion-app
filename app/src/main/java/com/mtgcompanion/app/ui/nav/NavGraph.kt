@@ -66,6 +66,7 @@ import androidx.navigation.navArgument
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
@@ -138,7 +139,8 @@ fun MtgNavGraph(
     deckRepository: DeckRepository,
     driveSyncManager: DriveSyncManager,
     updateManager: UpdateManager,
-    offlineCardRepository: OfflineCardRepository
+    offlineCardRepository: OfflineCardRepository,
+    playerProfileRepository: PlayerProfileRepository
 ) {
     val navController = rememberNavController()
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
@@ -315,7 +317,7 @@ fun MtgNavGraph(
             }
 
             composable(Routes.LIFE_COUNTER) {
-                val viewModel: LifeCounterViewModel = viewModel()
+                val viewModel: LifeCounterViewModel = viewModel(factory = LifeCounterViewModel.Factory(playerProfileRepository))
                 LifeCounterScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
 

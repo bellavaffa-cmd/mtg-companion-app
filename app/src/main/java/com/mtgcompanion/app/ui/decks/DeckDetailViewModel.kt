@@ -186,8 +186,9 @@ class DeckDetailViewModel(
             }
         }
 
-        val commanderNames = listOfNotNull(d.commander?.name)
-        val nonCommanderNames = d.cards.filter { it.scryfallId != d.commander?.scryfallId }.map { it.name }
+        val commanderNames = listOfNotNull(d.commander?.name, d.partnerCommander?.name)
+        val commanderIds = setOfNotNull(d.commander?.scryfallId, d.partnerCommander?.scryfallId)
+        val nonCommanderNames = d.cards.filterNot { it.scryfallId in commanderIds }.map { it.name }
         val combos = comboRepository.findCombosInDeck(commanderNames, nonCommanderNames)
 
         val (bracket, bracketName, reason) = estimateBracket(gameChangers.size, combos.size)
@@ -218,6 +219,10 @@ class DeckDetailViewModel(
 
     fun setCommander(card: DeckCardEntry?) {
         viewModelScope.launch { repository.setCommander(deckId, card) }
+    }
+
+    fun setPartnerCommander(card: DeckCardEntry?) {
+        viewModelScope.launch { repository.setPartnerCommander(deckId, card) }
     }
 
     /** Change a card's copy count in the deck (used by the enlarged-card quantity stepper). */
@@ -443,7 +448,7 @@ private data class ParsedLine(
         }
 
     fun toEntry(card: ScryfallCard): DeckCardEntry =
-        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander, card.typeLine)
+        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander, card.typeLine, card.partnerAbility)
 }
 
 private fun ScryfallCard.matches(line: ParsedLine): Boolean =
