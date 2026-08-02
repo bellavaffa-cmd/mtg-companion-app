@@ -1,10 +1,8 @@
 package com.mtgcompanion.app.ui.decks
 
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,7 +50,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -61,6 +58,7 @@ import com.mtgcompanion.app.data.PreconContents
 import com.mtgcompanion.app.data.PreconInfo
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
+import com.mtgcompanion.app.ui.common.elevatedCard
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -181,9 +179,7 @@ private fun PreconRow(precon: PreconInfo, onClick: () -> Unit, onImport: () -> U
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(4.dp))
-                .background(Surface)
-                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .elevatedCard()
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }

@@ -1,8 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,6 +52,7 @@ import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.ManaSymbol
+import com.mtgcompanion.app.ui.common.elevatedCard
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -128,9 +127,7 @@ private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .elevatedCard()
             .clickable(onClick = onClick)
     ) {
         AsyncImage(

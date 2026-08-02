@@ -2,9 +2,7 @@ package com.mtgcompanion.app.ui.home
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -53,11 +52,11 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.NewsItem
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.AnimatedUsdText
+import com.mtgcompanion.app.ui.common.elevatedCard
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldLight
-import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
@@ -71,6 +70,7 @@ fun HomeScreen(
     onOpenDecks: () -> Unit,
     onOpenScan: () -> Unit,
     onOpenRules: () -> Unit,
+    onOpenLifeCounter: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenDeck: (String) -> Unit,
     onViewCard: (String) -> Unit
@@ -115,9 +115,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Surface)
-                        .border(BorderStroke(1.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
+                        .elevatedCard(borderColor = Gold.copy(alpha = 0.5f))
                         .padding(12.dp)
                 ) {
                     Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = Gold, modifier = Modifier.size(20.dp))
@@ -148,6 +146,7 @@ fun HomeScreen(
             HomeTile(Icons.Filled.Style, "Decks", "Build, analyze, and check legality", onOpenDecks, iconSize = 34.dp)
             HomeTile(Icons.Filled.CameraAlt, "Scan", "Add cards with your camera", onOpenScan)
             HomeTile(Icons.Filled.MenuBook, "Rules", "Keyword glossary and card rulings", onOpenRules)
+            HomeTile(Icons.Filled.Favorite, "Life Counter", "Track life totals at the table", onOpenLifeCounter)
 
             if (news.isNotEmpty()) {
                 NewsSection(news, onOpenArticle = { url ->
@@ -163,9 +162,7 @@ private fun NewsSection(items: List<NewsItem>, onOpenArticle: (String) -> Unit) 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .elevatedCard()
             .padding(vertical = 4.dp)
     ) {
         Text(
@@ -206,9 +203,7 @@ private fun NewsSection(items: List<NewsItem>, onOpenArticle: (String) -> Unit) 
 private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .elevatedCard()
             .padding(16.dp)
     ) {
         Text(value, style = MaterialTheme.typography.titleLarge, color = GoldLight)
@@ -220,9 +215,7 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 private fun ValueStatCard(value: Double?, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .elevatedCard()
             .padding(16.dp)
     ) {
         if (value != null) {
@@ -241,9 +234,7 @@ private fun MatchSummaryCard(summary: MatchSummary) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .elevatedCard()
             .padding(16.dp)
     ) {
         Text(
@@ -266,9 +257,7 @@ private fun ContinueDeckTile(deck: Deck, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
+            .elevatedCard(borderColor = Gold.copy(alpha = 0.5f))
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
@@ -293,9 +282,7 @@ private fun CardOfDayTile(card: CardOfDay, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .elevatedCard()
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
@@ -325,9 +312,7 @@ private fun HomeTile(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
+            .elevatedCard()
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {

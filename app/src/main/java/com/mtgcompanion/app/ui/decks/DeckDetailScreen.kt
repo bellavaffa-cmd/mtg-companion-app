@@ -106,6 +106,7 @@ import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
+import com.mtgcompanion.app.ui.common.elevatedCard
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -713,9 +714,7 @@ private fun LegalityIssueRow(issue: LegalityIssue) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .elevatedCard(shape = RoundedCornerShape(8.dp))
             .padding(12.dp)
     ) {
         Icon(
@@ -1183,9 +1182,7 @@ private fun Panel(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(6.dp))
+            .elevatedCard()
             .padding(14.dp),
         content = content
     )
@@ -1255,9 +1252,7 @@ private fun ComboRow(combo: Variant, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .elevatedCard(shape = RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
@@ -1278,9 +1273,7 @@ private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
-            .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .elevatedCard(shape = RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
@@ -1349,9 +1342,7 @@ private fun DeckCardRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .pressScale(interactionSource)
-                .clip(RoundedCornerShape(4.dp))
-                .background(Surface)
-                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .elevatedCard(shape = RoundedCornerShape(8.dp))
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,

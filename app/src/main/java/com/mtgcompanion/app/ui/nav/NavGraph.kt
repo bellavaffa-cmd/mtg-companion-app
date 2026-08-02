@@ -1,6 +1,11 @@
 package com.mtgcompanion.app.ui.nav
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -77,6 +82,8 @@ import com.mtgcompanion.app.ui.detail.CardDetailScreen
 import com.mtgcompanion.app.ui.detail.CardDetailViewModel
 import com.mtgcompanion.app.ui.home.HomeScreen
 import com.mtgcompanion.app.ui.home.HomeViewModel
+import com.mtgcompanion.app.ui.lifecounter.LifeCounterScreen
+import com.mtgcompanion.app.ui.lifecounter.LifeCounterViewModel
 import com.mtgcompanion.app.ui.rules.RulesScreen
 import com.mtgcompanion.app.ui.rules.RulesViewModel
 import com.mtgcompanion.app.ui.scan.ScanScreen
@@ -109,6 +116,7 @@ private object Routes {
     const val SETTINGS = "settings"
     const val SCAN = "scan"
     const val RULES = "rules"
+    const val LIFE_COUNTER = "life_counter"
     const val DETAIL = "detail/{cardName}"
     const val DECK_DETAIL = "deck/{deckId}"
     const val COLLECTION_DETAIL = "collection/{collectionId}"
@@ -150,7 +158,13 @@ fun MtgNavGraph(
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,
-            modifier = Modifier.padding(padding)
+            modifier = Modifier.padding(padding),
+            // A hard cut between screens reads as unfinished; a quick fade+slide gives every
+            // push/pop (tab switches included) the same lightweight "moving deeper" feel.
+            enterTransition = { fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 10 } },
+            exitTransition = { fadeOut(tween(160)) },
+            popEnterTransition = { fadeIn(tween(220)) },
+            popExitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { it / 10 } }
         ) {
             composable(Routes.HOME) {
                 val viewModel: HomeViewModel = viewModel(
@@ -166,6 +180,7 @@ fun MtgNavGraph(
                     onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
                     onOpenScan = { navController.navigateToTab(Routes.SCAN) },
                     onOpenRules = { navController.navigateToTab(Routes.RULES) },
+                    onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                     onOpenDeck = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
                     onViewCard = { name -> navController.navigate(Routes.detail(name)) }
@@ -297,6 +312,11 @@ fun MtgNavGraph(
             composable(Routes.RULES) {
                 val viewModel: RulesViewModel = viewModel()
                 RulesScreen(viewModel = viewModel)
+            }
+
+            composable(Routes.LIFE_COUNTER) {
+                val viewModel: LifeCounterViewModel = viewModel()
+                LifeCounterScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
 
             composable(Routes.SETTINGS) {

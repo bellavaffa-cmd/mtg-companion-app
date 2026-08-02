@@ -224,7 +224,7 @@ private fun RulingsBody(state: RulingsState) {
                     )
                 }
             } else {
-                items(state.rulings) { ruling -> RulingCard(ruling) }
+                items(state.rulings, key = { "${it.publishedAt}${it.comment}" }) { ruling -> RulingCard(ruling) }
             }
         }
     }

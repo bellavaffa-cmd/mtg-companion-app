@@ -3,7 +3,6 @@ package com.mtgcompanion.app.ui.search
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,12 +67,13 @@ import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ShimmerPlaceholder
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.elevatedCard
+import com.mtgcompanion.app.ui.common.foilShine
 import com.mtgcompanion.app.ui.common.pressScale
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldLight
-import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
@@ -257,9 +257,7 @@ private fun CardResultRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .pressScale(interactionSource)
-                .clip(RoundedCornerShape(4.dp))
-                .background(Surface)
-                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .elevatedCard()
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
@@ -272,7 +270,10 @@ private fun CardResultRow(
                 model = card.displayImageUrl.toArtCropUrl(),
                 contentDescription = card.name,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
+                modifier = Modifier
+                    .size(width = 72.dp, height = 52.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .let { if (card.isRareOrMythic) it.foilShine() else it }
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
@@ -319,12 +320,19 @@ private fun CardResultTile(
                 model = card.displayImageUrl,
                 contentDescription = card.name,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.72f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .let { if (card.isRareOrMythic) it.foilShine() else it }
             )
         }
         CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = resultCardActions(onAddToTarget, onViewDetails))
     }
 }
+
+private val ScryfallCard.isRareOrMythic: Boolean
+    get() = rarity == "rare" || rarity == "mythic"
 
 private fun resultCardActions(onAddToTarget: () -> Unit, onViewDetails: () -> Unit) = listOf(
     CardMenuAction("Add to binder/deck", Icons.Filled.Add, onClick = onAddToTarget),
