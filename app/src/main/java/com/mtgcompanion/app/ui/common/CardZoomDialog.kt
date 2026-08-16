@@ -63,6 +63,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -74,7 +76,35 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 /** A place a card is held — a binder or a deck — and how many copies are there. */
 enum class SourceKind { BINDER, DECK }
 
-data class CardSource(val kind: SourceKind, val name: String, val quantity: Int)
+data class CardSource(val kind: SourceKind, val id: String, val name: String, val quantity: Int)
+
+/**
+ * Where every card is physically held, across every binder and deck — scryfallId -> the places
+ * holding it. Feeds [ZoomCard.sources] for the enlarged-card "IN N PLACES" section; a card held
+ * nowhere is simply absent from the map. Callers viewing one particular deck/binder typically
+ * filter out that deck/binder's own [CardSource.id] before passing the list to [ZoomCard].
+ */
+fun buildCardSources(collections: List<Collection>, decks: List<Deck>): Map<String, List<CardSource>> {
+    val bySource = HashMap<String, MutableList<CardSource>>()
+    collections.forEach { collection ->
+        collection.entries.forEach { entry ->
+            val qty = entry.quantity + entry.foilQuantity
+            if (qty > 0) {
+                bySource.getOrPut(entry.scryfallId) { mutableListOf() } +=
+                    CardSource(SourceKind.BINDER, collection.id, collection.name, qty)
+            }
+        }
+    }
+    decks.forEach { deck ->
+        deck.cards.forEach { entry ->
+            if (entry.quantity > 0) {
+                bySource.getOrPut(entry.scryfallId) { mutableListOf() } +=
+                    CardSource(SourceKind.DECK, deck.id, deck.name, entry.quantity)
+            }
+        }
+    }
+    return bySource
+}
 
 /**
  * One card in the enlarged-card overlay. [quantity] null hides the quantity/total row (e.g. for a

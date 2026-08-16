@@ -89,6 +89,7 @@ fun CollectionDetailScreen(
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val moveTargets by viewModel.moveTargets.collectAsState()
+    val cardSources by viewModel.cardSources.collectAsState()
     // The card whose move-destination picker is open.
     var moveTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
@@ -202,7 +203,8 @@ fun CollectionDetailScreen(
                 onDecrement = { viewModel.setQuantity(entry, (entry.quantity - 1).coerceAtLeast(0), entry.foilQuantity) },
                 onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                 onMove = { zoomId = null; moveTarget = entry },
-                onViewDetails = { zoomId = null; onViewDetails(entry.name) }
+                onViewDetails = { zoomId = null; onViewDetails(entry.name) },
+                sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != collection?.id }
             )
         }
         CardZoomDialog(zoomCards, entries.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }

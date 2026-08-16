@@ -89,6 +89,7 @@ fun SearchResultsScreen(
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val addTargets by viewModel.addTargets.collectAsState()
+    val cardSources by viewModel.cardSources.collectAsState()
     // The card whose "Add to…" binder/deck picker is open.
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // Index (within the current results) of the card enlarged by a tap, if any.
@@ -230,7 +231,8 @@ fun SearchResultsScreen(
                     // Picking a printing here goes straight into the normal add flow, so choosing
                     // art and saving it to a binder/deck is one motion instead of two pickers.
                     onSelectPrinting = { chosen -> zoomIndex = null; addTarget = chosen },
-                    onViewDetails = { zoomIndex = null; onCardClick(card) }
+                    onViewDetails = { zoomIndex = null; onCardClick(card) },
+                    sources = cardSources[card.id].orEmpty()
                 )
             },
             initialIndex = index,

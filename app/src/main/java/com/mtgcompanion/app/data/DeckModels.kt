@@ -31,6 +31,25 @@ enum class GameMode(
     }
 }
 
+/**
+ * Whether a deck's cards represent real cards the user owns.
+ * - [PHYSICAL]: a deck the user physically owns — its cards count toward what they own.
+ * - [VIRTUAL]: a deck the user doesn't physically own (e.g. a copy of someone else's list, an
+ *   online-only deck) — its cards don't count toward owned totals.
+ * - [PROTOTYPE]: a deck still being built/tested, incomplete by design — same as Virtual, its
+ *   cards aren't counted as owned until the deck is finished and marked Physical.
+ */
+enum class DeckOwnership(val label: String, val description: String) {
+    PHYSICAL("Physical", "You own this deck's cards — they count toward your collection."),
+    VIRTUAL("Virtual", "You don't own this deck physically — its cards aren't counted as owned."),
+    PROTOTYPE("Prototype", "Still being built — its cards aren't counted as owned yet.");
+
+    companion object {
+        val DEFAULT = PHYSICAL
+        fun fromName(name: String?): DeckOwnership = entries.firstOrNull { it.name == name } ?: DEFAULT
+    }
+}
+
 data class DeckCardEntry(
     val scryfallId: String,
     val name: String,
@@ -74,9 +93,11 @@ data class Deck(
     val gameMode: String = GameMode.DEFAULT.name,
     val createdAt: Long = System.currentTimeMillis(),
     val tags: List<String> = emptyList(),
-    val gameResults: List<GameResult> = emptyList()
+    val gameResults: List<GameResult> = emptyList(),
+    val ownership: String = DeckOwnership.DEFAULT.name
 ) {
     val mode: GameMode get() = GameMode.fromName(gameMode)
+    val ownershipType: DeckOwnership get() = DeckOwnership.fromName(ownership)
 }
 
 data class DeckStore(val decks: List<Deck> = emptyList())

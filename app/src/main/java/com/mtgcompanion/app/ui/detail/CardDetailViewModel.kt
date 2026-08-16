@@ -8,6 +8,7 @@ import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.ComboRepository
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
@@ -15,6 +16,8 @@ import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.data.TcgPlayerRepository
+import com.mtgcompanion.app.ui.common.CardSource
+import com.mtgcompanion.app.ui.common.buildCardSources
 import com.mtgcompanion.app.network.edhrec.EdhrecCardList
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.ScryfallIdentifier
@@ -80,7 +83,9 @@ class CardDetailViewModel(
     )
 
     /**
-     * Copies owned of each card name, across every binder and deck — shown on the enlarged card.
+     * Copies owned of each card name, across every binder and Physical deck — shown on the
+     * enlarged card. Virtual/Prototype decks are excluded: their cards aren't cards the user
+     * actually owns yet, so counting them here would overstate how many copies are on hand.
      * Counted under the front face as well as the full name, since a double-faced card is
      * "Tony Stark // The Invincible Iron Man" here but just "Tony Stark" to EDHREC.
      */
@@ -98,11 +103,18 @@ class CardDetailViewModel(
             colls.forEach { collection ->
                 collection.entries.forEach { entry -> count(entry.name, entry.quantity + entry.foilQuantity) }
             }
-            decks.forEach { deck ->
+            decks.filter { it.ownershipType == DeckOwnership.PHYSICAL }.forEach { deck ->
                 deck.cards.forEach { entry -> count(entry.name, entry.quantity) }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** scryfallId -> every binder/deck holding that card, for a suggestion tile's zoom overlay. */
+    val cardSources: StateFlow<Map<String, List<CardSource>>> = combine(
+        collectionRepository.collectionsFlow,
+        deckRepository.decksFlow
+    ) { colls, decks -> buildCardSources(colls, decks) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     init {
         loadCard()

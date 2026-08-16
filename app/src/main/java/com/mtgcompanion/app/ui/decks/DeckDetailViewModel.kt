@@ -10,6 +10,7 @@ import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.ComboRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
+import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.GameMode
@@ -18,8 +19,10 @@ import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.LegalityReport
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.evaluateLegality
+import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
+import com.mtgcompanion.app.ui.common.buildCardSources
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.ui.collection.fetchPrices
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
@@ -95,6 +98,12 @@ class DeckDetailViewModel(
             decks.filter { it.id != deckId }.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
                 collections.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** scryfallId -> every other binder/deck holding that card, for the zoom overlay's "also in" list. */
+    val cardSources: StateFlow<Map<String, List<CardSource>>> =
+        combine(collectionRepository.collectionsFlow, repository.decksFlow) { collections, decks ->
+            buildCardSources(collections, decks)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /**
      * Cards grouped by type from data already cached on each [DeckCardEntry] — no network wait.
@@ -217,6 +226,12 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.removeCardFromDeck(deckId, scryfallId) }
     }
 
+    /** Resolves this deck's cards to full Scryfall data (set + collector number) for exact-printing export. */
+    suspend fun resolveCardsForExport(): Map<String, ScryfallCard> {
+        val d = deck.value ?: return emptyMap()
+        return cardRepository.getCardsByIds(d.cards.map { it.scryfallId }).associateBy { it.id }
+    }
+
     fun setCommander(card: DeckCardEntry?) {
         viewModelScope.launch { repository.setCommander(deckId, card) }
     }
@@ -237,6 +252,10 @@ class DeckDetailViewModel(
 
     fun setGameMode(mode: GameMode) {
         viewModelScope.launch { repository.setGameMode(deckId, mode) }
+    }
+
+    fun setOwnership(ownership: DeckOwnership) {
+        viewModelScope.launch { repository.setOwnership(deckId, ownership) }
     }
 
     fun setTags(tags: List<String>) {
@@ -278,8 +297,10 @@ class DeckDetailViewModel(
 
     /**
      * Builds a TCGPlayer "mass entry" cart URL for whichever of this deck's cards aren't already
-     * covered by the user's binders (by name+quantity, across all binders) — so they can buy just
-     * what they're missing instead of the whole deck. Null if nothing's missing, or the deck is empty.
+     * covered by the user's binders plus their other Physical decks (by name+quantity) — so they
+     * can buy just what they're missing instead of the whole deck. A deck that's itself Physical
+     * naturally needs nothing extra, since its own cards count as owned. Null if nothing's
+     * missing, or the deck is empty.
      */
     fun buildMissingCardsUrl(onResult: (String?) -> Unit) {
         viewModelScope.launch {
@@ -295,6 +316,14 @@ class DeckDetailViewModel(
                     ownedByName[key] = (ownedByName[key] ?: 0) + entry.quantity + entry.foilQuantity
                 }
             }
+            repository.decksFlow.first()
+                .filter { it.ownershipType == DeckOwnership.PHYSICAL }
+                .forEach { physicalDeck ->
+                    physicalDeck.cards.forEach { entry ->
+                        val key = entry.name.lowercase()
+                        ownedByName[key] = (ownedByName[key] ?: 0) + entry.quantity
+                    }
+                }
             val missing = d.cards.mapNotNull { entry ->
                 val owned = ownedByName[entry.name.lowercase()] ?: 0
                 val need = entry.quantity - owned

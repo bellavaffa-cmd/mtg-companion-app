@@ -99,6 +99,7 @@ fun CardDetailScreen(
     val decks by viewModel.decks.collectAsState()
     val collections by viewModel.collections.collectAsState()
     val owned by viewModel.ownedByName.collectAsState()
+    val cardSources by viewModel.cardSources.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val context = LocalContext.current
     var showDeckPicker by remember { mutableStateOf(false) }
@@ -233,7 +234,8 @@ fun CardDetailScreen(
                                 // Picking a printing here goes straight into the binder-or-deck
                                 // choice, so choosing art and saving it is one motion, not two.
                                 onSelectPrinting = { chosen -> zoomKey = null; chooseDestinationFor = chosen },
-                                onViewDetails = { zoomKey = null; onViewDetails(view.name) }
+                                onViewDetails = { zoomKey = null; onViewDetails(view.name) },
+                                sources = resolved?.id?.let { cardSources[it] }.orEmpty()
                             )
                         },
                         initialIndex = zoomable.indexOfFirst { (k, _) -> k == key }.coerceAtLeast(0)

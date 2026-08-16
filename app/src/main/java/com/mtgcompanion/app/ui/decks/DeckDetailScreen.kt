@@ -68,6 +68,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -91,12 +92,14 @@ import kotlinx.coroutines.launch
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
+import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.LegalityIssue
 import com.mtgcompanion.app.data.partnersWith
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
+import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.ui.common.AnimatedUsdText
@@ -146,6 +149,7 @@ fun DeckDetailScreen(
     // The card whose move-destination picker is open.
     var moveTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     val moveTargets by viewModel.moveTargets.collectAsState()
+    val cardSources by viewModel.cardSources.collectAsState()
     // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this deck).
     var copyTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     // The card pending a remove-confirmation, if any.
@@ -294,7 +298,8 @@ fun DeckDetailScreen(
                         onDecrement = { viewModel.setCardQuantity(entry.scryfallId, (entry.quantity - 1).coerceAtLeast(1)) },
                         onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                         onMove = { zoom = null; moveTarget = entry },
-                        onViewDetails = { zoom = null; onViewDetails(entry.name) }
+                        onViewDetails = { zoom = null; onViewDetails(entry.name) },
+                        sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != currentDeck.id }
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
@@ -342,6 +347,8 @@ fun DeckDetailScreen(
             DeckSettingsDialog(
                 current = currentDeck.mode,
                 onSelect = { viewModel.setGameMode(it) },
+                ownership = currentDeck.ownershipType,
+                onOwnershipChange = { viewModel.setOwnership(it) },
                 tags = currentDeck.tags,
                 onTagsChange = { viewModel.setTags(it) },
                 onDismiss = { showSettings = false }
@@ -377,7 +384,7 @@ fun DeckDetailScreen(
             )
         }
         if (showExport) {
-            ExportDialog(decklist = buildDecklist(currentDeck), onDismiss = { showExport = false })
+            ExportDialog(deck = currentDeck, viewModel = viewModel, onDismiss = { showExport = false })
         }
         if (showGoldfish) {
             GoldfishDialog(deck = currentDeck, onDismiss = { showGoldfish = false })
@@ -473,14 +480,31 @@ private fun ImportResultDialog(state: ImportState, onDismiss: () -> Unit) {
 }
 
 /** Builds a plain-text decklist ("1 Card Name" per line), commander first. */
-private fun buildDecklist(deck: Deck): String = buildString {
-    deck.commander?.let { appendLine("${it.quantity} ${it.name}") }
-    deck.partnerCommander?.let { appendLine("${it.quantity} ${it.name}") }
+/**
+ * "Simple" is just "qty name" per line — the most broadly compatible format (Moxfield, Archidekt,
+ * TappedOut, MTG Arena, MTGO all read it). "Exact printing" appends "(SET) collector-number" from
+ * [cards], the same "(SLD) 1962" shape the deck's own decklist *importer* already parses — so it
+ * round-trips through this app (or anywhere else that also understands printing-annotated lines)
+ * preserving which specific art/printing each card was.
+ */
+private fun buildDecklist(deck: Deck, cards: Map<String, ScryfallCard> = emptyMap(), exactPrinting: Boolean = false): String = buildString {
+    fun line(entry: DeckCardEntry) {
+        val printing = if (exactPrinting) {
+            cards[entry.scryfallId]?.let { card ->
+                val set = card.set?.uppercase()
+                val number = card.collectorNumber
+                if (set != null && number != null) " ($set) $number" else null
+            }
+        } else null
+        appendLine("${entry.quantity} ${entry.name}${printing ?: ""}")
+    }
+    deck.commander?.let { line(it) }
+    deck.partnerCommander?.let { line(it) }
     val commanderIds = setOfNotNull(deck.commander?.scryfallId, deck.partnerCommander?.scryfallId)
     deck.cards
         .filterNot { it.scryfallId in commanderIds }
         .sortedBy { it.name.lowercase() }
-        .forEach { appendLine("${it.quantity} ${it.name}") }
+        .forEach { line(it) }
 }
 
 @Composable
@@ -528,8 +552,22 @@ private fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
 }
 
 @Composable
-private fun ExportDialog(decklist: String, onDismiss: () -> Unit) {
+private fun ExportDialog(deck: Deck, viewModel: DeckDetailViewModel, onDismiss: () -> Unit) {
     val clipboard = LocalClipboardManager.current
+    var exact by remember { mutableStateOf(false) }
+    var exactCards by remember { mutableStateOf<Map<String, ScryfallCard>?>(null) }
+    var loadingExact by remember { mutableStateOf(false) }
+
+    LaunchedEffect(exact) {
+        if (exact && exactCards == null) {
+            loadingExact = true
+            exactCards = runCatching { viewModel.resolveCardsForExport() }.getOrDefault(emptyMap())
+            loadingExact = false
+        }
+    }
+
+    val decklist = if (exact) buildDecklist(deck, exactCards.orEmpty(), exactPrinting = true) else buildDecklist(deck)
+
     AlertDialog(
         containerColor = Surface,
         onDismissRequest = onDismiss,
@@ -542,6 +580,11 @@ private fun ExportDialog(decklist: String, onDismiss: () -> Unit) {
                     color = TextMuted
                 )
                 Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ExportFormatChip("SIMPLE", selected = !exact) { exact = false }
+                    ExportFormatChip("EXACT PRINTING", selected = exact) { exact = true }
+                }
+                Spacer(Modifier.height(12.dp))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -551,18 +594,22 @@ private fun ExportDialog(decklist: String, onDismiss: () -> Unit) {
                         .verticalScroll(rememberScrollState())
                         .padding(12.dp)
                 ) {
-                    Text(
-                        decklist.ifBlank { "This deck has no cards yet." },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextPrimary
-                    )
+                    if (exact && loadingExact) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Gold)
+                    } else {
+                        Text(
+                            decklist.ifBlank { "This deck has no cards yet." },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextPrimary
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = { clipboard.setText(AnnotatedString(decklist)) },
-                enabled = decklist.isNotBlank(),
+                enabled = decklist.isNotBlank() && !(exact && loadingExact),
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
             ) { Text("Copy") }
         },
@@ -573,9 +620,26 @@ private fun ExportDialog(decklist: String, onDismiss: () -> Unit) {
 }
 
 @Composable
+private fun ExportFormatChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = if (selected) Bg else TextPrimary,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) Gold else Bg)
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(50))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    )
+}
+
+@Composable
 private fun DeckSettingsDialog(
     current: GameMode,
     onSelect: (GameMode) -> Unit,
+    ownership: DeckOwnership,
+    onOwnershipChange: (DeckOwnership) -> Unit,
     tags: List<String>,
     onTagsChange: (List<String>) -> Unit,
     onDismiss: () -> Unit
@@ -594,6 +658,31 @@ private fun DeckSettingsDialog(
                 )
                 Spacer(Modifier.height(14.dp))
                 GameModeDropdown(selected = current, onSelect = onSelect)
+                Spacer(Modifier.height(20.dp))
+                Text("Ownership", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DeckOwnership.entries.forEach { option ->
+                        val selected = option == ownership
+                        Text(
+                            option.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (selected) Bg else TextPrimary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (selected) Gold else Bg)
+                                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(50))
+                                .clickable { onOwnershipChange(option) }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+                Text(
+                    ownership.description,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextDim,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
                 Spacer(Modifier.height(20.dp))
                 Text("Tags", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 Spacer(Modifier.height(8.dp))

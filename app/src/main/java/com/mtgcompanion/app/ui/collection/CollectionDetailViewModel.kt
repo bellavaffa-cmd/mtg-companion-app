@@ -12,8 +12,10 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
+import com.mtgcompanion.app.ui.common.buildCardSources
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -51,6 +53,12 @@ class CollectionDetailViewModel(
     val collection: StateFlow<Collection?> = repository.collectionFlow(collectionId).stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), null
     )
+
+    /** scryfallId -> every other binder/deck holding that card, for the zoom overlay's "also in" list. */
+    val cardSources: StateFlow<Map<String, List<CardSource>>> =
+        combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
+            buildCardSources(collections, decks)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /** Dashboard totals for this binder's cards (unaffected by the search query). */
     val dashboard: StateFlow<CollectionDashboard?> = collection.mapLatest { c ->

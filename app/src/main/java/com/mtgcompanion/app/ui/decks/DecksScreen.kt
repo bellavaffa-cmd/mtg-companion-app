@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.GameModeDropdown
@@ -136,6 +137,21 @@ private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit) {
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
+        // Ownership badge, top-left — hidden for Physical decks (the default/expected case) so it
+        // only draws attention when a deck ISN'T counted toward the collection.
+        if (deck.ownershipType != DeckOwnership.PHYSICAL) {
+            Text(
+                deck.ownershipType.label.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = TextPrimary,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
         // Commander colour identity pips, top-right over the art.
         if (colors.isNotEmpty()) {
             Row(

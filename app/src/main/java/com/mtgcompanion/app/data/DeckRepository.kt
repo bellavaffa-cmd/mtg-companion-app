@@ -32,6 +32,10 @@ class DeckRepository(private val context: Context) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(gameMode = gameMode.name) else it } }
     }
 
+    suspend fun setOwnership(deckId: String, ownership: DeckOwnership) {
+        update { decks -> decks.map { if (it.id == deckId) it.copy(ownership = ownership.name) else it } }
+    }
+
     suspend fun setTags(deckId: String, tags: List<String>) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(tags = tags) else it } }
     }

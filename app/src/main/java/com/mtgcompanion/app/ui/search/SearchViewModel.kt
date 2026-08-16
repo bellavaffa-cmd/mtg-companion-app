@@ -12,8 +12,10 @@ import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
+import com.mtgcompanion.app.ui.common.buildCardSources
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -159,6 +161,12 @@ class SearchViewModel(
         decks.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
             collections.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** scryfallId -> every binder/deck holding that card, for a result's zoom overlay. */
+    val cardSources: StateFlow<Map<String, List<CardSource>>> = combine(
+        collectionRepository.collectionsFlow, deckRepository.decksFlow
+    ) { collections, decks -> buildCardSources(collections, decks) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()

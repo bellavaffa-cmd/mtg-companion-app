@@ -72,12 +72,12 @@ class CollectionsViewModel(
             collections.filter { it.kind == CollectionType.OWNED }.forEach { collection ->
                 collection.entries.forEach {
                     val qty = it.quantity + it.foilQuantity
-                    add(it.scryfallId, it.name, it.imageUrl, qty, CardSource(SourceKind.BINDER, collection.name, qty))
+                    add(it.scryfallId, it.name, it.imageUrl, qty, CardSource(SourceKind.BINDER, collection.id, collection.name, qty))
                 }
             }
             decks.forEach { deck ->
                 deck.cards.forEach {
-                    add(it.scryfallId, it.name, it.imageUrl, it.quantity, CardSource(SourceKind.DECK, deck.name, it.quantity))
+                    add(it.scryfallId, it.name, it.imageUrl, it.quantity, CardSource(SourceKind.DECK, deck.id, deck.name, it.quantity))
                 }
             }
             byCard.map { (id, acc) -> AllCardEntry(id, acc.name, acc.imageUrl, acc.total, acc.sources.toList()) }
