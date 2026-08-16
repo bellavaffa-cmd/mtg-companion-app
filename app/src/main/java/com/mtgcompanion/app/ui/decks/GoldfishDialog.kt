@@ -140,7 +140,7 @@ fun GoldfishDialog(deck: Deck, onDismiss: () -> Unit) {
                                 modifier = Modifier
                                     .width(110.dp)
                                     .aspectRatio(0.72f)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(16.dp))
                                     .clickable { zoomIndex = index }
                             )
                         }

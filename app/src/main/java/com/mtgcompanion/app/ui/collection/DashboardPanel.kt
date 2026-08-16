@@ -50,9 +50,9 @@ fun DashboardPanel(dashboard: CollectionDashboard?) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(6.dp))
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(14.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {

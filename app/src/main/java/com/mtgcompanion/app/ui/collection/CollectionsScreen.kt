@@ -73,6 +73,7 @@ import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.cardHeroElement
 import com.mtgcompanion.app.ui.common.pressScale
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -249,7 +250,7 @@ private fun AllCardsTab(
                     onValueChange = { query = it },
                     label = { Text("Search all cards", color = GoldDim) },
                     singleLine = true,
-                    shape = RoundedCornerShape(2.dp),
+                    shape = RoundedCornerShape(8.dp),
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Gold) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Gold,
@@ -301,7 +302,8 @@ private fun AllCardsTab(
                 // This entry is one printing shared by every binder/deck in its sources, so
                 // re-arting it updates the printing everywhere it's held, not just one place.
                 onSelectPrinting = { chosen -> viewModel.changePrintingEverywhere(c.scryfallId, chosen) },
-                onViewDetails = { zoomId = null; onViewDetails(c.name) }
+                onViewDetails = { zoomId = null; onViewDetails(c.name) },
+                sharedKey = c.scryfallId
             )
         }
         CardZoomDialog(zoomCards, filtered.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
@@ -321,9 +323,9 @@ private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit, onViewDetails: (
             modifier = Modifier
                 .fillMaxWidth()
                 .pressScale(interactionSource)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .background(Surface)
-                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
@@ -336,7 +338,7 @@ private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit, onViewDetails: (
                 model = card.imageUrl.toArtCropUrl(),
                 contentDescription = card.name,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
+                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp)).cardHeroElement(card.scryfallId)
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
@@ -376,7 +378,7 @@ private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit, onViewDetails: 
                     model = card.imageUrl,
                     contentDescription = card.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp)).cardHeroElement(card.scryfallId)
                 )
                 Text(
                     "×${card.total}",
@@ -420,9 +422,9 @@ private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete:
             modifier = Modifier
                 .fillMaxWidth()
                 .pressScale(interactionSource)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .background(Surface)
-                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,

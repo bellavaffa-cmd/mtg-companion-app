@@ -15,6 +15,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,14 +24,25 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.ui.theme.Surface
 
-/** Spring-based scale-down-on-press feedback. Pass the same [interactionSource] given to clickable/combinedClickable. */
+/**
+ * Spring-based scale-down-on-press feedback, plus a light haptic tick the instant the press
+ * registers. Pass the same [interactionSource] given to clickable/combinedClickable — since nearly
+ * every card row/tile in the app already uses this modifier, it's the one place to add haptics
+ * broadly without touching every call site individually.
+ */
 @Composable
 fun Modifier.pressScale(interactionSource: MutableInteractionSource): Modifier {
     val pressed by interactionSource.collectIsPressedAsState()
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(pressed) {
+        if (pressed) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
     val scale by animateFloatAsState(
         targetValue = if (pressed) 0.96f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
@@ -41,7 +53,7 @@ fun Modifier.pressScale(interactionSource: MutableInteractionSource): Modifier {
 
 /** Card-shaped shimmering placeholder shown while content is still loading. */
 @Composable
-fun ShimmerPlaceholder(modifier: Modifier = Modifier, shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(4.dp)) {
+fun ShimmerPlaceholder(modifier: Modifier = Modifier, shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(10.dp)) {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val progress by transition.animateFloat(
         initialValue = -0.4f,

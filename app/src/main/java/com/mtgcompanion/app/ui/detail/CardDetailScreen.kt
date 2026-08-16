@@ -48,7 +48,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -111,6 +112,7 @@ fun CardDetailScreen(
     // Set when the add button on an enlarged card needs a binder-or-deck choice first.
     var chooseDestinationFor by remember { mutableStateOf<ScryfallCard?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     LaunchedEffect(state.addedToCollectionMessage, state.addedToDeckMessage) {
         val message = state.addedToCollectionMessage ?: state.addedToDeckMessage
@@ -122,16 +124,18 @@ fun CardDetailScreen(
 
     Scaffold(
         containerColor = Bg,
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            LargeTopAppBar(
                 title = { Text(state.card?.name ?: "Card", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
+                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Bg, scrolledContainerColor = Surface),
+                scrollBehavior = scrollBehavior
             )
         }
     ) { padding ->
@@ -235,7 +239,8 @@ fun CardDetailScreen(
                                 // choice, so choosing art and saving it is one motion, not two.
                                 onSelectPrinting = { chosen -> zoomKey = null; chooseDestinationFor = chosen },
                                 onViewDetails = { zoomKey = null; onViewDetails(view.name) },
-                                sources = resolved?.id?.let { cardSources[it] }.orEmpty()
+                                sources = resolved?.id?.let { cardSources[it] }.orEmpty(),
+                                sharedKey = resolved?.id
                             )
                         },
                         initialIndex = zoomable.indexOfFirst { (k, _) -> k == key }.coerceAtLeast(0)
@@ -407,7 +412,7 @@ private fun EdhrecTile(view: EdhrecCardView, onClick: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(0.72f)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(RoundedCornerShape(14.dp))
         )
         Text(
             view.name,
@@ -446,9 +451,9 @@ private fun GoldPanel(modifier: Modifier = Modifier, content: @Composable Column
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
             .padding(16.dp),
         content = content
     )
@@ -478,10 +483,10 @@ private fun PrintsSection(prints: List<ScryfallCard>, selectedId: String, onSele
                         modifier = Modifier
                             .width(90.dp)
                             .aspectRatio(0.72f)
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(RoundedCornerShape(14.dp))
                             .border(
                                 BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Gold else BorderColor),
-                                RoundedCornerShape(6.dp)
+                                RoundedCornerShape(14.dp)
                             )
                     )
                     Spacer(Modifier.height(4.dp))
@@ -504,7 +509,7 @@ private fun CardHeader(card: ScryfallCard) {
         AsyncImage(
             model = card.displayImageUrl,
             contentDescription = card.name,
-            modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp))
+            modifier = Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
         )
         Column(modifier = Modifier.weight(1.4f)) {
             Text(card.name, style = MaterialTheme.typography.titleLarge)
@@ -537,7 +542,7 @@ private fun CollectionAndDeckActions(
     Box {
         Button(
             onClick = { menuOpen = true },
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
             modifier = Modifier.fillMaxWidth()
         ) { Text("ADD TO…", style = MaterialTheme.typography.labelLarge, color = Bg) }
@@ -603,7 +608,7 @@ private fun PricesSection(state: CardDetailUiState, onOpenTcgplayer: () -> Unit)
         }
         Button(
             onClick = onOpenTcgplayer,
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
             modifier = Modifier.padding(top = 14.dp)
         ) {

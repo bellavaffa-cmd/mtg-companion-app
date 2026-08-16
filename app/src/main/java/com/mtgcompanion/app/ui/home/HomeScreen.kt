@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CameraAlt
@@ -30,10 +32,10 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -42,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,6 +60,7 @@ import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldLight
+import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
@@ -84,23 +88,26 @@ fun HomeScreen(
     val alert by viewModel.alert.collectAsState()
     val news by viewModel.news.collectAsState()
     val context = LocalContext.current
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         containerColor = Bg,
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            LargeTopAppBar(
                 title = { Text("MTG COMPANION", style = MaterialTheme.typography.labelLarge, color = GoldLight) },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Gold)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
+                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Bg, scrolledContainerColor = Surface),
+                scrollBehavior = scrollBehavior
             )
         }
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().background(Bg).padding(padding).padding(20.dp),
+            modifier = Modifier.fillMaxSize().background(Bg).padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
@@ -265,7 +272,7 @@ private fun ContinueDeckTile(deck: Deck, onClick: () -> Unit) {
             model = deck.commander?.imageUrl.toArtCropUrl(),
             contentDescription = deck.commander?.name,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 64.dp, height = 46.dp).clip(RoundedCornerShape(4.dp))
+            modifier = Modifier.size(width = 64.dp, height = 46.dp).clip(RoundedCornerShape(10.dp))
         )
         Column(modifier = Modifier.weight(1f)) {
             Text("CONTINUE", style = MaterialTheme.typography.labelMedium, color = TextDim)
@@ -290,7 +297,7 @@ private fun CardOfDayTile(card: CardOfDay, onClick: () -> Unit) {
             model = card.imageUrl,
             contentDescription = card.name,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.width(44.dp).aspectRatio(0.72f).clip(RoundedCornerShape(4.dp))
+            modifier = Modifier.width(44.dp).aspectRatio(0.72f).clip(RoundedCornerShape(10.dp))
         )
         Column(modifier = Modifier.weight(1f)) {
             Text("CARD OF THE DAY", style = MaterialTheme.typography.labelMedium, color = TextDim)

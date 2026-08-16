@@ -59,6 +59,7 @@ import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.cardHeroElement
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -130,7 +131,7 @@ fun CollectionDetailScreen(
                 onValueChange = viewModel::onQueryChange,
                 label = { Text("Search this binder", color = GoldDim) },
                 singleLine = true,
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(8.dp),
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Gold) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Gold,
@@ -204,7 +205,8 @@ fun CollectionDetailScreen(
                 onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                 onMove = { zoomId = null; moveTarget = entry },
                 onViewDetails = { zoomId = null; onViewDetails(entry.name) },
-                sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != collection?.id }
+                sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != collection?.id },
+                sharedKey = entry.scryfallId
             )
         }
         CardZoomDialog(zoomCards, entries.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
@@ -270,9 +272,9 @@ private fun CollectionCardRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .pressScale(interactionSource)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .background(Surface)
-                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
@@ -285,7 +287,7 @@ private fun CollectionCardRow(
                 model = entry.imageUrl.toArtCropUrl(),
                 contentDescription = entry.name,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
+                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp)).cardHeroElement(entry.scryfallId)
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
@@ -333,7 +335,7 @@ private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, acti
                     model = entry.imageUrl,
                     contentDescription = entry.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp)).cardHeroElement(entry.scryfallId)
                 )
                 Text(
                     "×$totalQty",

@@ -18,8 +18,8 @@ android {
         minSdk 26
         targetSdk 34
         // versionCode scheme: major*10000 + minor*100 + patch (e.g. 1.8.0 -> 10800). Bump both per release.
-        versionCode 15600
-        versionName '1.56.0'
+        versionCode 15700
+        versionName '1.57.0'
     }
 
     signingConfigs {
@@ -79,7 +79,7 @@ dependencies {
     implementation 'androidx.compose.ui:ui-tooling-preview'
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.material:material-icons-extended'
-    implementation 'androidx.navigation:navigation-compose:2.7.7'
+    implementation 'androidx.navigation:navigation-compose:2.8.4'
 
     implementation 'com.squareup.retrofit2:retrofit:2.11.0'
     implementation 'com.squareup.retrofit2:converter-moshi:2.11.0'

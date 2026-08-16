@@ -190,7 +190,7 @@ fun ScanScreen(
                 .align(Alignment.Center)
                 .fillMaxWidth(0.8f)
                 .fillMaxHeight(0.55f)
-                .border(BorderStroke(2.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(12.dp))
+                .border(BorderStroke(2.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(20.dp))
         )
 
         // Top overlay: back + status pill + (debug) test button.
@@ -226,7 +226,7 @@ fun ScanScreen(
                     color = GoldLight,
                     modifier = Modifier
                         .padding(top = 8.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(RoundedCornerShape(10.dp))
                         .background(Bg.copy(alpha = 0.7f))
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 )
@@ -236,7 +236,7 @@ fun ScanScreen(
         // Bottom overlay: view-list button.
         Button(
             onClick = { showList = true },
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -454,9 +454,9 @@ private fun ScannedCardRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(Bg)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(10.dp)
     ) {
@@ -464,7 +464,7 @@ private fun ScannedCardRow(
             AsyncImage(
                 model = card.displayImageUrl,
                 contentDescription = card.name,
-                modifier = Modifier.size(width = 40.dp, height = 56.dp).clip(RoundedCornerShape(3.dp))
+                modifier = Modifier.size(width = 40.dp, height = 56.dp).clip(RoundedCornerShape(8.dp))
             )
             Text(
                 card.name,
@@ -489,13 +489,13 @@ private fun ScannedCardRow(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
             Button(
                 onClick = onAddToCollection,
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
             ) { Text("+ BINDER", style = MaterialTheme.typography.labelMedium, color = Bg) }
             OutlinedButton(
                 onClick = onAddToDeck,
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 border = BorderStroke(1.dp, BorderColor),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)

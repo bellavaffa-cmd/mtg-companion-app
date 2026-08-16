@@ -49,9 +49,9 @@ fun GameModeDropdown(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(Surface)
-                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(2.dp))
+                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
                     .clickable { open = true }
                     .padding(horizontal = 12.dp, vertical = 12.dp)
             ) {

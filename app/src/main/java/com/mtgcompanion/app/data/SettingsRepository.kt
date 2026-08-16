@@ -25,9 +25,9 @@ enum class CardViewMode {
 val GRID_COLUMNS_RANGE = 3..10
 const val GRID_COLUMNS_DEFAULT = 4
 
-/** Overall light/dark luminance of the app's theme. */
+/** Overall light/dark luminance of the app's theme. SYSTEM follows the device's own dark-mode setting. */
 enum class AppBrightness {
-    DARK, LIGHT;
+    DARK, LIGHT, SYSTEM;
 
     companion object {
         val DEFAULT = DARK

@@ -118,7 +118,7 @@ fun SearchScreen(
             ) {
                 Button(
                     onClick = { viewModel.search(); onOpenResults() },
-                    shape = RoundedCornerShape(2.dp),
+                    shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -146,7 +146,7 @@ fun SearchScreen(
                         label = { Text("Search cards", color = GoldDim) },
                         placeholder = { Text("Try \"is:commander c:g\"", color = TextDim) },
                         singleLine = true,
-                        shape = RoundedCornerShape(2.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Gold,
                             unfocusedBorderColor = BorderColor,
@@ -251,9 +251,9 @@ private fun SuggestionsDropdown(suggestions: List<String>, onPick: (String) -> U
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 4.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp))
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
     ) {
         suggestions.forEach { name ->
             Text(
@@ -288,9 +288,9 @@ private fun SortSection(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(Bg)
-                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(2.dp))
+                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
                     .clickable { open = true }
                     .padding(horizontal = 14.dp, vertical = 14.dp)
             ) {
@@ -381,9 +381,9 @@ private fun RarityDropdown(selected: Set<String>, onToggle: (String) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(Bg)
-                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(2.dp))
+                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
                     .clickable { open = true }
                     .padding(horizontal = 14.dp, vertical = 14.dp)
             ) {
@@ -446,7 +446,7 @@ private fun FilterField(label: String, value: String, placeholder: String, onVal
         label = { Text(label, color = GoldDim) },
         placeholder = { Text(placeholder, color = TextDim, style = MaterialTheme.typography.bodySmall) },
         singleLine = true,
-        shape = RoundedCornerShape(2.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = filterFieldColors(),
         modifier = Modifier.fillMaxWidth()
     )
@@ -459,7 +459,7 @@ private fun NumberField(label: String, value: String, modifier: Modifier, onValu
         onValueChange = onValueChange,
         label = { Text(label, color = GoldDim) },
         singleLine = true,
-        shape = RoundedCornerShape(2.dp),
+        shape = RoundedCornerShape(8.dp),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         colors = filterFieldColors(),
         modifier = modifier

@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.nav
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -41,6 +43,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +54,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
@@ -69,6 +74,7 @@ import com.mtgcompanion.app.data.DriveSyncManager
 import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
+import com.mtgcompanion.app.ui.common.LocalSharedTransitionScope
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
 import com.mtgcompanion.app.ui.collection.CollectionDetailViewModel
 import com.mtgcompanion.app.ui.collection.CollectionsScreen
@@ -96,6 +102,7 @@ import com.mtgcompanion.app.ui.settings.SettingsScreen
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
+import com.mtgcompanion.app.ui.theme.GoldGlow
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
@@ -132,6 +139,7 @@ private val bottomNavRoutes = setOf(
     Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.RULES
 )
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MtgNavGraph(
     settingsRepository: SettingsRepository,
@@ -157,6 +165,10 @@ fun MtgNavGraph(
             }
         }
     ) { padding ->
+        // Wraps every screen so a thumbnail image (e.g. a deck's card row) can morph into
+        // CardZoomDialog's enlarged view instead of just fading in — see LocalSharedTransitionScope.
+        SharedTransitionLayout {
+        CompositionLocalProvider(LocalSharedTransitionScope provides this) {
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,
@@ -331,6 +343,8 @@ fun MtgNavGraph(
                 )
             }
         }
+        }
+        }
     }
 
     val update = updateState.available
@@ -462,9 +476,10 @@ private fun RowScope.BarItem(
     iconSize: Dp = 24.dp,
     onClick: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     NavigationBarItem(
         selected = selected,
-        onClick = onClick,
+        onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onClick() },
         icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize)) },
         // Small single-line label so all five fit without wrapping.
         label = { Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -478,7 +493,8 @@ private fun bottomItemColors() = NavigationBarItemDefaults.colors(
     selectedTextColor = Gold,
     unselectedIconColor = TextDim,
     unselectedTextColor = TextDim,
-    indicatorColor = Bg
+    // A visible tonal pill behind the selected tab, instead of matching the background (invisible).
+    indicatorColor = GoldGlow
 )
 
 private fun NavHostController.navigateToTab(route: String) {

@@ -466,7 +466,7 @@ private fun LifeFace(
             style = MaterialTheme.typography.titleLarge.copy(fontSize = fontSize, color = Color.White),
             modifier = Modifier
                 .align(Alignment.Center)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(20.dp))
                 .clickable(onClick = onOpenKeypad)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         )
@@ -786,9 +786,9 @@ private fun DiceRow(sidesList: List<Int>, onRoll: (Int) -> Unit) {
             Box(
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(18.dp))
                     .background(Bg)
-                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
+                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(18.dp))
                     .clickable { onRoll(sides) },
                 contentAlignment = Alignment.Center
             ) {
@@ -964,7 +964,7 @@ private fun GameModeBanner(state: GameModeState, onClick: () -> Unit) {
                     model = card.displayImageUrl?.toArtCropUrl(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(width = 48.dp, height = 34.dp).clip(RoundedCornerShape(4.dp))
+                    modifier = Modifier.size(width = 48.dp, height = 34.dp).clip(RoundedCornerShape(10.dp))
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -1046,7 +1046,7 @@ private fun CardFace(card: ScryfallCard) {
         model = card.displayImageUrl,
         contentDescription = card.name,
         contentScale = ContentScale.Fit,
-        modifier = Modifier.fillMaxWidth().aspectRatio(1.4f).clip(RoundedCornerShape(8.dp))
+        modifier = Modifier.fillMaxWidth().aspectRatio(1.4f).clip(RoundedCornerShape(16.dp))
     )
     Text(card.name, style = MaterialTheme.typography.titleMedium, color = GoldLight, modifier = Modifier.padding(top = 10.dp))
     Text(

@@ -117,7 +117,7 @@ fun PreconsScreen(viewModel: PreconsViewModel, onBack: () -> Unit, onImported: (
                 placeholder = { Text("Search precons", color = TextDim) },
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted) },
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Gold,
                     unfocusedBorderColor = BorderColor,

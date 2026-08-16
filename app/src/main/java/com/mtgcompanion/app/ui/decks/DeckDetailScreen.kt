@@ -81,6 +81,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -106,6 +107,7 @@ import com.mtgcompanion.app.ui.common.AnimatedUsdText
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.cardHeroElement
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.cardGrid
@@ -152,6 +154,9 @@ fun DeckDetailScreen(
     val cardSources by viewModel.cardSources.collectAsState()
     // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this deck).
     var copyTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
+    // Tints the bar as content scrolls under it (no height change — the title row already carries
+    // a commander-art thumbnail, which a full Large app bar would end up rendering twice).
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     // The card pending a remove-confirmation, if any.
     var removeCardTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     var showImport by remember { mutableStateOf(false) }
@@ -162,8 +167,10 @@ fun DeckDetailScreen(
 
     Scaffold(
         containerColor = Bg,
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
+                scrollBehavior = scrollBehavior,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         deck?.commander?.imageUrl?.let { img ->
@@ -171,7 +178,7 @@ fun DeckDetailScreen(
                                 model = img.toArtCropUrl(),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(6.dp))
+                                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(14.dp))
                             )
                         }
                         Text(deck?.name ?: "Deck", color = GoldLight, style = MaterialTheme.typography.labelLarge)
@@ -226,7 +233,7 @@ fun DeckDetailScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, scrolledContainerColor = Surface)
             )
         }
     ) { padding ->
@@ -299,7 +306,8 @@ fun DeckDetailScreen(
                         onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                         onMove = { zoom = null; moveTarget = entry },
                         onViewDetails = { zoom = null; onViewDetails(entry.name) },
-                        sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != currentDeck.id }
+                        sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != currentDeck.id },
+                        sharedKey = entry.scryfallId
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
@@ -589,7 +597,7 @@ private fun ExportDialog(deck: Deck, viewModel: DeckDetailViewModel, onDismiss: 
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 260.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(16.dp))
                         .background(Bg)
                         .verticalScroll(rememberScrollState())
                         .padding(12.dp)
@@ -810,7 +818,7 @@ private fun LegalityIssueRow(issue: LegalityIssue) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .elevatedCard(shape = RoundedCornerShape(8.dp))
+            .elevatedCard(shape = RoundedCornerShape(16.dp))
             .padding(12.dp)
     ) {
         Icon(
@@ -893,7 +901,7 @@ private fun CardsTab(
                         }
                     }
                 },
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Gold,
                     unfocusedBorderColor = BorderColor,
@@ -1338,12 +1346,12 @@ private fun ManaCurveChart(curve: List<Pair<String, Int>>) {
 private fun StatBar(label: String, count: Int, max: Int) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = TextPrimary, modifier = Modifier.fillMaxWidth(0.28f))
-        Box(modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(2.dp)).background(Bg)) {
+        Box(modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(8.dp)).background(Bg)) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(count.toFloat() / max)
                     .height(8.dp)
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(Gold)
             )
         }
@@ -1356,7 +1364,7 @@ private fun ComboRow(combo: Variant, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .elevatedCard(shape = RoundedCornerShape(8.dp))
+            .elevatedCard(shape = RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
@@ -1377,7 +1385,7 @@ private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .elevatedCard(shape = RoundedCornerShape(8.dp))
+            .elevatedCard(shape = RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
@@ -1385,7 +1393,7 @@ private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit) {
             model = view.scryfallImageUrl.toArtCropUrl(),
             contentDescription = view.name,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
+            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(view.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
@@ -1406,7 +1414,7 @@ private fun SuggestionTile(view: EdhrecCardView, onClick: () -> Unit) {
             model = view.scryfallImageUrl,
             contentDescription = view.name,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+            modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
         )
         Text(
             view.name,
@@ -1446,7 +1454,7 @@ private fun DeckCardRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .pressScale(interactionSource)
-                .elevatedCard(shape = RoundedCornerShape(8.dp))
+                .elevatedCard(shape = RoundedCornerShape(16.dp))
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
@@ -1459,7 +1467,7 @@ private fun DeckCardRow(
                 model = card.imageUrl.toArtCropUrl(),
                 contentDescription = card.name,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
+                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp)).cardHeroElement(card.scryfallId)
             )
             Text(
                 card.name,
@@ -1514,7 +1522,7 @@ private fun DeckCardTile(card: DeckCardEntry, isCommander: Boolean = false, onCl
                     model = card.imageUrl,
                     contentDescription = card.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(6.dp))
+                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp)).cardHeroElement(card.scryfallId)
                 )
                 Text(
                     "×${card.quantity}",

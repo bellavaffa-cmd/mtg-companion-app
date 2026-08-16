@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -101,8 +102,13 @@ private fun mtgTypography(colors: AppColors) = Typography(
 
 @Composable
 fun MtgCompanionTheme(settingsRepository: SettingsRepository, content: @Composable () -> Unit) {
-    val brightness by settingsRepository.appBrightness.collectAsState(initial = AppBrightness.DEFAULT)
+    val setting by settingsRepository.appBrightness.collectAsState(initial = AppBrightness.DEFAULT)
     val accent by settingsRepository.accentTheme.collectAsState(initial = AccentTheme.DEFAULT)
+    // SYSTEM defers to the device's own dark-mode setting rather than a fixed choice.
+    val systemDark = isSystemInDarkTheme()
+    val brightness = if (setting == AppBrightness.SYSTEM) {
+        if (systemDark) AppBrightness.DARK else AppBrightness.LIGHT
+    } else setting
     val colors = remember(brightness, accent) { buildAppColors(brightness, accent) }
 
     CompositionLocalProvider(LocalAppColors provides colors) {

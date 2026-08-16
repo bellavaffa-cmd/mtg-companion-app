@@ -101,7 +101,7 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .background(Surface)
                         .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)

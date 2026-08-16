@@ -210,6 +210,19 @@ private fun AppearanceSection(settingsRepository: SettingsRepository) {
                 )
             )
         }
+        Box(modifier = Modifier.padding(start = 8.dp)) {
+            FilterChip(
+                selected = brightness == AppBrightness.SYSTEM,
+                onClick = { scope.launch { settingsRepository.setAppBrightness(AppBrightness.SYSTEM) } },
+                label = { Text("System", style = MaterialTheme.typography.labelMedium) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Gold,
+                    selectedLabelColor = Bg,
+                    labelColor = TextMuted,
+                    containerColor = Bg
+                )
+            )
+        }
     }
 
     Column {
@@ -380,9 +393,9 @@ private fun GridColumnsPreview(columns: Int, modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .weight(1f)
                     .aspectRatio(0.72f)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(Surface)
-                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(4.dp)),
+                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Filled.Style, contentDescription = null, tint = GoldDim, modifier = Modifier.size(16.dp))
@@ -419,7 +432,7 @@ private fun OfflineSearchSection(offlineCardRepository: OfflineCardRepository) {
         OutlinedButton(
             onClick = { offlineCardRepository.downloadDatabase() },
             enabled = !status.downloading,
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(8.dp),
             border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
         ) { DownloadButtonContent(status.downloading, buttonLabel, Gold) }
@@ -427,7 +440,7 @@ private fun OfflineSearchSection(offlineCardRepository: OfflineCardRepository) {
         Button(
             onClick = { offlineCardRepository.downloadDatabase() },
             enabled = !status.downloading,
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
         ) { DownloadButtonContent(status.downloading, buttonLabel, Bg) }
     }
@@ -466,7 +479,7 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
         Button(
             onClick = { updateManager.startUpdate() },
             enabled = !state.downloading && !state.installing,
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
         ) {
             if (state.downloading || state.installing) {
@@ -497,7 +510,7 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
         OutlinedButton(
             onClick = { updateManager.checkForUpdate(silent = false) },
             enabled = !state.checking,
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(8.dp),
             border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
         ) {
@@ -533,7 +546,7 @@ private fun DriveSyncSection(syncManager: DriveSyncManager) {
     if (status.connectedEmail == null) {
         Button(
             onClick = { signInLauncher.launch(syncManager.signInClient().signInIntent) },
-            shape = RoundedCornerShape(2.dp),
+            shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
         ) { Text("CONNECT GOOGLE DRIVE", style = MaterialTheme.typography.labelLarge, color = Bg) }
     } else {
@@ -553,7 +566,7 @@ private fun DriveSyncSection(syncManager: DriveSyncManager) {
             Button(
                 onClick = { syncManager.syncNow() },
                 enabled = !status.syncing,
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
             ) {
                 if (status.syncing) {
@@ -564,7 +577,7 @@ private fun DriveSyncSection(syncManager: DriveSyncManager) {
             }
             OutlinedButton(
                 onClick = { syncManager.signOut() },
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(8.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
             ) { Text("DISCONNECT", style = MaterialTheme.typography.labelLarge) }

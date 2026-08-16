@@ -95,7 +95,7 @@ fun RulesScreen(viewModel: RulesViewModel) {
                         }
                     }
                 },
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Gold,
                     unfocusedBorderColor = BorderColor,
@@ -157,9 +157,9 @@ private fun KeywordCard(keyword: Keyword) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(6.dp))
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(14.dp))
             .padding(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -204,7 +204,7 @@ private fun RulingsBody(state: RulingsState) {
                         model = state.card.displayImageUrl.toArtCropUrl(),
                         contentDescription = state.card.name,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(4.dp))
+                        modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
                     )
                     Text(
                         state.card.name,
@@ -235,9 +235,9 @@ private fun RulingCard(ruling: ScryfallRuling) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(6.dp))
+            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(14.dp))
             .padding(14.dp)
     ) {
         Text(ruling.comment, style = MaterialTheme.typography.bodySmall, color = TextPrimary)

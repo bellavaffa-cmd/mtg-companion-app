@@ -1,8 +1,8 @@
 <resources>
+    <!-- No forced statusBarColor/navigationBarColor here — enableEdgeToEdge() in MainActivity owns
+         the system bars, drawing app content behind them instead of the old opaque-bar look. -->
     <style name="Theme.MtgCompanionApp" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
-        <item name="android:statusBarColor">@color/bg</item>
-        <item name="android:navigationBarColor">@color/bg</item>
     </style>
 
     <!-- Shown by the OS the instant the app icon is tapped, before any Activity code runs. -->
