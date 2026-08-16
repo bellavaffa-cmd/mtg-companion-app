@@ -107,7 +107,6 @@ import com.mtgcompanion.app.ui.common.AnimatedUsdText
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
-import com.mtgcompanion.app.ui.common.cardHeroElement
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.cardGrid
@@ -306,8 +305,7 @@ fun DeckDetailScreen(
                         onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                         onMove = { zoom = null; moveTarget = entry },
                         onViewDetails = { zoom = null; onViewDetails(entry.name) },
-                        sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != currentDeck.id },
-                        sharedKey = entry.scryfallId
+                        sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != currentDeck.id }
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
@@ -1467,7 +1465,7 @@ private fun DeckCardRow(
                 model = card.imageUrl.toArtCropUrl(),
                 contentDescription = card.name,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp)).cardHeroElement(card.scryfallId)
+                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
             )
             Text(
                 card.name,
@@ -1522,7 +1520,7 @@ private fun DeckCardTile(card: DeckCardEntry, isCommander: Boolean = false, onCl
                     model = card.imageUrl,
                     contentDescription = card.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp)).cardHeroElement(card.scryfallId)
+                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
                 )
                 Text(
                     "×${card.quantity}",

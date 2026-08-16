@@ -1,7 +1,5 @@
 package com.mtgcompanion.app.ui.nav
 
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -43,7 +41,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -74,7 +71,6 @@ import com.mtgcompanion.app.data.DriveSyncManager
 import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
-import com.mtgcompanion.app.ui.common.LocalSharedTransitionScope
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
 import com.mtgcompanion.app.ui.collection.CollectionDetailViewModel
 import com.mtgcompanion.app.ui.collection.CollectionsScreen
@@ -139,7 +135,6 @@ private val bottomNavRoutes = setOf(
     Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.RULES
 )
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MtgNavGraph(
     settingsRepository: SettingsRepository,
@@ -165,10 +160,6 @@ fun MtgNavGraph(
             }
         }
     ) { padding ->
-        // Wraps every screen so a thumbnail image (e.g. a deck's card row) can morph into
-        // CardZoomDialog's enlarged view instead of just fading in — see LocalSharedTransitionScope.
-        SharedTransitionLayout {
-        CompositionLocalProvider(LocalSharedTransitionScope provides this) {
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,
@@ -342,8 +333,6 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() }
                 )
             }
-        }
-        }
         }
     }
 

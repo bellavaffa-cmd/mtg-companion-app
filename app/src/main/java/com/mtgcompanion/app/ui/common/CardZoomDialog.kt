@@ -1,6 +1,5 @@
 package com.mtgcompanion.app.ui.common
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -54,11 +53,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Collection
@@ -110,9 +112,7 @@ fun buildCardSources(collections: List<Collection>, decks: List<Deck>): Map<Stri
  * editable stepper. [onAdd], for a card not yet in a deck/binder, offers to put it in one.
  * [sources], when set, lists the binders/decks the card is in. [cardName] + [onSelectPrinting]
  * together show every alternate printing of the card as a strip below the art — tapping one calls
- * [onSelectPrinting] with that printing. [sharedKey], when set to the same value as the thumbnail
- * this card was opened from (typically its scryfallId), morphs the art from its list position into
- * this enlarged view instead of just fading in.
+ * [onSelectPrinting] with that printing.
  */
 data class ZoomCard(
     val imageUrl: String?,
@@ -125,89 +125,86 @@ data class ZoomCard(
     val onAdd: (() -> Unit)? = null,
     val onSelectPrinting: ((ScryfallCard) -> Unit)? = null,
     val onViewDetails: (() -> Unit)? = null,
-    val sources: List<CardSource> = emptyList(),
-    val sharedKey: String? = null
+    val sources: List<CardSource> = emptyList()
 )
 
 /**
  * Full-screen overlay that enlarges a card. Opens on [initialIndex] within [cards] and lets the
  * user swipe left/right to page through the rest of the list. Below each card it shows its value,
  * total value, and (when editable) a quantity stepper. Tap the card to dismiss.
- *
- * Rendered in-tree (not a system [androidx.compose.ui.window.Dialog]) so its main image can
- * participate in a shared-element hero transition with the thumbnail it was opened from, via
- * [LocalSharedTransitionScope] — every call site already invokes this as a sibling placed after
- * its screen's own Scaffold, so it naturally draws on top of that screen's content and top bar.
- * [BackHandler] replaces the system-back dismissal a real Dialog got for free.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Unit) {
     if (cards.isEmpty()) return
-    BackHandler(onBack = onDismiss)
     val pagerState = rememberPagerState(
         initialPage = initialIndex.coerceIn(0, cards.size - 1),
         pageCount = { cards.size }
     )
-    // Pops the whole overlay in from a slight scale/fade rather than snapping into view instantly;
-    // for a card whose art is also shared-element-morphing in, this doubles up harmlessly (both
-    // converge to the same end state).
-    val entrance = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        entrance.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow))
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.92f * entrance.value.coerceIn(0f, 1f)))
-    ) {
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-            val card = cards[page]
-            // A tapped alternate printing only swaps what's previewed here — it doesn't act on
-            // its own. Resets whenever the pager lands on a different card.
-            var previewed by remember(card) { mutableStateOf<ScryfallCard?>(null) }
-            Column(modifier = Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) { onDismiss() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    AsyncImage(
-                        model = previewed?.displayImageUrl ?: card.imageUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // Pops the whole overlay in from a slight scale/fade rather than snapping into view instantly.
+        val entrance = remember { Animatable(0f) }
+        LaunchedEffect(Unit) {
+            entrance.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow))
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.9f * entrance.value.coerceIn(0f, 1f)))
+                .graphicsLayer {
+                    alpha = entrance.value.coerceIn(0f, 1f)
+                    val scale = 0.9f + 0.1f * entrance.value
+                    scaleX = scale
+                    scaleY = scale
+                }
+        ) {
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                val card = cards[page]
+                // A tapped alternate printing only swaps what's previewed here — it doesn't act on
+                // its own. Resets whenever the pager lands on a different card.
+                var previewed by remember(card) { mutableStateOf<ScryfallCard?>(null) }
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.92f)
-                            .padding(horizontal = 24.dp, vertical = 16.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .cardHeroElement(card.sharedKey)
-                            .foilShine()
-                    )
-                }
-                val cardName = card.cardName
-                val onSelectPrinting = card.onSelectPrinting
-                if (cardName != null && onSelectPrinting != null) {
-                    AlternatePrintingsStrip(
-                        cardName = cardName,
-                        previewed = previewed,
-                        onPreview = { previewed = it },
-                        onConfirm = { chosen -> onSelectPrinting(chosen); previewed = null }
-                    )
-                }
-                // While a printing is previewed, show its own price instead of the original's.
-                val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd
-                if (effectivePrice != null || card.quantity != null ||
-                    card.onAdd != null || card.onViewDetails != null
-                ) {
-                    CardInfoBar(card, effectivePrice)
-                }
-                if (card.sources.isNotEmpty()) {
-                    SourcesSection(card.sources)
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { onDismiss() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = previewed?.displayImageUrl ?: card.imageUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth(0.92f)
+                                .padding(horizontal = 24.dp, vertical = 16.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .foilShine()
+                        )
+                    }
+                    val cardName = card.cardName
+                    val onSelectPrinting = card.onSelectPrinting
+                    if (cardName != null && onSelectPrinting != null) {
+                        AlternatePrintingsStrip(
+                            cardName = cardName,
+                            previewed = previewed,
+                            onPreview = { previewed = it },
+                            onConfirm = { chosen -> onSelectPrinting(chosen); previewed = null }
+                        )
+                    }
+                    // While a printing is previewed, show its own price instead of the original's.
+                    val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd
+                    if (effectivePrice != null || card.quantity != null ||
+                        card.onAdd != null || card.onViewDetails != null
+                    ) {
+                        CardInfoBar(card, effectivePrice)
+                    }
+                    if (card.sources.isNotEmpty()) {
+                        SourcesSection(card.sources)
+                    }
                 }
             }
         }

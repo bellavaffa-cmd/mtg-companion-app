@@ -67,7 +67,6 @@ import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ShimmerPlaceholder
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
-import com.mtgcompanion.app.ui.common.cardHeroElement
 import com.mtgcompanion.app.ui.common.elevatedCard
 import com.mtgcompanion.app.ui.common.foilShine
 import com.mtgcompanion.app.ui.common.pressScale
@@ -233,8 +232,7 @@ fun SearchResultsScreen(
                     // art and saving it to a binder/deck is one motion instead of two pickers.
                     onSelectPrinting = { chosen -> zoomIndex = null; addTarget = chosen },
                     onViewDetails = { zoomIndex = null; onCardClick(card) },
-                    sources = cardSources[card.id].orEmpty(),
-                    sharedKey = card.id
+                    sources = cardSources[card.id].orEmpty()
                 )
             },
             initialIndex = index,
@@ -277,7 +275,6 @@ private fun CardResultRow(
                 modifier = Modifier
                     .size(width = 72.dp, height = 52.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .cardHeroElement(card.id)
                     .let { if (card.isRareOrMythic) it.foilShine() else it }
             )
             Column(modifier = Modifier.weight(1f)) {
@@ -329,7 +326,6 @@ private fun CardResultTile(
                     .fillMaxWidth()
                     .aspectRatio(0.72f)
                     .clip(RoundedCornerShape(14.dp))
-                    .cardHeroElement(card.id)
                     .let { if (card.isRareOrMythic) it.foilShine() else it }
             )
         }

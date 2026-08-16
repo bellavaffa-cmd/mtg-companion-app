@@ -239,8 +239,7 @@ fun CardDetailScreen(
                                 // choice, so choosing art and saving it is one motion, not two.
                                 onSelectPrinting = { chosen -> zoomKey = null; chooseDestinationFor = chosen },
                                 onViewDetails = { zoomKey = null; onViewDetails(view.name) },
-                                sources = resolved?.id?.let { cardSources[it] }.orEmpty(),
-                                sharedKey = resolved?.id
+                                sources = resolved?.id?.let { cardSources[it] }.orEmpty()
                             )
                         },
                         initialIndex = zoomable.indexOfFirst { (k, _) -> k == key }.coerceAtLeast(0)
