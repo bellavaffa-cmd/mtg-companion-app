@@ -39,12 +39,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -118,6 +121,8 @@ fun buildCardSources(collections: List<Collection>, decks: List<Deck>): Map<Stri
  * card), adds a flip control that swaps the shown art to the other face. [tags] — printed
  * keywords plus heuristic theme tags — only ever set when the full [ScryfallCard] is on hand
  * (search results, resolved suggestions); a deck/binder entry's cached fields don't include it.
+ * [onFindSimilar], when set, adds a "find similar cards" action — resolves this card by name and
+ * opens its own zoom overlay of mechanically similar cards (see [SimilarCardsDialog]).
  */
 data class ZoomCard(
     val imageUrl: String?,
@@ -132,7 +137,8 @@ data class ZoomCard(
     val onViewDetails: (() -> Unit)? = null,
     val sources: List<CardSource> = emptyList(),
     val backImageUrl: String? = null,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val onFindSimilar: (() -> Unit)? = null
 )
 
 /**
@@ -228,7 +234,7 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                     // While a printing is previewed, show its own price instead of the original's.
                     val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd
                     if (effectivePrice != null || card.quantity != null ||
-                        card.onAdd != null || card.onViewDetails != null
+                        card.onAdd != null || card.onViewDetails != null || card.onFindSimilar != null
                     ) {
                         CardInfoBar(card, effectivePrice)
                     }
@@ -275,6 +281,11 @@ private fun CardInfoBar(card: ZoomCard, priceUsd: Double?) {
             card.onMove?.let { move ->
                 IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); move() }) {
                     Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move card", tint = Gold)
+                }
+            }
+            card.onFindSimilar?.let { findSimilar ->
+                IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); findSimilar() }) {
+                    Icon(Icons.Filled.Search, contentDescription = "Find similar cards", tint = Gold)
                 }
             }
             card.quantity?.let { qty ->
@@ -434,5 +445,62 @@ private fun InfoStat(label: String, value: String) {
     Column {
         Text(label, style = MaterialTheme.typography.labelMedium, color = TextMuted)
         Text(value, style = MaterialTheme.typography.titleMedium, color = GoldLight)
+    }
+}
+
+/**
+ * The "Find similar cards" action from any card's zoom overlay: resolves [cardName] on Scryfall,
+ * looks up mechanically similar cards ([CardRepository.findSimilar] — same type/colors/mana value,
+ * not synergy), and shows them in their own swipeable zoom overlay. [onAdd], when given, offers to
+ * add a similar card (how that's handled — straight into a known deck/binder, or a destination
+ * choice — is the caller's call). [onViewDetails], given the resolved [ScryfallCard], lets the
+ * user go one level deeper into a similar card's own page.
+ */
+@Composable
+fun SimilarCardsDialog(
+    cardName: String,
+    onDismiss: () -> Unit,
+    onAdd: ((ScryfallCard) -> Unit)? = null,
+    onViewDetails: ((ScryfallCard) -> Unit)? = null
+) {
+    val repository = remember { CardRepository() }
+    var similar by remember(cardName) { mutableStateOf<List<ScryfallCard>?>(null) }
+    LaunchedEffect(cardName) {
+        similar = try {
+            repository.findSimilar(repository.getByFuzzyName(cardName))
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    val result = similar
+    when {
+        result == null -> Dialog(onDismissRequest = onDismiss) {
+            Box(
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Surface).padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) { CircularProgressIndicator(color = Gold) }
+        }
+        result.isEmpty() -> AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = Surface,
+            title = { Text("No similar cards found", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
+            text = { Text("Couldn't find anything similar to \"$cardName\".", style = MaterialTheme.typography.bodySmall, color = TextMuted) },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("OK", color = Gold) } }
+        )
+        else -> CardZoomDialog(
+            cards = result.map { similarCard ->
+                ZoomCard(
+                    imageUrl = similarCard.displayImageUrl,
+                    cardName = similarCard.name,
+                    priceUsd = similarCard.prices?.usd?.toDoubleOrNull(),
+                    onAdd = onAdd?.let { add -> { add(similarCard) } },
+                    onViewDetails = onViewDetails?.let { view -> { view(similarCard) } },
+                    backImageUrl = similarCard.backImageUrl,
+                    tags = similarCard.tags
+                )
+            },
+            initialIndex = 0,
+            onDismiss = onDismiss
+        )
     }
 }

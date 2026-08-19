@@ -91,6 +91,11 @@ class CollectionDetailViewModel(
         viewModelScope.launch { repository.removeEntry(collectionId, entry.scryfallId) }
     }
 
+    /** Add a card not yet in this binder — e.g. one picked from the zoom overlay's "find similar" list. */
+    fun addCard(card: com.mtgcompanion.app.network.scryfall.ScryfallCard) {
+        viewModelScope.launch { repository.addCard(collectionId, card) }
+    }
+
     /** Move a card (all its copies) out of this binder into [target] deck or binder. */
     fun moveEntry(entry: CollectionEntry, target: MoveTarget) {
         viewModelScope.launch {
@@ -108,7 +113,7 @@ class CollectionDetailViewModel(
         when (target.kind) {
             SourceKind.DECK -> deckRepository.addEntry(
                 target.id,
-                DeckCardEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity + entry.foilQuantity, backImageUrl = entry.backImageUrl)
+                DeckCardEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity + entry.foilQuantity, backImageUrl = entry.backImageUrl, tags = entry.tags)
             )
             SourceKind.BINDER -> repository.addEntry(target.id, entry)
         }

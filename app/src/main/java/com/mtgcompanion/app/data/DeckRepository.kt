@@ -60,7 +60,7 @@ class DeckRepository(private val context: Context) {
                 val newCards = if (existing != null) {
                     deck.cards.map { if (it.scryfallId == card.id) it.copy(quantity = it.quantity + 1) else it }
                 } else {
-                    deck.cards + DeckCardEntry(card.id, card.name, card.displayImageUrl, 1, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl)
+                    deck.cards + DeckCardEntry(card.id, card.name, card.displayImageUrl, 1, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl, card.tags)
                 }
                 deck.copy(cards = newCards)
             }
@@ -101,12 +101,12 @@ class DeckRepository(private val context: Context) {
                 if (deck.id != deckId) return@map deck
                 val newCards = deck.cards.map {
                     if (it.scryfallId == oldScryfallId)
-                        it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine, partnerAbility = newCard.partnerAbility, backImageUrl = newCard.backImageUrl)
+                        it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine, partnerAbility = newCard.partnerAbility, backImageUrl = newCard.backImageUrl, tags = newCard.tags)
                     else it
                 }
                 fun retarget(entry: DeckCardEntry?) = entry
                     ?.takeIf { it.scryfallId == oldScryfallId }
-                    ?.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine, partnerAbility = newCard.partnerAbility, backImageUrl = newCard.backImageUrl)
+                    ?.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine, partnerAbility = newCard.partnerAbility, backImageUrl = newCard.backImageUrl, tags = newCard.tags)
                     ?: entry
                 deck.copy(cards = newCards, commander = retarget(deck.commander), partnerCommander = retarget(deck.partnerCommander))
             }

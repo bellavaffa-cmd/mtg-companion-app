@@ -7,7 +7,9 @@ data class CollectionEntry(
     val quantity: Int = 0,
     val foilQuantity: Int = 0,
     // Cached from ScryfallCard.backImageUrl — see DeckCardEntry.backImageUrl for why.
-    val backImageUrl: String? = null
+    val backImageUrl: String? = null,
+    // Cached from ScryfallCard.tags — see DeckCardEntry.tags for why.
+    val tags: List<String> = emptyList()
 )
 
 /** OWNED binders are the physical collection; WISHLIST binders track cards not owned yet. */

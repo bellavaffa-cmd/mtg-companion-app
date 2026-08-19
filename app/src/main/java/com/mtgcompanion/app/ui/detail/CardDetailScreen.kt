@@ -72,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.ui.common.CardTagsRow
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.ManaCost
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -114,6 +115,8 @@ fun CardDetailScreen(
     // scryfallId of the enlarged "similar card", if any — its own overlay, independent of the
     // EDHREC suggestions grid above (different data source, not meant to swipe together).
     var similarZoomId by remember { mutableStateOf<String?>(null) }
+    // Name of the card a nested "find similar" was triggered for, from within a zoom overlay.
+    var similarSearchFor by remember { mutableStateOf<String?>(null) }
     // Card the binder/deck pickers will add — this page's card, or one of its suggestions.
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // Set when the add button on an enlarged card needs a binder-or-deck choice first.
@@ -264,7 +267,8 @@ fun CardDetailScreen(
                                 onViewDetails = { similarZoomId = null; onViewDetails(similar.name) },
                                 sources = cardSources[similar.id].orEmpty(),
                                 backImageUrl = similar.backImageUrl,
-                                tags = similar.tags
+                                tags = similar.tags,
+                                onFindSimilar = { similarZoomId = null; similarSearchFor = similar.name }
                             )
                         },
                         initialIndex = state.similarCards.indexOfFirst { it.id == id }.coerceAtLeast(0)
@@ -290,7 +294,8 @@ fun CardDetailScreen(
                                 onViewDetails = { zoomKey = null; onViewDetails(view.name) },
                                 sources = resolved?.id?.let { cardSources[it] }.orEmpty(),
                                 backImageUrl = resolved?.backImageUrl,
-                                tags = resolved?.tags.orEmpty()
+                                tags = resolved?.tags.orEmpty(),
+                                onFindSimilar = { zoomKey = null; similarSearchFor = view.name }
                             )
                         },
                         initialIndex = zoomable.indexOfFirst { (k, _) -> k == key }.coerceAtLeast(0)
@@ -298,6 +303,15 @@ fun CardDetailScreen(
                 }
             }
         }
+    }
+
+    similarSearchFor?.let { name ->
+        SimilarCardsDialog(
+            cardName = name,
+            onDismiss = { similarSearchFor = null },
+            onAdd = { similar -> similarSearchFor = null; chooseDestinationFor = similar },
+            onViewDetails = { similar -> similarSearchFor = null; onViewDetails(similar.name) }
+        )
     }
 
     chooseDestinationFor?.let { card ->

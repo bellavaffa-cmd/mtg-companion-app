@@ -65,7 +65,11 @@ data class DeckCardEntry(
     // Cached from ScryfallCard.backImageUrl — the second face's art for a transform/modal-DFC/flip
     // card, so the zoom overlay can offer a flip control without a network round-trip. Null for
     // single-faced cards and for entries added before this field existed.
-    val backImageUrl: String? = null
+    val backImageUrl: String? = null,
+    // Cached from ScryfallCard.tags (printed keywords + heuristic theme tags) at add-time, so the
+    // zoom overlay can show tag chips without a network round-trip. Empty for entries added before
+    // this field existed.
+    val tags: List<String> = emptyList()
 )
 
 /** Whether [a] and [b] can legally be co-commanders under the Partner mechanic. */

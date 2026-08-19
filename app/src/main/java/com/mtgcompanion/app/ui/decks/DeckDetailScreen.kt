@@ -107,6 +107,7 @@ import com.mtgcompanion.app.ui.common.AnimatedUsdText
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.cardGrid
@@ -154,6 +155,8 @@ fun DeckDetailScreen(
     val cardSources by viewModel.cardSources.collectAsState()
     // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this deck).
     var copyTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
+    // Name of the card whose "find similar" overlay is open, if any.
+    var similarSearchFor by remember { mutableStateOf<String?>(null) }
     // Tints the bar as content scrolls under it (no height change — the title row already carries
     // a commander-art thumbnail, which a full Large app bar would end up rendering twice).
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -307,7 +310,9 @@ fun DeckDetailScreen(
                         onMove = { zoom = null; moveTarget = entry },
                         onViewDetails = { zoom = null; onViewDetails(entry.name) },
                         sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != currentDeck.id },
-                        backImageUrl = entry.backImageUrl
+                        backImageUrl = entry.backImageUrl,
+                        tags = entry.tags,
+                        onFindSimilar = { zoom = null; similarSearchFor = entry.name }
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
@@ -321,6 +326,15 @@ fun DeckDetailScreen(
                 }
                 CardZoomDialog(zoomCards, sug.indexOfFirst { (it.id ?: it.name) == key }.coerceAtLeast(0)) { zoom = null }
             }
+        }
+
+        similarSearchFor?.let { name ->
+            SimilarCardsDialog(
+                cardName = name,
+                onDismiss = { similarSearchFor = null },
+                onAdd = { similar -> similarSearchFor = null; viewModel.addCard(similar) },
+                onViewDetails = { similar -> similarSearchFor = null; onViewDetails(similar.name) }
+            )
         }
 
         moveTarget?.let { entry ->

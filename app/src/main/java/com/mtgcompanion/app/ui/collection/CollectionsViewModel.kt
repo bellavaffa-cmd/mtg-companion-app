@@ -29,7 +29,8 @@ data class AllCardEntry(
     val imageUrl: String?,
     val total: Int,
     val sources: List<CardSource> = emptyList(),
-    val backImageUrl: String? = null
+    val backImageUrl: String? = null,
+    val tags: List<String> = emptyList()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -58,14 +59,14 @@ class CollectionsViewModel(
     val allCards: StateFlow<List<AllCardEntry>> =
         combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
             // Accumulate total copies plus the list of binders/decks holding each card.
-            class Acc(val name: String, val imageUrl: String?, val backImageUrl: String?) {
+            class Acc(val name: String, val imageUrl: String?, val backImageUrl: String?, val tags: List<String>) {
                 var total = 0
                 val sources = mutableListOf<CardSource>()
             }
             val byCard = LinkedHashMap<String, Acc>()
-            fun add(id: String, name: String, imageUrl: String?, backImageUrl: String?, qty: Int, source: CardSource) {
+            fun add(id: String, name: String, imageUrl: String?, backImageUrl: String?, tags: List<String>, qty: Int, source: CardSource) {
                 if (qty <= 0) return
-                val acc = byCard.getOrPut(id) { Acc(name, imageUrl, backImageUrl) }
+                val acc = byCard.getOrPut(id) { Acc(name, imageUrl, backImageUrl, tags) }
                 acc.total += qty
                 acc.sources += source
             }
@@ -73,15 +74,15 @@ class CollectionsViewModel(
             collections.filter { it.kind == CollectionType.OWNED }.forEach { collection ->
                 collection.entries.forEach {
                     val qty = it.quantity + it.foilQuantity
-                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, qty, CardSource(SourceKind.BINDER, collection.id, collection.name, qty))
+                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, qty, CardSource(SourceKind.BINDER, collection.id, collection.name, qty))
                 }
             }
             decks.forEach { deck ->
                 deck.cards.forEach {
-                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.quantity, CardSource(SourceKind.DECK, deck.id, deck.name, it.quantity))
+                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, it.quantity, CardSource(SourceKind.DECK, deck.id, deck.name, it.quantity))
                 }
             }
-            byCard.map { (id, acc) -> AllCardEntry(id, acc.name, acc.imageUrl, acc.total, acc.sources.toList(), acc.backImageUrl) }
+            byCard.map { (id, acc) -> AllCardEntry(id, acc.name, acc.imageUrl, acc.total, acc.sources.toList(), acc.backImageUrl, acc.tags) }
                 .sortedBy { it.name.lowercase() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

@@ -59,6 +59,7 @@ import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.FlipBadge
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
@@ -100,6 +101,8 @@ fun CollectionDetailScreen(
     var confirmDeleteBinder by remember { mutableStateOf(false) }
     // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this binder).
     var copyTarget by remember { mutableStateOf<CollectionEntry?>(null) }
+    // Name of the card whose "find similar" overlay is open, if any.
+    var similarSearchFor by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         containerColor = Bg,
@@ -206,10 +209,21 @@ fun CollectionDetailScreen(
                 onMove = { zoomId = null; moveTarget = entry },
                 onViewDetails = { zoomId = null; onViewDetails(entry.name) },
                 sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != collection?.id },
-                backImageUrl = entry.backImageUrl
+                backImageUrl = entry.backImageUrl,
+                tags = entry.tags,
+                onFindSimilar = { zoomId = null; similarSearchFor = entry.name }
             )
         }
         CardZoomDialog(zoomCards, entries.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
+    }
+
+    similarSearchFor?.let { name ->
+        SimilarCardsDialog(
+            cardName = name,
+            onDismiss = { similarSearchFor = null },
+            onAdd = { similar -> similarSearchFor = null; viewModel.addCard(similar) },
+            onViewDetails = { similar -> similarSearchFor = null; onViewDetails(similar.name) }
+        )
     }
 
     moveTarget?.let { entry ->

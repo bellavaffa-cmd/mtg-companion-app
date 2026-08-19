@@ -63,6 +63,7 @@ import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.FlipBadge
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ShimmerPlaceholder
@@ -95,6 +96,8 @@ fun SearchResultsScreen(
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // Index (within the current results) of the card enlarged by a tap, if any.
     var zoomIndex by remember { mutableStateOf<Int?>(null) }
+    // Name of the card whose "find similar" overlay is open, if any.
+    var similarSearchFor by remember { mutableStateOf<String?>(null) }
     val resultCards = (uiState as? SearchUiState.Success)?.cards.orEmpty()
     val listState = rememberLazyListState()
 
@@ -235,11 +238,21 @@ fun SearchResultsScreen(
                     onViewDetails = { zoomIndex = null; onCardClick(card) },
                     sources = cardSources[card.id].orEmpty(),
                     backImageUrl = card.backImageUrl,
-                    tags = card.tags
+                    tags = card.tags,
+                    onFindSimilar = { zoomIndex = null; similarSearchFor = card.name }
                 )
             },
             initialIndex = index,
             onDismiss = { zoomIndex = null }
+        )
+    }
+
+    similarSearchFor?.let { name ->
+        SimilarCardsDialog(
+            cardName = name,
+            onDismiss = { similarSearchFor = null },
+            onAdd = { similar -> similarSearchFor = null; addTarget = similar },
+            onViewDetails = { similar -> similarSearchFor = null; onCardClick(similar) }
         )
     }
 }

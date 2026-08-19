@@ -49,7 +49,8 @@ class CollectionRepository(private val context: Context) {
                     imageUrl = card.displayImageUrl,
                     quantity = if (foil) 0 else 1,
                     foilQuantity = if (foil) 1 else 0,
-                    backImageUrl = card.backImageUrl
+                    backImageUrl = card.backImageUrl,
+                    tags = card.tags
                 )
             }
         }
@@ -70,7 +71,7 @@ class CollectionRepository(private val context: Context) {
         updateEntries(collectionId) { entries ->
             entries.map {
                 if (it.scryfallId != oldScryfallId) it
-                else it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, backImageUrl = newCard.backImageUrl)
+                else it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, backImageUrl = newCard.backImageUrl, tags = newCard.tags)
             }
         }
     }

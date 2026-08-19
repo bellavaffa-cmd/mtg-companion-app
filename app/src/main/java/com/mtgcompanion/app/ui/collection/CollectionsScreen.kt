@@ -70,6 +70,7 @@ import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.FlipBadge
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -229,6 +230,8 @@ private fun AllCardsTab(
     }
     // Tapping a card enlarges it (swipeable through the filtered list) with value/total.
     var zoomId by remember { mutableStateOf<String?>(null) }
+    // Name of the card whose "find similar" overlay is open, if any.
+    var similarSearchFor by remember { mutableStateOf<String?>(null) }
 
     if (allCards.isEmpty()) {
         Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
@@ -303,10 +306,22 @@ private fun AllCardsTab(
                 // re-arting it updates the printing everywhere it's held, not just one place.
                 onSelectPrinting = { chosen -> viewModel.changePrintingEverywhere(c.scryfallId, chosen) },
                 onViewDetails = { zoomId = null; onViewDetails(c.name) },
-                backImageUrl = c.backImageUrl
+                backImageUrl = c.backImageUrl,
+                tags = c.tags,
+                // No "add" here — an All Cards entry already lives in a specific binder/deck, and
+                // this tab has no destination-picker of its own to add a brand-new card into.
+                onFindSimilar = { zoomId = null; similarSearchFor = c.name }
             )
         }
         CardZoomDialog(zoomCards, filtered.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
+    }
+
+    similarSearchFor?.let { name ->
+        SimilarCardsDialog(
+            cardName = name,
+            onDismiss = { similarSearchFor = null },
+            onViewDetails = { similar -> similarSearchFor = null; onViewDetails(similar.name) }
+        )
     }
 }
 

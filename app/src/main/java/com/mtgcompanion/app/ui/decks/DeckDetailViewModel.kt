@@ -226,6 +226,11 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.removeCardFromDeck(deckId, scryfallId) }
     }
 
+    /** Add a card not yet in the deck — e.g. one picked from the zoom overlay's "find similar" list. */
+    fun addCard(card: ScryfallCard) {
+        viewModelScope.launch { repository.addCardToDeck(deckId, card) }
+    }
+
     /** Resolves this deck's cards to full Scryfall data (set + collector number) for exact-printing export. */
     suspend fun resolveCardsForExport(): Map<String, ScryfallCard> {
         val d = deck.value ?: return emptyMap()
@@ -290,7 +295,7 @@ class DeckDetailViewModel(
             SourceKind.DECK -> repository.addEntry(target.id, entry)
             SourceKind.BINDER -> collectionRepository.addEntry(
                 target.id,
-                CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity, foilQuantity = 0, backImageUrl = entry.backImageUrl)
+                CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity, foilQuantity = 0, backImageUrl = entry.backImageUrl, tags = entry.tags)
             )
         }
     }
@@ -477,7 +482,7 @@ private data class ParsedLine(
         }
 
     fun toEntry(card: ScryfallCard): DeckCardEntry =
-        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl)
+        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl, card.tags)
 }
 
 private fun ScryfallCard.matches(line: ParsedLine): Boolean =
