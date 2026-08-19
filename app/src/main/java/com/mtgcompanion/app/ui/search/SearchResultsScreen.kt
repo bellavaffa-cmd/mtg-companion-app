@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.search
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -52,6 +53,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,6 +92,7 @@ fun SearchResultsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
+    val context = LocalContext.current
     val addTargets by viewModel.addTargets.collectAsState()
     val cardSources by viewModel.cardSources.collectAsState()
     // The card whose "Add to…" binder/deck picker is open.
@@ -219,7 +222,10 @@ fun SearchResultsScreen(
         MoveTargetDialog(
             cardName = card.name,
             targets = addTargets,
-            onPick = { target -> viewModel.addToTarget(card, target); addTarget = null },
+            onPick = { target ->
+                viewModel.addToTarget(card, target) { warning -> Toast.makeText(context, warning, Toast.LENGTH_LONG).show() }
+                addTarget = null
+            },
             onDismiss = { addTarget = null }
         )
     }

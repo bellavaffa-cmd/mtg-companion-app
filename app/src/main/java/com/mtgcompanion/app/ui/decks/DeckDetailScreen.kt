@@ -96,6 +96,7 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.LegalityIssue
+import com.mtgcompanion.app.data.LegalityIssueKind
 import com.mtgcompanion.app.data.partnersWith
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
@@ -285,7 +286,7 @@ fun DeckDetailScreen(
                     )
                     1 -> StatsTab(analysis, currentDeck, viewModel)
                     2 -> AnalysisTab(analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel)
-                    else -> LegalityTab(analysis)
+                    else -> LegalityTab(analysis, viewModel)
                 }
             }
         }
@@ -332,7 +333,10 @@ fun DeckDetailScreen(
             SimilarCardsDialog(
                 cardName = name,
                 onDismiss = { similarSearchFor = null },
-                onAdd = { similar -> similarSearchFor = null; viewModel.addCard(similar) },
+                onAdd = { similar ->
+                    similarSearchFor = null
+                    viewModel.addCard(similar) { warning -> Toast.makeText(context, warning, Toast.LENGTH_LONG).show() }
+                },
                 onViewDetails = { similar -> similarSearchFor = null; onViewDetails(similar.name) }
             )
         }
@@ -769,12 +773,13 @@ private fun DeckSettingsDialog(
 }
 
 @Composable
-private fun LegalityTab(analysis: DeckAnalysis) {
+private fun LegalityTab(analysis: DeckAnalysis, viewModel: DeckDetailViewModel) {
     val report = analysis.legality
     if (report == null) {
         LoadingBox()
         return
     }
+    val context = LocalContext.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -821,18 +826,36 @@ private fun LegalityTab(analysis: DeckAnalysis) {
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
-            items(report.issues) { issue -> LegalityIssueRow(issue) }
+            items(report.issues) { issue ->
+                LegalityIssueRow(
+                    issue,
+                    onFix = if (issue.kind == LegalityIssueKind.COPY_LIMIT && issue.scryfallId != null && issue.fixQuantity != null) {
+                        {
+                            viewModel.setCardQuantity(issue.scryfallId, issue.fixQuantity)
+                            val word = if (issue.fixQuantity == 1) "copy" else "copies"
+                            Toast.makeText(context, "Reduced ${issue.card} to ${issue.fixQuantity} $word.", Toast.LENGTH_SHORT).show()
+                        }
+                    } else null
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun LegalityIssueRow(issue: LegalityIssue) {
+private fun LegalityIssueRow(issue: LegalityIssue, onFix: (() -> Unit)?) {
+    val haptic = LocalHapticFeedback.current
     Row(
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
             .elevatedCard(shape = RoundedCornerShape(16.dp))
+            .let {
+                if (onFix != null) {
+                    it.clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onFix() }
+                } else it
+            }
             .padding(12.dp)
     ) {
         Icon(
@@ -841,11 +864,20 @@ private fun LegalityIssueRow(issue: LegalityIssue) {
             tint = Color(0xFFD3402F),
             modifier = Modifier.size(18.dp)
         )
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             issue.card?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
             }
             Text(issue.reason, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+            if (onFix != null) {
+                val word = if (issue.fixQuantity == 1) "COPY" else "COPIES"
+                Text(
+                    "TAP TO REDUCE TO ${issue.fixQuantity} $word",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Gold,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
     }
 }

@@ -18,6 +18,7 @@ import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.LegalityReport
 import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.evaluateLegality
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
@@ -226,8 +227,14 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.removeCardFromDeck(deckId, scryfallId) }
     }
 
-    /** Add a card not yet in the deck — e.g. one picked from the zoom overlay's "find similar" list. */
-    fun addCard(card: ScryfallCard) {
+    /**
+     * Add a card not yet in the deck — e.g. one picked from the zoom overlay's "find similar" list.
+     * The card is always added — [onWarning], if the resulting copy count breaks this deck's
+     * format rules (singleton, max copies), is informational rather than a block, since testing/
+     * sideboard scenarios are legitimate.
+     */
+    fun addCard(card: ScryfallCard, onWarning: ((String) -> Unit)? = null) {
+        deck.value?.let { d -> duplicateWarning(d, card)?.let { onWarning?.invoke(it) } }
         viewModelScope.launch { repository.addCardToDeck(deckId, card) }
     }
 

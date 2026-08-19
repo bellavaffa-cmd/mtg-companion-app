@@ -15,11 +15,13 @@ import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -281,8 +283,12 @@ class ScanViewModel(
 
     fun addToDeck(card: ScryfallCard, quantity: Int, deckId: String) {
         viewModelScope.launch {
+            // Checked before adding, off the deck's currently-stored state — informational only,
+            // the card is added either way (testing/sideboard scenarios are legitimate).
+            val warning = deckRepository.decksFlow.first().find { it.id == deckId }
+                ?.let { duplicateWarning(it, card, addingQuantity = quantity) }
             deckRepository.addEntry(deckId, deckEntry(card, quantity))
-            _uiState.value = _uiState.value.copy(status = "Added $quantity × ${card.name} to deck")
+            _uiState.value = _uiState.value.copy(status = warning ?: "Added $quantity × ${card.name} to deck")
         }
     }
 

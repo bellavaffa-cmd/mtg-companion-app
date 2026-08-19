@@ -7,6 +7,7 @@ import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -302,11 +304,19 @@ class SearchViewModel(
         }
     }
 
-    /** Add [card] straight into [target], for the long-press "Add to…" action. */
-    fun addToTarget(card: ScryfallCard, target: MoveTarget) {
+    /**
+     * Add [card] straight into [target], for the long-press "Add to…" action. [onWarning], for a
+     * deck target whose format rules the resulting copy count would break (singleton, max copies),
+     * is informational — the card is added either way.
+     */
+    fun addToTarget(card: ScryfallCard, target: MoveTarget, onWarning: ((String) -> Unit)? = null) {
         viewModelScope.launch {
             when (target.kind) {
-                SourceKind.DECK -> deckRepository.addCardToDeck(target.id, card)
+                SourceKind.DECK -> {
+                    deckRepository.decksFlow.first().find { it.id == target.id }
+                        ?.let { duplicateWarning(it, card) }?.let { onWarning?.invoke(it) }
+                    deckRepository.addCardToDeck(target.id, card)
+                }
                 SourceKind.BINDER -> collectionRepository.addCard(target.id, card)
             }
         }

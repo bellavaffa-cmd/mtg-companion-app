@@ -10,6 +10,7 @@ import com.mtgcompanion.app.data.ComboRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
@@ -296,8 +297,11 @@ class CardDetailViewModel(
 
     fun addToDeck(deckId: String, card: ScryfallCard) {
         viewModelScope.launch {
+            // Checked before adding, off the deck's currently-loaded state — informational only,
+            // the card is added either way (testing/sideboard scenarios are legitimate).
+            val warning = decks.value.find { it.id == deckId }?.let { duplicateWarning(it, card) }
             deckRepository.addCardToDeck(deckId, card)
-            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added ${card.name} to deck.")
+            _uiState.value = _uiState.value.copy(addedToDeckMessage = warning ?: "Added ${card.name} to deck.")
         }
     }
 
