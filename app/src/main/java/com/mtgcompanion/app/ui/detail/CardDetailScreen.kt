@@ -75,6 +75,7 @@ import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.ManaCost
+import com.mtgcompanion.app.ui.common.InlineManaText
 import com.mtgcompanion.app.ui.common.ZoomCard
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
@@ -641,7 +642,7 @@ private fun CardHeader(card: ScryfallCard) {
                     .background(Brush.horizontalGradient(listOf(BorderColor, Bg)))
             )
             // Both faces' text, always — a flip only changes the art/name/mana cost/type line above.
-            Text(card.displayOracleText ?: "", style = MaterialTheme.typography.bodySmall)
+            InlineManaText(card.displayOracleText ?: "", style = MaterialTheme.typography.bodySmall)
         }
     }
 }

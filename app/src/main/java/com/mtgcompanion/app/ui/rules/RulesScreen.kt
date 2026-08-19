@@ -30,6 +30,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import com.mtgcompanion.app.ui.common.InlineManaText
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -166,7 +167,7 @@ private fun KeywordCard(keyword: Keyword) {
             Text(keyword.name, style = MaterialTheme.typography.titleMedium, color = GoldLight, modifier = Modifier.weight(1f))
             Text(keyword.category.uppercase(), style = MaterialTheme.typography.labelMedium, color = TextDim)
         }
-        Text(
+        InlineManaText(
             keyword.text,
             style = MaterialTheme.typography.bodySmall,
             color = TextPrimary,
@@ -240,7 +241,7 @@ private fun RulingCard(ruling: ScryfallRuling) {
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(14.dp))
             .padding(14.dp)
     ) {
-        Text(ruling.comment, style = MaterialTheme.typography.bodySmall, color = TextPrimary)
+        InlineManaText(ruling.comment, style = MaterialTheme.typography.bodySmall, color = TextPrimary)
         val meta = listOfNotNull(
             ruling.source?.let { if (it == "wotc") "Wizards of the Coast" else it.replaceFirstChar { c -> c.uppercase() } },
             ruling.publishedAt

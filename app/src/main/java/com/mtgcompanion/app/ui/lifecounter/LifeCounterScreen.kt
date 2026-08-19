@@ -59,6 +59,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.mtgcompanion.app.ui.common.InlineManaText
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -1049,7 +1050,7 @@ private fun CardFace(card: ScryfallCard) {
         modifier = Modifier.fillMaxWidth().aspectRatio(1.4f).clip(RoundedCornerShape(16.dp))
     )
     Text(card.name, style = MaterialTheme.typography.titleMedium, color = GoldLight, modifier = Modifier.padding(top = 10.dp))
-    Text(
+    InlineManaText(
         card.displayOracleText ?: "No text.",
         style = MaterialTheme.typography.bodySmall,
         color = TextPrimary,

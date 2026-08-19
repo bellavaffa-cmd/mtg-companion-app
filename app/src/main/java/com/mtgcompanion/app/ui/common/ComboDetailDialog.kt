@@ -107,7 +107,7 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text("HOW IT WORKS", style = MaterialTheme.typography.labelMedium, color = TextMuted)
-                    Text(
+                    InlineManaText(
                         combo.description?.takeIf { it.isNotBlank() } ?: "No write-up available for this combo yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextPrimary
