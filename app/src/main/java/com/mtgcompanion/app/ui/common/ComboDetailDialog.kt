@@ -162,9 +162,10 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
 }
 
 /** One card in a combo's "cards used" strip — its real Scryfall art (Commander Spellbook hands us
- * the image URL directly, no separate lookup needed) plus a ×qty badge when more than one copy is used. */
+ * the image URL directly, no separate lookup needed) plus a ×qty badge when more than one copy is used.
+ * Sized wide enough that the card's own rules text is actually legible, not just its art. */
 @Composable
-fun ComboCardThumb(usage: ComboCardUsage, width: Dp = 84.dp) {
+fun ComboCardThumb(usage: ComboCardUsage, width: Dp = 220.dp) {
     Column(modifier = Modifier.width(width), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(0.72f)) {
             AsyncImage(
