@@ -27,11 +27,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
@@ -112,7 +114,8 @@ fun buildCardSources(collections: List<Collection>, decks: List<Deck>): Map<Stri
  * editable stepper. [onAdd], for a card not yet in a deck/binder, offers to put it in one.
  * [sources], when set, lists the binders/decks the card is in. [cardName] + [onSelectPrinting]
  * together show every alternate printing of the card as a strip below the art — tapping one calls
- * [onSelectPrinting] with that printing.
+ * [onSelectPrinting] with that printing. [backImageUrl], when set (a transform/modal-DFC/flip
+ * card), adds a flip control that swaps the shown art to the other face.
  */
 data class ZoomCard(
     val imageUrl: String?,
@@ -125,7 +128,8 @@ data class ZoomCard(
     val onAdd: (() -> Unit)? = null,
     val onSelectPrinting: ((ScryfallCard) -> Unit)? = null,
     val onViewDetails: (() -> Unit)? = null,
-    val sources: List<CardSource> = emptyList()
+    val sources: List<CardSource> = emptyList(),
+    val backImageUrl: String? = null
 )
 
 /**
@@ -163,6 +167,8 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                 // A tapped alternate printing only swaps what's previewed here — it doesn't act on
                 // its own. Resets whenever the pager lands on a different card.
                 var previewed by remember(card) { mutableStateOf<ScryfallCard?>(null) }
+                // Which face is showing, for a transform/modal-DFC/flip card. Resets per card too.
+                var flipped by remember(card) { mutableStateOf(false) }
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
@@ -175,7 +181,7 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                         contentAlignment = Alignment.Center
                     ) {
                         AsyncImage(
-                            model = previewed?.displayImageUrl ?: card.imageUrl,
+                            model = previewed?.displayImageUrl ?: (if (flipped) card.backImageUrl else card.imageUrl),
                             contentDescription = null,
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
@@ -184,6 +190,23 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                                 .clip(RoundedCornerShape(20.dp))
                                 .foilShine()
                         )
+                        if (card.backImageUrl != null) {
+                            val flipHaptic = LocalHapticFeedback.current
+                            IconButton(
+                                onClick = {
+                                    flipHaptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    flipped = !flipped
+                                    previewed = null
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 24.dp, end = 32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.55f))
+                            ) {
+                                Icon(Icons.Filled.Autorenew, contentDescription = "Flip card", tint = Gold)
+                            }
+                        }
                     }
                     val cardName = card.cardName
                     val onSelectPrinting = card.onSelectPrinting

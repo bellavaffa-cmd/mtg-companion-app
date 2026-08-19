@@ -63,6 +63,7 @@ import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
+import com.mtgcompanion.app.ui.common.FlipBadge
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ShimmerPlaceholder
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -232,7 +233,8 @@ fun SearchResultsScreen(
                     // art and saving it to a binder/deck is one motion instead of two pickers.
                     onSelectPrinting = { chosen -> zoomIndex = null; addTarget = chosen },
                     onViewDetails = { zoomIndex = null; onCardClick(card) },
-                    sources = cardSources[card.id].orEmpty()
+                    sources = cardSources[card.id].orEmpty(),
+                    backImageUrl = card.backImageUrl
                 )
             },
             initialIndex = index,
@@ -268,15 +270,18 @@ private fun CardResultRow(
                 )
                 .padding(12.dp)
         ) {
-            AsyncImage(
-                model = card.displayImageUrl.toArtCropUrl(),
-                contentDescription = card.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(width = 72.dp, height = 52.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .let { if (card.isRareOrMythic) it.foilShine() else it }
-            )
+            Box {
+                AsyncImage(
+                    model = card.displayImageUrl.toArtCropUrl(),
+                    contentDescription = card.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(width = 72.dp, height = 52.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .let { if (card.isRareOrMythic) it.foilShine() else it }
+                )
+                if (card.backImageUrl != null) FlipBadge()
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
                 Text(
@@ -318,16 +323,19 @@ private fun CardResultTile(
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
                 )
         ) {
-            AsyncImage(
-                model = card.displayImageUrl,
-                contentDescription = card.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(0.72f)
-                    .clip(RoundedCornerShape(14.dp))
-                    .let { if (card.isRareOrMythic) it.foilShine() else it }
-            )
+            Box {
+                AsyncImage(
+                    model = card.displayImageUrl,
+                    contentDescription = card.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(0.72f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .let { if (card.isRareOrMythic) it.foilShine() else it }
+                )
+                if (card.backImageUrl != null) FlipBadge()
+            }
         }
         CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = resultCardActions(onAddToTarget, onViewDetails))
     }

@@ -151,7 +151,9 @@ fun GoldfishDialog(deck: Deck, onDismiss: () -> Unit) {
         }
 
         zoomIndex?.let { index ->
-            val zoomCards = hand.map { card -> ZoomCard(imageUrl = card.entry.imageUrl, cardName = card.entry.name) }
+            val zoomCards = hand.map { card ->
+                ZoomCard(imageUrl = card.entry.imageUrl, cardName = card.entry.name, backImageUrl = card.entry.backImageUrl)
+            }
             CardZoomDialog(zoomCards, index) { zoomIndex = null }
         }
     }

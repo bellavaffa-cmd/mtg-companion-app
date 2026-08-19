@@ -40,6 +40,10 @@ data class ScryfallCard(
     val cmc: Double? = null,
     @Json(name = "type_line") val typeLine: String? = null,
     @Json(name = "oracle_text") val oracleText: String? = null,
+    /** e.g. "normal", "transform", "modal_dfc", "split", "adventure", "flip", "meld". Determines
+     * whether [cardFaces] represent a flippable back side ([hasFlipSides]) or are just two rules
+     * text blocks printed on one face (split/adventure — already merged by [displayOracleText]). */
+    val layout: String? = null,
     val colors: List<String>? = null,
     @Json(name = "color_identity") val colorIdentity: List<String>? = null,
     @Json(name = "produced_mana") val producedMana: List<String>? = null,
@@ -61,6 +65,16 @@ data class ScryfallCard(
 ) {
     val displayImageUrl: String?
         get() = imageUris?.normal ?: cardFaces?.firstOrNull()?.imageUris?.normal
+
+    /** The second face's image, when this card actually flips ([hasFlipSides]) — null for
+     * split/adventure cards, whose "second face" is just more rules text on the same printed image. */
+    val backImageUrl: String?
+        get() = if (hasFlipSides) cardFaces?.getOrNull(1)?.imageUris?.normal else null
+
+    /** True for cards with a real second side to flip to in the UI: transform, modal DFC, flip,
+     * and reversible cards. False for split/adventure (two spells/rules blocks on one printed face). */
+    val hasFlipSides: Boolean
+        get() = cardFaces?.size == 2 && layout in FLIPPABLE_LAYOUTS
 
     /** A short label for this specific printing, e.g. "Modern Horizons 3 · 123". */
     val printingLabel: String
@@ -94,6 +108,10 @@ data class ScryfallCard(
                 "Partner"
             }
         }
+
+    companion object {
+        private val FLIPPABLE_LAYOUTS = setOf("transform", "modal_dfc", "flip", "reversible_card", "double_faced_token")
+    }
 }
 
 data class ScryfallCardFace(

@@ -58,7 +58,7 @@ class PreconsViewModel(
                 val deckEntries = all.mapNotNull { entry ->
                     val id = entry.scryfallId ?: return@mapNotNull null
                     val card = cardsById[id] ?: return@mapNotNull null
-                    DeckCardEntry(card.id, card.name, card.displayImageUrl, entry.quantity, card.canBeCommander, card.typeLine, card.partnerAbility)
+                    DeckCardEntry(card.id, card.name, card.displayImageUrl, entry.quantity, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl)
                 }
                 if (deckEntries.isEmpty()) {
                     onError("None of this precon's cards could be found on Scryfall.")

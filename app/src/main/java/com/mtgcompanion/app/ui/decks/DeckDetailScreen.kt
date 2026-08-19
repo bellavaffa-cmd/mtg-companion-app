@@ -112,6 +112,7 @@ import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.elevatedCard
+import com.mtgcompanion.app.ui.common.FlipBadge
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -305,7 +306,8 @@ fun DeckDetailScreen(
                         onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                         onMove = { zoom = null; moveTarget = entry },
                         onViewDetails = { zoom = null; onViewDetails(entry.name) },
-                        sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != currentDeck.id }
+                        sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != currentDeck.id },
+                        backImageUrl = entry.backImageUrl
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
@@ -1461,12 +1463,15 @@ private fun DeckCardRow(
                 )
                 .padding(12.dp)
         ) {
-            AsyncImage(
-                model = card.imageUrl.toArtCropUrl(),
-                contentDescription = card.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
-            )
+            Box {
+                AsyncImage(
+                    model = card.imageUrl.toArtCropUrl(),
+                    contentDescription = card.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
+                )
+                if (card.backImageUrl != null) FlipBadge()
+            }
             Text(
                 card.name,
                 style = MaterialTheme.typography.bodyMedium,
@@ -1533,6 +1538,8 @@ private fun DeckCardTile(card: DeckCardEntry, isCommander: Boolean = false, onCl
                         .background(Color.Black.copy(alpha = 0.6f))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+                // The commander star already claims this corner — don't stack both badges there.
+                if (card.backImageUrl != null && !isCommander) FlipBadge()
                 if (isCommander) {
                     Icon(
                         Icons.Filled.Star,

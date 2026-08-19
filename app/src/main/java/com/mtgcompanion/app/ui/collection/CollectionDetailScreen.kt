@@ -60,6 +60,7 @@ import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
+import com.mtgcompanion.app.ui.common.FlipBadge
 import com.mtgcompanion.app.ui.common.MoveTargetDialog
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
@@ -204,7 +205,8 @@ fun CollectionDetailScreen(
                 onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                 onMove = { zoomId = null; moveTarget = entry },
                 onViewDetails = { zoomId = null; onViewDetails(entry.name) },
-                sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != collection?.id }
+                sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != collection?.id },
+                backImageUrl = entry.backImageUrl
             )
         }
         CardZoomDialog(zoomCards, entries.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
@@ -281,12 +283,15 @@ private fun CollectionCardRow(
                 )
                 .padding(12.dp)
         ) {
-            AsyncImage(
-                model = entry.imageUrl.toArtCropUrl(),
-                contentDescription = entry.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
-            )
+            Box {
+                AsyncImage(
+                    model = entry.imageUrl.toArtCropUrl(),
+                    contentDescription = entry.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
+                )
+                if (entry.backImageUrl != null) FlipBadge()
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
                 Text(
@@ -346,6 +351,7 @@ private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, acti
                         .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+                if (entry.backImageUrl != null) FlipBadge()
             }
             Text(
                 entry.name,

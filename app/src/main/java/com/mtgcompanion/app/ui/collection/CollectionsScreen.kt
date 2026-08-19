@@ -71,6 +71,7 @@ import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
+import com.mtgcompanion.app.ui.common.FlipBadge
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.pressScale
@@ -301,7 +302,8 @@ private fun AllCardsTab(
                 // This entry is one printing shared by every binder/deck in its sources, so
                 // re-arting it updates the printing everywhere it's held, not just one place.
                 onSelectPrinting = { chosen -> viewModel.changePrintingEverywhere(c.scryfallId, chosen) },
-                onViewDetails = { zoomId = null; onViewDetails(c.name) }
+                onViewDetails = { zoomId = null; onViewDetails(c.name) },
+                backImageUrl = c.backImageUrl
             )
         }
         CardZoomDialog(zoomCards, filtered.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
@@ -332,12 +334,15 @@ private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit, onViewDetails: (
                 )
                 .padding(12.dp)
         ) {
-            AsyncImage(
-                model = card.imageUrl.toArtCropUrl(),
-                contentDescription = card.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
-            )
+            Box {
+                AsyncImage(
+                    model = card.imageUrl.toArtCropUrl(),
+                    contentDescription = card.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
+                )
+                if (card.backImageUrl != null) FlipBadge()
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
                 Text(
@@ -389,6 +394,7 @@ private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit, onViewDetails: 
                         .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+                if (card.backImageUrl != null) FlipBadge()
             }
             Text(
                 card.name,

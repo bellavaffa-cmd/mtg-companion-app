@@ -25,9 +25,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -239,7 +242,8 @@ fun CardDetailScreen(
                                 // choice, so choosing art and saving it is one motion, not two.
                                 onSelectPrinting = { chosen -> zoomKey = null; chooseDestinationFor = chosen },
                                 onViewDetails = { zoomKey = null; onViewDetails(view.name) },
-                                sources = resolved?.id?.let { cardSources[it] }.orEmpty()
+                                sources = resolved?.id?.let { cardSources[it] }.orEmpty(),
+                                backImageUrl = resolved?.backImageUrl
                             )
                         },
                         initialIndex = zoomable.indexOfFirst { (k, _) -> k == key }.coerceAtLeast(0)
@@ -504,19 +508,38 @@ private fun PrintsSection(prints: List<ScryfallCard>, selectedId: String, onSele
 
 @Composable
 private fun CardHeader(card: ScryfallCard) {
+    // Which face's art/name/mana cost/type line to show — resets if the printing changes underneat.
+    var showBack by remember(card.id) { mutableStateOf(false) }
+    val backFace = card.cardFaces?.getOrNull(1)
+    val flipped = showBack && card.backImageUrl != null
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        AsyncImage(
-            model = card.displayImageUrl,
-            contentDescription = card.name,
-            modifier = Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
-        )
+        Box(modifier = Modifier.weight(1f)) {
+            AsyncImage(
+                model = if (flipped) card.backImageUrl else card.displayImageUrl,
+                contentDescription = card.name,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            )
+            if (card.backImageUrl != null) {
+                IconButton(
+                    onClick = { showBack = !showBack },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.55f))
+                ) {
+                    Icon(Icons.Filled.Autorenew, contentDescription = "Flip card", tint = Gold)
+                }
+            }
+        }
         Column(modifier = Modifier.weight(1.4f)) {
-            Text(card.name, style = MaterialTheme.typography.titleLarge)
-            card.manaCost?.takeIf { it.isNotBlank() }?.let {
+            Text(if (flipped) backFace?.name ?: card.name else card.name, style = MaterialTheme.typography.titleLarge)
+            val manaCost = if (flipped) backFace?.manaCost else card.manaCost
+            manaCost?.takeIf { it.isNotBlank() }?.let {
                 ManaCost(it, size = 18.dp, modifier = Modifier.padding(vertical = 6.dp))
             }
             Text(
-                (card.typeLine ?: "").uppercase(),
+                ((if (flipped) backFace?.typeLine else card.typeLine) ?: "").uppercase(),
                 style = MaterialTheme.typography.labelMedium,
                 color = TextMuted
             )
@@ -527,6 +550,7 @@ private fun CardHeader(card: ScryfallCard) {
                     .height(1.dp)
                     .background(Brush.horizontalGradient(listOf(BorderColor, Bg)))
             )
+            // Both faces' text, always — a flip only changes the art/name/mana cost/type line above.
             Text(card.displayOracleText ?: "", style = MaterialTheme.typography.bodySmall)
         }
     }

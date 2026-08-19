@@ -61,7 +61,11 @@ data class DeckCardEntry(
     val typeLine: String? = null,
     // Cached from ScryfallCard.partnerAbility — null (no partner ability), "Partner" (pairs with
     // any other plain-partner card), or the exact "Partner with <Name>" target.
-    val partnerAbility: String? = null
+    val partnerAbility: String? = null,
+    // Cached from ScryfallCard.backImageUrl — the second face's art for a transform/modal-DFC/flip
+    // card, so the zoom overlay can offer a flip control without a network round-trip. Null for
+    // single-faced cards and for entries added before this field existed.
+    val backImageUrl: String? = null
 )
 
 /** Whether [a] and [b] can legally be co-commanders under the Partner mechanic. */

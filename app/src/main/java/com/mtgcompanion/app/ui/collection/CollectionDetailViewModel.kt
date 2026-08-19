@@ -108,7 +108,7 @@ class CollectionDetailViewModel(
         when (target.kind) {
             SourceKind.DECK -> deckRepository.addEntry(
                 target.id,
-                DeckCardEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity + entry.foilQuantity)
+                DeckCardEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity + entry.foilQuantity, backImageUrl = entry.backImageUrl)
             )
             SourceKind.BINDER -> repository.addEntry(target.id, entry)
         }

@@ -259,10 +259,10 @@ class ScanViewModel(
     }
 
     private fun collectionEntry(card: ScryfallCard, quantity: Int) =
-        CollectionEntry(card.id, card.name, card.displayImageUrl, quantity = quantity, foilQuantity = 0)
+        CollectionEntry(card.id, card.name, card.displayImageUrl, quantity = quantity, foilQuantity = 0, backImageUrl = card.backImageUrl)
 
     private fun deckEntry(card: ScryfallCard, quantity: Int) =
-        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity = quantity, canBeCommander = card.canBeCommander, typeLine = card.typeLine, partnerAbility = card.partnerAbility)
+        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity = quantity, canBeCommander = card.canBeCommander, typeLine = card.typeLine, partnerAbility = card.partnerAbility, backImageUrl = card.backImageUrl)
 
     fun addToCollection(card: ScryfallCard, quantity: Int, collectionId: String) {
         viewModelScope.launch {

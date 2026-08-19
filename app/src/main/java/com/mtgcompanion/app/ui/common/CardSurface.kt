@@ -3,8 +3,17 @@ package com.mtgcompanion.app.ui.common
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -13,6 +22,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.ui.theme.BorderColor
+import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.Surface2
 
@@ -28,3 +38,27 @@ fun Modifier.elevatedCard(shape: Shape = RoundedCornerShape(20.dp), borderColor:
     .clip(shape)
     .background(Brush.verticalGradient(listOf(Surface, Surface2)))
     .border(BorderStroke(1.dp, borderColor), shape)
+
+/**
+ * A small top-start corner badge marking a card as having a second side (transform/modal-DFC/flip)
+ * — a hint to tap in and flip it, before committing to a zoom. Mirrors the existing top-end ×qty
+ * badge styling used across deck/binder/all-cards tiles, just on the opposite corner.
+ */
+@Composable
+fun BoxScope.FlipBadge() {
+    Box(
+        modifier = Modifier
+            .align(Alignment.TopStart)
+            .padding(6.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.6f))
+            .padding(3.dp)
+    ) {
+        Icon(
+            Icons.Filled.Autorenew,
+            contentDescription = "Has a second side",
+            tint = GoldLight,
+            modifier = Modifier.size(12.dp)
+        )
+    }
+}

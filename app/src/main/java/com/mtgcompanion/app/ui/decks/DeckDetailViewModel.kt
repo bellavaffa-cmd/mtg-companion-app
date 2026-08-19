@@ -290,7 +290,7 @@ class DeckDetailViewModel(
             SourceKind.DECK -> repository.addEntry(target.id, entry)
             SourceKind.BINDER -> collectionRepository.addEntry(
                 target.id,
-                CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity, foilQuantity = 0)
+                CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity, foilQuantity = 0, backImageUrl = entry.backImageUrl)
             )
         }
     }
@@ -477,7 +477,7 @@ private data class ParsedLine(
         }
 
     fun toEntry(card: ScryfallCard): DeckCardEntry =
-        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander, card.typeLine, card.partnerAbility)
+        DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl)
 }
 
 private fun ScryfallCard.matches(line: ParsedLine): Boolean =
