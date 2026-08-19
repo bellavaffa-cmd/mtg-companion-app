@@ -22,7 +22,9 @@ data class ComboCardUsage(
 
 data class ComboCard(
     val id: Int,
-    val name: String
+    val name: String,
+    val imageUriFrontNormal: String? = null,
+    val imageUriFrontArtCrop: String? = null
 )
 
 data class ComboFeatureUsage(

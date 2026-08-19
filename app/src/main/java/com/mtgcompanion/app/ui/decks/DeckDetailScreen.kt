@@ -1414,7 +1414,24 @@ private fun ComboRow(combo: Variant, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
-        Text(combo.uses.joinToString(" + ") { it.card.name }, style = MaterialTheme.typography.bodyMedium, color = GoldLight)
+        // Commander Spellbook hands us each card's real Scryfall art directly, so a quick glance
+        // at the combo shows the actual cards instead of just their names.
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            combo.uses.forEach { usage ->
+                AsyncImage(
+                    model = usage.card.imageUriFrontArtCrop,
+                    contentDescription = usage.card.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(8.dp))
+                )
+            }
+        }
+        Text(
+            combo.uses.joinToString(" + ") { it.card.name },
+            style = MaterialTheme.typography.bodyMedium,
+            color = GoldLight,
+            modifier = Modifier.padding(top = 8.dp)
+        )
         Text(
             "Produces: " + combo.produces.joinToString(", ") { it.feature.name },
             style = MaterialTheme.typography.bodySmall,
