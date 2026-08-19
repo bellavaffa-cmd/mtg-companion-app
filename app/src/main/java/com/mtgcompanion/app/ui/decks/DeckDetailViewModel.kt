@@ -53,6 +53,11 @@ data class DeckAnalysis(
     val manaCurve: List<Pair<String, Int>> = emptyList(),
     val avgManaValue: Double = 0.0,
     val colorCounts: List<Pair<String, Int>> = emptyList(),
+    /** How many colored mana symbols of each color appear across every card's cast cost (generic
+     * numbers aren't a color and are excluded; hybrid/Phyrexian symbols count toward each color
+     * they represent) — the deck's actual color-mana demand, distinct from [colorCounts] (cards
+     * per color identity) and [colorSourceCounts] (lands that produce each color). */
+    val colorPipCounts: List<Pair<String, Int>> = emptyList(),
     val typeCounts: List<Pair<String, Int>> = emptyList(),
     val totalUsd: Double = 0.0,
     val deckSize: Int = 0,
@@ -164,6 +169,8 @@ class DeckDetailViewModel(
         val curveBuckets = linkedMapOf("0" to 0, "1" to 0, "2" to 0, "3" to 0, "4" to 0, "5" to 0, "6" to 0, "7+" to 0)
         val colorTotals = linkedMapOf("W" to 0, "U" to 0, "B" to 0, "R" to 0, "G" to 0, "Colorless" to 0)
         val colorSourceTotals = linkedMapOf("W" to 0, "U" to 0, "B" to 0, "R" to 0, "G" to 0)
+        val pipTotals = linkedMapOf("W" to 0, "U" to 0, "B" to 0, "R" to 0, "G" to 0, "Colorless" to 0)
+        val pipSymbolRegex = Regex("\\{([^}]+)\\}")
         val typeTotals = LinkedHashMap<String, Int>()
         var totalUsd = 0.0
         var cmcSum = 0.0
@@ -183,6 +190,17 @@ class DeckDetailViewModel(
             val identity = card?.colorIdentity ?: card?.colors
             if (identity.isNullOrEmpty()) colorTotals["Colorless"] = (colorTotals["Colorless"] ?: 0) + qty
             else identity.forEach { c -> colorTotals[c]?.let { colorTotals[c] = it + qty } }
+
+            card?.manaCost?.let { cost ->
+                pipSymbolRegex.findAll(cost).forEach { m ->
+                    val symbol = m.groupValues[1].uppercase()
+                    if (symbol == "C") {
+                        pipTotals["Colorless"] = (pipTotals["Colorless"] ?: 0) + qty
+                    } else {
+                        symbol.split("/").forEach { part -> pipTotals[part]?.let { pipTotals[part] = it + qty } }
+                    }
+                }
+            }
 
             if (type != "Land") {
                 val cmc = (card?.cmc ?: 0.0)
@@ -209,6 +227,7 @@ class DeckDetailViewModel(
             manaCurve = curveBuckets.toList(),
             avgManaValue = if (nonLandCount > 0) cmcSum / nonLandCount else 0.0,
             colorCounts = colorTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
+            colorPipCounts = pipTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
             typeCounts = typeTotals.entries.sortedByDescending { it.value }.map { it.key to it.value },
             totalUsd = totalUsd,
             deckSize = nonLandCount + landCount,

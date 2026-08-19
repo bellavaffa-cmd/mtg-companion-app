@@ -1152,6 +1152,58 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                 }
             }
         }
+        if (analysis.colorPipCounts.isNotEmpty()) {
+            item {
+                Panel {
+                    SectionLabel("MANA SYMBOLS")
+                    val totalPips = analysis.colorPipCounts.sumOf { it.second }
+                    Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        analysis.colorPipCounts.forEach { (color, count) ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                ManaSymbol(color, size = 16.dp)
+                                Text(
+                                    "$count",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextPrimary,
+                                    modifier = Modifier.width(28.dp)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(BorderColor)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxHeight()
+                                            .fillMaxWidth(count.toFloat() / totalPips)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Gold)
+                                    )
+                                }
+                                Text(
+                                    "${count * 100 / totalPips}%",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = TextMuted,
+                                    modifier = Modifier.width(38.dp)
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        "$totalPips colored mana symbols across every card's cast cost — how much of each color this deck actually demands, not just how many lands produce it.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextDim,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                }
+            }
+        }
         if (analysis.landCount > 0) {
             item {
                 Panel {
