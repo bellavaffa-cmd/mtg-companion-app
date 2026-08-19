@@ -70,6 +70,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mtgcompanion.app.ui.common.CardTagsRow
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
 import com.mtgcompanion.app.ui.common.ManaCost
@@ -110,6 +111,9 @@ fun CardDetailScreen(
     var showCollectionPicker by remember { mutableStateOf(false) }
     // Key of the suggested card being enlarged, if any.
     var zoomKey by remember { mutableStateOf<String?>(null) }
+    // scryfallId of the enlarged "similar card", if any — its own overlay, independent of the
+    // EDHREC suggestions grid above (different data source, not meant to swipe together).
+    var similarZoomId by remember { mutableStateOf<String?>(null) }
     // Card the binder/deck pickers will add — this page's card, or one of its suggestions.
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
     // Set when the add button on an enlarged card needs a binder-or-deck choice first.
@@ -223,6 +227,48 @@ fun CardDetailScreen(
 
                     fullSpanItem { SectionHeader("Combos · Commander Spellbook") }
                     fullSpanItem { CombosSection(state) }
+
+                    // Same type + colors + a nearby mana value — not synergy, just "cards like this
+                    // one" for browsing alternatives. Distinct from the EDHREC recs above.
+                    fullSpanItem { SectionHeader("Similar Cards") }
+                    if (state.similarLoading) {
+                        fullSpanItem {
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Gold)
+                            }
+                        }
+                    } else if (state.similarCards.isEmpty()) {
+                        fullSpanItem {
+                            Text(
+                                "No similar cards found.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                        }
+                    } else {
+                        items(state.similarCards, key = { it.id }) { similar ->
+                            SimilarCardTile(similar, onClick = { similarZoomId = similar.id })
+                        }
+                    }
+                }
+
+                similarZoomId?.let { id ->
+                    CardZoomDialog(
+                        cards = state.similarCards.map { similar ->
+                            ZoomCard(
+                                imageUrl = similar.displayImageUrl,
+                                cardName = similar.name,
+                                priceUsd = similar.prices?.usd?.toDoubleOrNull(),
+                                onAdd = { similarZoomId = null; chooseDestinationFor = similar },
+                                onSelectPrinting = { chosen -> similarZoomId = null; chooseDestinationFor = chosen },
+                                onViewDetails = { similarZoomId = null; onViewDetails(similar.name) },
+                                sources = cardSources[similar.id].orEmpty(),
+                                backImageUrl = similar.backImageUrl,
+                                tags = similar.tags
+                            )
+                        },
+                        initialIndex = state.similarCards.indexOfFirst { it.id == id }.coerceAtLeast(0)
+                    ) { similarZoomId = null }
                 }
 
                 zoomKey?.let { key ->
@@ -243,7 +289,8 @@ fun CardDetailScreen(
                                 onSelectPrinting = { chosen -> zoomKey = null; chooseDestinationFor = chosen },
                                 onViewDetails = { zoomKey = null; onViewDetails(view.name) },
                                 sources = resolved?.id?.let { cardSources[it] }.orEmpty(),
-                                backImageUrl = resolved?.backImageUrl
+                                backImageUrl = resolved?.backImageUrl,
+                                tags = resolved?.tags.orEmpty()
                             )
                         },
                         initialIndex = zoomable.indexOfFirst { (k, _) -> k == key }.coerceAtLeast(0)
@@ -436,6 +483,32 @@ private fun EdhrecTile(view: EdhrecCardView, onClick: () -> Unit) {
 }
 
 @Composable
+private fun SimilarCardTile(card: ScryfallCard, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = card.displayImageUrl,
+            contentDescription = card.name,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.72f)
+                .clip(RoundedCornerShape(14.dp))
+        )
+        Text(
+            card.name,
+            style = MaterialTheme.typography.labelMedium,
+            color = TextPrimary,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+@Composable
 private fun SectionHeader(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)) {
         Text(text.uppercase(), style = MaterialTheme.typography.titleMedium)
@@ -543,6 +616,9 @@ private fun CardHeader(card: ScryfallCard) {
                 style = MaterialTheme.typography.labelMedium,
                 color = TextMuted
             )
+            if (card.tags.isNotEmpty()) {
+                CardTagsRow(card.tags, modifier = Modifier.padding(top = 8.dp))
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

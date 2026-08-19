@@ -234,7 +234,8 @@ fun SearchResultsScreen(
                     onSelectPrinting = { chosen -> zoomIndex = null; addTarget = chosen },
                     onViewDetails = { zoomIndex = null; onCardClick(card) },
                     sources = cardSources[card.id].orEmpty(),
-                    backImageUrl = card.backImageUrl
+                    backImageUrl = card.backImageUrl,
+                    tags = card.tags
                 )
             },
             initialIndex = index,

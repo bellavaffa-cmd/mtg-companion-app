@@ -44,6 +44,9 @@ data class ScryfallCard(
      * whether [cardFaces] represent a flippable back side ([hasFlipSides]) or are just two rules
      * text blocks printed on one face (split/adventure — already merged by [displayOracleText]). */
     val layout: String? = null,
+    /** Printed keyword abilities, e.g. ["Flying", "Lifelink"] — feeds [tags] alongside a few
+     * heuristic theme tags (Lifegain, Removal, ...) inferred from oracle text. */
+    val keywords: List<String>? = null,
     val colors: List<String>? = null,
     @Json(name = "color_identity") val colorIdentity: List<String>? = null,
     @Json(name = "produced_mana") val producedMana: List<String>? = null,
@@ -80,6 +83,24 @@ data class ScryfallCard(
     val printingLabel: String
         get() = listOfNotNull(setName ?: set?.uppercase(), collectorNumber?.let { "#$it" }).joinToString(" · ")
 
+    /** e.g. "Creature" from "Legendary Creature — Human Wizard" — used for type-grouping and the
+     * "similar cards" search. Falls back to "Other" for double-faced cards with mismatched face
+     * types or anything unrecognized. */
+    val primaryType: String
+        get() = PRIMARY_TYPES.firstOrNull { typeLine?.contains(it, ignoreCase = true) == true } ?: "Other"
+
+    /** Printed keywords plus a handful of heuristic theme tags (Lifegain, Card Draw, Removal, ...)
+     * inferred from oracle text — shown as chips wherever the full card (not just a cached
+     * deck/binder entry) is on hand. Heuristic tags are pattern-matched, not exhaustive. */
+    val tags: List<String>
+        get() {
+            val result = LinkedHashSet<String>()
+            keywords?.let(result::addAll)
+            val text = displayOracleText.orEmpty()
+            THEME_TAG_RULES.forEach { rule -> if (rule.pattern.containsMatchIn(text)) result += rule.label }
+            return result.toList()
+        }
+
     val displayOracleText: String?
         get() = oracleText ?: cardFaces?.joinToString("\n\n") { face ->
             listOfNotNull(face.typeLine, face.oracleText).joinToString("\n")
@@ -111,6 +132,26 @@ data class ScryfallCard(
 
     companion object {
         private val FLIPPABLE_LAYOUTS = setOf("transform", "modal_dfc", "flip", "reversible_card", "double_faced_token")
+
+        /** Checked in order, so e.g. "Artifact Creature" resolves to "Creature" (matches the deck
+         * Cards-tab type grouping's own priority — creatures group together even when they're also
+         * artifacts/enchantments). */
+        val PRIMARY_TYPES = listOf(
+            "Creature", "Planeswalker", "Instant", "Sorcery", "Artifact", "Enchantment", "Battle", "Land"
+        )
+
+        /** Heuristic oracle-text patterns for common deckbuilding theme tags that aren't printed
+         * keywords. Approximate by nature — false negatives (a differently-worded effect) are far
+         * more likely than false positives, so this stays a short, conservative list. */
+        private data class ThemeTagRule(val label: String, val pattern: Regex)
+        private val THEME_TAG_RULES = listOf(
+            ThemeTagRule("Lifegain", Regex("gain(s)?\\s+\\S*\\s*life|whenever you gain life", RegexOption.IGNORE_CASE)),
+            ThemeTagRule("Card Draw", Regex("draws? (a|two|three|\\d+|that many) cards?", RegexOption.IGNORE_CASE)),
+            ThemeTagRule("Removal", Regex("destroy target|exile target|deals? \\d+ damage to target", RegexOption.IGNORE_CASE)),
+            ThemeTagRule("Ramp", Regex("search your library for a( basic)? land card|add \\{[wubrgc]\\}", RegexOption.IGNORE_CASE)),
+            ThemeTagRule("Tokens", Regex("creates? [^.]*token", RegexOption.IGNORE_CASE)),
+            ThemeTagRule("Counterspell", Regex("counter target spell", RegexOption.IGNORE_CASE))
+        )
     }
 }
 

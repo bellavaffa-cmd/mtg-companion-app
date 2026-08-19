@@ -115,7 +115,9 @@ fun buildCardSources(collections: List<Collection>, decks: List<Deck>): Map<Stri
  * [sources], when set, lists the binders/decks the card is in. [cardName] + [onSelectPrinting]
  * together show every alternate printing of the card as a strip below the art — tapping one calls
  * [onSelectPrinting] with that printing. [backImageUrl], when set (a transform/modal-DFC/flip
- * card), adds a flip control that swaps the shown art to the other face.
+ * card), adds a flip control that swaps the shown art to the other face. [tags] — printed
+ * keywords plus heuristic theme tags — only ever set when the full [ScryfallCard] is on hand
+ * (search results, resolved suggestions); a deck/binder entry's cached fields don't include it.
  */
 data class ZoomCard(
     val imageUrl: String?,
@@ -129,7 +131,8 @@ data class ZoomCard(
     val onSelectPrinting: ((ScryfallCard) -> Unit)? = null,
     val onViewDetails: (() -> Unit)? = null,
     val sources: List<CardSource> = emptyList(),
-    val backImageUrl: String? = null
+    val backImageUrl: String? = null,
+    val tags: List<String> = emptyList()
 )
 
 /**
@@ -217,6 +220,10 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                             onPreview = { previewed = it },
                             onConfirm = { chosen -> onSelectPrinting(chosen); previewed = null }
                         )
+                    }
+                    // Previewing an alternate printing doesn't change tags — same card, different art.
+                    if (card.tags.isNotEmpty()) {
+                        CardTagsRow(card.tags, modifier = Modifier.background(Surface).padding(horizontal = 24.dp, vertical = 8.dp))
                     }
                     // While a printing is previewed, show its own price instead of the original's.
                     val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd

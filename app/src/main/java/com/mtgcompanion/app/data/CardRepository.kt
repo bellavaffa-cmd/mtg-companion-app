@@ -82,4 +82,39 @@ class CardRepository {
         val rulings = api.getRulings(card.id).data
         return card to rulings
     }
+
+    /**
+     * A rough "similar cards" list: same primary type, same colors, and (for non-lands) a mana
+     * value within 1 of this card's — Scryfall has no native similarity search, so this is a
+     * heuristic query built from the card's own attributes, sorted by EDHREC popularity so
+     * well-known cards surface first. Excludes every printing of this card itself. Empty for
+     * cards whose type doesn't map to one of [ScryfallCard.PRIMARY_TYPES] (rare, e.g. "Kindred").
+     */
+    suspend fun findSimilar(card: ScryfallCard, limit: Int = 12): List<ScryfallCard> {
+        val query = buildSimilarQuery(card) ?: return emptyList()
+        val excludeId = card.oracleId ?: card.id
+        return search(query, order = "edhrec").cards
+            .filter { (it.oracleId ?: it.id) != excludeId }
+            .take(limit)
+    }
+
+    private fun buildSimilarQuery(card: ScryfallCard): String? {
+        val type = card.primaryType
+        if (type == "Other") return null
+        val parts = mutableListOf("t:$type")
+        if (type == "Land") {
+            // Lands don't have a meaningful mana value to compare — match by what they produce.
+            card.producedMana?.takeIf { it.isNotEmpty() }?.let { colors ->
+                parts += "produces:" + colors.joinToString("") { it.lowercase() }
+            }
+        } else {
+            val colorQuery = if (card.colors.isNullOrEmpty()) "c" else card.colors.joinToString("") { it.lowercase() }
+            parts += "c:$colorQuery"
+            card.cmc?.let { mv ->
+                parts += "mv>=${(mv - 1).coerceAtLeast(0.0).toInt()}"
+                parts += "mv<=${(mv + 1).toInt()}"
+            }
+        }
+        return parts.joinToString(" ")
+    }
 }

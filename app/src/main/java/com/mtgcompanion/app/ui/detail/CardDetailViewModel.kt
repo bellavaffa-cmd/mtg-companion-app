@@ -42,6 +42,9 @@ data class CardDetailUiState(
     val edhrecLoading: Boolean = false,
     val cardEdhrecLists: List<EdhrecCardList>? = null,
     val cardEdhrecLoading: Boolean = false,
+    /** Same type + colors + a nearby mana value — a rough "similar cards" list, not synergy-based. */
+    val similarCards: List<ScryfallCard> = emptyList(),
+    val similarLoading: Boolean = false,
     /** When the card can be a commander: show its commander-page recs (true) or its card-page recs (false). */
     val viewAsCommander: Boolean = true,
     /** Suggested cards resolved on Scryfall, keyed by lowercase name (and front face), for prices. */
@@ -130,6 +133,7 @@ class CardDetailViewModel(
                 loadCombos()
                 loadCardEdhrec()
                 loadPrints()
+                loadSimilar(card)
                 if (card.canBeCommander) loadEdhrec()
                 card.tcgplayerId?.let { loadTcgPrice(it) }
             } catch (e: Exception) {
@@ -149,6 +153,18 @@ class CardDetailViewModel(
                     )
                 }
             }
+        }
+    }
+
+    private fun loadSimilar(card: ScryfallCard) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(similarLoading = true)
+            val similar = try {
+                cardRepository.findSimilar(card)
+            } catch (e: Exception) {
+                emptyList()
+            }
+            _uiState.value = _uiState.value.copy(similarLoading = false, similarCards = similar)
         }
     }
 
