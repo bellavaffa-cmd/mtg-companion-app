@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionRepository
+import com.mtgcompanion.app.data.ComboRepository
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
@@ -13,6 +14,7 @@ import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
@@ -48,6 +50,18 @@ sealed interface SearchUiState {
     /** Offline and no card database has been downloaded yet. */
     data object OfflineNoDatabase : SearchUiState
 }
+
+/** Cards (the form + results above) or Combos (a Commander Spellbook combo search below). */
+enum class SearchMode { CARDS, COMBOS }
+
+sealed interface ComboSearchState {
+    data object Idle : ComboSearchState
+    data object Loading : ComboSearchState
+    data class Loaded(val combos: List<Variant>) : ComboSearchState
+    data class Error(val message: String) : ComboSearchState
+}
+
+private data class ComboQueryInput(val card: String, val result: String, val colors: Set<Char>, val mode: SearchMode)
 
 /** The field results are ordered by. [order] maps straight to Scryfall's `order` query param. */
 enum class SortOption(val label: String, val order: String?) {
@@ -145,8 +159,24 @@ class SearchViewModel(
     private val settingsRepository: SettingsRepository,
     private val collectionRepository: CollectionRepository,
     private val deckRepository: DeckRepository,
-    private val repository: CardRepository = CardRepository()
+    private val repository: CardRepository = CardRepository(),
+    private val comboRepository: ComboRepository = ComboRepository()
 ) : ViewModel() {
+
+    private val _mode = MutableStateFlow(SearchMode.CARDS)
+    val mode: StateFlow<SearchMode> = _mode.asStateFlow()
+
+    private val _comboCardQuery = MutableStateFlow("")
+    val comboCardQuery: StateFlow<String> = _comboCardQuery.asStateFlow()
+
+    private val _comboResultQuery = MutableStateFlow("")
+    val comboResultQuery: StateFlow<String> = _comboResultQuery.asStateFlow()
+
+    private val _comboColors = MutableStateFlow<Set<Char>>(emptySet())
+    val comboColors: StateFlow<Set<Char>> = _comboColors.asStateFlow()
+
+    private val _combos = MutableStateFlow<ComboSearchState>(ComboSearchState.Idle)
+    val combos: StateFlow<ComboSearchState> = _combos.asStateFlow()
 
     /** List or grid, as set in Settings > Card Display. */
     val viewMode: StateFlow<CardViewMode> = settingsRepository.searchViewMode
@@ -206,10 +236,57 @@ class SearchViewModel(
                 _suggestions.value = if (q.isBlank()) emptyList() else repository.autocomplete(q.trim())
             }
         }
+        // Search combos as the user fills in any of the 3 filters (only while on the Combos tab).
+        viewModelScope.launch {
+            combine(_comboCardQuery, _comboResultQuery, _comboColors, _mode) { card, result, colors, m ->
+                ComboQueryInput(card.trim(), result.trim(), colors, m)
+            }
+                .debounce(350)
+                .distinctUntilChanged()
+                .collectLatest { input ->
+                    when {
+                        input.mode != SearchMode.COMBOS -> Unit
+                        input.card.isBlank() && input.result.isBlank() && input.colors.isEmpty() ->
+                            _combos.value = ComboSearchState.Idle
+                        else -> runComboSearch(input)
+                    }
+                }
+        }
     }
 
     fun onQueryChange(newQuery: String) {
         _query.value = newQuery
+    }
+
+    fun setMode(newMode: SearchMode) {
+        _mode.value = newMode
+    }
+
+    fun onComboCardQueryChange(newQuery: String) {
+        _comboCardQuery.value = newQuery
+    }
+
+    fun onComboResultQueryChange(newQuery: String) {
+        _comboResultQuery.value = newQuery
+    }
+
+    fun toggleComboColor(color: Char) {
+        _comboColors.value = _comboColors.value.let { if (color in it) it - color else it + color }
+    }
+
+    private suspend fun runComboSearch(input: ComboQueryInput) {
+        _combos.value = ComboSearchState.Loading
+        val parts = mutableListOf<String>()
+        if (input.card.isNotBlank()) parts += "card:\"${input.card}\""
+        if (input.result.isNotBlank()) parts += "result:\"${input.result}\""
+        if (input.colors.isNotEmpty()) parts += "ci<=${input.colors.sorted().joinToString("")}"
+        _combos.value = try {
+            ComboSearchState.Loaded(comboRepository.search(parts.joinToString(" ")))
+        } catch (e: Exception) {
+            ComboSearchState.Error(
+                if (isOffline(e)) "You're offline — combo search needs an internet connection." else "Search failed."
+            )
+        }
     }
 
     fun onFiltersChange(filters: SearchFilters) {

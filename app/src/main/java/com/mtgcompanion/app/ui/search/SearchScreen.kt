@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,10 +56,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.network.spellbook.Variant
+import com.mtgcompanion.app.ui.common.ComboDetailDialog
+import com.mtgcompanion.app.ui.common.ComboSummaryRow
 import com.mtgcompanion.app.ui.common.ManaSymbol
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -80,6 +87,7 @@ fun SearchScreen(
     onCardClick: (ScryfallCard) -> Unit,
     onOpenResults: () -> Unit
 ) {
+    val mode by viewModel.mode.collectAsState()
     val query by viewModel.query.collectAsState()
     val filters by viewModel.filters.collectAsState()
     val sortBy by viewModel.sortBy.collectAsState()
@@ -99,8 +107,10 @@ fun SearchScreen(
                         )
                     },
                     actions = {
-                        TextButton(onClick = { viewModel.onFiltersChange(SearchFilters()) }) {
-                            Text("Clear all", color = TextMuted)
+                        if (mode == SearchMode.CARDS) {
+                            TextButton(onClick = { viewModel.onFiltersChange(SearchFilters()) }) {
+                                Text("Clear all", color = TextMuted)
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
@@ -109,22 +119,24 @@ fun SearchScreen(
             }
         },
         bottomBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Bg)
-                    .border(BorderStroke(1.dp, BorderColor))
-                    .padding(16.dp)
-            ) {
-                Button(
-                    onClick = { viewModel.search(); onOpenResults() },
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
-                    modifier = Modifier.fillMaxWidth()
+            if (mode == SearchMode.CARDS) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Bg)
+                        .border(BorderStroke(1.dp, BorderColor))
+                        .padding(16.dp)
                 ) {
-                    Icon(Icons.Filled.Search, contentDescription = null, tint = Bg, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("SEARCH", style = MaterialTheme.typography.labelLarge, color = Bg)
+                    Button(
+                        onClick = { viewModel.search(); onOpenResults() },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.Search, contentDescription = null, tint = Bg, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("SEARCH", style = MaterialTheme.typography.labelLarge, color = Bg)
+                    }
                 }
             }
         }
@@ -134,113 +146,256 @@ fun SearchScreen(
                 .fillMaxSize()
                 .background(Bg)
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .let { if (mode == SearchMode.CARDS) it.verticalScroll(rememberScrollState()) else it }
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = viewModel::onQueryChange,
-                        label = { Text("Search cards", color = GoldDim) },
-                        placeholder = { Text("Try \"is:commander c:g\"", color = TextDim) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Gold,
-                            unfocusedBorderColor = BorderColor,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            cursorColor = Gold,
-                            focusedContainerColor = Surface,
-                            unfocusedContainerColor = Surface
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = { viewModel.randomCard(onCardClick) }) {
-                        Icon(Icons.Filled.Shuffle, contentDescription = "Random card", tint = TextMuted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModeChip("Cards", mode == SearchMode.CARDS) { viewModel.setMode(SearchMode.CARDS) }
+                ModeChip("Combos", mode == SearchMode.COMBOS) { viewModel.setMode(SearchMode.COMBOS) }
+            }
+
+            if (mode == SearchMode.COMBOS) {
+                val comboCardQuery by viewModel.comboCardQuery.collectAsState()
+                val comboResultQuery by viewModel.comboResultQuery.collectAsState()
+                val comboColors by viewModel.comboColors.collectAsState()
+                val combos by viewModel.combos.collectAsState()
+                ComboSearchBody(
+                    cardQuery = comboCardQuery,
+                    resultQuery = comboResultQuery,
+                    colors = comboColors,
+                    state = combos,
+                    onCardQueryChange = viewModel::onComboCardQueryChange,
+                    onResultQueryChange = viewModel::onComboResultQueryChange,
+                    onToggleColor = viewModel::toggleComboColor
+                )
+            } else {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = viewModel::onQueryChange,
+                            label = { Text("Search cards", color = GoldDim) },
+                            placeholder = { Text("Try \"is:commander c:g\"", color = TextDim) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Gold,
+                                unfocusedBorderColor = BorderColor,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                cursorColor = Gold,
+                                focusedContainerColor = Surface,
+                                unfocusedContainerColor = Surface
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { viewModel.randomCard(onCardClick) }) {
+                            Icon(Icons.Filled.Shuffle, contentDescription = "Random card", tint = TextMuted)
+                        }
+                    }
+                    if (suggestions.isNotEmpty()) {
+                        SuggestionsDropdown(
+                            suggestions,
+                            onPick = { name -> viewModel.pickSuggestion(name); onOpenResults() }
+                        )
                     }
                 }
-                if (suggestions.isNotEmpty()) {
-                    SuggestionsDropdown(
-                        suggestions,
-                        onPick = { name -> viewModel.pickSuggestion(name); onOpenResults() }
+
+                SortSection(
+                    sortBy = sortBy,
+                    sortDirection = sortDirection,
+                    onSortChange = viewModel::onSortChange,
+                    onSortDirectionChange = viewModel::onSortDirectionChange
+                )
+
+                FilterField("Type line", filters.typeLine, "e.g. legendary creature") { viewModel.onFiltersChange(filters.copy(typeLine = it)) }
+                FilterField("Oracle text", filters.oracle, "e.g. draw a card") { viewModel.onFiltersChange(filters.copy(oracle = it)) }
+                FilterField("Sets", filters.sets, "set codes, e.g. MH3, LTR") { viewModel.onFiltersChange(filters.copy(sets = it)) }
+
+                Column {
+                    FilterLabel("Colors")
+                    ManaColorPicker(
+                        selected = filters.colors,
+                        onToggle = { color -> viewModel.onFiltersChange(filters.copy(colors = filters.colors.toggle(color))) }
                     )
                 }
-            }
 
-            SortSection(
-                sortBy = sortBy,
-                sortDirection = sortDirection,
-                onSortChange = viewModel::onSortChange,
-                onSortDirectionChange = viewModel::onSortDirectionChange
-            )
-
-            FilterField("Type line", filters.typeLine, "e.g. legendary creature") { viewModel.onFiltersChange(filters.copy(typeLine = it)) }
-            FilterField("Oracle text", filters.oracle, "e.g. draw a card") { viewModel.onFiltersChange(filters.copy(oracle = it)) }
-            FilterField("Sets", filters.sets, "set codes, e.g. MH3, LTR") { viewModel.onFiltersChange(filters.copy(sets = it)) }
-
-            Column {
-                FilterLabel("Colors")
-                ManaColorPicker(
-                    selected = filters.colors,
-                    onToggle = { color -> viewModel.onFiltersChange(filters.copy(colors = filters.colors.toggle(color))) }
-                )
-            }
-
-            Column {
-                FilterLabel("Commander (color identity)")
-                ManaColorPicker(
-                    selected = filters.colorIdentity,
-                    onToggle = { color -> viewModel.onFiltersChange(filters.copy(colorIdentity = filters.colorIdentity.toggle(color))) }
-                )
-            }
-
-            RarityDropdown(
-                selected = filters.rarities,
-                onToggle = { viewModel.onFiltersChange(filters.copy(rarities = filters.rarities.toggle(it))) }
-            )
-
-            Column {
-                FilterLabel("Price (USD)")
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    NumberField("Min", filters.priceMin, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(priceMin = it)) }
-                    NumberField("Max", filters.priceMax, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(priceMax = it)) }
-                }
-            }
-
-            Column {
-                FilterLabel("Power")
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    NumberField("Min", filters.powerMin, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(powerMin = it)) }
-                    NumberField("Max", filters.powerMax, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(powerMax = it)) }
-                }
-            }
-
-            Column {
-                FilterLabel("Toughness")
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    NumberField("Min", filters.toughnessMin, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(toughnessMin = it)) }
-                    NumberField("Max", filters.toughnessMax, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(toughnessMax = it)) }
-                }
-            }
-
-            Column {
-                FilterLabel("Finishes")
-                Row(modifier = Modifier.padding(top = 8.dp)) {
-                    ChipRow(
-                        options = listOf("nonfoil", "foil", "etched"),
-                        selected = filters.finishes,
-                        onToggle = { viewModel.onFiltersChange(filters.copy(finishes = filters.finishes.toggle(it))) }
+                Column {
+                    FilterLabel("Commander (color identity)")
+                    ManaColorPicker(
+                        selected = filters.colorIdentity,
+                        onToggle = { color -> viewModel.onFiltersChange(filters.copy(colorIdentity = filters.colorIdentity.toggle(color))) }
                     )
                 }
+
+                RarityDropdown(
+                    selected = filters.rarities,
+                    onToggle = { viewModel.onFiltersChange(filters.copy(rarities = filters.rarities.toggle(it))) }
+                )
+
+                Column {
+                    FilterLabel("Price (USD)")
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
+                        NumberField("Min", filters.priceMin, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(priceMin = it)) }
+                        NumberField("Max", filters.priceMax, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(priceMax = it)) }
+                    }
+                }
+
+                Column {
+                    FilterLabel("Power")
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
+                        NumberField("Min", filters.powerMin, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(powerMin = it)) }
+                        NumberField("Max", filters.powerMax, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(powerMax = it)) }
+                    }
+                }
+
+                Column {
+                    FilterLabel("Toughness")
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
+                        NumberField("Min", filters.toughnessMin, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(toughnessMin = it)) }
+                        NumberField("Max", filters.toughnessMax, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(toughnessMax = it)) }
+                    }
+                }
+
+                Column {
+                    FilterLabel("Finishes")
+                    Row(modifier = Modifier.padding(top = 8.dp)) {
+                        ChipRow(
+                            options = listOf("nonfoil", "foil", "etched"),
+                            selected = filters.finishes,
+                            onToggle = { viewModel.onFiltersChange(filters.copy(finishes = filters.finishes.toggle(it))) }
+                        )
+                    }
+                }
+
+                FilterField("Artist", filters.artist, "e.g. Rebecca Guay") { viewModel.onFiltersChange(filters.copy(artist = it)) }
+
+                Spacer(Modifier.size(12.dp))
             }
-
-            FilterField("Artist", filters.artist, "e.g. Rebecca Guay") { viewModel.onFiltersChange(filters.copy(artist = it)) }
-
-            Spacer(Modifier.size(12.dp))
         }
+    }
+}
+
+@Composable
+private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = Gold,
+            selectedLabelColor = Bg,
+            labelColor = TextMuted,
+            containerColor = Bg
+        )
+    )
+}
+
+/** Combo search: card name + what it produces are free text (Commander Spellbook does substring
+ * matching on both); Commander (color identity) is a WUBRG multi-select meaning "combos that fit
+ * within these colors" — the same "what can my commander's identity support" filter Card search
+ * already has, applied to the combo's own color identity instead of a card's. The three combine
+ * into one query string in the ViewModel. */
+@Composable
+private fun ComboSearchBody(
+    cardQuery: String,
+    resultQuery: String,
+    colors: Set<Char>,
+    state: ComboSearchState,
+    onCardQueryChange: (String) -> Unit,
+    onResultQueryChange: (String) -> Unit,
+    onToggleColor: (Char) -> Unit
+) {
+    var showCombo by remember { mutableStateOf<Variant?>(null) }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Gold,
+        unfocusedBorderColor = BorderColor,
+        focusedTextColor = TextPrimary,
+        unfocusedTextColor = TextPrimary,
+        cursorColor = Gold,
+        focusedContainerColor = Surface,
+        unfocusedContainerColor = Surface
+    )
+    Column(modifier = Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = cardQuery,
+            onValueChange = onCardQueryChange,
+            placeholder = { Text("Card used in the combo", color = TextDim) },
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted) },
+            shape = RoundedCornerShape(8.dp),
+            colors = fieldColors,
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
+        )
+        OutlinedTextField(
+            value = resultQuery,
+            onValueChange = onResultQueryChange,
+            placeholder = { Text("Produces (e.g. infinite mana, extra turns)", color = TextDim) },
+            singleLine = true,
+            shape = RoundedCornerShape(8.dp),
+            colors = fieldColors,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+        )
+        FilterLabel("Commander (color identity)")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp)) {
+            WUBRG.forEach { color ->
+                val isSelected = color in colors
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (isSelected) Gold.copy(alpha = 0.22f) else Surface)
+                        .border(
+                            BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) Gold else BorderColor),
+                            CircleShape
+                        )
+                        .clickable { onToggleColor(color) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    ManaSymbol(color.toString(), size = 22.dp)
+                }
+            }
+        }
+
+        when (state) {
+            ComboSearchState.Idle -> Text(
+                "Search by card, effect, or commander color identity to find combos.",
+                style = MaterialTheme.typography.bodySmall,
+                fontStyle = FontStyle.Italic,
+                modifier = Modifier.padding(top = 20.dp)
+            )
+            ComboSearchState.Loading -> Box(
+                modifier = Modifier.fillMaxWidth().padding(top = 30.dp),
+                contentAlignment = Alignment.Center
+            ) { CircularProgressIndicator(color = Gold) }
+            is ComboSearchState.Error -> Text(
+                state.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 20.dp)
+            )
+            is ComboSearchState.Loaded -> if (state.combos.isEmpty()) {
+                Text(
+                    "No combos match.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted,
+                    modifier = Modifier.padding(top = 20.dp)
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize().padding(top = 14.dp)
+                ) {
+                    items(state.combos, key = { it.id }) { combo ->
+                        ComboSummaryRow(combo, onClick = { showCombo = combo })
+                    }
+                }
+            }
+        }
+    }
+    showCombo?.let { combo ->
+        ComboDetailDialog(combo = combo, onDismiss = { showCombo = null })
     }
 }
 
