@@ -3,6 +3,7 @@ package com.mtgcompanion.app.ui.common
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -157,6 +159,46 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
                     Text("VIEW ON COMMANDER SPELLBOOK", color = Gold, style = MaterialTheme.typography.labelMedium)
                 }
             }
+        }
+    }
+}
+
+/** A tappable summary card for one combo — small art-crop thumbnails of the cards involved plus
+ * what it produces. Shared by every screen that lists combos (Card Detail, Deck Detail's Analysis
+ * tab, and the Rules screen's Combos search) so they read consistently and tapping always opens
+ * the same [ComboDetailDialog]. */
+@Composable
+fun ComboSummaryRow(combo: Variant, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .elevatedCard(shape = RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            combo.uses.forEach { usage ->
+                AsyncImage(
+                    model = usage.card.imageUriFrontArtCrop,
+                    contentDescription = usage.card.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(8.dp))
+                )
+            }
+        }
+        Text(
+            combo.uses.joinToString(" + ") { it.card.name },
+            style = MaterialTheme.typography.bodyMedium,
+            color = GoldLight,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+        if (combo.produces.isNotEmpty()) {
+            Text(
+                "Produces: " + combo.produces.joinToString(", ") { it.feature.name },
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 }

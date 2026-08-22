@@ -26,4 +26,11 @@ class ComboRepository {
             emptyList()
         }
     }
+
+    /** Free-form combo search against Commander Spellbook's own query language (e.g.
+     * `card:"Sol Ring" result:"mana" ci<=WU`) — used by the Rules screen's Combos tab. */
+    suspend fun search(query: String, limit: Int = 30): List<Variant> {
+        if (query.isBlank()) return emptyList()
+        return api.findCombosForCard(query, limit).results
+    }
 }

@@ -110,6 +110,7 @@ import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
+import com.mtgcompanion.app.ui.common.ComboSummaryRow
 import com.mtgcompanion.app.ui.common.GameModeDropdown
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
@@ -1349,7 +1350,7 @@ private fun AnalysisTab(
         } else {
             items(analysis.combos.take(10), key = { it.id }) { combo ->
                 var showCombo by remember { mutableStateOf(false) }
-                ComboRow(combo, onClick = { showCombo = true })
+                ComboSummaryRow(combo, onClick = { showCombo = true })
                 if (showCombo) {
                     ComboDetailDialog(combo = combo, onDismiss = { showCombo = false })
                 }
@@ -1457,41 +1458,6 @@ private fun StatBar(label: String, count: Int, max: Int) {
     }
 }
 
-@Composable
-private fun ComboRow(combo: Variant, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .elevatedCard(shape = RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(12.dp)
-    ) {
-        // Commander Spellbook hands us each card's real Scryfall art directly, so a quick glance
-        // at the combo shows the actual cards instead of just their names.
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            combo.uses.forEach { usage ->
-                AsyncImage(
-                    model = usage.card.imageUriFrontArtCrop,
-                    contentDescription = usage.card.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(8.dp))
-                )
-            }
-        }
-        Text(
-            combo.uses.joinToString(" + ") { it.card.name },
-            style = MaterialTheme.typography.bodyMedium,
-            color = GoldLight,
-            modifier = Modifier.padding(top = 8.dp)
-        )
-        Text(
-            "Produces: " + combo.produces.joinToString(", ") { it.feature.name },
-            style = MaterialTheme.typography.bodySmall,
-            color = TextMuted,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-    }
-}
 
 @Composable
 private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit) {

@@ -74,6 +74,7 @@ import com.mtgcompanion.app.ui.common.CardTagsRow
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
+import com.mtgcompanion.app.ui.common.ComboSummaryRow
 import com.mtgcompanion.app.ui.common.ManaCost
 import com.mtgcompanion.app.ui.common.InlineManaText
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -749,28 +750,12 @@ private fun CombosSection(state: CardDetailUiState) {
         else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             state.combos.take(5).forEach { variant ->
                 var showCombo by remember { mutableStateOf(false) }
-                ComboRow(variant, onClick = { showCombo = true })
+                ComboSummaryRow(variant, onClick = { showCombo = true })
                 if (showCombo) {
                     ComboDetailDialog(combo = variant, onDismiss = { showCombo = false })
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ComboRow(variant: Variant, onClick: () -> Unit) {
-    GoldPanel(modifier = Modifier.clickable(onClick = onClick)) {
-        Text(
-            variant.uses.joinToString(" + ") { it.card.name },
-            style = MaterialTheme.typography.bodyMedium,
-            color = GoldLight
-        )
-        Text(
-            "Produces: " + variant.produces.joinToString(", ") { it.feature.name },
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 6.dp)
-        )
     }
 }
 

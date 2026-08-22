@@ -3,6 +3,7 @@ package com.mtgcompanion.app.ui.rules
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -35,6 +37,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +50,11 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.rules.Keyword
 import com.mtgcompanion.app.network.scryfall.ScryfallRuling
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.network.spellbook.Variant
+import com.mtgcompanion.app.ui.common.ComboDetailDialog
+import com.mtgcompanion.app.ui.common.ComboSummaryRow
+import com.mtgcompanion.app.ui.common.ManaSymbol
+import com.mtgcompanion.app.ui.search.WUBRG
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -76,43 +86,60 @@ fun RulesScreen(viewModel: RulesViewModel) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModeChip("Keywords", mode == RulesMode.KEYWORDS) { viewModel.setMode(RulesMode.KEYWORDS) }
                 ModeChip("Card rulings", mode == RulesMode.RULINGS) { viewModel.setMode(RulesMode.RULINGS) }
+                ModeChip("Combos", mode == RulesMode.COMBOS) { viewModel.setMode(RulesMode.COMBOS) }
             }
 
-            OutlinedTextField(
-                value = query,
-                onValueChange = viewModel::onQueryChange,
-                placeholder = {
-                    Text(
-                        if (mode == RulesMode.KEYWORDS) "Search keywords (e.g. trample)" else "Card name for rulings",
-                        color = TextDim
-                    )
-                },
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onQueryChange("") }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Clear", tint = TextMuted)
-                        }
-                    }
-                },
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Gold,
-                    unfocusedBorderColor = BorderColor,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary,
-                    cursorColor = Gold,
-                    focusedContainerColor = Surface,
-                    unfocusedContainerColor = Surface
-                ),
-                modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
-            )
-
-            if (mode == RulesMode.KEYWORDS) {
-                KeywordsList(keywords)
+            if (mode == RulesMode.COMBOS) {
+                val comboCardQuery by viewModel.comboCardQuery.collectAsState()
+                val comboResultQuery by viewModel.comboResultQuery.collectAsState()
+                val comboColors by viewModel.comboColors.collectAsState()
+                val combos by viewModel.combos.collectAsState()
+                ComboSearchBody(
+                    cardQuery = comboCardQuery,
+                    resultQuery = comboResultQuery,
+                    colors = comboColors,
+                    state = combos,
+                    onCardQueryChange = viewModel::onComboCardQueryChange,
+                    onResultQueryChange = viewModel::onComboResultQueryChange,
+                    onToggleColor = viewModel::toggleComboColor
+                )
             } else {
-                RulingsBody(rulings)
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = viewModel::onQueryChange,
+                    placeholder = {
+                        Text(
+                            if (mode == RulesMode.KEYWORDS) "Search keywords (e.g. trample)" else "Card name for rulings",
+                            color = TextDim
+                        )
+                    },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.onQueryChange("") }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Clear", tint = TextMuted)
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Gold,
+                        focusedContainerColor = Surface,
+                        unfocusedContainerColor = Surface
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
+                )
+
+                if (mode == RulesMode.KEYWORDS) {
+                    KeywordsList(keywords)
+                } else {
+                    RulingsBody(rulings)
+                }
             }
         }
     }
@@ -132,6 +159,112 @@ private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
             containerColor = Bg
         )
     )
+}
+
+/** Combo search: card name + what it produces are free text (Commander Spellbook does substring
+ * matching on both), color identity is a WUBRG multi-select meaning "at most these colors" — the
+ * three combine into one query string in the ViewModel. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ComboSearchBody(
+    cardQuery: String,
+    resultQuery: String,
+    colors: Set<Char>,
+    state: ComboSearchState,
+    onCardQueryChange: (String) -> Unit,
+    onResultQueryChange: (String) -> Unit,
+    onToggleColor: (Char) -> Unit
+) {
+    var showCombo by remember { mutableStateOf<Variant?>(null) }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Gold,
+        unfocusedBorderColor = BorderColor,
+        focusedTextColor = TextPrimary,
+        unfocusedTextColor = TextPrimary,
+        cursorColor = Gold,
+        focusedContainerColor = Surface,
+        unfocusedContainerColor = Surface
+    )
+    Column(modifier = Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = cardQuery,
+            onValueChange = onCardQueryChange,
+            placeholder = { Text("Card used in the combo", color = TextDim) },
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted) },
+            shape = RoundedCornerShape(8.dp),
+            colors = fieldColors,
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
+        )
+        OutlinedTextField(
+            value = resultQuery,
+            onValueChange = onResultQueryChange,
+            placeholder = { Text("Produces (e.g. infinite mana, extra turns)", color = TextDim) },
+            singleLine = true,
+            shape = RoundedCornerShape(8.dp),
+            colors = fieldColors,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+        )
+        Text("COLOR IDENTITY", style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = Modifier.padding(top = 14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp)) {
+            WUBRG.forEach { color ->
+                val isSelected = color in colors
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (isSelected) Gold.copy(alpha = 0.22f) else Surface)
+                        .border(
+                            BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) Gold else BorderColor),
+                            CircleShape
+                        )
+                        .clickable { onToggleColor(color) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    ManaSymbol(color.toString(), size = 22.dp)
+                }
+            }
+        }
+
+        when (state) {
+            ComboSearchState.Idle -> Text(
+                "Search by card, effect, or color identity to find combos.",
+                style = MaterialTheme.typography.bodySmall,
+                fontStyle = FontStyle.Italic,
+                modifier = Modifier.padding(top = 20.dp)
+            )
+            ComboSearchState.Loading -> Box(
+                modifier = Modifier.fillMaxWidth().padding(top = 30.dp),
+                contentAlignment = Alignment.Center
+            ) { CircularProgressIndicator(color = Gold) }
+            is ComboSearchState.Error -> Text(
+                state.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 20.dp)
+            )
+            is ComboSearchState.Loaded -> if (state.combos.isEmpty()) {
+                Text(
+                    "No combos match.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted,
+                    modifier = Modifier.padding(top = 20.dp)
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize().padding(top = 14.dp)
+                ) {
+                    items(state.combos, key = { it.id }) { combo ->
+                        ComboSummaryRow(combo, onClick = { showCombo = combo })
+                    }
+                }
+            }
+        }
+    }
+    showCombo?.let { combo ->
+        ComboDetailDialog(combo = combo, onDismiss = { showCombo = null })
+    }
 }
 
 @Composable
