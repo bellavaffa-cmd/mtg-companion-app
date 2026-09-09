@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -13,6 +14,8 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,7 +40,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.AlertDialog
@@ -64,7 +72,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
@@ -85,6 +95,9 @@ import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 import java.util.concurrent.Executors
+
+/** The framing guide's brief "got it" flash color on a successful scan. */
+private val SuccessGreen = Color(0xFF4CAF50)
 
 @Composable
 fun ScanScreen(
@@ -113,6 +126,24 @@ fun ScanScreen(
     var deckPickerCard by remember { mutableStateOf<ScannedCard?>(null) }
     var collectionPickerCard by remember { mutableStateOf<ScannedCard?>(null) }
     var showList by remember { mutableStateOf(false) }
+    var showManualAdd by remember { mutableStateOf(false) }
+
+    // Bound once the camera provider resolves, so the torch button has something to control.
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    var torchOn by remember { mutableStateOf(false) }
+
+    // A brief "got it" flash on the framing guide + a haptic buzz on every successful add,
+    // alongside the existing shutter sound — successToken only changes on a real success (not on
+    // a failed lookup, which also uses state.status), so this can't misfire on those.
+    val haptic = LocalHapticFeedback.current
+    val successFlash = remember { Animatable(0f) }
+    LaunchedEffect(state.successToken) {
+        if (state.successToken > 0) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            successFlash.snapTo(1f)
+            successFlash.animateTo(0f, animationSpec = tween(500))
+        }
+    }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     DisposableEffect(Unit) { onDispose { cameraExecutor.shutdown() } }
@@ -173,7 +204,7 @@ fun ScanScreen(
                             }
                         }
                     cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
+                    camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         CameraSelector.DEFAULT_BACK_CAMERA,
                         preview,
@@ -184,16 +215,37 @@ fun ScanScreen(
             }
         )
 
-        // Framing guide so the user knows to fill the frame with the card title.
+        // Framing guide so the user knows to fill the frame with the card title — briefly
+        // flashes green with a checkmark on a successful add (successFlash, above).
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth(0.8f)
                 .fillMaxHeight(0.55f)
-                .border(BorderStroke(2.dp, Gold.copy(alpha = 0.5f)), RoundedCornerShape(20.dp))
-        )
+                .border(
+                    BorderStroke(
+                        (2 + 3 * successFlash.value).dp,
+                        if (successFlash.value > 0f) {
+                            SuccessGreen.copy(alpha = 0.5f + 0.5f * successFlash.value)
+                        } else {
+                            Gold.copy(alpha = 0.5f)
+                        }
+                    ),
+                    RoundedCornerShape(20.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (successFlash.value > 0f) {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = SuccessGreen.copy(alpha = successFlash.value),
+                    modifier = Modifier.size(64.dp)
+                )
+            }
+        }
 
-        // Top overlay: back + status pill + (debug) test button.
+        // Top overlay: back + torch/capture/manual-add + status pill + (debug) test button.
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -204,6 +256,27 @@ fun ScanScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ScrimIconButton(onClick = onBack, icon = Icons.Filled.ArrowBack, desc = "Back")
                 Box(modifier = Modifier.weight(1f))
+                if (camera?.cameraInfo?.hasFlashUnit() == true) {
+                    ScrimIconButton(
+                        onClick = {
+                            torchOn = !torchOn
+                            camera?.cameraControl?.enableTorch(torchOn)
+                        },
+                        icon = if (torchOn) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
+                        desc = if (torchOn) "Turn off flashlight" else "Turn on flashlight",
+                        tint = if (torchOn) Gold else TextMuted
+                    )
+                }
+                ScrimIconButton(
+                    onClick = { viewModel.captureNow() },
+                    icon = Icons.Filled.PhotoCamera,
+                    desc = "Scan now"
+                )
+                ScrimIconButton(
+                    onClick = { showManualAdd = true },
+                    icon = Icons.Filled.Keyboard,
+                    desc = "Type a card name"
+                )
                 if (BuildConfig.DEBUG) {
                     ScrimIconButton(
                         onClick = {
@@ -300,6 +373,52 @@ fun ScanScreen(
             }
         )
     }
+
+    if (showManualAdd) {
+        ManualAddDialog(
+            onDismiss = { showManualAdd = false },
+            onAdd = { name ->
+                showManualAdd = false
+                viewModel.manualAdd(name)
+            }
+        )
+    }
+}
+
+/** Type-and-add fallback for when the camera keeps missing a card or grabs the wrong one. */
+@Composable
+private fun ManualAddDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = { Text("Type a card name", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                placeholder = { Text("e.g. Sol Ring", color = TextDim) },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Gold,
+                    unfocusedBorderColor = BorderColor,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    cursorColor = Gold
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (name.isNotBlank()) onAdd(name.trim()) },
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("ADD", color = Bg) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+        }
+    )
 }
 
 @Composable
@@ -371,14 +490,19 @@ private fun OverlayBackButton(onBack: () -> Unit) {
 }
 
 @Composable
-private fun ScrimIconButton(onClick: () -> Unit, icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String) {
+private fun ScrimIconButton(
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    desc: String,
+    tint: Color? = null
+) {
     IconButton(
         onClick = onClick,
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .background(Bg.copy(alpha = 0.6f))
     ) {
-        Icon(icon, contentDescription = desc, tint = Gold)
+        Icon(icon, contentDescription = desc, tint = tint ?: Gold)
     }
 }
 

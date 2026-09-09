@@ -29,9 +29,20 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** A scanned card and how many copies were scanned (adjustable before adding to a deck/binder). */
 data class ScannedCard(val card: ScryfallCard, val quantity: Int = 1)
 
+/** Consecutive title-less frames required before concluding a card has actually left the frame
+ * (as opposed to one blurry/glared frame while it's still sitting there). At the analyzer's
+ * throttled rate (roughly one attempt per round trip, not real camera frame rate) this is a
+ * fraction of a second — enough to absorb a flicker without meaningfully delaying recognition of
+ * a genuinely new card. */
+private const val BLANK_FRAMES_TO_RESET = 4
+
 data class ScanUiState(
     val status: String? = null,
-    val scannedCards: List<ScannedCard> = emptyList()
+    val scannedCards: List<ScannedCard> = emptyList(),
+    /** Bumped on every successful add — a one-shot event distinct from [status] (which is also
+     * used for non-success messages like a failed lookup) so the UI can trigger a haptic/visual
+     * flash only on real successes, via a LaunchedEffect keyed on this value. */
+    val successToken: Int = 0
 )
 
 class ScanViewModel(
@@ -54,16 +65,30 @@ class ScanViewModel(
     //                   isn't looked up again and again.
     //  - nameCache:     titles already resolved this session, to skip the network entirely.
     //  - lastAddedCard: the card we most recently added from THIS card sitting in frame — cleared
-    //                   once the frame goes title-less (card removed). OCR isn't pixel-stable
-    //                   frame to frame, so a lingering card can occasionally read as a slightly
-    //                   different string (a stray misread character); comparing new candidates
-    //                   against this via looksLikeSameCard catches that case so the same physical
-    //                   card doesn't silently get re-added (bumping its count) just because the
-    //                   exact OCR string flickered while it never actually left view.
+    //                   once the card is confidently gone (see blankFrameStreak below). OCR isn't
+    //                   pixel-stable frame to frame, so a lingering card can occasionally read as
+    //                   a slightly different string (a stray misread character); comparing new
+    //                   candidates against this via looksLikeSameCard catches that case so the
+    //                   same physical card doesn't silently get re-added (bumping its count) just
+    //                   because the exact OCR string flickered while it never actually left view.
+    //  - blankFrameStreak: consecutive title-less frames. A single blank frame (glare, motion
+    //                   blur, a hand momentarily crossing the lens) does NOT by itself mean the
+    //                   card left — clearing the guards on just one blank frame was the original
+    //                   bug: the very next frame reads the same still-in-view card fresh, passes
+    //                   the stability check again, hits the nameCache, and silently re-adds it,
+    //                   bumping its count with no card ever actually having been swapped. Only a
+    //                   real run of blank frames (BLANK_FRAMES_TO_RESET) is treated as "card gone".
     private var lastCandidate: String? = null
     private var lastLookedUp: String? = null
     private var lastAddedCard: ScryfallCard? = null
+    private var blankFrameStreak = 0
     private val nameCache = HashMap<String, ScryfallCard>()
+
+    // Set by captureNow() (the manual "tap to scan" button): the next successfully OCR'd frame is
+    // accepted immediately, skipping the two-frame stability wait and the same-card-still-in-frame
+    // guard — an explicit user tap is itself the confirmation those guards otherwise stand in for,
+    // and this doubles as the deliberate way to re-scan the same physical card to bump its count.
+    private val forceScanNext = AtomicBoolean(false)
 
     // A camera-shutter click played on each successful scan.
     private val scanSound = MediaActionSound().apply { load(MediaActionSound.SHUTTER_CLICK) }
@@ -95,33 +120,43 @@ class ScanViewModel(
 
     private fun handleRecognizedText(visionText: Text, onProcessed: () -> Unit) {
         val candidate = extractCardName(visionText)
+        val forced = forceScanNext.getAndSet(false)
         if (candidate == null) {
-            // No title in view (e.g. between cards) — reset so the next card reads as fresh.
-            lastCandidate = null
-            lastLookedUp = null
-            lastAddedCard = null
+            // No title in view. Only treat this as "the card actually left" after a real streak
+            // of blank frames — see blankFrameStreak's doc comment above.
+            if (++blankFrameStreak >= BLANK_FRAMES_TO_RESET) {
+                lastCandidate = null
+                lastLookedUp = null
+                lastAddedCard = null
+            }
             busy.set(false)
             onProcessed()
             return
         }
+        blankFrameStreak = 0
 
         // Still the same physical card sitting in frame, even if this frame's OCR came out
-        // slightly different from the exact string we last looked up — don't re-add it.
-        lastAddedCard?.let { last ->
-            if (looksLikeSameCard(candidate, last.name)) {
-                lastCandidate = candidate.lowercase()
-                busy.set(false)
-                onProcessed()
-                return
+        // slightly different from the exact string we last looked up — don't re-add it. A forced
+        // (manual capture) scan skips this: the user tapping the button IS the "yes, really"
+        // confirmation, and re-scanning the same card on purpose is how you bump its count.
+        if (!forced) {
+            lastAddedCard?.let { last ->
+                if (looksLikeSameCard(candidate, last.name)) {
+                    lastCandidate = candidate.lowercase()
+                    busy.set(false)
+                    onProcessed()
+                    return
+                }
             }
         }
 
         val normalized = candidate.lowercase()
         // Require the same title on two consecutive frames before spending a lookup — this
         // rejects blurry mid-motion misreads — and don't re-look-up a title still in frame.
-        val stable = normalized == lastCandidate
+        // A forced scan accepts whatever's in frame right now instead of waiting.
+        val stable = forced || normalized == lastCandidate
         lastCandidate = normalized
-        if (!stable || normalized == lastLookedUp) {
+        if (!stable || (!forced && normalized == lastLookedUp)) {
             busy.set(false)
             onProcessed()
             return
@@ -184,7 +219,7 @@ class ScanViewModel(
 
     private fun addScannedCard(card: ScryfallCard) {
         val existing = _uiState.value.scannedCards.find { it.card.id == card.id }
-        _uiState.value = if (existing != null) {
+        val next = if (existing != null) {
             // Re-scanning a card bumps its copy count instead of duplicating the row.
             _uiState.value.copy(
                 status = "${card.name} ×${existing.quantity + 1}",
@@ -199,7 +234,33 @@ class ScanViewModel(
                 scannedCards = listOf(ScannedCard(card, 1)) + _uiState.value.scannedCards
             )
         }
+        _uiState.value = next.copy(successToken = next.successToken + 1)
         scanSound.play(MediaActionSound.SHUTTER_CLICK)
+    }
+
+    /** The manual "tap to scan" button: force the very next camera frame's OCR result straight
+     * through, bypassing the stability wait and the same-card guard (see [forceScanNext]'s doc). */
+    fun captureNow() {
+        forceScanNext.set(true)
+    }
+
+    /**
+     * Type-and-add fallback for when OCR keeps missing a card (glare, damaged/foil card, sleeve
+     * glare) or grabbed the wrong one — a fuzzy name lookup straight to the scanned list, the same
+     * resolution the camera path falls back to when it can't read an exact printing.
+     */
+    fun manualAdd(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val card = cardRepository.getByFuzzyName(trimmed)
+                addScannedCard(card)
+                lastAddedCard = card
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(status = "No match for \"$trimmed\"")
+            }
+        }
     }
 
     fun incrementScanned(card: ScryfallCard) {
