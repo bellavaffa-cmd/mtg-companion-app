@@ -18,8 +18,17 @@ android {
         minSdk 26
         targetSdk 34
         // versionCode scheme: major*10000 + minor*100 + patch (e.g. 1.8.0 -> 10800). Bump both per release.
-        versionCode 16700
-        versionName '1.67.0'
+        versionCode 16800
+        versionName '1.68.0'
+
+        // The app ships as a single universal APK via GitHub Releases (no Play Store per-ABI app
+        // bundle splitting), so onnxruntime-android's native libs for every ABI would otherwise
+        // all land in one APK. Dropping 32-bit x86 is a safe, free ~38MB cut — no real phone needs
+        // it, and the project's own test emulator (x86_64) is unaffected. arm64-v8a (real phones)
+        // and x86_64 (the test emulator) are both kept; armeabi-v7a (older 32-bit phones) too.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
     }
 
     signingConfigs {
@@ -98,6 +107,11 @@ dependencies {
     implementation 'androidx.camera:camera-view:1.3.4'
 
     implementation 'com.google.mlkit:text-recognition:16.0.1'
+
+    // Art-recognition fallback for the scanner: an ImageNet-pretrained MobileNetV2 (bundled as an
+    // asset, ui/scan) run entirely on-device to embed a photographed card's art and match it
+    // against a downloaded visual-fingerprint index — see data/artrecognition/.
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.29.0'
 
     // Google Sign-In for Drive access; Drive itself is called via REST over the existing OkHttp,
     // avoiding the heavyweight google-api-services-drive client libraries.

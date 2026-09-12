@@ -70,6 +70,7 @@ import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.DriveSyncManager
 import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
 import com.mtgcompanion.app.ui.collection.CollectionDetailViewModel
@@ -143,7 +144,8 @@ fun MtgNavGraph(
     driveSyncManager: DriveSyncManager,
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
-    playerProfileRepository: PlayerProfileRepository
+    playerProfileRepository: PlayerProfileRepository,
+    artIndexRepository: ArtIndexRepository
 ) {
     val navController = rememberNavController()
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
@@ -287,7 +289,7 @@ fun MtgNavGraph(
 
             composable(Routes.SCAN) {
                 val viewModel: ScanViewModel = viewModel(
-                    factory = ScanViewModel.Factory(collectionRepository, deckRepository)
+                    factory = ScanViewModel.Factory(collectionRepository, deckRepository, artIndexRepository)
                 )
                 ScanScreen(
                     viewModel = viewModel,
@@ -329,6 +331,7 @@ fun MtgNavGraph(
                     syncManager = driveSyncManager,
                     updateManager = updateManager,
                     offlineCardRepository = offlineCardRepository,
+                    artIndexRepository = artIndexRepository,
                     settingsRepository = settingsRepository,
                     onBack = { navController.popBackStack() }
                 )

@@ -2,13 +2,17 @@ package com.mtgcompanion.app.ui.scan
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
@@ -44,6 +48,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Remove
@@ -131,6 +136,9 @@ fun ScanScreen(
     // Bound once the camera provider resolves, so the torch button has something to control.
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torchOn by remember { mutableStateOf(false) }
+    // A separate still-capture use case from the continuous analysis stream — "identify by art"
+    // wants one real, full-quality photo, not a YUV analysis frame.
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
 
     // A brief "got it" flash on the framing guide + a haptic buzz on every successful add,
     // alongside the existing shutter sound — successToken only changes on a real success (not on
@@ -203,13 +211,18 @@ fun ScanScreen(
                                 viewModel.onFrame(inputImage, onProcessed = { imageProxy.close() })
                             }
                         }
+                    val capture = ImageCapture.Builder()
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .build()
                     cameraProvider.unbindAll()
                     camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         CameraSelector.DEFAULT_BACK_CAMERA,
                         preview,
-                        analysis
+                        analysis,
+                        capture
                     )
+                    imageCapture = capture
                 }, ContextCompat.getMainExecutor(ctx))
                 previewView
             }
@@ -276,6 +289,27 @@ fun ScanScreen(
                     onClick = { showManualAdd = true },
                     icon = Icons.Filled.Keyboard,
                     desc = "Type a card name"
+                )
+                ScrimIconButton(
+                    onClick = {
+                        imageCapture?.takePicture(
+                            cameraExecutor,
+                            object : ImageCapture.OnImageCapturedCallback() {
+                                override fun onCaptureSuccess(image: ImageProxy) {
+                                    val bitmap = imageProxyToBitmap(image)
+                                    image.close()
+                                    if (bitmap != null) viewModel.matchByArt(bitmap)
+                                }
+
+                                override fun onError(exception: androidx.camera.core.ImageCaptureException) {
+                                    // Swallowed — matchByArt's own "couldn't match" status covers the
+                                    // user-facing failure case; a capture error is rare and transient.
+                                }
+                            }
+                        )
+                    },
+                    icon = Icons.Filled.ImageSearch,
+                    desc = "Identify by art"
                 )
                 if (BuildConfig.DEBUG) {
                     ScrimIconButton(
@@ -475,6 +509,19 @@ private fun CollectionPickerDialog(
             TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
         }
     )
+}
+
+/** ImageCapture's default output format is JPEG — decode straight from the single plane's bytes
+ * and correct for sensor rotation, same as every other capture-to-Bitmap conversion on Android. */
+private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
+    val buffer = image.planes[0].buffer
+    val bytes = ByteArray(buffer.remaining())
+    buffer.get(bytes)
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+    val rotation = image.imageInfo.rotationDegrees
+    if (rotation == 0) return bitmap
+    val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
 }
 
 @Composable

@@ -70,6 +70,7 @@ import com.mtgcompanion.app.data.DriveSyncManager
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.GRID_COLUMNS_RANGE
 import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.update.UpdateManager
 import kotlinx.coroutines.launch
@@ -91,6 +92,7 @@ fun SettingsScreen(
     syncManager: DriveSyncManager,
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
+    artIndexRepository: ArtIndexRepository,
     settingsRepository: SettingsRepository,
     onBack: () -> Unit
 ) {
@@ -129,6 +131,10 @@ fun SettingsScreen(
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
             SettingsCategory("Offline Search") { OfflineSearchSection(offlineCardRepository) }
+
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
+
+            SettingsCategory("Scanner Art Recognition") { ArtRecognitionSection(artIndexRepository) }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
@@ -443,6 +449,52 @@ private fun OfflineSearchSection(offlineCardRepository: OfflineCardRepository) {
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
         ) { DownloadButtonContent(status.downloading, buttonLabel, Bg) }
+    }
+
+    status.message?.let {
+        Text(it, color = Gold, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun ArtRecognitionSection(artIndexRepository: ArtIndexRepository) {
+    val status by artIndexRepository.status.collectAsState()
+
+    Text(
+        "Download a visual-fingerprint database (~60 MB) so the scanner can identify a card by " +
+            "its art when the printed text is hard to read (glare, damage, an unusual frame).",
+        style = MaterialTheme.typography.bodySmall
+    )
+
+    if (status.hasData) {
+        Text("${status.cardCount} cards recognized", style = MaterialTheme.typography.labelMedium, color = GoldLight)
+    }
+
+    val buttonLabel = if (status.hasData) "UPDATE DATA" else "DOWNLOAD DATA"
+    if (status.hasData) {
+        OutlinedButton(
+            onClick = { artIndexRepository.downloadIndex() },
+            enabled = !status.downloading,
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
+        ) { DownloadButtonContent(status.downloading, buttonLabel, Gold) }
+    } else {
+        Button(
+            onClick = { artIndexRepository.downloadIndex() },
+            enabled = !status.downloading,
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+        ) { DownloadButtonContent(status.downloading, buttonLabel, Bg) }
+    }
+
+    if (status.downloading) {
+        LinearProgressIndicator(
+            progress = { status.progress },
+            color = Gold,
+            trackColor = BorderColor,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+        )
     }
 
     status.message?.let {

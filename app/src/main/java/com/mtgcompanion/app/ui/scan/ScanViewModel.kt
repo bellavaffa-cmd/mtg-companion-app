@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.scan
 
+import android.graphics.Bitmap
 import android.media.MediaActionSound
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -16,6 +17,7 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.duplicateWarning
+import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,6 +38,11 @@ data class ScannedCard(val card: ScryfallCard, val quantity: Int = 1)
  * a genuinely new card. */
 private const val BLANK_FRAMES_TO_RESET = 4
 
+/** Minimum (score minus runner-up) an art match needs before it's trusted enough to auto-add —
+ * calibrated against synthetic camera-like distortion (crop/rotation/lighting/JPEG noise) of clean
+ * reference scans, not real photographs yet; a conservative starting point pending real-world use. */
+private const val ART_MATCH_MIN_MARGIN = 4000
+
 data class ScanUiState(
     val status: String? = null,
     val scannedCards: List<ScannedCard> = emptyList(),
@@ -48,7 +55,8 @@ data class ScanUiState(
 class ScanViewModel(
     private val cardRepository: CardRepository = CardRepository(),
     private val collectionRepository: CollectionRepository,
-    private val deckRepository: DeckRepository
+    private val deckRepository: DeckRepository,
+    private val artIndexRepository: ArtIndexRepository
 ) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -263,6 +271,43 @@ class ScanViewModel(
         }
     }
 
+    /**
+     * Identify a card by its art instead of text — the fallback for exactly what OCR struggles
+     * with (glare, damage, an unusual frame) as long as the art itself is still legible. Requires
+     * the art-recognition data to have been downloaded in Settings first.
+     */
+    fun matchByArt(bitmap: Bitmap) {
+        _uiState.value = _uiState.value.copy(status = "Matching by art…")
+        viewModelScope.launch {
+            val match = try {
+                artIndexRepository.match(bitmap)
+            } catch (e: Exception) {
+                null
+            }
+            when {
+                match == null && !artIndexRepository.status.value.hasData ->
+                    _uiState.value = _uiState.value.copy(status = "Download art-recognition data in Settings first.")
+                match == null ->
+                    _uiState.value = _uiState.value.copy(status = "Couldn't match this card by art.")
+                match.margin < ART_MATCH_MIN_MARGIN ->
+                    _uiState.value = _uiState.value.copy(status = "Not confident enough — try again, or type the name.")
+                else -> {
+                    val card = try {
+                        cardRepository.getCardsByIds(listOf(match.card.scryfallId)).firstOrNull()
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (card != null) {
+                        addScannedCard(card)
+                        lastAddedCard = card
+                    } else {
+                        _uiState.value = _uiState.value.copy(status = "Matched \"${match.card.name}\" by art, but couldn't load its data.")
+                    }
+                }
+            }
+        }
+    }
+
     fun incrementScanned(card: ScryfallCard) {
         _uiState.value = _uiState.value.copy(
             scannedCards = _uiState.value.scannedCards.map {
@@ -363,14 +408,16 @@ class ScanViewModel(
 
     class Factory(
         private val collectionRepository: CollectionRepository,
-        private val deckRepository: DeckRepository
+        private val deckRepository: DeckRepository,
+        private val artIndexRepository: ArtIndexRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ScanViewModel(
                 cardRepository = CardRepository(),
                 collectionRepository = collectionRepository,
-                deckRepository = deckRepository
+                deckRepository = deckRepository,
+                artIndexRepository = artIndexRepository
             ) as T
         }
     }

@@ -43,7 +43,8 @@ class MainActivity : ComponentActivity() {
                         driveSyncManager = app.driveSyncManager,
                         updateManager = app.updateManager,
                         offlineCardRepository = app.offlineCardRepository,
-                        playerProfileRepository = app.playerProfileRepository
+                        playerProfileRepository = app.playerProfileRepository,
+                        artIndexRepository = app.artIndexRepository
                     )
                 }
             }
