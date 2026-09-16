@@ -1,5 +1,31 @@
 package com.mtgcompanion.app.ui.detail
 
+import kotlinx.coroutines.launch
+import com.mtgcompanion.app.ui.theme.Surface2
+import com.mtgcompanion.app.ui.theme.OnGold
+import com.mtgcompanion.app.ui.theme.NumberStyle
+import com.mtgcompanion.app.ui.common.sharedArt
+import com.mtgcompanion.app.ui.common.riseIn
+import com.mtgcompanion.app.ui.common.popSpring
+import com.mtgcompanion.app.ui.common.foilShine
+import com.mtgcompanion.app.ui.common.SharedKeys
+import com.mtgcompanion.app.ui.common.PillChip
+import com.mtgcompanion.app.ui.common.CountUpText
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -12,6 +38,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -140,7 +167,7 @@ fun CardDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(state.card?.name ?: "Card", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                title = { Text(state.card?.name ?: "Card", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
@@ -235,7 +262,7 @@ fun CardDetailScreen(
 
                     // Same type + colors + a nearby mana value — not synergy, just "cards like this
                     // one" for browsing alternatives. Distinct from the EDHREC recs above.
-                    fullSpanItem { SectionHeader("Similar Cards") }
+                    fullSpanItem { SectionHeader("Similar cards") }
                     if (state.similarLoading) {
                         fullSpanItem {
                             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -391,7 +418,7 @@ private fun AddDestinationDialog(
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) } }
     )
 }
 
@@ -426,7 +453,7 @@ private fun CollectionPickerDialog(
                 OutlinedTextField(
                     value = newName,
                     onValueChange = { newName = it },
-                    label = { Text("New binder name", color = GoldDim) },
+                    label = { Text("New binder name", color = TextMuted) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Gold,
@@ -443,10 +470,10 @@ private fun CollectionPickerDialog(
             Button(
                 onClick = { if (newName.isNotBlank()) onCreateCollection(newName.trim()) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("CREATE & ADD", color = Bg) }
+            ) { Text("Create & add", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
 }
@@ -530,16 +557,7 @@ private fun SimilarCardTile(card: ScryfallCard, onClick: () -> Unit) {
 
 @Composable
 private fun SectionHeader(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)) {
-        Text(text.uppercase(), style = MaterialTheme.typography.titleMedium)
-        Box(
-            modifier = Modifier
-                .padding(start = 12.dp)
-                .weight(1f)
-                .height(1.dp)
-                .background(BorderColor)
-        )
-    }
+    Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 14.dp, bottom = 2.dp, start = 2.dp))
 }
 
 @Composable
@@ -547,9 +565,8 @@ private fun GoldPanel(modifier: Modifier = Modifier, content: @Composable Column
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(22.dp))
             .background(Surface)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
             .padding(16.dp),
         content = content
     )
@@ -579,10 +596,10 @@ private fun PrintsSection(prints: List<ScryfallCard>, selectedId: String, onSele
                         modifier = Modifier
                             .width(90.dp)
                             .aspectRatio(0.72f)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(6.dp))
                             .border(
-                                BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Gold else BorderColor),
-                                RoundedCornerShape(14.dp)
+                                BorderStroke(if (selected) 2.dp else 0.dp, if (selected) Gold else Color.Transparent),
+                                RoundedCornerShape(6.dp)
                             )
                     )
                     Spacer(Modifier.height(4.dp))
@@ -601,54 +618,137 @@ private fun PrintsSection(prints: List<ScryfallCard>, selectedId: String, onSele
 
 @Composable
 private fun CardHeader(card: ScryfallCard) {
-    // Which face's art/name/mana cost/type line to show — resets if the printing changes underneat.
+    // Which face's art/name/mana cost/type line to show — resets if the printing changes underneath.
     var showBack by remember(card.id) { mutableStateOf(false) }
     val backFace = card.cardFaces?.getOrNull(1)
     val flipped = showBack && card.backImageUrl != null
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Box(modifier = Modifier.weight(1f)) {
-            AsyncImage(
-                model = if (flipped) card.backImageUrl else card.displayImageUrl,
-                contentDescription = card.name,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Box(contentAlignment = Alignment.TopEnd) {
+            TiltingCard(
+                imageUrl = if (flipped) card.backImageUrl else card.displayImageUrl,
+                name = card.name,
+                modifier = Modifier.width(250.dp).padding(top = 8.dp, bottom = 6.dp)
             )
             if (card.backImageUrl != null) {
                 IconButton(
                     onClick = { showBack = !showBack },
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
+                        .padding(top = 18.dp, end = 10.dp)
                         .clip(CircleShape)
                         .background(Color.Black.copy(alpha = 0.55f))
                 ) {
-                    Icon(Icons.Filled.Autorenew, contentDescription = "Flip card", tint = Gold)
+                    Icon(Icons.Filled.Autorenew, contentDescription = "Flip card", tint = Color.White)
                 }
             }
         }
-        Column(modifier = Modifier.weight(1.4f)) {
-            Text(if (flipped) backFace?.name ?: card.name else card.name, style = MaterialTheme.typography.titleLarge)
-            val manaCost = if (flipped) backFace?.manaCost else card.manaCost
-            manaCost?.takeIf { it.isNotBlank() }?.let {
-                ManaCost(it, size = 18.dp, modifier = Modifier.padding(vertical = 6.dp))
+        Text("Drag the card to tilt it", style = MaterialTheme.typography.labelSmall, color = TextDim, modifier = Modifier.padding(bottom = 12.dp))
+        Column(Modifier.fillMaxWidth().riseIn(1), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    ((if (flipped) backFace?.typeLine else card.typeLine) ?: ""),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = TextMuted,
+                    modifier = Modifier.weight(1f)
+                )
+                val manaCost = if (flipped) backFace?.manaCost else card.manaCost
+                manaCost?.takeIf { it.isNotBlank() }?.let { ManaCost(it, size = 20.dp) }
             }
-            Text(
-                ((if (flipped) backFace?.typeLine else card.typeLine) ?: "").uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                color = TextMuted
-            )
+            Text(if (flipped) backFace?.name ?: card.name else card.name, style = MaterialTheme.typography.headlineMedium)
             if (card.tags.isNotEmpty()) {
-                CardTagsRow(card.tags, modifier = Modifier.padding(top = 8.dp))
+                CardTagsRow(card.tags, modifier = Modifier.padding(top = 2.dp))
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp)
-                    .height(1.dp)
-                    .background(Brush.horizontalGradient(listOf(BorderColor, Bg)))
-            )
             // Both faces' text, always — a flip only changes the art/name/mana cost/type line above.
-            InlineManaText(card.displayOracleText ?: "", style = MaterialTheme.typography.bodySmall)
+            if (!card.displayOracleText.isNullOrBlank()) {
+                Box(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(20.dp)).background(Surface).padding(16.dp)) {
+                    InlineManaText(card.displayOracleText ?: "", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                }
+            }
         }
+    }
+}
+
+/**
+ * The card image as a physical object: drag across it and it tilts toward your finger, with a
+ * rainbow foil sheen and a glare spot that follow the tilt. Springs back flat when let go.
+ */
+@Composable
+private fun TiltingCard(imageUrl: String?, name: String, modifier: Modifier = Modifier) {
+    val rotX = remember { Animatable(0f) }
+    val rotY = remember { Animatable(0f) }
+    var glare by remember { mutableStateOf(Offset(0.5f, 0.25f)) }
+    var dragging by remember { mutableStateOf(false) }
+    val holo by animateFloatAsState(if (dragging) 1f else 0f, tween(250), label = "holo")
+    val scope = rememberCoroutineScope()
+    val shape = RoundedCornerShape(13.dp)
+    fun settle() {
+        dragging = false
+        scope.launch { rotX.animateTo(0f, popSpring()) }
+        scope.launch { rotY.animateTo(0f, popSpring()) }
+    }
+    Box(
+        modifier
+            .aspectRatio(0.716f)
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { dragging = true },
+                    onDragEnd = { settle() },
+                    onDragCancel = { settle() },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val px = (change.position.x / size.width).coerceIn(0f, 1f)
+                        val py = (change.position.y / size.height).coerceIn(0f, 1f)
+                        glare = Offset(px, py)
+                        scope.launch { rotY.snapTo((px - 0.5f) * 28f) }
+                        scope.launch { rotX.snapTo((0.5f - py) * 24f) }
+                    }
+                )
+            }
+            .graphicsLayer {
+                rotationX = rotX.value
+                rotationY = rotY.value
+                cameraDistance = 14f * density
+            }
+            .shadow(22.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
+            .clip(shape)
+    ) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize().sharedArt(SharedKeys.cardArt(name), shape).foilShine()
+        )
+        Box(
+            Modifier.matchParentSize().drawWithContent {
+                drawContent()
+                if (holo > 0f) {
+                    val w = size.width
+                    val h = size.height
+                    val shift = glare.x * w
+                    drawRect(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color(0xFFFF5ABE).copy(alpha = 0.28f * holo),
+                                Color(0xFF5AD2FF).copy(alpha = 0.32f * holo),
+                                Color(0xFFFFEB78).copy(alpha = 0.26f * holo),
+                                Color.Transparent
+                            ),
+                            start = Offset(shift - w, 0f),
+                            end = Offset(shift + w * 0.4f, h)
+                        ),
+                        blendMode = BlendMode.Screen
+                    )
+                    drawRect(
+                        Brush.radialGradient(
+                            listOf(Color.White.copy(alpha = 0.45f * holo), Color.Transparent),
+                            center = Offset(glare.x * w, glare.y * h),
+                            radius = w * 0.55f
+                        ),
+                        blendMode = BlendMode.Screen
+                    )
+                }
+            }
+        )
     }
 }
 
@@ -657,27 +757,26 @@ private fun CollectionAndDeckActions(
     onAddToCollection: () -> Unit,
     onAddToDeck: () -> Unit
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
-    Box {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
         Button(
-            onClick = { menuOpen = true },
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("ADD TO…", style = MaterialTheme.typography.labelLarge, color = Bg) }
-        DropdownMenu(
-            expanded = menuOpen,
-            onDismissRequest = { menuOpen = false },
-            modifier = Modifier.background(Surface)
+            onClick = onAddToDeck,
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = OnGold),
+            contentPadding = PaddingValues(vertical = 14.dp),
+            modifier = Modifier.weight(1.3f)
         ) {
-            DropdownMenuItem(
-                text = { Text("Binder", style = MaterialTheme.typography.bodyMedium, color = TextPrimary) },
-                onClick = { menuOpen = false; onAddToCollection() }
-            )
-            DropdownMenuItem(
-                text = { Text("Deck", style = MaterialTheme.typography.bodyMedium, color = TextPrimary) },
-                onClick = { menuOpen = false; onAddToDeck() }
-            )
+            Icon(Icons.Filled.Style, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Add to deck", style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp))
+        }
+        Button(
+            onClick = onAddToCollection,
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = TextPrimary),
+            contentPadding = PaddingValues(vertical = 14.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("Add to binder", style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp))
         }
     }
 }
@@ -686,20 +785,10 @@ private fun CollectionAndDeckActions(
 @Composable
 private fun CommanderViewToggle(asCommander: Boolean, onChange: (Boolean) -> Unit) {
     Column {
-        SectionHeader("EDHREC Recommendations")
+        SectionHeader("EDHREC recommendations")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = asCommander,
-                onClick = { onChange(true) },
-                label = { Text("As Commander") },
-                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Gold, selectedLabelColor = Bg)
-            )
-            FilterChip(
-                selected = !asCommander,
-                onClick = { onChange(false) },
-                label = { Text("As a Card") },
-                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Gold, selectedLabelColor = Bg)
-            )
+            PillChip("As commander", asCommander, onClick = { onChange(true) })
+            PillChip("As a card", !asCommander, onClick = { onChange(false) })
         }
     }
 }
@@ -708,14 +797,14 @@ private fun CommanderViewToggle(asCommander: Boolean, onChange: (Boolean) -> Uni
 private fun PricesSection(state: CardDetailUiState, onOpenTcgplayer: () -> Unit) {
     GoldPanel {
         val prices = state.card?.prices
-        Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-            prices?.usd?.let { PriceTile("USD", "$$it") }
-            prices?.usdFoil?.let { PriceTile("USD Foil", "$$it") }
-            prices?.eur?.let { PriceTile("EUR", "€$it") }
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            prices?.usd?.toDoubleOrNull()?.let { PriceTile("USD", it, "$") }
+            prices?.usdFoil?.toDoubleOrNull()?.let { PriceTile("USD foil", it, "$") }
+            prices?.eur?.toDoubleOrNull()?.let { PriceTile("EUR", it, "€") }
         }
         if (state.tcgPricesConfigured && state.tcgPrices != null) {
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp).height(1.dp).background(BorderColor))
-            Text("TCGPLAYER LIVE MARKET", style = MaterialTheme.typography.labelMedium, color = TextDim)
+            Text("TCGplayer market", style = MaterialTheme.typography.labelMedium, color = TextDim)
             state.tcgPrices.forEach { result ->
                 Text(
                     "${result.subTypeName ?: "Normal"}: market $${result.marketPrice ?: "-"} " +
@@ -727,20 +816,22 @@ private fun PricesSection(state: CardDetailUiState, onOpenTcgplayer: () -> Unit)
         }
         Button(
             onClick = onOpenTcgplayer,
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = TextPrimary),
             modifier = Modifier.padding(top = 14.dp)
         ) {
-            Text("VIEW ON TCGPLAYER", style = MaterialTheme.typography.labelLarge, color = Bg)
+            Text("View on TCGplayer", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.width(6.dp))
+            Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
         }
     }
 }
 
 @Composable
-private fun PriceTile(label: String, value: String) {
+private fun PriceTile(label: String, value: Double, symbol: String) {
     Column {
-        Text(label.uppercase(), style = MaterialTheme.typography.labelMedium, color = TextDim)
-        Text(value, style = MaterialTheme.typography.bodyLarge, color = GoldLight)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = TextMuted)
+        CountUpText(value, NumberStyle(34), TextPrimary, format = { symbol + "%,.2f".format(it) })
     }
 }
 
@@ -798,7 +889,7 @@ private fun DeckPickerDialog(
                                 .padding(vertical = 10.dp)
                         )
                         TextButton(onClick = { onConsiderDeck(deck.id) }) {
-                            Text("CONSIDER", color = Gold, style = MaterialTheme.typography.labelMedium)
+                            Text("Consider", color = Gold, style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -808,7 +899,7 @@ private fun DeckPickerDialog(
                 OutlinedTextField(
                     value = newDeckName,
                     onValueChange = { newDeckName = it },
-                    label = { Text("New deck name", color = GoldDim) },
+                    label = { Text("New deck name", color = TextMuted) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Gold,
@@ -825,10 +916,10 @@ private fun DeckPickerDialog(
             Button(
                 onClick = { if (newDeckName.isNotBlank()) onCreateDeck(newDeckName.trim()) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("CREATE & ADD", color = Bg) }
+            ) { Text("Create & add", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
 }

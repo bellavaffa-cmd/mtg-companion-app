@@ -120,7 +120,7 @@ fun SearchResultsScreen(
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text("RESULTS", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                title = { Text("Results", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
@@ -161,7 +161,7 @@ fun SearchResultsScreen(
                     EmptyState(
                         icon = Icons.Filled.ErrorOutline,
                         title = state.message,
-                        actionLabel = "RETRY",
+                        actionLabel = "Retry",
                         onAction = { viewModel.search() }
                     )
                 }
@@ -305,7 +305,7 @@ private fun CardResultRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
                 Text(
-                    (card.typeLine ?: "").uppercase(),
+                    (card.typeLine ?: ""),
                     style = MaterialTheme.typography.labelMedium,
                     color = TextMuted,
                     maxLines = 1,

@@ -19,7 +19,7 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 fun ConfirmDeleteDialog(
     title: String,
     message: String,
-    confirmLabel: String = "DELETE",
+    confirmLabel: String = "Delete",
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -35,7 +35,7 @@ fun ConfirmDeleteDialog(
             ) { Text(confirmLabel, color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
 }

@@ -1,5 +1,14 @@
 package com.mtgcompanion.app.ui.decks
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Animatable
+import com.mtgcompanion.app.ui.theme.Surface3
+import com.mtgcompanion.app.ui.theme.NumberStyle
+import com.mtgcompanion.app.ui.theme.LocalAppColors
+import com.mtgcompanion.app.ui.common.StatusBadge
+import com.mtgcompanion.app.ui.common.PillChip
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -85,7 +94,7 @@ import java.util.Date
 import java.util.Locale
 
 /** Cut candidates are flagged in this color everywhere they appear. */
-internal val CutColor = Color(0xFFE0873A)
+internal val CutColor = Color(0xFFFF8A4C)
 private val ShortColor = Color(0xFFE56B5D)
 
 // ---- Cards tab: filter + badges ----
@@ -101,7 +110,7 @@ internal fun CardFilterChips(selected: CardFilter, cutCount: Int, comboCount: In
                 CardFilter.CUT -> cutCount
                 CardFilter.COMBO -> comboCount
             }
-            FilterPill(if (count == null) filter.label else "${filter.label} ($count)", selected == filter) { onSelect(filter) }
+            PillChip(filter.label, selected == filter, onClick = { onSelect(filter) }, count = count)
         }
     }
 }
@@ -134,17 +143,11 @@ internal fun DeckCardBadges(replaceable: Boolean, comboPiece: Boolean, nearMiss:
 
 @Composable
 private fun Badge(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, fill: Color?) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(fill ?: Color.Transparent)
-            .border(BorderStroke(1.dp, fill ?: Gold), RoundedCornerShape(50))
-            .padding(horizontal = 6.dp, vertical = 1.dp)
-    ) {
-        Icon(icon, contentDescription = null, tint = if (fill != null) Bg else Gold, modifier = Modifier.size(11.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = if (fill != null) Bg else Gold, fontWeight = FontWeight.Bold)
+    val app = LocalAppColors.current
+    if (fill == null) {
+        StatusBadge(label, fill = app.accent, ink = app.onAccent, icon = icon, outlined = true)
+    } else {
+        StatusBadge(label, fill = fill, ink = if (fill == app.accent) app.onAccent else Color(0xFF1E0D02), icon = icon)
     }
 }
 
@@ -168,7 +171,7 @@ internal fun ConsideringTab(
     ) {
         item {
             Panel {
-                SectionLabel("CONSIDERING (${deck.considering.size})")
+                SectionLabel("Considering (${deck.considering.size})")
                 Text(
                     "Cards you think might work but haven't committed to. They don't count toward this deck's size, curve, price, legality or combos.",
                     style = MaterialTheme.typography.bodySmall,
@@ -215,12 +218,12 @@ internal fun ConsideringTab(
                     Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         prices[entry.scryfallId]?.let { Text("$%.2f".format(it), style = MaterialTheme.typography.labelMedium, color = TextMuted) }
-                        if (completesCombo) Badge("COMPLETES A COMBO", Icons.Filled.Bolt, fill = Gold)
+                        if (completesCombo) Badge("Completes a combo", Icons.Filled.Bolt, fill = Gold)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = { onAddToDeck(entry) }) { Text("ADD", color = Gold, style = MaterialTheme.typography.labelMedium) }
+                        TextButton(onClick = { onAddToDeck(entry) }) { Text("Add", color = Gold, style = MaterialTheme.typography.labelMedium) }
                         TextButton(onClick = { onSwapIn(entry) }, enabled = deck.cards.isNotEmpty()) {
-                            Text("SWAP IN", color = if (deck.cards.isNotEmpty()) CutColor else TextDim, style = MaterialTheme.typography.labelMedium)
+                            Text("Swap in", color = if (deck.cards.isNotEmpty()) CutColor else TextDim, style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -272,7 +275,7 @@ internal fun SwapPickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) } }
     )
 }
 
@@ -302,9 +305,9 @@ internal fun ComboPieceWarningDialog(cardName: String, combos: List<Variant>, on
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = CutColor, contentColor = Bg)) { Text("MARK ANYWAY", color = Bg) }
+            Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = CutColor, contentColor = Bg)) { Text("Mark anyway", color = Bg) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) } }
     )
 }
 
@@ -313,7 +316,7 @@ internal fun ComboPieceWarningDialog(cardName: String, combos: List<Variant>, on
 @Composable
 internal fun RolesPanel(report: RoleReport?) {
     Panel {
-        SectionLabel("DECK ROLES")
+        SectionLabel("Deck roles")
         if (report == null) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Gold)
@@ -333,7 +336,7 @@ internal fun RolesPanel(report: RoleReport?) {
                 Column(Modifier.fillMaxWidth().clickable(enabled = count.cards.isNotEmpty()) { expanded = !expanded }) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Text(count.role.label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
-                        Text("${count.count}", style = MaterialTheme.typography.bodyMedium, color = color, fontWeight = FontWeight.Bold)
+                        Text("${count.count}", style = NumberStyle(20), color = color)
                         if (count.min != null) {
                             Text(
                                 " / ${count.min}–${count.max}",
@@ -343,11 +346,13 @@ internal fun RolesPanel(report: RoleReport?) {
                         }
                     }
                     if (count.max != null) {
-                        Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(BorderColor)) {
+                        val fill = remember(count.role) { Animatable(0f) }
+                        LaunchedEffect(count.count, count.max) { fill.animateTo((count.count.toFloat() / count.max).coerceIn(0f, 1f), tween(850, easing = FastOutSlowInEasing)) }
+                        Box(Modifier.fillMaxWidth().padding(top = 6.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(Surface3)) {
                             Box(
                                 Modifier
                                     .fillMaxHeight()
-                                    .fillMaxWidth((count.count.toFloat() / count.max).coerceIn(0f, 1f))
+                                    .fillMaxWidth(fill.value)
                                     .clip(RoundedCornerShape(3.dp))
                                     .background(color)
                             )
@@ -392,7 +397,7 @@ private val versionDate = SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefaul
 @Composable
 internal fun VersionHistoryPanel(history: List<VersionSummary>, onOpen: (VersionSummary) -> Unit) {
     Panel {
-        SectionLabel("VERSION HISTORY")
+        SectionLabel("Version history")
         if (history.isEmpty()) {
             Text(
                 "Each time you change this deck's list, the new list is saved here as a version — with what changed and how it did in games you log.",
@@ -475,11 +480,11 @@ internal fun VersionDetailDialog(summary: VersionSummary, onDismiss: () -> Unit)
                     }
                 } else {
                     if (summary.added.isNotEmpty()) {
-                        Text("ADDED", style = MaterialTheme.typography.labelMedium, color = Gold)
+                        Text("Added", style = MaterialTheme.typography.labelMedium, color = Gold)
                         summary.added.forEach { (name, qty) -> Text("+$qty  $name", style = MaterialTheme.typography.bodySmall, color = TextPrimary) }
                     }
                     if (summary.removed.isNotEmpty()) {
-                        Text("REMOVED", style = MaterialTheme.typography.labelMedium, color = ShortColor, modifier = Modifier.padding(top = 10.dp))
+                        Text("Removed", style = MaterialTheme.typography.labelMedium, color = ShortColor, modifier = Modifier.padding(top = 10.dp))
                         summary.removed.forEach { (name, qty) -> Text("−$qty  $name", style = MaterialTheme.typography.bodySmall, color = TextPrimary) }
                     }
                     if (summary.added.isEmpty() && summary.removed.isEmpty()) {
@@ -489,14 +494,14 @@ internal fun VersionDetailDialog(summary: VersionSummary, onDismiss: () -> Unit)
                 Text("Commander: ${summary.version.commanders.joinToString(" + ").ifEmpty { "none" }}", style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = Modifier.padding(top = 10.dp))
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("CLOSE", color = Gold) } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = Gold) } }
     )
 }
 
 // ---- REC tab: near-miss combos, budget swaps ----
 
 internal fun LazyListScope.nearMissSection(nearMisses: List<NearMissCombo>, available: Boolean, onConsider: (String) -> Unit) {
-    item { SectionLabel("ONE CARD AWAY (${nearMisses.size})") }
+    item { SectionLabel("One card away (${nearMisses.size})") }
     when {
         !available -> item { Text("Couldn't reach Commander Spellbook — check your connection.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
         nearMisses.isEmpty() -> item { Text("No combos are a single card away.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
@@ -512,7 +517,7 @@ internal fun LazyListScope.nearMissSection(nearMisses: List<NearMissCombo>, avai
                         modifier = Modifier.weight(1f)
                     )
                     near.missing.firstOrNull()?.let { name ->
-                        TextButton(onClick = { onConsider(name) }) { Text("CONSIDER", color = Gold, style = MaterialTheme.typography.labelMedium) }
+                        TextButton(onClick = { onConsider(name) }) { Text("Consider", color = Gold, style = MaterialTheme.typography.labelMedium) }
                     }
                 }
             }
@@ -532,7 +537,7 @@ internal fun LazyListScope.budgetSwapsSection(
 ) {
     item {
         Column {
-            SectionLabel("BUDGET SWAPS")
+            SectionLabel("Budget swaps")
             Text(
                 "Cheaper cards that do the same job, in your colors and legal in this format. Pick a price above which to look:",
                 style = MaterialTheme.typography.bodySmall,
@@ -572,7 +577,7 @@ internal fun LazyListScope.budgetSwapsSection(
                             )
                         }
                         if (!swap.entry.replaceable) {
-                            TextButton(onClick = { onMarkCut(swap.entry) }) { Text("MARK CUT", color = CutColor, style = MaterialTheme.typography.labelMedium) }
+                            TextButton(onClick = { onMarkCut(swap.entry) }) { Text("Mark cut", color = CutColor, style = MaterialTheme.typography.labelMedium) }
                         } else {
                             Text("CUT", style = MaterialTheme.typography.labelMedium, color = CutColor, modifier = Modifier.padding(end = 8.dp))
                         }
@@ -591,7 +596,7 @@ internal fun LazyListScope.budgetSwapsSection(
                                     )
                                     Text(alt.prices?.usd?.let { "$$it" } ?: "—", style = MaterialTheme.typography.labelMedium, color = TextMuted)
                                     Text(
-                                        "CONSIDER",
+                                        "Consider",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = Gold,
                                         modifier = Modifier.clickable { onConsider(alt) }.padding(vertical = 2.dp)
@@ -672,18 +677,18 @@ internal fun MissingCardsDialog(
             if (missing.isNotEmpty()) {
                 if (pickingWishlist) {
                     Button(onClick = { onAddToWishlist(null, newName) }, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) {
-                        Text("CREATE & ADD", color = Bg)
+                        Text("Create & add", color = Bg)
                     }
                 } else {
                     Row {
-                        TextButton(onClick = onBuy) { Text("BUY", color = Gold) }
+                        TextButton(onClick = onBuy) { Text("Buy", color = Gold) }
                         Button(onClick = { pickingWishlist = true }, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) {
-                            Text("ADD TO WISHLIST", color = Bg)
+                            Text("Add to wishlist", color = Bg)
                         }
                     }
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CLOSE", color = TextMuted) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = TextMuted) } }
     )
 }

@@ -1,5 +1,7 @@
 ﻿package com.mtgcompanion.app.ui.rules
 
+import androidx.compose.ui.unit.sp
+import com.mtgcompanion.app.ui.theme.OnGold
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -67,7 +69,7 @@ fun RulesScreen(viewModel: RulesViewModel) {
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text("RULES", style = MaterialTheme.typography.labelLarge, color = GoldLight) },
+                title = { Text("Rules", style = MaterialTheme.typography.titleLarge) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )
         }
@@ -124,12 +126,12 @@ private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(
         selected = selected,
         onClick = onClick,
-        label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+        label = { Text(label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
         colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = Gold,
-            selectedLabelColor = Bg,
+            selectedLabelColor = OnGold,
             labelColor = TextMuted,
-            containerColor = Bg
+            containerColor = Surface
         )
     )
 }
@@ -165,7 +167,7 @@ private fun KeywordCard(keyword: Keyword) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(keyword.name, style = MaterialTheme.typography.titleMedium, color = GoldLight, modifier = Modifier.weight(1f))
-            Text(keyword.category.uppercase(), style = MaterialTheme.typography.labelMedium, color = TextDim)
+            Text(keyword.category.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelMedium, color = TextDim)
         }
         InlineManaText(
             keyword.text,

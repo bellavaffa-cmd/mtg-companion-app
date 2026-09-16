@@ -350,7 +350,7 @@ fun ScanScreen(
                 .padding(24.dp)
         ) {
             Text(
-                "VIEW LIST (${state.scannedCards.sumOf { it.quantity }})",
+                "View list (${state.scannedCards.sumOf { it.quantity }})",
                 style = MaterialTheme.typography.labelLarge,
                 color = Bg
             )
@@ -447,10 +447,10 @@ private fun ManualAddDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
             Button(
                 onClick = { if (name.isNotBlank()) onAdd(name.trim()) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("ADD", color = Bg) }
+            ) { Text("Add", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
 }
@@ -486,7 +486,7 @@ private fun CollectionPickerDialog(
                 OutlinedTextField(
                     value = newName,
                     onValueChange = { newName = it },
-                    label = { Text("New binder name", color = GoldDim) },
+                    label = { Text("New binder name", color = TextMuted) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Gold,
@@ -503,10 +503,10 @@ private fun CollectionPickerDialog(
             Button(
                 onClick = { if (newName.isNotBlank()) onCreateCollection(newName.trim()) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("CREATE & ADD", color = Bg) }
+            ) { Text("Create & add", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
 }
@@ -575,7 +575,7 @@ private fun ScannedListPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "SCANNED (${cards.sumOf { it.quantity }})",
+                "Scanned (${cards.sumOf { it.quantity }})",
                 style = MaterialTheme.typography.titleMedium,
                 color = GoldLight
             )
@@ -706,7 +706,7 @@ private fun DeckPickerDialog(
                 OutlinedTextField(
                     value = newDeckName,
                     onValueChange = { newDeckName = it },
-                    label = { Text("New deck name", color = GoldDim) },
+                    label = { Text("New deck name", color = TextMuted) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Gold,
@@ -723,10 +723,10 @@ private fun DeckPickerDialog(
             Button(
                 onClick = { if (newDeckName.isNotBlank()) onCreateDeck(newDeckName.trim()) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("CREATE & ADD", color = Bg) }
+            ) { Text("Create & add", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
 }

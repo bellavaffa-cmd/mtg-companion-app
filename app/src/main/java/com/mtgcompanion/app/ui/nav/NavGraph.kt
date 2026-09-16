@@ -1,5 +1,23 @@
 package com.mtgcompanion.app.ui.nav
 
+import com.mtgcompanion.app.ui.common.LocalNavAnimatedScope
+import com.mtgcompanion.app.ui.common.LocalSharedTransitionScope
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NamedNavArgument
+import androidx.navigation.NavGraphBuilder
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import com.mtgcompanion.app.ui.common.pressScale
+import com.mtgcompanion.app.ui.common.popSpring
+import com.mtgcompanion.app.ui.theme.LocalAppColors
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -142,6 +160,7 @@ private val bottomNavRoutes = setOf(
     Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.RULES
 )
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MtgNavGraph(
     settingsRepository: SettingsRepository,
@@ -173,6 +192,8 @@ fun MtgNavGraph(
             }
         }
     ) { padding ->
+        SharedTransitionLayout {
+        CompositionLocalProvider(LocalSharedTransitionScope provides this) {
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,
@@ -187,7 +208,7 @@ fun MtgNavGraph(
             popEnterTransition = { fadeIn(tween(220)) },
             popExitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { it / 10 } }
         ) {
-            composable(Routes.HOME) {
+            destination(Routes.HOME) {
                 val viewModel: HomeViewModel = viewModel(
                     factory = HomeViewModel.Factory(
                         deckRepository, collectionRepository, settingsRepository,
@@ -208,18 +229,19 @@ fun MtgNavGraph(
                 )
             }
 
-            composable(Routes.SEARCH) {
+            destination(Routes.SEARCH) {
                 val viewModel: SearchViewModel = viewModel(
                     factory = SearchViewModel.Factory(offlineCardRepository, settingsRepository, collectionRepository, deckRepository)
                 )
                 SearchScreen(
                     viewModel = viewModel,
                     onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
-                    onOpenResults = { navController.navigate(Routes.SEARCH_RESULTS) }
+                    onOpenResults = { navController.navigate(Routes.SEARCH_RESULTS) },
+                    onOpenRules = { navController.navigate(Routes.RULES) }
                 )
             }
 
-            composable(Routes.SEARCH_RESULTS) { backStackEntry ->
+            destination(Routes.SEARCH_RESULTS) { backStackEntry ->
                 // Shares the Search tab's ViewModel (via its still-live back-stack entry) so this
                 // shows results for the same query/filters the user just built.
                 val parentEntry = remember(backStackEntry) { navController.getBackStackEntry(Routes.SEARCH) }
@@ -234,7 +256,7 @@ fun MtgNavGraph(
                 )
             }
 
-            composable(Routes.COLLECTION) {
+            destination(Routes.COLLECTION) {
                 val viewModel: CollectionsViewModel = viewModel(
                     factory = CollectionsViewModel.Factory(collectionRepository, deckRepository, settingsRepository)
                 )
@@ -245,7 +267,7 @@ fun MtgNavGraph(
                 )
             }
 
-            composable(
+            destination(
                 route = Routes.COLLECTION_DETAIL,
                 arguments = listOf(navArgument("collectionId") { type = NavType.StringType })
             ) { backStackEntry ->
@@ -260,7 +282,7 @@ fun MtgNavGraph(
                 )
             }
 
-            composable(Routes.DECKS) {
+            destination(Routes.DECKS) {
                 val viewModel: DecksViewModel = viewModel(
                     factory = DecksViewModel.Factory(deckRepository)
                 )
@@ -271,7 +293,7 @@ fun MtgNavGraph(
                 )
             }
 
-            composable(Routes.PRECONS) {
+            destination(Routes.PRECONS) {
                 val viewModel: PreconsViewModel = viewModel(
                     factory = PreconsViewModel.Factory(deckRepository)
                 )
@@ -284,7 +306,7 @@ fun MtgNavGraph(
                 )
             }
 
-            composable(
+            destination(
                 route = Routes.DECK_DETAIL,
                 arguments = listOf(navArgument("deckId") { type = NavType.StringType })
             ) { backStackEntry ->
@@ -301,7 +323,7 @@ fun MtgNavGraph(
                 )
             }
 
-            composable(Routes.SCAN) {
+            destination(Routes.SCAN) {
                 val viewModel: ScanViewModel = viewModel(
                     factory = ScanViewModel.Factory(collectionRepository, deckRepository, artIndexRepository)
                 )
@@ -312,7 +334,7 @@ fun MtgNavGraph(
                 )
             }
 
-            composable(
+            destination(
                 route = Routes.DETAIL,
                 arguments = listOf(navArgument("cardName") { type = NavType.StringType })
             ) { backStackEntry ->
@@ -330,17 +352,17 @@ fun MtgNavGraph(
                 )
             }
 
-            composable(Routes.RULES) {
+            destination(Routes.RULES) {
                 val viewModel: RulesViewModel = viewModel()
                 RulesScreen(viewModel = viewModel)
             }
 
-            composable(Routes.LIFE_COUNTER) {
+            destination(Routes.LIFE_COUNTER) {
                 val viewModel: LifeCounterViewModel = viewModel(factory = LifeCounterViewModel.Factory(playerProfileRepository, lifeCounterSettingsRepository))
                 LifeCounterScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
 
-            composable(Routes.SETTINGS) {
+            destination(Routes.SETTINGS) {
                 SettingsScreen(
                     syncManager = driveSyncManager,
                     updateManager = updateManager,
@@ -350,6 +372,8 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() }
                 )
             }
+        }
+        }
         }
     }
 
@@ -438,70 +462,101 @@ private fun UpdateDialog(
                 onClick = onUpdate,
                 enabled = !downloading && !installing,
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("UPDATE", color = Bg) }
+            ) { Text("Update", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !downloading && !installing) { Text("LATER", color = TextMuted) }
+            TextButton(onClick = onDismiss, enabled = !downloading && !installing) { Text("Later", color = TextMuted) }
         }
     )
 }
 
+/** A nav destination that also exposes its enter/exit animation scope for [sharedArt] transitions. */
+private fun NavGraphBuilder.destination(
+    route: String,
+    arguments: List<NamedNavArgument> = emptyList(),
+    content: @Composable (NavBackStackEntry) -> Unit
+) {
+    composable(route, arguments) { entry ->
+        CompositionLocalProvider(LocalNavAnimatedScope provides this) { content(entry) }
+    }
+}
+
+/**
+ * Floating bottom bar: four destinations around a raised Scan button, with a highlight pill that
+ * springs to the selected tab. Rules moved out of the bar (it's on Home and in Search's toolbar).
+ */
 @Composable
 private fun MtgBottomBar(currentRoute: String?, navController: NavHostController) {
-    NavigationBar(containerColor = Surface) {
-        BarItem(Icons.Filled.Home, "Home", currentRoute == Routes.HOME) {
-            navController.navigateToTab(Routes.HOME)
-        }
-        BarItem(Icons.Filled.Search, "Search", currentRoute == Routes.SEARCH) {
-            navController.navigateToTab(Routes.SEARCH)
-        }
-        BarItem(Icons.Filled.Collections, "Collection", currentRoute == Routes.COLLECTION) {
-            navController.navigateToTab(Routes.COLLECTION)
-        }
-        BarItem(
-            Icons.Filled.Style, "Decks",
-            currentRoute == Routes.DECKS || currentRoute == Routes.DECK_DETAIL,
-            iconSize = 30.dp
+    val colors = LocalAppColors.current
+    val haptic = LocalHapticFeedback.current
+    val selected = when (currentRoute) {
+        Routes.HOME -> 0
+        Routes.SEARCH -> 1
+        Routes.DECKS, Routes.DECK_DETAIL -> 3
+        Routes.COLLECTION -> 4
+        else -> -1
+    }
+    fun go(route: String) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); navController.navigateToTab(route) }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(Bg)
+            .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp)
+    ) {
+        BoxWithConstraints(
+            Modifier
+                .fillMaxWidth()
+                .height(68.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(colors.surface)
         ) {
-            navController.navigateToTab(Routes.DECKS)
-        }
-        BarItem(Icons.Filled.CameraAlt, "Scan", currentRoute == Routes.SCAN) {
-            navController.navigateToTab(Routes.SCAN)
-        }
-        BarItem(Icons.Filled.MenuBook, "Rules", currentRoute == Routes.RULES) {
-            navController.navigateToTab(Routes.RULES)
+            val slot = maxWidth / 5
+            val pillX by animateDpAsState(slot * selected.coerceAtLeast(0) + (slot - 52.dp) / 2, popSpring(), label = "barPill")
+            if (selected >= 0) {
+                Box(Modifier.offset(x = pillX, y = 8.dp).size(width = 52.dp, height = 30.dp).clip(RoundedCornerShape(15.dp)).background(colors.accentGlow))
+            }
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                BarItem(Icons.Filled.Home, "Home", selected == 0) { go(Routes.HOME) }
+                BarItem(Icons.Filled.Search, "Search", selected == 1) { go(Routes.SEARCH) }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    val interaction = remember { MutableInteractionSource() }
+                    Box(
+                        Modifier
+                            .pressScale(interaction)
+                            .size(54.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(colors.accent)
+                            .clickable(interactionSource = interaction, indication = null) { go(Routes.SCAN) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.CameraAlt, contentDescription = "Scan a card", tint = colors.onAccent, modifier = Modifier.size(26.dp))
+                    }
+                }
+                BarItem(Icons.Filled.Style, "Decks", selected == 3) { go(Routes.DECKS) }
+                BarItem(Icons.Filled.Collections, "Collection", selected == 4) { go(Routes.COLLECTION) }
+            }
         }
     }
 }
 
 @Composable
-private fun RowScope.BarItem(
-    icon: ImageVector,
-    label: String,
-    selected: Boolean,
-    iconSize: Dp = 24.dp,
-    onClick: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    NavigationBarItem(
-        selected = selected,
-        onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onClick() },
-        icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize)) },
-        // Small single-line label so all five fit without wrapping.
-        label = { Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        colors = bottomItemColors()
-    )
+private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    val tint by animateColorAsState(if (selected) colors.accent else colors.textDim, label = "barTint")
+    val labelColor by animateColorAsState(if (selected) colors.textPrimary else colors.textDim, label = "barLabel")
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(23.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = labelColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
-
-@Composable
-private fun bottomItemColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = Gold,
-    selectedTextColor = Gold,
-    unselectedIconColor = TextDim,
-    unselectedTextColor = TextDim,
-    // A visible tonal pill behind the selected tab, instead of matching the background (invisible).
-    indicatorColor = GoldGlow
-)
 
 private fun NavHostController.navigateToTab(route: String) {
     navigate(route) {

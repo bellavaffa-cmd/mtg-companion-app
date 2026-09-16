@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.SegmentedTabs
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -108,7 +109,7 @@ fun CollectionsScreen(
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text("COLLECTION", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                title = { Text("Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 actions = {
                     if (pagerState.currentPage == 1) {
                         IconButton(onClick = { showCreateDialog = true }) {
@@ -121,22 +122,12 @@ fun CollectionsScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
-            TabRow(
-                selectedTabIndex = pagerState.currentPage,
-                containerColor = Bg,
-                contentColor = Gold
-            ) {
-                Tab(
-                    selected = pagerState.currentPage == 0,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
-                    text = { Text("ALL CARDS", style = MaterialTheme.typography.labelMedium, color = if (pagerState.currentPage == 0) Gold else TextMuted) }
-                )
-                Tab(
-                    selected = pagerState.currentPage == 1,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
-                    text = { Text("BINDERS", style = MaterialTheme.typography.labelMedium, color = if (pagerState.currentPage == 1) Gold else TextMuted) }
-                )
-            }
+            SegmentedTabs(
+                labels = listOf("All cards", "Binders"),
+                selected = pagerState.currentPage,
+                onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
 
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 if (page == 0) {
@@ -251,7 +242,7 @@ private fun AllCardsTab(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Search all cards", color = GoldDim) },
+                    label = { Text("Search all cards", color = TextMuted) },
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp),
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Gold) },
@@ -493,7 +484,7 @@ private fun CreateCollectionDialog(onDismiss: () -> Unit, onConfirm: (String, Co
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Binder name", color = GoldDim) },
+                    label = { Text("Binder name", color = TextMuted) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Gold,
@@ -507,7 +498,7 @@ private fun CreateCollectionDialog(onDismiss: () -> Unit, onConfirm: (String, Co
                     listOf(CollectionType.OWNED to "Owned", CollectionType.WISHLIST to "Wishlist").forEach { (option, label) ->
                         val selected = type == option
                         Text(
-                            label.uppercase(),
+                            label,
                             style = MaterialTheme.typography.labelMedium,
                             color = if (selected) Bg else TextPrimary,
                             modifier = Modifier
@@ -532,10 +523,10 @@ private fun CreateCollectionDialog(onDismiss: () -> Unit, onConfirm: (String, Co
             Button(
                 onClick = { if (name.isNotBlank()) onConfirm(name.trim(), type) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("CREATE", color = Bg) }
+            ) { Text("Create", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
 }

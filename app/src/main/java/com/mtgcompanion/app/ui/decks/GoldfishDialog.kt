@@ -99,7 +99,7 @@ fun GoldfishDialog(deck: Deck, onDismiss: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OutlinedButton(onClick = { newHand() }, modifier = Modifier.weight(1f)) {
-                        Text("NEW HAND", color = Gold)
+                        Text("New hand", color = Gold)
                     }
                     Button(
                         onClick = { remaining.firstOrNull()?.let { card -> hand = hand + card; remaining = remaining.drop(1) } },
@@ -112,7 +112,7 @@ fun GoldfishDialog(deck: Deck, onDismiss: () -> Unit) {
         ) { padding ->
             Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
                 Text(
-                    "HAND (${hand.size})",
+                    "Hand (${hand.size})",
                     style = MaterialTheme.typography.labelMedium,
                     color = TextMuted,
                     modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp)
@@ -165,7 +165,7 @@ private fun GoldfishTopBar(libraryCount: Int, onDismiss: () -> Unit) {
     TopAppBar(
         title = {
             Column {
-                Text("GOLDFISH", color = GoldLight, style = MaterialTheme.typography.labelLarge)
+                Text("Goldfish", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Text("Library: $libraryCount", color = TextPrimary, style = MaterialTheme.typography.labelMedium)
             }
         },

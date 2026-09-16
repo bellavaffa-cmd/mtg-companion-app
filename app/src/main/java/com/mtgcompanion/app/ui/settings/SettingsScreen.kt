@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.settings
 
+import androidx.compose.ui.unit.sp
+import com.mtgcompanion.app.ui.theme.OnGold
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -100,7 +102,7 @@ fun SettingsScreen(
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text("SETTINGS", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                title = { Text("Settings", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
@@ -159,9 +161,8 @@ private fun SettingsCategory(
                 .padding(vertical = 4.dp)
         ) {
             Text(
-                title.uppercase(),
+                title,
                 style = MaterialTheme.typography.titleMedium,
-                color = GoldLight,
                 modifier = Modifier.weight(1f)
             )
             Icon(
@@ -195,24 +196,24 @@ private fun AppearanceSection(settingsRepository: SettingsRepository) {
         FilterChip(
             selected = brightness == AppBrightness.DARK,
             onClick = { scope.launch { settingsRepository.setAppBrightness(AppBrightness.DARK) } },
-            label = { Text("Dark", style = MaterialTheme.typography.labelMedium) },
+            label = { Text("Dark", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = Gold,
-                selectedLabelColor = Bg,
+                selectedLabelColor = OnGold,
                 labelColor = TextMuted,
-                containerColor = Bg
+                containerColor = Surface
             )
         )
         Box(modifier = Modifier.padding(start = 8.dp)) {
             FilterChip(
                 selected = brightness == AppBrightness.LIGHT,
                 onClick = { scope.launch { settingsRepository.setAppBrightness(AppBrightness.LIGHT) } },
-                label = { Text("Light", style = MaterialTheme.typography.labelMedium) },
+                label = { Text("Light", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Gold,
-                    selectedLabelColor = Bg,
+                    selectedLabelColor = OnGold,
                     labelColor = TextMuted,
-                    containerColor = Bg
+                    containerColor = Surface
                 )
             )
         }
@@ -220,12 +221,12 @@ private fun AppearanceSection(settingsRepository: SettingsRepository) {
             FilterChip(
                 selected = brightness == AppBrightness.SYSTEM,
                 onClick = { scope.launch { settingsRepository.setAppBrightness(AppBrightness.SYSTEM) } },
-                label = { Text("System", style = MaterialTheme.typography.labelMedium) },
+                label = { Text("System", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Gold,
-                    selectedLabelColor = Bg,
+                    selectedLabelColor = OnGold,
                     labelColor = TextMuted,
-                    containerColor = Bg
+                    containerColor = Surface
                 )
             )
         }
@@ -327,14 +328,14 @@ private fun CardViewModeRow(label: String, mode: CardViewMode, onSelect: (CardVi
             selected = mode == CardViewMode.LIST,
             onClick = { onSelect(CardViewMode.LIST) },
             leadingIcon = { Icon(Icons.Filled.ViewList, contentDescription = null, modifier = Modifier.size(16.dp)) },
-            label = { Text("List", style = MaterialTheme.typography.labelMedium) },
+            label = { Text("List", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = Gold,
-                selectedLabelColor = Bg,
-                selectedLeadingIconColor = Bg,
+                selectedLabelColor = OnGold,
+                selectedLeadingIconColor = OnGold,
                 labelColor = TextMuted,
                 iconColor = TextMuted,
-                containerColor = Bg
+                containerColor = Surface
             )
         )
         Box(modifier = Modifier.padding(start = 8.dp)) {
@@ -342,14 +343,14 @@ private fun CardViewModeRow(label: String, mode: CardViewMode, onSelect: (CardVi
                 selected = mode == CardViewMode.GRID,
                 onClick = { onSelect(CardViewMode.GRID) },
                 leadingIcon = { Icon(Icons.Filled.GridView, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                label = { Text("Grid", style = MaterialTheme.typography.labelMedium) },
+                label = { Text("Grid", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Gold,
-                    selectedLabelColor = Bg,
-                    selectedLeadingIconColor = Bg,
+                    selectedLabelColor = OnGold,
+                    selectedLeadingIconColor = OnGold,
                     labelColor = TextMuted,
                     iconColor = TextMuted,
-                    containerColor = Bg
+                    containerColor = Surface
                 )
             )
         }
@@ -433,7 +434,7 @@ private fun OfflineSearchSection(offlineCardRepository: OfflineCardRepository) {
         )
     }
 
-    val buttonLabel = if (status.hasData) "UPDATE DATABASE" else "DOWNLOAD DATABASE"
+    val buttonLabel = if (status.hasData) "Update database" else "Download database"
     if (status.hasData) {
         OutlinedButton(
             onClick = { offlineCardRepository.downloadDatabase() },
@@ -471,7 +472,7 @@ private fun ArtRecognitionSection(artIndexRepository: ArtIndexRepository) {
         Text("${status.cardCount} cards recognized", style = MaterialTheme.typography.labelMedium, color = GoldLight)
     }
 
-    val buttonLabel = if (status.hasData) "UPDATE DATA" else "DOWNLOAD DATA"
+    val buttonLabel = if (status.hasData) "Update data" else "Download data"
     if (status.hasData) {
         OutlinedButton(
             // Only the explicit update re-fetches what's already on disk; a first-time download
@@ -540,7 +541,7 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
             if (state.downloading || state.installing) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Bg)
             } else {
-                Text("DOWNLOAD & INSTALL", style = MaterialTheme.typography.labelLarge, color = Bg)
+                Text("Download & install", style = MaterialTheme.typography.labelLarge, color = Bg)
             }
         }
         if (state.downloading) {
@@ -572,7 +573,7 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
             if (state.checking) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Gold)
             } else {
-                Text("CHECK FOR UPDATES", style = MaterialTheme.typography.labelLarge)
+                Text("Check for updates", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -603,7 +604,7 @@ private fun DriveSyncSection(syncManager: DriveSyncManager) {
             onClick = { signInLauncher.launch(syncManager.signInClient().signInIntent) },
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-        ) { Text("CONNECT GOOGLE DRIVE", style = MaterialTheme.typography.labelLarge, color = Bg) }
+        ) { Text("Connect Google Drive", style = MaterialTheme.typography.labelLarge, color = Bg) }
     } else {
         Text(
             "Connected as ${status.connectedEmail}",
@@ -627,7 +628,7 @@ private fun DriveSyncSection(syncManager: DriveSyncManager) {
                 if (status.syncing) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Bg)
                 } else {
-                    Text("SYNC NOW", style = MaterialTheme.typography.labelLarge, color = Bg)
+                    Text("Sync now", style = MaterialTheme.typography.labelLarge, color = Bg)
                 }
             }
             OutlinedButton(
@@ -635,7 +636,7 @@ private fun DriveSyncSection(syncManager: DriveSyncManager) {
                 shape = RoundedCornerShape(8.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
-            ) { Text("DISCONNECT", style = MaterialTheme.typography.labelLarge) }
+            ) { Text("Disconnect", style = MaterialTheme.typography.labelLarge) }
         }
     }
     status.message?.let {

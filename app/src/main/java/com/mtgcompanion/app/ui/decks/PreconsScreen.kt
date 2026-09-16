@@ -100,7 +100,7 @@ fun PreconsScreen(viewModel: PreconsViewModel, onBack: () -> Unit, onImported: (
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text("PRECON DECKS", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                title = { Text("Precon decks", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
@@ -266,10 +266,10 @@ private fun PreconContentsDialog(
                 onClick = onImport,
                 enabled = contents != null,
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("IMPORT AS DECK", color = Bg) }
+            ) { Text("Import as deck", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CLOSE", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Close", color = TextMuted) }
         }
     )
 }

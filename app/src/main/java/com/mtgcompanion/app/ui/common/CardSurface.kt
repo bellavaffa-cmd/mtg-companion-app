@@ -35,17 +35,15 @@ import com.mtgcompanion.app.ui.theme.Surface3
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
 /**
- * The app-wide "elevated" card look: a real soft shadow for genuine depth, a top-to-bottom
- * gradient (instead of a flat fill), and a faint hairline border. Replaces the old flat-background
- * + 1dp-border pattern used on every tile/row/panel. [borderColor] lets a few emphasized surfaces
- * (e.g. "continue this deck") keep their accent-tinted border instead of the default hairline.
+ * The app-wide card surface: a flat tonal fill one step up from the background, no outline and no
+ * shadow — surfaces separate by tone, which keeps busy screens calm and lets card art carry the
+ * colour. [borderColor] is only for the rare surface that genuinely needs an accent edge.
  */
 @Composable
-fun Modifier.elevatedCard(shape: Shape = RoundedCornerShape(20.dp), borderColor: Color = BorderColor): Modifier = this
-    .shadow(elevation = 6.dp, shape = shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f))
+fun Modifier.elevatedCard(shape: Shape = RoundedCornerShape(20.dp), borderColor: Color = Color.Unspecified): Modifier = this
     .clip(shape)
-    .background(Brush.verticalGradient(listOf(Surface, Surface2)))
-    .border(BorderStroke(1.dp, borderColor), shape)
+    .background(Surface)
+    .then(if (borderColor != Color.Unspecified) Modifier.border(BorderStroke(1.dp, borderColor), shape) else Modifier)
 
 /**
  * A small top-start corner badge marking a card as having a second side (transform/modal-DFC/flip)

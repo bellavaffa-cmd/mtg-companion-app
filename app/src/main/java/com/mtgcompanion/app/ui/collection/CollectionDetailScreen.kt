@@ -108,7 +108,7 @@ fun CollectionDetailScreen(
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text(collection?.name ?: "Binder", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                title = { Text(collection?.name ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
@@ -132,7 +132,7 @@ fun CollectionDetailScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::onQueryChange,
-                label = { Text("Search this binder", color = GoldDim) },
+                label = { Text("Search this binder", color = TextMuted) },
                 singleLine = true,
                 shape = RoundedCornerShape(8.dp),
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Gold) },
@@ -240,7 +240,7 @@ fun CollectionDetailScreen(
         ConfirmDeleteDialog(
             title = "Remove card?",
             message = "Remove ${entry.name} ($qty cop${if (qty == 1) "y" else "ies"}) from this binder?",
-            confirmLabel = "REMOVE",
+            confirmLabel = "Remove",
             onConfirm = { viewModel.remove(entry); removeTarget = null },
             onDismiss = { removeTarget = null }
         )

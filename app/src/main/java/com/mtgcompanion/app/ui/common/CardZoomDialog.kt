@@ -260,11 +260,11 @@ private fun CardInfoBar(card: ZoomCard, priceUsd: Double?) {
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
             priceUsd?.let { price ->
-                InfoStat("VALUE", "$" + "%,.2f".format(price))
+                InfoStat("Value", "$" + "%,.2f".format(price))
             }
             // A total is only meaningful once you own a copy — otherwise it's just "$0.00".
             if (priceUsd != null && card.quantity != null && card.quantity > 0) {
-                InfoStat("TOTAL", "$" + "%,.2f".format(priceUsd * card.quantity))
+                InfoStat("Total", "$" + "%,.2f".format(priceUsd * card.quantity))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -298,7 +298,7 @@ private fun CardInfoBar(card: ZoomCard, priceUsd: Double?) {
                         Icon(Icons.Filled.Add, contentDescription = "Increase quantity", tint = Gold)
                     }
                 } else {
-                    InfoStat("QTY", "$qty")
+                    InfoStat("Qty", "$qty")
                 }
             }
         }
@@ -406,7 +406,7 @@ private fun SourcesSection(sources: List<CardSource>) {
     ) {
         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(BorderColor))
         Text(
-            "IN ${sources.size} ${if (sources.size == 1) "PLACE" else "PLACES"}",
+            "In ${sources.size} ${if (sources.size == 1) "place" else "places"}",
             style = MaterialTheme.typography.labelMedium,
             color = TextMuted,
             modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)

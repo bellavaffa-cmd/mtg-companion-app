@@ -1,5 +1,32 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.theme.OnGold
+import com.mtgcompanion.app.ui.theme.NumberStyle
+import com.mtgcompanion.app.ui.theme.LocalAppColors
+import com.mtgcompanion.app.ui.common.sharedArt
+import com.mtgcompanion.app.ui.common.riseIn
+import com.mtgcompanion.app.ui.common.rememberEntranceWindow
+import com.mtgcompanion.app.ui.common.pressScale
+import com.mtgcompanion.app.ui.common.SharedKeys
+import com.mtgcompanion.app.ui.common.SearchPill
+import com.mtgcompanion.app.ui.common.PillChip
+import com.mtgcompanion.app.ui.common.ManaPips
+import com.mtgcompanion.app.ui.common.IdentityStrip
+import com.mtgcompanion.app.ui.common.ArtImage
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -69,44 +96,79 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrow
     val decks by viewModel.decks.collectAsState()
     val commanderColors by viewModel.commanderColors.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var ownership by rememberSaveable { mutableStateOf<String?>(null) }
+    val app = LocalAppColors.current
+    val entering = rememberEntranceWindow()
 
-    Scaffold(
-        containerColor = Bg,
-        topBar = {
-            TopAppBar(
-                title = { Text("DECKS", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
-                actions = {
-                    IconButton(onClick = onBrowsePrecons) {
-                        Icon(Icons.Filled.Style, contentDescription = "Browse precons", tint = Gold)
+    val shown = decks.filter { deck ->
+        (ownership == null || deck.ownershipType.name == ownership) &&
+            (query.isBlank() || deck.name.contains(query.trim(), ignoreCase = true) || deck.commander?.name?.contains(query.trim(), ignoreCase = true) == true)
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier.fillMaxSize().background(Bg),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 18.dp, bottom = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.riseIn(0)) {
+                    Text("Decks", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                    Box(
+                        Modifier.size(42.dp).clip(CircleShape).background(app.surface).clickable(onClick = onBrowsePrecons),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Filled.Inventory2, contentDescription = "Browse precons", tint = app.textPrimary, modifier = Modifier.size(20.dp)) }
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        Modifier.size(42.dp).clip(CircleShape).background(app.accent).clickable { showCreateDialog = true },
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Filled.Add, contentDescription = "New deck", tint = app.onAccent) }
+                }
+                if (decks.isNotEmpty()) {
+                    SearchPill(query = query, onQueryChange = { query = it }, placeholder = "Search decks or commanders", modifier = Modifier.riseIn(1))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState()).riseIn(2)) {
+                        PillChip("All", ownership == null, onClick = { ownership = null }, count = decks.size)
+                        DeckOwnership.entries.forEach { type ->
+                            val n = decks.count { it.ownershipType == type }
+                            if (n > 0) PillChip(type.label, ownership == type.name, onClick = { ownership = if (ownership == type.name) null else type.name }, count = n)
+                        }
                     }
-                    IconButton(onClick = { showCreateDialog = true }) {
-                        Icon(Icons.Filled.Add, contentDescription = "New deck", tint = Gold)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
-            )
+                }
+            }
         }
-    ) { padding ->
+
         if (decks.isEmpty()) {
-            Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding).padding(20.dp)) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "empty") {
                 Text(
-                    "No decks yet. Tap + to build your first deck.",
-                    style = MaterialTheme.typography.bodySmall
+                    "No decks yet. Start from an official precon, or tap + to build one from scratch.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(4.dp)
                 )
             }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                modifier = Modifier.fillMaxSize().background(Bg).padding(padding),
-                contentPadding = PaddingValues(20.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(decks, key = { it.id }) { deck ->
-                    // Colourless commander -> a single "C" pip; unknown (not fetched yet) -> none.
-                    val colors = commanderColors[deck.id]?.ifEmpty { listOf("C") }.orEmpty()
-                    DeckTile(deck = deck, colors = colors, onClick = { onDeckClick(deck.id) })
-                }
+        } else if (shown.isEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "nomatch") {
+                Text("No decks match.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(4.dp))
+            }
+        }
+
+        itemsIndexed(shown, key = { _, deck -> deck.id }) { index, deck ->
+            // Colourless commander -> a single "C" pip; unknown (not fetched yet) -> none.
+            val colors = commanderColors[deck.id]?.ifEmpty { listOf("C") }.orEmpty()
+            DeckTile(
+                deck = deck,
+                colors = colors,
+                onClick = { onDeckClick(deck.id) },
+                modifier = Modifier.animateItem().riseIn(index + 3, entering)
+            )
+        }
+
+        // Fills an odd row, and is the obvious next step when the list is short.
+        if (query.isBlank() && ownership == null) {
+            item(key = "precons") {
+                PreconTile(onClick = onBrowsePrecons, modifier = Modifier.riseIn(shown.size + 3, entering))
             }
         }
     }
@@ -123,71 +185,54 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrow
 }
 
 @Composable
-private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit) {
+private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        modifier = Modifier
+        modifier = modifier
+            .pressScale(interaction)
             .fillMaxWidth()
-            .aspectRatio(1f)
-            .elevatedCard()
-            .clickable(onClick = onClick)
+            .aspectRatio(0.74f)
+            .clip(RoundedCornerShape(22.dp))
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
     ) {
-        AsyncImage(
+        ArtImage(
             model = deck.commander?.imageUrl.toArtCropUrl(),
+            seed = deck.name,
+            colors = colors,
             contentDescription = deck.commander?.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().sharedArt(SharedKeys.deckArt(deck.id), RoundedCornerShape(22.dp))
         )
-        // Ownership badge, top-left — hidden for Physical decks (the default/expected case) so it
-        // only draws attention when a deck ISN'T counted toward the collection.
-        if (deck.ownershipType != DeckOwnership.PHYSICAL) {
-            Text(
-                deck.ownershipType.label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = TextPrimary,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            )
-        }
-        // Commander colour identity pips, top-right over the art.
-        if (colors.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 5.dp, vertical = 3.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                colors.forEach { ManaSymbol(it, size = 16.dp) }
-            }
-        }
-        // Dark scrim over the lower half so the overlaid name stays legible on bright art.
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0.4f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.9f)
-                    )
-                )
+                .background(Brush.verticalGradient(0.3f to Color.Transparent, 0.62f to Color.Black.copy(alpha = 0.35f), 1f to Color.Black.copy(alpha = 0.95f)))
         )
+        // Ownership badge, top-left: hidden for Physical decks (the default) so it only draws
+        // attention when a deck is not counted toward the collection.
+        if (deck.ownershipType != DeckOwnership.PHYSICAL) {
+            Text(
+                deck.ownershipType.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(10.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 9.dp, vertical = 4.dp)
+            )
+        }
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(start = 12.dp, end = 12.dp, bottom = 14.dp)
         ) {
             if (deck.tags.isNotEmpty()) {
                 Text(
-                    deck.tags.joinToString(" · ") { it.uppercase() },
+                    deck.tags.joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Gold,
+                    color = LocalAppColors.current.accentLight,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(bottom = 2.dp)
@@ -195,19 +240,49 @@ private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit) {
             }
             Text(
                 deck.name,
-                style = MaterialTheme.typography.titleSmall,
-                color = GoldLight,
-                maxLines = 1,
+                style = MaterialTheme.typography.titleSmall.copy(lineHeight = 18.sp),
+                color = Color.White,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                (deck.commander?.name ?: "No commander set") + " · ${deck.cards.sumOf { it.quantity }} cards",
+                deck.commander?.name ?: "No commander set",
                 style = MaterialTheme.typography.labelMedium,
-                color = TextPrimary,
+                color = Color.White.copy(alpha = 0.7f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                if (colors.isNotEmpty()) ManaPips(colors, size = 15.dp)
+                Spacer(Modifier.weight(1f))
+                Text("${deck.cards.sumOf { it.quantity }}", style = NumberStyle(19), color = Color.White)
+                Text(" cards", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
+            }
         }
+        IdentityStrip(colors, modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(), thickness = 3.dp)
+    }
+}
+
+@Composable
+private fun PreconTile(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val app = LocalAppColors.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(0.74f)
+            .clip(RoundedCornerShape(22.dp))
+            .background(app.surface)
+            .clickable(onClick = onClick)
+            .padding(18.dp)
+    ) {
+        Box(Modifier.size(48.dp).clip(CircleShape).background(app.surface3), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Inventory2, contentDescription = null, tint = app.textPrimary)
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Start from a precon", style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
+        Text("Import any official Commander deck", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -224,7 +299,7 @@ private fun CreateDeckDialog(onDismiss: () -> Unit, onConfirm: (String, GameMode
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Deck name", color = GoldDim) },
+                    label = { Text("Deck name", color = TextMuted) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Gold,
@@ -240,11 +315,11 @@ private fun CreateDeckDialog(onDismiss: () -> Unit, onConfirm: (String, GameMode
         confirmButton = {
             Button(
                 onClick = { if (name.isNotBlank()) onConfirm(name.trim(), mode) },
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("CREATE", color = Bg) }
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = OnGold)
+            ) { Text("Create", color = OnGold) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
 }

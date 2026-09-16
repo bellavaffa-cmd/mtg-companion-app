@@ -1,5 +1,29 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.theme.Surface3
+import com.mtgcompanion.app.ui.theme.Surface2
+import com.mtgcompanion.app.ui.theme.NumberStyle
+import com.mtgcompanion.app.ui.theme.LocalAppColors
+import com.mtgcompanion.app.ui.common.sharedArt
+import com.mtgcompanion.app.ui.common.popSpring
+import com.mtgcompanion.app.ui.common.SharedKeys
+import com.mtgcompanion.app.ui.common.SegmentedTabs
+import com.mtgcompanion.app.ui.common.ManaPips
+import com.mtgcompanion.app.ui.common.IdentityStrip
+import com.mtgcompanion.app.ui.common.CountUpText
+import com.mtgcompanion.app.ui.common.ArtImage
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.SideEffect
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Animatable
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -134,7 +158,7 @@ import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
 /** Tab order. The Considering tab sits right beside Cards, since the two are worked together. */
-private val DECK_TABS = listOf("CARDS", "CONSIDERING", "STATS", "REC", "LEGAL")
+private val DECK_TABS = listOf("Cards", "Considering", "Stats", "Suggestions", "Legality")
 private const val TAB_CONSIDERING = 1
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -175,9 +199,10 @@ fun DeckDetailScreen(
     var copyTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     // Name of the card whose "find similar" overlay is open, if any.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
-    // Tints the bar as content scrolls under it (no height change — the title row already carries
-    // a commander-art thumbnail, which a full Large app bar would end up rendering twice).
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    // The art header shrinks from a full hero to a slim bar as any tab's list scrolls, and grows
+    // back when you pull down at the top — driven by the same nested-scroll state a collapsing
+    // Material app bar uses, so it works across every page of the pager.
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     // The card pending a remove-confirmation, if any.
     var removeCardTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     var showImport by remember { mutableStateOf(false) }
@@ -190,34 +215,26 @@ fun DeckDetailScreen(
         containerColor = Bg,
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                scrollBehavior = scrollBehavior,
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        deck?.commander?.imageUrl?.let { img ->
-                            AsyncImage(
-                                model = img.toArtCropUrl(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(14.dp))
-                            )
-                        }
-                        Text(deck?.name ?: "Deck", color = GoldLight, style = MaterialTheme.typography.labelLarge)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "Deck menu", tint = Gold)
-                    }
+            val density = LocalDensity.current
+            val expanded = 284.dp
+            val collapsed = 64.dp
+            val limit = with(density) { (collapsed - expanded).toPx() }
+            SideEffect {
+                if (scrollBehavior.state.heightOffsetLimit != limit) scrollBehavior.state.heightOffsetLimit = limit
+            }
+            val height = expanded + with(density) { scrollBehavior.state.heightOffset.toDp() }
+            DeckHero(
+                deck = deck,
+                analysis = analysis,
+                height = height,
+                collapsedFraction = scrollBehavior.state.collapsedFraction,
+                onBack = onBack,
+                onMenu = { menuOpen = true },
+                menu = {
                     DropdownMenu(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
-                        modifier = Modifier.background(Surface)
+                        modifier = Modifier.background(Surface2)
                     ) {
                         DropdownMenuItem(
                             text = { Text("Deck settings", color = TextPrimary) },
@@ -240,33 +257,24 @@ fun DeckDetailScreen(
                             onClick = { menuOpen = false; showMissing = true }
                         )
                         DropdownMenuItem(
-                            text = { Text("Delete deck", color = Color(0xFFD3402F)) },
+                            text = { Text("Delete deck", color = LocalAppColors.current.error) },
                             onClick = { menuOpen = false; confirmDelete = true }
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, scrolledContainerColor = Surface)
+                }
             )
         }
     ) { padding ->
         val currentDeck = deck ?: return@Scaffold
 
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
-            ScrollableTabRow(selectedTabIndex = pagerState.currentPage, containerColor = Bg, contentColor = Gold, edgePadding = 8.dp) {
-                DECK_TABS.forEachIndexed { index, label ->
-                    Tab(
-                        selected = pagerState.currentPage == index,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        text = {
-                            Text(
-                                if (index == TAB_CONSIDERING && currentDeck.considering.isNotEmpty()) "$label (${currentDeck.considering.size})" else label,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (pagerState.currentPage == index) Gold else TextMuted
-                            )
-                        }
-                    )
-                }
-            }
+            SegmentedTabs(
+                labels = DECK_TABS,
+                selected = pagerState.currentPage,
+                onSelect = { index -> scope.launch { pagerState.animateScrollToPage(index) } },
+                counts = mapOf(TAB_CONSIDERING to currentDeck.considering.size),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
 
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 when (page) {
@@ -412,7 +420,7 @@ fun DeckDetailScreen(
             ConfirmDeleteDialog(
                 title = "Remove card?",
                 message = "Remove ${entry.name} (${entry.quantity} cop${if (entry.quantity == 1) "y" else "ies"}) from this deck?",
-                confirmLabel = "REMOVE",
+                confirmLabel = "Remove",
                 onConfirm = { viewModel.removeCard(entry.scryfallId); removeCardTarget = null },
                 onDismiss = { removeCardTarget = null }
             )
@@ -723,8 +731,8 @@ private fun ExportDialog(deck: Deck, viewModel: DeckDetailViewModel, onDismiss: 
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ExportFormatChip("SIMPLE", selected = !exact) { exact = false }
-                    ExportFormatChip("EXACT PRINTING", selected = exact) { exact = true }
+                    ExportFormatChip("Simple", selected = !exact) { exact = false }
+                    ExportFormatChip("Exact printing", selected = exact) { exact = true }
                 }
                 Spacer(Modifier.height(12.dp))
                 Column(
@@ -986,9 +994,9 @@ private fun LegalityIssueRow(issue: LegalityIssue, onFix: (() -> Unit)?) {
             }
             Text(issue.reason, style = MaterialTheme.typography.bodySmall, color = TextMuted)
             if (onFix != null) {
-                val word = if (issue.fixQuantity == 1) "COPY" else "COPIES"
+                val word = if (issue.fixQuantity == 1) "copy" else "copies"
                 Text(
-                    "TAP TO REDUCE TO ${issue.fixQuantity} $word",
+                    "Tap to reduce to ${issue.fixQuantity} $word",
                     style = MaterialTheme.typography.labelMedium,
                     color = Gold,
                     modifier = Modifier.padding(top = 4.dp)
@@ -1140,11 +1148,10 @@ private fun CardsTab(
 
             groups.forEach { group ->
                 item {
-                    Text(
-                        "${group.type.uppercase()} (${group.cards.sumOf { it.quantity }})",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
-                    )
+                    Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp, start = 2.dp, end = 4.dp)) {
+                        Text(group.type, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Text("${group.cards.sumOf { it.quantity }}", style = NumberStyle(20), color = TextMuted)
+                    }
                 }
                 if (viewMode == CardViewMode.GRID) {
                     cardGrid(group.cards, columns = gridColumns, key = { it.scryfallId }) { card ->
@@ -1201,8 +1208,8 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                 val draws = deck.gameResults.count { it.result == "DRAW" }
                 val total = deck.gameResults.size
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    SectionLabel("MATCH RECORD")
-                    TextButton(onClick = { showLogResult = true }) { Text("LOG RESULT", color = Gold, style = MaterialTheme.typography.labelMedium) }
+                    SectionLabel("Match record")
+                    TextButton(onClick = { showLogResult = true }) { Text("Log result", color = Gold, style = MaterialTheme.typography.labelMedium) }
                 }
                 if (total == 0) {
                     Text(
@@ -1213,7 +1220,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                     )
                 } else {
                     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("$wins-$losses" + if (draws > 0) "-$draws" else "", style = MaterialTheme.typography.titleLarge)
+                        Text("$wins–$losses" + if (draws > 0) "–$draws" else "", style = NumberStyle(40), color = TextPrimary)
                         Text(
                             "${(wins * 100 / total)}% win rate over $total game${if (total == 1) "" else "s"}",
                             style = MaterialTheme.typography.bodyMedium,
@@ -1257,10 +1264,13 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         item { VersionHistoryPanel(versionHistory, onOpen = { openVersion = it }) }
         item {
             Panel {
-                SectionLabel("COMMANDER BRACKET")
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Bracket ${analysis.bracket}", style = MaterialTheme.typography.titleLarge)
-                    Text(analysis.bracketName, style = MaterialTheme.typography.bodyMedium, color = GoldLight, modifier = Modifier.padding(bottom = 4.dp))
+                SectionLabel("Commander bracket")
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    Text("${analysis.bracket}", style = NumberStyle(46), color = TextPrimary)
+                    Column(Modifier.padding(bottom = 6.dp)) {
+                        Text("Bracket", style = MaterialTheme.typography.labelMedium)
+                        Text(analysis.bracketName, style = MaterialTheme.typography.titleMedium, color = GoldLight)
+                    }
                 }
                 Text(analysis.bracketReason, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
                 if (analysis.gameChangers.isNotEmpty()) {
@@ -1281,13 +1291,13 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         }
         item {
             Panel {
-                SectionLabel("TOTAL VALUE (USD)")
-                AnimatedUsdText(analysis.totalUsd, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+                SectionLabel("Total value (USD)")
+                CountUpText(analysis.totalUsd, NumberStyle(46), TextPrimary, format = { "$" + "%,.2f".format(it) }, modifier = Modifier.padding(top = 4.dp))
             }
         }
         item {
             Panel {
-                SectionLabel("MANA CURVE")
+                SectionLabel("Mana curve")
                 ManaCurveChart(analysis.manaCurve)
                 Text(
                     "Average mana value: ${"%.2f".format(analysis.avgManaValue)}",
@@ -1300,7 +1310,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         item { RolesPanel(roles) }
         item {
             Panel {
-                SectionLabel("COLORS")
+                SectionLabel("Colors")
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 6.dp)) {
                     analysis.colorCounts.forEach { (color, count) ->
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -1314,7 +1324,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         if (analysis.colorPipCounts.isNotEmpty()) {
             item {
                 Panel {
-                    SectionLabel("MANA SYMBOLS")
+                    SectionLabel("Mana symbols")
                     val totalPips = analysis.colorPipCounts.sumOf { it.second }
                     Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         analysis.colorPipCounts.forEach { (color, count) ->
@@ -1366,7 +1376,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         if (analysis.landCount > 0) {
             item {
                 Panel {
-                    SectionLabel("MANA BASE")
+                    SectionLabel("Mana base")
                     Text(
                         "${analysis.landCount} lands · ${analysis.deckSize} cards in library",
                         style = MaterialTheme.typography.bodySmall,
@@ -1421,7 +1431,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         }
         item {
             Panel {
-                SectionLabel("CARD TYPES")
+                SectionLabel("Card types")
                 val maxType = analysis.typeCounts.maxOfOrNull { it.second } ?: 1
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
                     analysis.typeCounts.forEach { (type, count) -> StatBar(type, count, maxType) }
@@ -1469,7 +1479,7 @@ private fun LogGameResultDialog(onConfirm: (String, String?) -> Unit, onDismiss:
                 OutlinedTextField(
                     value = opponent,
                     onValueChange = { opponent = it },
-                    label = { Text("Opponent (optional)", color = GoldDim) },
+                    label = { Text("Opponent (optional)", color = TextMuted) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Gold,
@@ -1485,10 +1495,10 @@ private fun LogGameResultDialog(onConfirm: (String, String?) -> Unit, onDismiss:
             Button(
                 onClick = { onConfirm(result, opponent.trim()) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("LOG", color = Bg) }
+            ) { Text("Log", color = Bg) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
 }
@@ -1517,7 +1527,7 @@ private fun AnalysisTab(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item { SectionLabel("COMBOS (${analysis.combos.size})") }
+        item { SectionLabel("Combos (${analysis.combos.size})") }
         if (!analysis.combosAvailable) {
             item { Text("Couldn't reach Commander Spellbook — check your connection.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
         } else if (analysis.combos.isEmpty()) {
@@ -1539,7 +1549,7 @@ private fun AnalysisTab(
             onMarkCut = onMarkCut,
             onViewDetails = onViewDetails
         )
-        item { SectionLabel("EDHREC SUGGESTIONS") }
+        item { SectionLabel("EDHREC suggestions") }
         val sug = suggestions
         when {
             sug == null -> item {
@@ -1576,8 +1586,8 @@ internal fun Panel(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .elevatedCard()
-            .padding(14.dp),
+            .elevatedCard(shape = RoundedCornerShape(22.dp))
+            .padding(16.dp),
         content = content
     )
 }
@@ -1590,6 +1600,8 @@ internal fun SectionLabel(text: String) {
 @Composable
 private fun ManaCurveChart(curve: List<Pair<String, Int>>) {
     val max = curve.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
+    val grow = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { grow.animateTo(1f, popSpring()) }
     Row(
         modifier = Modifier.fillMaxWidth().height(130.dp).padding(top = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1601,7 +1613,7 @@ private fun ManaCurveChart(curve: List<Pair<String, Int>>) {
                 verticalArrangement = Arrangement.Bottom,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("$count", style = MaterialTheme.typography.labelMedium, color = GoldLight)
+                Text("$count", style = NumberStyle(17), color = TextPrimary)
                 // The bar lives in whatever space is left after both text labels, so its height is
                 // always a fraction of that leftover — never a fixed dp value. A hardcoded bar
                 // height could add up with the labels to more than the Row's fixed height, pushing
@@ -1611,10 +1623,11 @@ private fun ManaCurveChart(curve: List<Pair<String, Int>>) {
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.7f)
+                            .fillMaxWidth(0.78f)
                             .fillMaxHeight(0.06f + 0.94f * count / max)
-                            .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                            .background(if (count > 0) Gold else BorderColor)
+                            .graphicsLayer { scaleY = grow.value; transformOrigin = TransformOrigin(0.5f, 1f) }
+                            .clip(RoundedCornerShape(topStart = 7.dp, topEnd = 7.dp, bottomStart = 3.dp, bottomEnd = 3.dp))
+                            .background(if (count > 0) Brush.verticalGradient(listOf(GoldLight, GoldDim)) else Brush.verticalGradient(listOf(Surface3, Surface3)))
                     )
                 }
                 Spacer(Modifier.height(4.dp))
@@ -1628,16 +1641,18 @@ private fun ManaCurveChart(curve: List<Pair<String, Int>>) {
 private fun StatBar(label: String, count: Int, max: Int) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = TextPrimary, modifier = Modifier.fillMaxWidth(0.28f))
+        val fill = remember { Animatable(0f) }
+        LaunchedEffect(count, max) { fill.animateTo(count.toFloat() / max, tween(800, easing = FastOutSlowInEasing)) }
         Box(modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(8.dp)).background(Bg)) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(count.toFloat() / max)
+                    .fillMaxWidth(fill.value)
                     .height(8.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Gold)
             )
         }
-        Text("$count", style = MaterialTheme.typography.bodySmall, color = GoldLight)
+        Text("$count", style = NumberStyle(18), color = TextPrimary)
     }
 }
 
@@ -1668,7 +1683,7 @@ private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit, onConsider:
                 color = TextMuted
             )
         }
-        TextButton(onClick = onConsider) { Text("CONSIDER", color = Gold, style = MaterialTheme.typography.labelMedium) }
+        TextButton(onClick = onConsider) { Text("Consider", color = Gold, style = MaterialTheme.typography.labelMedium) }
     }
 }
 
@@ -1698,7 +1713,7 @@ private fun SuggestionTile(view: EdhrecCardView, onClick: () -> Unit, onConsider
                 modifier = Modifier.weight(1f)
             )
             Text(
-                "CONSIDER",
+                "Consider",
                 style = MaterialTheme.typography.labelMedium,
                 color = Gold,
                 modifier = Modifier.clickable(onClick = onConsider).padding(vertical = 2.dp)
@@ -1730,32 +1745,36 @@ private fun DeckCardRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .pressScale(interactionSource)
-                .elevatedCard(shape = RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(18.dp))
+                .background(if (menuExpanded) Surface2 else Surface)
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
                 )
-                .padding(12.dp)
+                .padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 4.dp)
         ) {
             Box {
-                AsyncImage(
+                ArtImage(
                     model = card.imageUrl.toArtCropUrl(),
+                    seed = card.name,
                     contentDescription = card.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
+                    modifier = Modifier.size(width = 60.dp, height = 46.dp).clip(RoundedCornerShape(11.dp))
                 )
                 if (card.backImageUrl != null) FlipBadge()
             }
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     card.name,
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextPrimary,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                card.typeLine?.let {
+                    Text(it, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.padding(top = 3.dp))
             }
             if (card.canBeCommander) {
@@ -1769,17 +1788,16 @@ private fun DeckCardRow(
                 }
             }
             // Compact quantity stepper on the right: − removes a copy (removes the card at 0), + adds one.
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                IconButton(onClick = onDecrement, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Filled.Remove, contentDescription = "Remove a copy", tint = Gold, modifier = Modifier.size(18.dp))
-                }
-                Text("${card.quantity}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-                IconButton(onClick = onIncrement, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add a copy", tint = Gold, modifier = Modifier.size(18.dp))
-                }
-            }
+            QuantityStepper(card.quantity, onDecrement = onDecrement, onIncrement = onIncrement)
         }
-        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = actions)
+        CardActionMenu(
+            expanded = menuExpanded,
+            onDismiss = { menuExpanded = false },
+            actions = actions,
+            title = card.name,
+            subtitle = card.typeLine,
+            imageUrl = card.imageUrl.toArtCropUrl()
+        )
     }
 }
 
@@ -1850,7 +1868,14 @@ private fun DeckCardTile(
             )
             DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.padding(top = 2.dp))
         }
-        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = actions)
+        CardActionMenu(
+            expanded = menuExpanded,
+            onDismiss = { menuExpanded = false },
+            actions = actions,
+            title = card.name,
+            subtitle = card.typeLine,
+            imageUrl = card.imageUrl.toArtCropUrl()
+        )
     }
 }
 
@@ -1905,4 +1930,150 @@ private fun deckCardActions(
     actions += CardMenuAction("Remove from deck", Icons.Filled.Close, destructive = true) { onRemove(entry) }
     actions += CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
     return actions
+}
+
+/**
+ * The deck page's header: commander art filling the top, deck name and key figures over its lower
+ * edge, collapsing to a slim bar with just the name as the content scrolls.
+ */
+@Composable
+private fun DeckHero(
+    deck: Deck?,
+    analysis: DeckAnalysis,
+    height: Dp,
+    collapsedFraction: Float,
+    onBack: () -> Unit,
+    onMenu: () -> Unit,
+    menu: @Composable () -> Unit
+) {
+    val app = LocalAppColors.current
+    val identity = analysis.colorCounts.map { it.first }.filter { it in listOf("W", "U", "B", "R", "G") }
+    val expandedAlpha = (1f - collapsedFraction * 1.8f).coerceIn(0f, 1f)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(height)
+            .background(Bg)
+            .clipToBounds()
+    ) {
+        if (deck != null) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - collapsedFraction * 0.9f; translationY = -collapsedFraction * 60f }) {
+                ArtImage(
+                    model = deck.commander?.imageUrl.toArtCropUrl(),
+                    seed = deck.name,
+                    colors = identity,
+                    contentDescription = deck.commander?.name,
+                    modifier = Modifier.fillMaxSize().sharedArt(SharedKeys.deckArt(deck.id))
+                )
+            }
+        }
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f to Bg.copy(alpha = 0.45f),
+                    0.3f to Bg.copy(alpha = 0.05f),
+                    0.7f to Bg.copy(alpha = 0.78f),
+                    1f to Bg
+                )
+            )
+        )
+        Box(Modifier.fillMaxSize().background(Bg.copy(alpha = collapsedFraction)))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 12.dp)
+        ) {
+            HeroButton(Icons.Filled.ArrowBack, "Back", onBack)
+            Text(
+                deck?.name ?: "",
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp).graphicsLayer { alpha = ((collapsedFraction - 0.6f) * 2.5f).coerceIn(0f, 1f) }
+            )
+            Box {
+                HeroButton(Icons.Filled.MoreVert, "Deck menu", onMenu)
+                menu()
+            }
+        }
+
+        if (deck != null && expandedAlpha > 0f) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 20.dp, bottom = 10.dp)
+                    .graphicsLayer { alpha = expandedAlpha },
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                deck.commander?.let { commander ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (identity.isNotEmpty()) ManaPips(identity, size = 16.dp)
+                        Text(commander.name, style = MaterialTheme.typography.labelLarge, color = app.textPrimary.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Text(deck.name, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 2.dp)) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        CountUpText(deck.cards.sumOf { it.quantity }.toDouble(), NumberStyle(24), app.textPrimary)
+                        Text(" cards", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(bottom = 3.dp))
+                    }
+                    if (!analysis.loading && analysis.totalUsd > 0) {
+                        CountUpText(analysis.totalUsd, NumberStyle(24), app.textPrimary, format = { "$" + "%,.2f".format(it) })
+                    }
+                    if (!analysis.loading && analysis.bracket > 0) {
+                        Text(
+                            "Bracket ${analysis.bracket}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = app.accent,
+                            modifier = Modifier.clip(RoundedCornerShape(50)).background(app.accentGlow).padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+                if (identity.isNotEmpty()) IdentityStrip(identity, modifier = Modifier.width(110.dp).padding(top = 4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    val app = LocalAppColors.current
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(app.bg.copy(alpha = 0.55f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = app.textPrimary, modifier = Modifier.size(22.dp))
+    }
+}
+
+/** − n + in a small pill; the number bumps when it changes. */
+@Composable
+private fun QuantityStepper(quantity: Int, onDecrement: () -> Unit, onIncrement: () -> Unit) {
+    val app = LocalAppColors.current
+    val bump = remember { Animatable(1f) }
+    var last by remember { mutableIntStateOf(quantity) }
+    LaunchedEffect(quantity) {
+        if (quantity != last) {
+            last = quantity
+            bump.snapTo(1.35f)
+            bump.animateTo(1f, popSpring())
+        }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(app.bg)
+    ) {
+        Box(Modifier.size(width = 32.dp, height = 36.dp).clickable(onClick = onDecrement), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Remove, contentDescription = "Remove a copy", tint = app.textMuted, modifier = Modifier.size(16.dp))
+        }
+        Text("$quantity", style = NumberStyle(20), color = app.textPrimary, modifier = Modifier.graphicsLayer { scaleX = bump.value; scaleY = bump.value })
+        Box(Modifier.size(width = 32.dp, height = 36.dp).clickable(onClick = onIncrement), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Add, contentDescription = "Add a copy", tint = app.textMuted, modifier = Modifier.size(16.dp))
+        }
+    }
 }

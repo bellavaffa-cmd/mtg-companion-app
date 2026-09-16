@@ -47,8 +47,22 @@ class HomeViewModel(
     private val newsRepository: NewsRepository = NewsRepository()
 ) : ViewModel() {
 
-    private val decks: StateFlow<List<Deck>> = deckRepository.decksFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** Every deck, most recently opened first — Home's deck rail. */
+    val decks: StateFlow<List<Deck>> = combine(deckRepository.decksFlow, settingsRepository.lastOpenedDeckId) { list, lastId ->
+        list.sortedByDescending { it.id == lastId }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** deckId -> commander colour identity, for the identity strips on Home's deck tiles. */
+    val deckColors: StateFlow<Map<String, List<String>>> = deckRepository.decksFlow.mapLatest { list ->
+        val ids = list.flatMap { listOfNotNull(it.commander?.scryfallId, it.partnerCommander?.scryfallId) }
+        if (ids.isEmpty()) return@mapLatest emptyMap()
+        val byId = try { cardRepository.getCardsByIds(ids).associateBy { it.id } } catch (e: Exception) { return@mapLatest emptyMap() }
+        list.mapNotNull { deck ->
+            val main = deck.commander?.scryfallId?.let { byId[it]?.colorIdentity } ?: return@mapNotNull null
+            val partner = deck.partnerCommander?.scryfallId?.let { byId[it]?.colorIdentity }.orEmpty()
+            deck.id to (main + partner).distinct()
+        }.toMap()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val deckCount: StateFlow<Int> = decks.map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)

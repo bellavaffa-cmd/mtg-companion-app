@@ -65,7 +65,7 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
             containerColor = Bg,
             topBar = {
                 TopAppBar(
-                    title = { Text("COMBO", color = GoldLight, style = MaterialTheme.typography.labelLarge) },
+                    title = { Text("Combo", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                     navigationIcon = {
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Filled.Close, contentDescription = "Close", tint = Gold)
@@ -92,7 +92,7 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("CARDS USED", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                    Text("Cards used", style = MaterialTheme.typography.labelMedium, color = TextMuted)
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -103,7 +103,7 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
 
                 if (combo.produces.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("PRODUCES", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                        Text("Produces", style = MaterialTheme.typography.labelMedium, color = TextMuted)
                         combo.produces.forEach { produced ->
                             Text(produced.feature.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
                         }
@@ -118,7 +118,7 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
                         .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("HOW IT WORKS", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                    Text("How it works", style = MaterialTheme.typography.labelMedium, color = TextMuted)
                     // Commander Spellbook already writes its description as one step per line —
                     // numbering them instead of showing one prose blob makes the sequence explicit.
                     val steps = combo.description?.lines()?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
@@ -156,7 +156,7 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
                     val url = "https://commanderspellbook.com/combo/${combo.id}/"
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                 }) {
-                    Text("VIEW ON COMMANDER SPELLBOOK", color = Gold, style = MaterialTheme.typography.labelMedium)
+                    Text("View on Commander Spellbook", color = Gold, style = MaterialTheme.typography.labelMedium)
                 }
             }
         }

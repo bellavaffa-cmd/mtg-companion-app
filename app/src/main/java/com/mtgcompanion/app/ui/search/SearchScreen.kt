@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.search
 
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.filled.MenuBook
+import com.mtgcompanion.app.ui.theme.OnGold
+import com.mtgcompanion.app.ui.common.PillChip
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -85,7 +90,8 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 fun SearchScreen(
     viewModel: SearchViewModel,
     onCardClick: (ScryfallCard) -> Unit,
-    onOpenResults: () -> Unit
+    onOpenResults: () -> Unit,
+    onOpenRules: () -> Unit = {}
 ) {
     val mode by viewModel.mode.collectAsState()
     val query by viewModel.query.collectAsState()
@@ -99,23 +105,20 @@ fun SearchScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = {
-                        Text(
-                            "MTG COMPANION",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = GoldLight
-                        )
-                    },
+                    title = { Text("Search", style = MaterialTheme.typography.headlineSmall) },
                     actions = {
                         if (mode == SearchMode.CARDS) {
                             TextButton(onClick = { viewModel.onFiltersChange(SearchFilters()) }) {
-                                Text("Clear all", color = TextMuted)
+                                Text("Clear all", color = TextMuted, style = MaterialTheme.typography.labelLarge)
                             }
+                        }
+                        // Rules left the bottom bar to make room for the raised Scan button; it lives here now.
+                        IconButton(onClick = onOpenRules) {
+                            Icon(Icons.Filled.MenuBook, contentDescription = "Rules and glossary", tint = TextPrimary)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
                 )
-                GoldDivider()
             }
         },
         bottomBar = {
@@ -124,18 +127,18 @@ fun SearchScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(Bg)
-                        .border(BorderStroke(1.dp, BorderColor))
-                        .padding(16.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
                     Button(
                         onClick = { viewModel.search(); onOpenResults() },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = OnGold),
+                        contentPadding = PaddingValues(vertical = 14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Filled.Search, contentDescription = null, tint = Bg, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("SEARCH", style = MaterialTheme.typography.labelLarge, color = Bg)
+                        Icon(Icons.Filled.Search, contentDescription = null, tint = OnGold, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Search", style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp), color = OnGold)
                     }
                 }
             }
@@ -151,8 +154,8 @@ fun SearchScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeChip("Cards", mode == SearchMode.CARDS) { viewModel.setMode(SearchMode.CARDS) }
-                ModeChip("Combos", mode == SearchMode.COMBOS) { viewModel.setMode(SearchMode.COMBOS) }
+                PillChip("Cards", mode == SearchMode.CARDS, onClick = { viewModel.setMode(SearchMode.CARDS) })
+                PillChip("Combos", mode == SearchMode.COMBOS, onClick = { viewModel.setMode(SearchMode.COMBOS) })
             }
 
             if (mode == SearchMode.COMBOS) {
@@ -175,7 +178,7 @@ fun SearchScreen(
                         OutlinedTextField(
                             value = query,
                             onValueChange = viewModel::onQueryChange,
-                            label = { Text("Search cards", color = GoldDim) },
+                            label = { Text("Search cards", color = TextMuted) },
                             placeholder = { Text("Try \"is:commander c:g\"", color = TextDim) },
                             singleLine = true,
                             shape = RoundedCornerShape(8.dp),
@@ -282,12 +285,12 @@ private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(
         selected = selected,
         onClick = onClick,
-        label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+        label = { Text(label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
         colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = Gold,
-            selectedLabelColor = Bg,
+            selectedLabelColor = OnGold,
             labelColor = TextMuted,
-            containerColor = Bg
+            containerColor = Surface
         )
     )
 }
@@ -454,7 +457,7 @@ private fun SortSection(
             }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.background(Surface)) {
                 Text(
-                    "DIRECTION",
+                    "Direction",
                     style = MaterialTheme.typography.labelMedium,
                     color = TextMuted,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
@@ -473,7 +476,7 @@ private fun SortSection(
                 }
                 Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
                 Text(
-                    "SORT BY",
+                    "Sort by",
                     style = MaterialTheme.typography.labelMedium,
                     color = TextMuted,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
@@ -581,12 +584,12 @@ private fun ChipRow(options: List<String>, selected: Set<String>, onToggle: (Str
             FilterChip(
                 selected = option in selected,
                 onClick = { onToggle(option) },
-                label = { Text(option.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelMedium) },
+                label = { Text(option.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Gold,
-                    selectedLabelColor = Bg,
+                    selectedLabelColor = OnGold,
                     labelColor = TextMuted,
-                    containerColor = Bg
+                    containerColor = Surface
                 )
             )
         }
@@ -598,7 +601,7 @@ private fun FilterField(label: String, value: String, placeholder: String, onVal
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, color = GoldDim) },
+        label = { Text(label, color = TextMuted) },
         placeholder = { Text(placeholder, color = TextDim, style = MaterialTheme.typography.bodySmall) },
         singleLine = true,
         shape = RoundedCornerShape(8.dp),
@@ -612,7 +615,7 @@ private fun NumberField(label: String, value: String, modifier: Modifier, onValu
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, color = GoldDim) },
+        label = { Text(label, color = TextMuted) },
         singleLine = true,
         shape = RoundedCornerShape(8.dp),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
