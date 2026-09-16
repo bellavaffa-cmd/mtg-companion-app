@@ -32,7 +32,7 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -88,20 +88,20 @@ fun HomeScreen(
     val alert by viewModel.alert.collectAsState()
     val news by viewModel.news.collectAsState()
     val context = LocalContext.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     Scaffold(
         containerColor = Bg,
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = { Text("MTG COMPANION", style = MaterialTheme.typography.labelLarge, color = GoldLight) },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Gold)
                     }
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Bg, scrolledContainerColor = Surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, scrolledContainerColor = Surface),
                 scrollBehavior = scrollBehavior
             )
         }

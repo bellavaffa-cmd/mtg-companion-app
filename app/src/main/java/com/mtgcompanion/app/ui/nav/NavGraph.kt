@@ -12,6 +12,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -158,6 +163,10 @@ fun MtgNavGraph(
 
     Scaffold(
         containerColor = Bg,
+        // The system bars are hidden app-wide (MainActivity), so these are normally zero — but a
+        // camera cutout still needs clearing on regular screens. The life counter's tiles are meant
+        // to run edge to edge, so it gets none.
+        contentWindowInsets = if (currentRoute == Routes.LIFE_COUNTER) WindowInsets(0) else WindowInsets.systemBars.union(WindowInsets.displayCutout),
         bottomBar = {
             if (currentRoute in bottomNavRoutes) {
                 MtgBottomBar(currentRoute = currentRoute, navController = navController)
@@ -167,7 +176,10 @@ fun MtgNavGraph(
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,
-            modifier = Modifier.padding(padding),
+            // This padding already clears the status bar (and the nav bar or bottom bar), so mark
+            // those insets consumed — otherwise every screen's own Scaffold/TopAppBar pads for the
+            // status bar a second time, leaving an empty band above each title.
+            modifier = Modifier.padding(padding).consumeWindowInsets(padding),
             // A hard cut between screens reads as unfinished; a quick fade+slide gives every
             // push/pop (tab switches included) the same lightweight "moving deeper" feel.
             enterTransition = { fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 10 } },
