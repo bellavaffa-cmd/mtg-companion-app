@@ -133,6 +133,17 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
     val seatBounds = remember { mutableStateMapOf<Int, Rect>() }
     var tableBounds by remember { mutableStateOf(Rect.Zero) }
 
+    // The phone lies on the table between players, so a stray back press or edge swipe shouldn't end
+    // the game: the first press only arms exit, and a second within the window leaves. Registered
+    // before the menu's handler (and every overlay's), so those still close first.
+    var exitArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(exitArmed) {
+        if (exitArmed) {
+            delay(EXIT_CONFIRM_MILLIS)
+            exitArmed = false
+        }
+    }
+    BackHandler { if (exitArmed) onBack() else exitArmed = true }
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
     LaunchedEffect(highRollRequested) {
@@ -288,6 +299,26 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                 }
 
                 MenuButton(open = menuOpen, onClick = { menuOpen = !menuOpen }, modifier = Modifier.align(Alignment.Center))
+
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = exitArmed,
+                    enter = fadeIn(tween(TableMotion.FAST)) + slideInVertically(tween(TableMotion.FAST, easing = TableMotion.SlideIn)) { it / 2 },
+                    exit = fadeOut(tween(200)),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp)
+                ) {
+                    Text(
+                        "PRESS BACK AGAIN TO EXIT",
+                        fontFamily = BebasNeue,
+                        fontSize = 20.sp,
+                        letterSpacing = 1.sp,
+                        color = Color.White,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(TableColors.SurfaceRaised)
+                            .border(BorderStroke(1.dp, TableColors.Line), RoundedCornerShape(50))
+                            .padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
             }
         }
 
@@ -899,3 +930,5 @@ private fun TipSample(demo: TipDemo) {
         }
     }
 }
+
+private const val EXIT_CONFIRM_MILLIS = 2_000L
