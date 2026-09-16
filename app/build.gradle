@@ -18,8 +18,8 @@ android {
         minSdk 26
         targetSdk 34
         // versionCode scheme: major*10000 + minor*100 + patch (e.g. 1.8.0 -> 10800). Bump both per release.
-        versionCode 17000
-        versionName '1.70.0'
+        versionCode 17100
+        versionName '1.71.0'
 
         // Bounds which ABIs exist in this project at all, which the `splits` block below then
         // divides into one APK each. It has to stay: the universal APK packages every ABI the
@@ -139,9 +139,9 @@ dependencies {
 
     implementation 'com.google.mlkit:text-recognition:16.0.1'
 
-    // Art-recognition fallback for the scanner: an ImageNet-pretrained MobileNetV2 (bundled as an
-    // asset, ui/scan) run entirely on-device to embed a photographed card's art and match it
-    // against a downloaded visual-fingerprint index — see data/artrecognition/.
+    // Art-recognition fallback for the scanner: an ImageNet-pretrained MobileNetV2 (downloaded
+    // alongside the index, not bundled) run entirely on-device to embed a photographed card's art
+    // and match it against a visual-fingerprint index — see data/artrecognition/.
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.29.0'
 
     // Google Sign-In for Drive access; Drive itself is called via REST over the existing OkHttp,
