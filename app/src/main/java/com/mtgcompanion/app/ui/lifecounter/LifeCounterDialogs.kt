@@ -1,9 +1,13 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +17,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,20 +25,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,91 +42,86 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.common.InlineManaText
-import com.mtgcompanion.app.ui.theme.Bg
-import com.mtgcompanion.app.ui.theme.BorderColor
-import com.mtgcompanion.app.ui.theme.Gold
-import com.mtgcompanion.app.ui.theme.GoldLight
-import com.mtgcompanion.app.ui.theme.TextDim
-import com.mtgcompanion.app.ui.theme.TextMuted
-import com.mtgcompanion.app.ui.theme.TextPrimary
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
-// ---- Exact life keypad ----
+// ---- Confirm ----
 
-/** Tap the life number to bring up an exact-value keypad instead of tapping ±1 repeatedly. */
+/** A centered question with a cancel and a confirm, the way the table asks before anything destructive. */
 @Composable
-internal fun LifeKeypadDialog(initial: Int, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(initial.toString()) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Bg,
-        title = { Text("Set life total", color = GoldLight) },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text.ifBlank { "0" },
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 40.sp),
-                    color = TextPrimary,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("-", "0", "⌫")).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 10.dp)) {
-                        row.forEach { key ->
-                            KeypadButton(key) {
-                                text = when (key) {
-                                    "⌫" -> text.dropLast(1)
-                                    "-" -> if (text.startsWith("-")) text.removePrefix("-") else "-$text"
-                                    else -> if (text == "0") key else text + key
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { GoldButton("SET") { onConfirm(text.toIntOrNull() ?: initial) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) } }
-    )
-}
-
-@Composable
-private fun KeypadButton(label: String, onClick: () -> Unit) {
+internal fun ConfirmOverlay(text: String, confirmLabel: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    BackHandler(onBack = onDismiss)
     Box(
+        contentAlignment = Alignment.Center,
         modifier = Modifier
-            .size(52.dp)
-            .clip(CircleShape)
-            .background(Bg)
-            .border(BorderStroke(1.dp, BorderColor), CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.85f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
     ) {
-        Text(label, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp).popIn(easing = TableMotion.Pop)) {
+            TableLabel(text, 34.sp, align = TextAlign.Center)
+            Row(horizontalArrangement = Arrangement.spacedBy(28.dp), modifier = Modifier.padding(top = 18.dp)) {
+                TableLabel("Cancel", 30.sp, color = TableColors.Blue, modifier = Modifier.clickable(onClick = onDismiss))
+                TableLabel(confirmLabel, 30.sp, color = TableColors.Accent, modifier = Modifier.clickable { onConfirm(); onDismiss() })
+            }
+        }
     }
 }
 
+// ---- Exact life keypad ----
+
+/** Tap the life number to type an exact total instead of tapping ±1 repeatedly. */
 @Composable
-internal fun GoldButton(label: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
-        modifier = modifier
-    ) { Text(label, color = Bg, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+internal fun LifeKeypadOverlay(playerName: String, initial: Int, seat: SeatColor, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(initial.toString()) }
+    TableOverlay(title = playerName, onClose = onDismiss) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .padding(top = 8.dp, bottom = 20.dp)
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(seat.color)
+            ) {
+                TableLabel(text.ifBlank { "0" }, 96.sp, color = if (seat.whiteText) Color.White else Color.Black)
+            }
+            listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("−", "0", "⌫")).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(bottom = 14.dp)) {
+                    row.forEach { key ->
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(TableColors.SurfaceRaised)
+                                .clickable {
+                                    text = when (key) {
+                                        "⌫" -> text.dropLast(1)
+                                        "−" -> if (text.startsWith("-")) text.removePrefix("-") else "-$text"
+                                        else -> if (text == "0") key else (text + key).take(4)
+                                    }
+                                }
+                        ) { TableLabel(key, 36.sp) }
+                    }
+                }
+            }
+            PillButton("Set life", TableColors.Accent, onClick = { onConfirm(text.toIntOrNull() ?: initial); onDismiss() }, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
 }
 
 // ---- Dice, coin, high roll ----
@@ -137,183 +130,182 @@ private const val MAX_CUSTOM_DICE = 20
 private const val MAX_CUSTOM_SIDES = 1000
 
 @Composable
-internal fun DiceRollerDialog(
+internal fun DiceOverlay(
     players: List<PlayerLife>,
     startWithHighRoll: Boolean,
     onHighRoll: () -> HighRollResult,
     onSetFirstPlayer: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var result by remember { mutableStateOf("—") }
+    var result by remember { mutableStateOf<String?>(null) }
+    var rollId by remember { mutableIntStateOf(0) }
     var diceCount by remember { mutableStateOf("1") }
     var diceSides by remember { mutableStateOf("20") }
     var highRoll by remember { mutableStateOf(if (startWithHighRoll) onHighRoll() else null) }
     val count = diceCount.toIntOrNull()?.takeIf { it in 1..MAX_CUSTOM_DICE }
     val sides = diceSides.toIntOrNull()?.takeIf { it in 2..MAX_CUSTOM_SIDES }
+    fun show(text: String) { result = text; rollId++ }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Bg,
-        title = { Text(if (startWithHighRoll) "Who goes first?" else "Dice & coin", color = GoldLight) },
-        text = {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState())
-            ) {
-                if (!startWithHighRoll) {
-                    Text(result, style = MaterialTheme.typography.titleLarge, color = GoldLight, textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 16.dp))
-                    DiceRow(listOf(4, 6, 8)) { s -> result = rollDice(1, s) }
-                    Spacer(Modifier.height(8.dp))
-                    DiceRow(listOf(10, 12, 20)) { s -> result = rollDice(1, s) }
-                    Spacer(Modifier.height(14.dp))
-                    GoldButton("FLIP COIN") { result = if (Random.nextBoolean()) "Heads" else "Tails" }
-
-                    Spacer(Modifier.height(18.dp))
-                    DialogSectionLabel("CUSTOM DICE")
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
-                        DialogNumberField(diceCount, width = 60) { diceCount = it }
-                        Text("d", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                        DialogNumberField(diceSides, width = 76) { diceSides = it }
-                        GoldButton("ROLL", enabled = count != null && sides != null) { result = rollDice(count!!, sides!!) }
-                    }
-                    if (count == null || sides == null) {
-                        Text("Up to $MAX_CUSTOM_DICE dice, 2–$MAX_CUSTOM_SIDES sides", style = MaterialTheme.typography.labelSmall, color = TextDim, modifier = Modifier.padding(top = 4.dp))
-                    }
-                    Spacer(Modifier.height(18.dp))
-                    DialogSectionLabel("WHO GOES FIRST")
+    TableOverlay(title = if (startWithHighRoll) "High roll" else "Dice", onClose = onDismiss) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
+        ) {
+            if (!startWithHighRoll) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().height(130.dp)) {
+                    result?.let { RollResult(it, rollId) } ?: TableLabel("Tap a die", 40.sp, color = TableColors.TextMuted)
                 }
-                TextButton(onClick = { highRoll = onHighRoll() }) {
-                    Text(if (highRoll == null) "HIGH ROLL (D20 EACH)" else "ROLL AGAIN", color = Gold)
-                }
-                highRoll?.let { roll ->
-                    players.forEach { player ->
-                        val rolls = roll.rolls[player.id].orEmpty()
-                        val isWinner = player.id == roll.winnerId
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
-                        ) {
-                            Box(Modifier.size(10.dp).clip(CircleShape).background(paletteColor(player.colorIndex)))
-                            Text(
-                                player.displayName,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isWinner) GoldLight else TextPrimary,
-                                fontWeight = if (isWinner) FontWeight.Bold else FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            // More than one roll means they tied for highest and rolled off.
-                            Text(
-                                rolls.joinToString(" → "),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isWinner) GoldLight else TextMuted,
-                                fontWeight = if (isWinner) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    }
-                    players.firstOrNull { it.id == roll.winnerId }?.let { winner ->
-                        GoldButton("START WITH ${winner.displayName.uppercase()}", modifier = Modifier.padding(top = 8.dp)) {
-                            onSetFirstPlayer(winner.id)
-                            onDismiss()
+                listOf(listOf(4, 6, 8), listOf(10, 12, 20)).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {
+                        row.forEach { s ->
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(84.dp)
+                                    .clip(RoundedCornerShape(22.dp))
+                                    .background(TableColors.SurfaceRaised)
+                                    .clickable { show(rollDice(1, s)) }
+                            ) { TableLabel("D$s", 36.sp) }
                         }
                     }
                 }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("CLOSE", color = TextMuted) } }
-    )
-}
+                PillButton("Flip a coin", TableColors.Yellow, textColor = Color.Black, onClick = { show(if (Random.nextBoolean()) "Heads" else "Tails") })
 
-/** "d20 → 14" for one die; "3d6 → 2, 5, 1 = 8" for several. */
-private fun rollDice(count: Int, sides: Int): String {
-    val rolls = List(count) { Random.nextInt(1, sides + 1) }
-    return if (count == 1) "d$sides → ${rolls.first()}" else "${count}d$sides → ${rolls.joinToString(", ")} = ${rolls.sum()}"
-}
-
-@Composable
-private fun DiceRow(sidesList: List<Int>, onRoll: (Int) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        sidesList.forEach { sides ->
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Bg)
-                    .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(18.dp))
-                    .clickable { onRoll(sides) },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("d$sides", style = MaterialTheme.typography.labelMedium, color = Gold)
+                SectionTitle("Custom dice")
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    NumberField(diceCount, width = 70) { diceCount = it }
+                    TableLabel("D", 36.sp)
+                    NumberField(diceSides, width = 90) { diceSides = it }
+                    PillButton("Roll", TableColors.Accent, enabled = count != null && sides != null, onClick = { show(rollDice(count!!, sides!!)) })
+                }
+                if (count == null || sides == null) {
+                    TableLabel("Up to $MAX_CUSTOM_DICE dice, 2–$MAX_CUSTOM_SIDES sides", 18.sp, color = TableColors.TextMuted, modifier = Modifier.padding(top = 6.dp))
+                }
+                SectionTitle("Who goes first")
             }
+
+            PillButton(if (highRoll == null) "Roll for everyone" else "Roll again", TableColors.MenuHighRoll, textColor = Color.Black, onClick = { highRoll = onHighRoll() })
+            highRoll?.let { roll ->
+                Spacer(Modifier.height(14.dp))
+                players.forEach { player ->
+                    val rolls = roll.rolls[player.id].orEmpty()
+                    val winner = player.id == roll.winnerId
+                    val seat = seatColor(player.colorIndex)
+                    val ink = if (seat.whiteText) Color.White else Color.Black
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
+                            .popIn(delayMillis = 40 * (player.id - 1), easing = TableMotion.Pop)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(seat.color)
+                            .border(BorderStroke(if (winner) 4.dp else 0.dp, if (winner) Color.White else Color.Transparent), RoundedCornerShape(16.dp))
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                    ) {
+                        TableLabel(player.displayName, 28.sp, color = ink, maxLines = 1, modifier = Modifier.weight(1f))
+                        // More than one roll means they tied for highest and rolled off.
+                        TableLabel(rolls.joinToString("  →  "), if (winner) 40.sp else 30.sp, color = ink)
+                    }
+                }
+                players.firstOrNull { it.id == roll.winnerId }?.let { winner ->
+                    PillButton(
+                        "Start with ${winner.displayName}",
+                        TableColors.Accent,
+                        onClick = { onSetFirstPlayer(winner.id); onDismiss() },
+                        modifier = Modifier.padding(top = 8.dp).popIn(delayMillis = 200)
+                    )
+                }
+            }
+            Spacer(Modifier.height(28.dp))
         }
     }
 }
 
+/** A roll result spinning into place. Re-keyed on every roll so the same value still animates. */
 @Composable
-internal fun DialogNumberField(value: String, width: Int, onValueChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { new -> if (new.length <= 4 && new.all { it.isDigit() }) onValueChange(new) },
-        singleLine = true,
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary, textAlign = TextAlign.Center),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        colors = dialogFieldColors(),
-        modifier = Modifier.width(width.dp)
+private fun RollResult(text: String, rollId: Int) {
+    val progress = remember(rollId) { Animatable(0f) }
+    LaunchedEffect(rollId) { progress.animateTo(1f, tween(450, easing = TableMotion.Pop)) }
+    TableLabel(
+        text,
+        if (text.length > 14) 40.sp else 72.sp,
+        color = TableColors.Yellow,
+        align = TextAlign.Center,
+        modifier = Modifier.graphicsLayer {
+            val p = progress.value
+            scaleX = p; scaleY = p
+            alpha = p.coerceIn(0f, 1f)
+            rotationZ = (1f - p) * 360f
+        }
     )
 }
 
-@Composable
-internal fun dialogFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = Gold,
-    unfocusedBorderColor = BorderColor,
-    focusedTextColor = TextPrimary,
-    unfocusedTextColor = TextPrimary,
-    cursorColor = Gold
-)
+/** "D20 · 14" for one die; "3D6 · 2 5 1 = 8" for several. */
+private fun rollDice(count: Int, sides: Int): String {
+    val rolls = List(count) { Random.nextInt(1, sides + 1) }
+    return if (count == 1) "${rolls.first()}" else "${rolls.joinToString("  ")} = ${rolls.sum()}"
+}
 
 @Composable
-internal fun DialogSectionLabel(text: String, modifier: Modifier = Modifier) {
-    Text(text, style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = modifier.fillMaxWidth())
+internal fun NumberField(value: String, width: Int, onValueChange: (String) -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .width(width.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(TableColors.SurfaceRaised)
+            .padding(vertical = 8.dp)
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = { new -> if (new.length <= 4 && new.all { it.isDigit() }) onValueChange(new) },
+            singleLine = true,
+            textStyle = tableText(30.sp).copy(textAlign = TextAlign.Center),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            cursorBrush = SolidColor(TableColors.Yellow),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+internal fun SectionTitle(text: String, modifier: Modifier = Modifier) {
+    TableLabel(text, 30.sp, color = TableColors.TextMuted, modifier = modifier.fillMaxWidth().padding(top = 26.dp, bottom = 10.dp))
 }
 
 // ---- Game history ----
 
 /** Newest first, since the last few changes are what a table usually wants to check. */
 @Composable
-internal fun GameHistoryDialog(entries: List<HistoryEntry>, players: List<PlayerLife>, onDismiss: () -> Unit) {
+internal fun GameHistoryOverlay(entries: List<HistoryEntry>, players: List<PlayerLife>, onDismiss: () -> Unit) {
     val nameOf = { id: Int -> players.firstOrNull { it.id == id }?.displayName ?: "Player $id" }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Bg,
-        title = { Text("Game history", color = GoldLight) },
-        text = {
-            if (entries.isEmpty()) {
-                Text("Nothing has happened yet this game.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
-            } else {
-                LazyColumn(modifier = Modifier.heightIn(max = 460.dp)) {
-                    items(entries.asReversed(), key = { it.id }) { entry ->
-                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-                            Text(
-                                "T${entry.turn} · ${formatElapsed(entry.matchSeconds)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextDim,
-                                modifier = Modifier.width(72.dp)
-                            )
-                            InlineManaText(
-                                describeHistoryEntry(entry, nameOf),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextPrimary,
-                                modifier = Modifier.weight(1f)
-                            )
+    TableOverlay(title = "History", onClose = onDismiss) {
+        if (entries.isEmpty()) {
+            TableLabel("Nothing has happened yet this game", 26.sp, color = TableColors.TextMuted, modifier = Modifier.padding(20.dp))
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                items(entries.asReversed(), key = { it.id }) { entry ->
+                    val player = entry.playerId?.let { id -> players.firstOrNull { it.id == id } }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(TableColors.Surface)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Box(Modifier.size(12.dp).clip(CircleShape).background(player?.let { paletteColor(it.colorIndex) } ?: TableColors.Line))
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            InlineManaText(describeHistoryEntry(entry, nameOf).uppercase(), style = tableText(21.sp), color = Color.White)
                         }
+                        TableLabel("T${entry.turn} · ${formatElapsed(entry.matchSeconds)}", 17.sp, color = TableColors.TextMuted)
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("CLOSE", color = Gold) } }
-    )
+        }
+    }
 }
 
 /** Mana appears as `{W}` etc., which InlineManaText renders as the real symbol. */
@@ -323,23 +315,23 @@ private fun describeHistoryEntry(entry: HistoryEntry, nameOf: (Int) -> String): 
     val to = entry.to
     val change = if (from != null && to != null) {
         val delta = to - from
-        " $from → $to (${if (delta > 0) "+" else ""}$delta)"
+        "  $from → $to (${if (delta > 0) "+" else ""}$delta)"
     } else ""
     return when (val event = entry.event) {
         HistoryEvent.Life -> "$who · life$change"
         is HistoryEvent.CommanderDamage -> {
             val partner = if (event.source.slot == 1) "'s partner" else ""
-            "$who · commander damage from ${nameOf(event.source.opponentId)}$partner$change"
+            "$who · damage from ${nameOf(event.source.opponentId)}$partner$change"
         }
-        is HistoryEvent.Counter -> "$who · ${event.kind.label.lowercase()}$change"
-        is HistoryEvent.Mana -> "$who · {${event.color}} in pool$change"
+        is HistoryEvent.Counter -> "$who · ${event.kind.label}$change"
+        is HistoryEvent.Mana -> "$who · {${event.color}} pool$change"
         is HistoryEvent.CommanderTax -> "$who · ${if (event.slot == 1) "partner tax" else "commander tax"}$change"
         HistoryEvent.BecameMonarch -> "$who became the Monarch"
         HistoryEvent.TookInitiative -> "$who took the Initiative"
         HistoryEvent.Killed -> "$who was knocked out"
-        HistoryEvent.Revived -> "$who was revived$change"
-        HistoryEvent.TurnStarted -> "$who's turn begins"
-        HistoryEvent.WonHighRoll -> "$who won the high roll and goes first"
+        HistoryEvent.Revived -> "$who was revived"
+        HistoryEvent.TurnStarted -> "$who's turn"
+        HistoryEvent.WonHighRoll -> "$who goes first"
         is HistoryEvent.BecameDayOrNight -> if (event.state == DayNight.DAY) "It became day" else "It became night"
     }
 }
@@ -350,80 +342,63 @@ internal fun formatElapsed(totalSeconds: Int): String = "%d:%02d".format(totalSe
 
 /** Every seating arrangement, grouped by player count. Picking one starts a new game after confirming. */
 @Composable
-internal fun LayoutPickerDialog(currentLayoutId: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun SeatingOverlay(currentLayoutId: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
     var pending by remember { mutableStateOf<String?>(null) }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Bg)
-                .padding(horizontal = 20.dp, vertical = 16.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("SEATING", style = MaterialTheme.typography.titleMedium, color = GoldLight, modifier = Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text("CLOSE", color = TextMuted) }
-            }
-            Text(
-                "Each tile turns to face the player sitting at that edge of the phone.",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextMuted,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+    Box(Modifier.fillMaxSize()) {
+        TableOverlay(title = "Seating", onClose = onDismiss) {
+            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+                TableLabel("Each tile faces whoever sits at that edge of the phone", 20.sp, color = TableColors.TextMuted)
                 TableLayouts.all.groupBy { it.playerCount }.forEach { (count, layouts) ->
-                    DialogSectionLabel(if (count == 1) "1 PLAYER" else "$count PLAYERS", Modifier.padding(top = 12.dp, bottom = 6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        layouts.forEach { layout ->
-                            LayoutPreview(
+                    SectionTitle(if (count == 1) "1 player" else "$count players")
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        layouts.forEachIndexed { index, layout ->
+                            LayoutThumbnail(
                                 layout = layout,
                                 selected = layout.id == currentLayoutId,
-                                onClick = { if (layout.id != currentLayoutId) pending = layout.id }
+                                onClick = { if (layout.id != currentLayoutId) pending = layout.id },
+                                modifier = Modifier.popIn(delayMillis = 30 * index)
                             )
                         }
                     }
                 }
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(32.dp))
             }
         }
-    }
-
-    pending?.let { layoutId ->
-        AlertDialog(
-            onDismissRequest = { pending = null },
-            containerColor = Bg,
-            title = { Text("Start a new game?", color = GoldLight) },
-            text = { Text("Changing the seating resets everyone's life and counters.", color = TextPrimary) },
-            confirmButton = { GoldButton("NEW GAME") { onSelect(layoutId); pending = null; onDismiss() } },
-            dismissButton = { TextButton(onClick = { pending = null }) { Text("CANCEL", color = TextMuted) } }
-        )
+        pending?.let { layoutId ->
+            ConfirmOverlay(
+                text = "Start a new game with this seating?",
+                confirmLabel = "New game",
+                onConfirm = { onSelect(layoutId); onDismiss() },
+                onDismiss = { pending = null }
+            )
+        }
     }
 }
 
 @Composable
-private fun LayoutPreview(layout: TableLayout, selected: Boolean, onClick: () -> Unit) {
+private fun LayoutThumbnail(layout: TableLayout, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-        modifier = Modifier
-            .size(width = 62.dp, height = 104.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) Gold.copy(alpha = 0.25f) else Color.Black)
-            .border(BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Gold else BorderColor), RoundedCornerShape(10.dp))
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier
+            .size(width = 70.dp, height = 116.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) TableColors.Accent else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(5.dp)
     ) {
         layout.rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f).fillMaxWidth()) {
                 row.cells.forEach { cell ->
                     Box(
-                        modifier = Modifier
+                        Modifier
                             .weight(1f)
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(6.dp))
                             .background(
                                 when {
-                                    cell.seat == null -> Color.White.copy(alpha = 0.12f)
-                                    selected -> Gold
-                                    else -> Color.White.copy(alpha = 0.85f)
+                                    cell.seat == null -> Color.White.copy(alpha = 0.18f)
+                                    selected -> Color.White.copy(alpha = 0.9f)
+                                    else -> Color.White
                                 }
                             )
                     )
@@ -436,31 +411,31 @@ private fun LayoutPreview(layout: TableLayout, selected: Boolean, onClick: () ->
 // ---- Game modes ----
 
 @Composable
-internal fun ArchenemyPickerDialog(players: List<PlayerLife>, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Bg,
-        title = { Text("Who is the Archenemy?", color = GoldLight) },
-        text = {
-            Column {
-                players.forEach { player ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().clickable { onPick(player.id); onDismiss() }.padding(vertical = 10.dp)
-                    ) {
-                        Box(Modifier.size(12.dp).clip(CircleShape).background(paletteColor(player.colorIndex)))
-                        Spacer(Modifier.width(10.dp))
-                        Text(player.displayName, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
-                    }
+internal fun ArchenemyPickerOverlay(players: List<PlayerLife>, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    TableOverlay(title = "Who's the Archenemy?", onClose = onDismiss) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+            players.forEachIndexed { index, player ->
+                val seat = seatColor(player.colorIndex)
+                Box(
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                        .popIn(delayMillis = 40 * index)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(seat.color)
+                        .clickable { onPick(player.id); onDismiss() }
+                        .padding(horizontal = 18.dp, vertical = 12.dp)
+                ) {
+                    TableLabel(player.displayName, 34.sp, color = if (seat.whiteText) Color.White else Color.Black)
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("CANCEL", color = TextMuted) } }
-    )
+        }
+    }
 }
 
 @Composable
-internal fun GameModeDetailDialog(
+internal fun GameModeOverlay(
     state: GameModeState,
     onPlaneswalk: () -> Unit,
     onRollDie: () -> PlanarDieFace,
@@ -470,6 +445,7 @@ internal fun GameModeDetailDialog(
     onDismiss: () -> Unit
 ) {
     var dieResult by remember { mutableStateOf<PlanarDieFace?>(null) }
+    var dieRoll by remember { mutableIntStateOf(0) }
     var showRules by remember { mutableStateOf(false) }
     val title = when (state.mode) {
         GameModeKind.PLANECHASE -> "Planechase"
@@ -477,110 +453,80 @@ internal fun GameModeDetailDialog(
         GameModeKind.BOUNTY -> "Bounty"
         GameModeKind.NONE -> ""
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Bg,
-        title = { Text(title, color = GoldLight) },
-        text = {
-            Column(modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
-                when {
-                    state.loading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Gold)
-                        Text("Shuffling…", color = TextMuted, modifier = Modifier.padding(start = 10.dp))
+    TableOverlay(title = title, onClose = onDismiss) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
+        ) {
+            when {
+                state.loading -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 40.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = TableColors.Yellow)
+                    TableLabel("Shuffling", 30.sp, color = TableColors.TextMuted, modifier = Modifier.padding(start = 12.dp))
+                }
+                state.mode == GameModeKind.PLANECHASE -> {
+                    state.currentPlane?.let { ModeCard(it.displayImageUrl, it.name, it.displayOracleText, landscape = true) }
+                        ?: TableLabel("Couldn't load planes — check your connection", 24.sp, color = TableColors.TextMuted)
+                    dieResult?.let { face ->
+                        RollResult(face.name, dieRoll)
                     }
-                    state.mode == GameModeKind.PLANECHASE -> {
-                        state.currentPlane?.let { CardFace(it) } ?: Text("Couldn't load planes — check your connection.", color = TextMuted)
-                        dieResult?.let {
-                            Text(
-                                "Planar die: ${it.name.lowercase().replaceFirstChar { c -> c.uppercase() }}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Gold,
-                                modifier = Modifier.padding(top = 10.dp)
-                            )
-                        }
-                    }
-                    state.mode == GameModeKind.ARCHENEMY -> {
-                        state.currentScheme?.let { CardFace(it) }
-                            ?: Text(if (state.schemeDeck.isEmpty()) "Couldn't load schemes — check your connection." else "Reveal the first scheme to begin.", color = TextMuted)
-                        if (state.ongoingSchemes.isNotEmpty()) {
-                            Spacer(Modifier.height(14.dp))
-                            Text("ONGOING", style = MaterialTheme.typography.labelMedium, color = TextDim)
-                            state.ongoingSchemes.forEach { scheme ->
-                                Text("• ${scheme.name}", style = MaterialTheme.typography.bodySmall, color = TextMuted, modifier = Modifier.padding(top = 4.dp))
-                            }
-                        }
-                    }
-                    state.mode == GameModeKind.BOUNTY -> {
-                        val bounty = state.currentBounty
-                        if (bounty == null) {
-                            Text(
-                                if (state.bountyDeck.isEmpty()) "Couldn't load bounty cards — check your connection."
-                                else "Reveal the first bounty as the starting player's third turn begins.",
-                                color = TextMuted
-                            )
-                        } else {
-                            BountyFace(bounty)
-                        }
-                        state.bountyRules?.let { rules ->
-                            TextButton(onClick = { showRules = !showRules }, modifier = Modifier.padding(top = 6.dp)) {
-                                Text(if (showRules) "HIDE RULES" else "HOW BOUNTY WORKS", color = Gold)
-                            }
-                            if (showRules) {
-                                InlineManaText(rules, style = MaterialTheme.typography.bodySmall, color = TextMuted)
-                            }
-                        }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 14.dp)) {
+                        PillButton("Roll planar die", TableColors.SurfaceRaised, onClick = { dieResult = onRollDie(); dieRoll++ })
+                        PillButton("Planeswalk", TableColors.Accent, onClick = onPlaneswalk)
                     }
                 }
-                TextButton(onClick = { onStop(); onDismiss() }, modifier = Modifier.padding(top = 10.dp)) {
-                    Text("END ${title.uppercase()}", color = Color(0xFFFF8A80))
+                state.mode == GameModeKind.ARCHENEMY -> {
+                    state.currentScheme?.let { ModeCard(it.displayImageUrl, it.name, it.displayOracleText, landscape = true) }
+                        ?: TableLabel(
+                            if (state.schemeDeck.isEmpty()) "Couldn't load schemes — check your connection" else "Reveal the first scheme to begin",
+                            24.sp, color = TableColors.TextMuted
+                        )
+                    if (state.ongoingSchemes.isNotEmpty()) {
+                        SectionTitle("Ongoing")
+                        state.ongoingSchemes.forEach { TableLabel(it.name, 22.sp, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) }
+                    }
+                    PillButton("Reveal scheme", TableColors.Accent, enabled = state.schemeDeck.isNotEmpty(), onClick = onRevealScheme, modifier = Modifier.padding(top = 14.dp))
+                }
+                state.mode == GameModeKind.BOUNTY -> {
+                    val bounty = state.currentBounty
+                    val front = bounty?.cardFaces?.firstOrNull()
+                    if (bounty == null) {
+                        TableLabel(
+                            if (state.bountyDeck.isEmpty()) "Couldn't load bounty cards — check your connection"
+                            else "Reveal the first bounty as the starting player's third turn begins",
+                            24.sp, color = TableColors.TextMuted, align = TextAlign.Center
+                        )
+                    } else {
+                        ModeCard(front?.imageUris?.normal ?: bounty.displayImageUrl, front?.name ?: bounty.name, front?.oracleText, landscape = false)
+                    }
+                    PillButton(
+                        if (bounty == null) "Reveal bounty" else "Claimed · next bounty",
+                        TableColors.Accent,
+                        enabled = state.bountyDeck.isNotEmpty(),
+                        onClick = onRevealBounty,
+                        modifier = Modifier.padding(top = 14.dp)
+                    )
+                    state.bountyRules?.let { rules ->
+                        TableLabel(if (showRules) "Hide rules" else "How bounty works", 24.sp, color = TableColors.Yellow,
+                            modifier = Modifier.padding(top = 14.dp).clickable { showRules = !showRules })
+                        if (showRules) InlineManaText(rules, style = tableText(20.sp), color = TableColors.TextMuted, modifier = Modifier.padding(top = 6.dp))
+                    }
                 }
             }
-        },
-        confirmButton = {
-            when (state.mode) {
-                GameModeKind.PLANECHASE -> Row {
-                    TextButton(onClick = { dieResult = onRollDie() }) { Text("ROLL DIE", color = Gold) }
-                    GoldButton("PLANESWALK", onClick = onPlaneswalk)
-                }
-                GameModeKind.ARCHENEMY -> GoldButton("REVEAL SCHEME", enabled = state.schemeDeck.isNotEmpty(), onClick = onRevealScheme)
-                GameModeKind.BOUNTY -> GoldButton(
-                    if (state.currentBounty == null) "REVEAL BOUNTY" else "CLAIMED · NEXT",
-                    enabled = state.bountyDeck.isNotEmpty(),
-                    onClick = onRevealBounty
-                )
-                GameModeKind.NONE -> Unit
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CLOSE", color = TextMuted) } }
-    )
-}
-
-@Composable
-private fun CardFace(card: ScryfallCard) {
-    AsyncImage(
-        model = card.displayImageUrl,
-        contentDescription = card.name,
-        contentScale = ContentScale.Fit,
-        modifier = Modifier.fillMaxWidth().aspectRatio(1.4f).clip(RoundedCornerShape(16.dp))
-    )
-    Text(card.name, style = MaterialTheme.typography.titleMedium, color = GoldLight, modifier = Modifier.padding(top = 10.dp))
-    InlineManaText(card.displayOracleText ?: "No text.", style = MaterialTheme.typography.bodySmall, color = TextPrimary, modifier = Modifier.padding(top = 6.dp))
-}
-
-/** Only the bounty (front) face — the back is the shared rules, shown separately on request. */
-@Composable
-private fun BountyFace(card: ScryfallCard) {
-    val front = card.cardFaces?.firstOrNull()
-    AsyncImage(
-        model = front?.imageUris?.normal ?: card.displayImageUrl,
-        contentDescription = front?.name ?: card.name,
-        contentScale = ContentScale.Fit,
-        modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(16.dp))
-    )
-    Text(front?.name ?: card.name, style = MaterialTheme.typography.titleMedium, color = GoldLight, modifier = Modifier.padding(top = 10.dp))
-    front?.oracleText?.let {
-        InlineManaText(it, style = MaterialTheme.typography.bodySmall, color = TextPrimary, modifier = Modifier.padding(top = 6.dp))
+            TableLabel("End $title", 26.sp, color = TableColors.Accent, modifier = Modifier.padding(top = 26.dp, bottom = 30.dp).clickable { onStop(); onDismiss() })
+        }
     }
+}
+
+@Composable
+private fun ModeCard(imageUrl: String?, name: String, text: String?, landscape: Boolean) {
+    AsyncImage(
+        model = imageUrl,
+        contentDescription = name,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxWidth().aspectRatio(if (landscape) 1.4f else 0.72f).popIn(easing = TableMotion.Pop).clip(RoundedCornerShape(18.dp))
+    )
+    TableLabel(name, 34.sp, modifier = Modifier.fillMaxWidth().padding(top = 12.dp))
+    text?.let { InlineManaText(it, style = tableText(20.sp), color = TableColors.TextMuted, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) }
 }
 
 // ---- Card search ----
@@ -589,7 +535,7 @@ private val SEARCH_FORMATS = listOf("commander", "standard", "pioneer", "modern"
 
 /** Price and format legality for any card, without leaving the game. */
 @Composable
-internal fun CardSearchDialog(onSearch: suspend (String) -> List<ScryfallCard>, onDismiss: () -> Unit) {
+internal fun CardSearchOverlay(onSearch: suspend (String) -> List<ScryfallCard>, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<ScryfallCard>>(emptyList()) }
@@ -605,91 +551,92 @@ internal fun CardSearchDialog(onSearch: suspend (String) -> List<ScryfallCard>, 
         scope.launch {
             try {
                 results = onSearch(query.trim())
-                if (results.isEmpty()) message = "No cards found."
+                if (results.isEmpty()) message = "No cards found"
             } catch (e: Exception) {
                 results = emptyList()
-                message = if (isOffline(e)) "You're offline — card search needs an internet connection." else "Search failed."
+                message = if (isOffline(e)) "You're offline — card search needs internet" else "Search failed"
             } finally {
                 searching = false
             }
         }
     }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(modifier = Modifier.fillMaxSize().background(Bg).padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    if (selected == null) "CARD SEARCH" else "CARD",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = GoldLight,
-                    modifier = Modifier.weight(1f)
-                )
-                if (selected != null) {
-                    TextButton(onClick = { selected = null }) { Text("RESULTS", color = Gold) }
-                }
-                TextButton(onClick = onDismiss) { Text("CLOSE", color = TextMuted) }
-            }
-
+    TableOverlay(title = "Card search", onClose = { if (selected != null) selected = null else onDismiss() }) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             val card = selected
             if (card == null) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text("Card name", color = TextDim) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { runSearch() }),
-                    colors = dialogFieldColors(),
-                    trailingIcon = {
-                        if (searching) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Gold)
-                        else TextButton(onClick = ::runSearch) { Text("GO", color = Gold) }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                message?.let { Text(it, color = TextMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp)) }
-                LazyColumn(modifier = Modifier.padding(top = 8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(TableColors.SurfaceRaised).padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        if (query.isEmpty()) TableLabel("Card name", 26.sp, color = TableColors.TextMuted)
+                        BasicTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            singleLine = true,
+                            textStyle = tableText(26.sp),
+                            cursorBrush = SolidColor(TableColors.Yellow),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { runSearch() }),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (searching) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = TableColors.Yellow)
+                    else TableLabel("Go", 26.sp, color = TableColors.Yellow, modifier = Modifier.clickable { runSearch() })
+                }
+                message?.let { TableLabel(it, 22.sp, color = TableColors.TextMuted, modifier = Modifier.padding(top = 12.dp)) }
+                LazyColumn(modifier = Modifier.padding(top = 10.dp)) {
                     items(results, key = { it.id }) { result ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().clickable { selected = result }.padding(vertical = 10.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 6.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(TableColors.Surface)
+                                .clickable { selected = result }
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(result.name, color = TextPrimary, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                result.typeLine?.let { Text(it, color = TextDim, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            Column(Modifier.weight(1f)) {
+                                TableLabel(result.name, 24.sp, maxLines = 1)
+                                result.typeLine?.let { TableLabel(it, 16.sp, color = TableColors.TextMuted, maxLines = 1) }
                             }
-                            Text(result.prices?.usd?.let { "$$it" } ?: "—", color = Gold, style = MaterialTheme.typography.labelMedium)
+                            TableLabel(result.prices?.usd?.let { "$$it" } ?: "—", 24.sp, color = TableColors.Yellow)
                         }
                     }
                 }
             } else {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     AsyncImage(
                         model = card.displayImageUrl,
                         contentDescription = card.name,
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(16.dp))
+                        modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).popIn(easing = TableMotion.Pop).clip(RoundedCornerShape(18.dp))
                     )
-                    Text(card.name, style = MaterialTheme.typography.titleMedium, color = GoldLight, modifier = Modifier.padding(top = 10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 6.dp)) {
-                        Text("Price ${card.prices?.usd?.let { "$$it" } ?: "—"}", color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
-                        card.prices?.usdFoil?.let { Text("Foil $$it", color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
+                    TableLabel(card.name, 36.sp, modifier = Modifier.padding(top = 12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                        TableLabel("Price ${card.prices?.usd?.let { "$$it" } ?: "—"}", 26.sp, color = TableColors.Yellow)
+                        card.prices?.usdFoil?.let { TableLabel("Foil $$it", 26.sp, color = TableColors.TextMuted) }
                     }
-                    DialogSectionLabel("LEGALITY", Modifier.padding(top = 14.dp, bottom = 6.dp))
+                    SectionTitle("Legality")
                     SEARCH_FORMATS.forEach { format ->
                         val status = card.legalities?.get(format) ?: "not_legal"
                         val legal = status == "legal" || status == "restricted"
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                            Text(format.replaceFirstChar { it.uppercase() }, color = TextPrimary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                            Text(
-                                status.replace('_', ' ').uppercase(),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (legal) Color(0xFF7CD992) else Color(0xFFFF8A80)
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                            TableLabel(format, 24.sp, modifier = Modifier.weight(1f))
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(if (legal) TableColors.MenuSeating else TableColors.SurfaceRaised)
+                                    .padding(horizontal = 12.dp, vertical = 2.dp)
+                            ) {
+                                TableLabel(status.replace('_', ' '), 20.sp, color = if (legal) Color.Black else TableColors.TextMuted)
+                            }
                         }
                     }
                     card.displayOracleText?.let {
-                        InlineManaText(it, style = MaterialTheme.typography.bodySmall, color = TextMuted, modifier = Modifier.padding(top = 12.dp))
+                        InlineManaText(it, style = tableText(20.sp), color = TableColors.TextMuted, modifier = Modifier.padding(top = 12.dp, bottom = 24.dp))
                     }
                 }
             }
