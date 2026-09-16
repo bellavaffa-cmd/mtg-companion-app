@@ -611,6 +611,7 @@ internal fun LazyListScope.budgetSwapsSection(
 @Composable
 internal fun MissingCardsDialog(
     missing: List<MissingCard>,
+    physicalDeck: Boolean,
     wishlists: List<Collection>,
     onAddToWishlist: (wishlistId: String?, newName: String?) -> Unit,
     onBuy: () -> Unit,
@@ -625,7 +626,16 @@ internal fun MissingCardsDialog(
         text = {
             Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
                 if (!pickingWishlist) {
-                    if (missing.isEmpty()) {
+                    if (missing.isEmpty() && physicalDeck) {
+                        // Every deck starts out Physical, which counts its own cards as owned — so
+                        // "you own everything" would be true by definition, not a real check.
+                        Text(
+                            "This deck is set to Physical, so its own cards count as owned and nothing shows as missing. " +
+                                "To see what you'd still need to buy, set it to Virtual or Prototype in Deck settings.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted
+                        )
+                    } else if (missing.isEmpty()) {
                         Text("You own every card in this deck — counting your owned binders and Physical decks.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                     } else {
                         Text(

@@ -516,6 +516,7 @@ fun DeckDetailScreen(
         if (showMissing) {
             MissingCardsDialog(
                 missing = missing,
+                physicalDeck = deck?.ownershipType == DeckOwnership.PHYSICAL,
                 wishlists = wishlists,
                 onAddToWishlist = { wishlistId, newName ->
                     viewModel.addMissingToWishlist(wishlistId, newName) { message -> toast(message) }
@@ -1018,13 +1019,21 @@ private fun CardsTab(
 
     // Grouped by type instantly from cached data, refined once analysis resolves from Scryfall;
     // only falls back to one flat list for entries with no type info at all yet.
+    //
+    // The analysis is a snapshot that lags the deck by its network round trips (combos, Scryfall),
+    // so it only decides grouping, and only while it covers exactly the deck's cards. The entries
+    // drawn always come from the live deck, so a cut flag or quantity change shows immediately.
+    val liveById = deck.cards.associateBy { it.scryfallId }
+    val analysisCurrent = analysis.byType.isNotEmpty() &&
+        analysis.byType.flatMap { g -> g.cards.map { it.scryfallId } }.toSet() == liveById.keys
     val typeGroups = (
         when {
-            analysis.byType.isNotEmpty() -> analysis.byType
+            analysisCurrent -> analysis.byType
             cardGroups.isNotEmpty() -> cardGroups
             else -> listOf(TypeGroup("Cards", deck.cards))
         }
         )
+        .map { group -> group.copy(cards = group.cards.mapNotNull { liveById[it.scryfallId] }) }
         .mapNotNull { group ->
             val cards = group.cards.filter { card ->
                 (trimmed.isBlank() || card.name.contains(trimmed, ignoreCase = true)) &&

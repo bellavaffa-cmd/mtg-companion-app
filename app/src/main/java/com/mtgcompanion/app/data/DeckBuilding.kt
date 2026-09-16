@@ -40,6 +40,15 @@ data class RoleCount(val role: DeckRole, val count: Int, val cards: List<String>
 enum class RoleStatus { SHORT, ON_TARGET, OVER, NO_TARGET }
 
 /**
+ * Whether a card is played as a land: its front face's type line says Land. That catches artifact
+ * lands and Dryad Arbor, which a "primary type" ranking files under Artifact/Creature, while a
+ * spell with a land back face (a modal DFC) still counts as the spell it's usually cast as. The
+ * roles panel and the mana base both use this, so their land counts agree.
+ */
+fun isLandType(typeLine: String?): Boolean =
+    typeLine?.substringBefore(" // ")?.contains("Land", ignoreCase = true) == true
+
+/**
  * Counts each role across [cards] (by copies). [rolesOf] says which roles a non-land card fills.
  * Board wipes are usually tagged as removal too; they're counted as wipes only, so the two numbers
  * don't double-count the same card.
@@ -48,7 +57,7 @@ fun countRoles(cards: List<DeckCardEntry>, mode: GameMode, rolesOf: (DeckCardEnt
     val commander = mode == GameMode.COMMANDER
     val tally = DeckRole.entries.associateWith { mutableListOf<DeckCardEntry>() }
     cards.forEach { entry ->
-        if (entry.typeLine?.contains("Land", ignoreCase = true) == true) {
+        if (isLandType(entry.typeLine)) {
             tally.getValue(DeckRole.LANDS) += entry
             return@forEach
         }
@@ -63,7 +72,11 @@ fun countRoles(cards: List<DeckCardEntry>, mode: GameMode, rolesOf: (DeckCardEnt
         RoleCount(
             role = role,
             count = entries.sumOf { it.quantity },
-            cards = entries.map { it.name }.sorted(),
+            // One line per card, not per printing: three Swamp printings read as "Swamp ×25".
+            cards = entries.groupBy { it.name }.toSortedMap().map { (name, copies) ->
+                val total = copies.sumOf { it.quantity }
+                if (total > 1) "$name ×$total" else name
+            },
             min = if (commander) role.commanderMin else null,
             max = if (commander) role.commanderMax else null
         )
@@ -182,9 +195,11 @@ fun missingCards(deck: Deck, collections: List<Collection>, decks: List<Deck>): 
             owned[key] = (owned[key] ?: 0) + entry.quantity
         }
     }
-    return deck.cards.mapNotNull { entry ->
-        val need = entry.quantity - (owned[entry.name.lowercase()] ?: 0)
-        if (need > 0) MissingCard(entry, need) else null
+    // Grouped by name like ownership is, so a deck's three Swamp printings are one "30 Swamp" line
+    // — per printing, owned copies would be subtracted from each printing again.
+    return deck.cards.groupBy { it.name.lowercase() }.mapNotNull { (key, printings) ->
+        val need = printings.sumOf { it.quantity } - (owned[key] ?: 0)
+        if (need > 0) MissingCard(printings.first(), need) else null
     }.sortedBy { it.entry.name }
 }
 

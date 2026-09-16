@@ -14,6 +14,7 @@ import com.mtgcompanion.app.data.RoleCount
 import com.mtgcompanion.app.data.VersionSummary
 import com.mtgcompanion.app.data.cardNameKeys
 import com.mtgcompanion.app.data.comboPieces
+import com.mtgcompanion.app.data.isLandType
 import com.mtgcompanion.app.data.countRoles
 import com.mtgcompanion.app.data.manaBaseAdvice
 import com.mtgcompanion.app.data.missingCards
@@ -41,6 +42,7 @@ import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.ui.common.buildCardSources
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
+import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.ui.collection.fetchPrices
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.ScryfallCollectionResponse
@@ -305,13 +307,21 @@ class DeckDetailViewModel(
         } ?: return@mapLatest null
         // EDHREC's top cards for a commander are mostly staples the deck probably already runs;
         // suggesting those wastes the list, so only offer cards the deck doesn't have.
-        val inDeck = (d.cards.map { it.name } + listOfNotNull(d.commander?.name))
+        // Cards already on the Considering list are skipped too, as budget swaps do.
+        val inDeck = (d.cards.map { it.name } + d.considering.map { it.name } + listOfNotNull(d.commander?.name))
             .flatMap { cardNameKeys(it) }
             .toSet()
-        (lists.firstOrNull { it.tag == "topcards" } ?: lists.firstOrNull { it.cardviews.isNotEmpty() })
-            ?.cardviews
-            ?.filterNot { view -> cardNameKeys(view.name).any { it in inDeck } }
-            ?.take(12)
+        // Top cards alone can come back empty after that filter — a precon's commander page is
+        // mostly the precon itself — so fall through to high synergy, then every other list's cards
+        // by how many decks run them (the other lists include barely-played new cards).
+        val priority = listOf("topcards", "highsynergycards")
+        val headline = lists.filter { it.tag in priority }.sortedBy { priority.indexOf(it.tag) }.flatMap { it.cardviews }
+        val rest = lists.filterNot { it.tag in priority }.flatMap { it.cardviews }
+            .sortedByDescending { it.inclusionPercent ?: -1 }
+        (headline + rest)
+            .distinctBy { it.name }
+            .filterNot { view -> cardNameKeys(view.name).any { it in inDeck } }
+            .take(12)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private suspend fun buildAnalysis(d: Deck): DeckAnalysis {
@@ -361,7 +371,7 @@ class DeckDetailViewModel(
                 }
             }
 
-            if (type != "Land") {
+            if (!isLandType(card?.typeLine ?: entry.typeLine)) {
                 val cmc = (card?.cmc ?: 0.0)
                 cmcSum += cmc * qty
                 nonLandCount += qty
@@ -390,7 +400,14 @@ class DeckDetailViewModel(
         }.toSet()
         val comboCompleters = nearMisses.flatMap { near -> near.missing.flatMap { cardNameKeys(it) } }.toSet()
 
-        val (bracket, bracketName, reason) = estimateBracket(gameChangers.size, combos.size)
+        val (bracket, bracketName, estimateReason) = estimateBracket(gameChangers.size, combos.size)
+        // Offline, "no combos" only means none were checked — say so rather than imply a clean deck.
+        val reason = when {
+            deckCombos != null -> estimateReason
+            gameChangers.isEmpty() ->
+                "No Game Changers found. Combos weren't checked (Commander Spellbook couldn't be reached), so this may be higher."
+            else -> "$estimateReason Combos weren't checked — Commander Spellbook couldn't be reached."
+        }
         val pipList = pipTotals.entries.filter { it.value > 0 }.map { it.key to it.value }
         val sourceList = colorSourceTotals.entries.filter { it.value > 0 }.map { it.key to it.value }
 

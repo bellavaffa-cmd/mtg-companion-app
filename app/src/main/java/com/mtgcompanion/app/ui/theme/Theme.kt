@@ -31,7 +31,12 @@ private fun mtgColorScheme(colors: AppColors, brightness: AppBrightness): ColorS
             surfaceVariant = colors.surface2,
             onSurfaceVariant = colors.textMuted,
             outline = colors.border,
-            error = colors.error
+            error = colors.error,
+            // Snackbars draw on inverseSurface. Material's inverse is the opposite brightness, but this
+            // app's typography bakes in textPrimary, so a light bar got pale text — keep it on-theme.
+            inverseSurface = colors.surface2,
+            inverseOnSurface = colors.textPrimary,
+            inversePrimary = colors.accent
         )
     } else {
         lightColorScheme(
@@ -45,7 +50,10 @@ private fun mtgColorScheme(colors: AppColors, brightness: AppBrightness): ColorS
             surfaceVariant = colors.surface2,
             onSurfaceVariant = colors.textMuted,
             outline = colors.border,
-            error = colors.error
+            error = colors.error,
+            inverseSurface = colors.surface2,
+            inverseOnSurface = colors.textPrimary,
+            inversePrimary = colors.accent
         )
     }
 

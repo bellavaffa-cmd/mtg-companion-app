@@ -28,6 +28,32 @@ class DeckRepository(private val context: Context) {
         return deck
     }
 
+    /**
+     * A new deck that arrives complete — a precon import. One write for cards and commanders, so its
+     * version history starts with the imported list rather than a "commander changed" step after it.
+     */
+    suspend fun createDeckWithCards(
+        name: String,
+        gameMode: GameMode,
+        entries: List<DeckCardEntry>,
+        commander: DeckCardEntry?,
+        partnerCommander: DeckCardEntry?
+    ): Deck {
+        val merged = entries.groupBy { it.scryfallId }.map { (_, copies) ->
+            copies.first().copy(quantity = copies.sumOf { it.quantity })
+        }
+        val deck = Deck(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            gameMode = gameMode.name,
+            cards = merged,
+            commander = commander,
+            partnerCommander = partnerCommander
+        )
+        update { it + deck }
+        return deck
+    }
+
     suspend fun setGameMode(deckId: String, gameMode: GameMode) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(gameMode = gameMode.name) else it } }
     }
@@ -315,6 +341,13 @@ class DeckRepository(private val context: Context) {
             var versions = after.versions
             if (versions.isEmpty() && previous != null && previous.cards.isNotEmpty()) {
                 versions = versions + previous.copy(id = BASELINE_PREFIX + UUID.randomUUID(), savedAt = now - 1)
+            }
+            // A whole list arriving at once into an empty deck — a precon or decklist import — is
+            // the starting list too. Without this the first tweak minutes later folds into it and
+            // the imported list is gone. One card at a time (building from scratch) isn't one.
+            val importedFromNothing = (previous == null || previous.cards.isEmpty()) && snapshot.cards.size > 1
+            if (versions.isEmpty() && importedFromNothing) {
+                return after.copy(versions = listOf(snapshot.copy(id = BASELINE_PREFIX + UUID.randomUUID(), savedAt = now)))
             }
             val last = versions.lastOrNull()
             // A baseline is the list from before versions existed — never fold new edits into it. Nor
