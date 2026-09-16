@@ -461,8 +461,9 @@ private fun ArtRecognitionSection(artIndexRepository: ArtIndexRepository) {
     val status by artIndexRepository.status.collectAsState()
 
     Text(
-        "Download a visual-fingerprint database (~60 MB) so the scanner can identify a card by " +
-            "its art when the printed text is hard to read (glare, damage, an unusual frame).",
+        "Download a visual-fingerprint database and recognition model (~75 MB) so the scanner can " +
+            "identify a card by its art when the printed text is hard to read (glare, damage, an " +
+            "unusual frame).",
         style = MaterialTheme.typography.bodySmall
     )
 
@@ -473,7 +474,9 @@ private fun ArtRecognitionSection(artIndexRepository: ArtIndexRepository) {
     val buttonLabel = if (status.hasData) "UPDATE DATA" else "DOWNLOAD DATA"
     if (status.hasData) {
         OutlinedButton(
-            onClick = { artIndexRepository.downloadIndex() },
+            // Only the explicit update re-fetches what's already on disk; a first-time download
+            // picks up whatever half is missing.
+            onClick = { artIndexRepository.downloadData(force = true) },
             enabled = !status.downloading,
             shape = RoundedCornerShape(8.dp),
             border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
@@ -481,7 +484,7 @@ private fun ArtRecognitionSection(artIndexRepository: ArtIndexRepository) {
         ) { DownloadButtonContent(status.downloading, buttonLabel, Gold) }
     } else {
         Button(
-            onClick = { artIndexRepository.downloadIndex() },
+            onClick = { artIndexRepository.downloadData() },
             enabled = !status.downloading,
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)

@@ -18,16 +18,36 @@ android {
         minSdk 26
         targetSdk 34
         // versionCode scheme: major*10000 + minor*100 + patch (e.g. 1.8.0 -> 10800). Bump both per release.
-        versionCode 16800
-        versionName '1.68.0'
+        versionCode 16900
+        versionName '1.69.0'
 
-        // The app ships as a single universal APK via GitHub Releases (no Play Store per-ABI app
-        // bundle splitting), so onnxruntime-android's native libs for every ABI would otherwise
-        // all land in one APK. Dropping 32-bit x86 is a safe, free ~38MB cut — no real phone needs
-        // it, and the project's own test emulator (x86_64) is unaffected. arm64-v8a (real phones)
-        // and x86_64 (the test emulator) are both kept; armeabi-v7a (older 32-bit phones) too.
+        // Bounds which ABIs exist in this project at all, which the `splits` block below then
+        // divides into one APK each. It has to stay: the universal APK packages every ABI the
+        // project has native libs for, regardless of the splits `include` list, so without this
+        // onnxruntime's unused 32-bit x86 libs (~38MB) would land back in it.
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+    }
+
+    // onnxruntime-android ships a 22-38MB libonnxruntime.so PER ABI, so one universal APK carrying
+    // all of them is ~90MB of native code alone. Build a separate APK per ABI instead, so a phone
+    // downloads only the one it can actually run. 32-bit x86 is dropped entirely (no real device
+    // needs it); x86_64 is kept only so the project's own test emulator still has a build.
+    //
+    // The universal APK is still built, as an always-installable fallback and because it is what
+    // pre-1.69.0 clients' in-app updater picks up (it takes the release's first .apk asset, so the
+    // universal one must be uploaded first — see UpdateManager and the release workflow).
+    //
+    // All the split APKs share one versionCode: they're sideloaded from GitHub Releases, not
+    // ranked against each other by the Play Store, and Android is happy to install over an equal
+    // versionCode, so a user can move between the universal and their ABI's build freely.
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            universalApk true
         }
     }
 
@@ -71,6 +91,15 @@ android {
     packaging {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+        jniLibs {
+            // Store .so compressed in the APK instead of uncompressed-and-page-aligned (AGP's
+            // default for minSdk >= 23). libonnxruntime.so is ~32MB raw but ~12MB deflated, and
+            // this app is sideloaded from GitHub Releases, so download size is what the user
+            // actually feels. The trade-off is that the libs are extracted at install time — a
+            // little more on-device storage and a slightly slower install — rather than being
+            // mapped straight out of the APK.
+            useLegacyPackaging = true
         }
     }
 }

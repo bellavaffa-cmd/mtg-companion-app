@@ -3,6 +3,7 @@ package com.mtgcompanion.app.update
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.mtgcompanion.app.BuildConfig
@@ -101,11 +102,13 @@ class UpdateManager(
             val json = JSONObject(resp.body?.string().orEmpty())
             val tag = json.optString("tag_name").ifBlank { return null }
             val assets = json.optJSONArray("assets") ?: return null
-            val apkUrl = (0 until assets.length())
+            // A release carries several APKs since 1.69.0 — one per ABI, plus a universal one.
+            val apks = (0 until assets.length())
                 .map { assets.getJSONObject(it) }
-                .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
-                ?.optString("browser_download_url")
-                ?: return null
+                .filter { it.optString("name").endsWith(".apk", ignoreCase = true) }
+                .associate { it.optString("name") to it.optString("browser_download_url") }
+            val chosen = pickApkForThisDevice(apks.keys.toList()) ?: return null
+            val apkUrl = apks[chosen]?.ifBlank { null } ?: return null
             return UpdateInfo(tag.removePrefix("v"), apkUrl, json.optString("body"))
         }
     }
@@ -172,6 +175,38 @@ class UpdateManager(
 
     companion object {
         private const val REPO = "bellavaffa-cmd/mtg-companion-app"
+
+        /**
+         * Picks which of a release's APK assets this device should download.
+         *
+         * Since 1.69.0 a release carries one APK per ABI (`...-arm64-v8a.apk`) plus a universal
+         * one, so that a phone downloads only the native code it can run — the per-ABI builds are
+         * roughly half the size of the universal. Assets are matched against
+         * [Build.SUPPORTED_ABIS] in the device's own preference order, so a 64-bit ARM phone takes
+         * the arm64-v8a build and only falls back to armeabi-v7a if that's all there is.
+         *
+         * Falls back to any remaining APK, which covers both the universal asset and every release
+         * up to 1.68.0, where a single unsuffixed APK was the only thing published.
+         */
+        fun pickApkForThisDevice(
+            names: List<String>,
+            supportedAbis: List<String> = Build.SUPPORTED_ABIS.toList()
+        ): String? {
+            for (abi in supportedAbis) {
+                // Match on the ABI as its own dash-delimited segment, so "x86" can't match the
+                // "x86_64" asset.
+                val match = names.firstOrNull { it.contains("-$abi.apk", ignoreCase = true) }
+                if (match != null) return match
+            }
+            val abiSuffixed = names.filter { name ->
+                ALL_ABIS.any { name.contains("-$it.apk", ignoreCase = true) }
+            }
+            // Prefer an APK that isn't built for some other device's ABI.
+            return (names - abiSuffixed.toSet()).firstOrNull() ?: names.firstOrNull()
+        }
+
+        /** Every ABI this project has ever published a split APK for. */
+        private val ALL_ABIS = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
 
         /** True if dotted version [latest] is greater than [current] (e.g. "1.12.0" > "1.11.0"). */
         fun isNewer(latest: String, current: String): Boolean {

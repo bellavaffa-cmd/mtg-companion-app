@@ -3,25 +3,25 @@ package com.mtgcompanion.app.data.artrecognition
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
-import android.content.Context
 import android.graphics.Bitmap
+import java.io.File
 import java.nio.FloatBuffer
 import kotlin.math.sqrt
 
 /**
  * Embeds a card-art image into the same 1280-dim, L2-normalized MobileNetV2 feature vector the
- * reference index ([ArtIndexReader]) was built from — same ImageNet-pretrained model (bundled as
- * an asset), same preprocessing (224x224, ImageNet mean/std normalization), so the two are
- * directly comparable. This is an off-the-shelf general-purpose visual-similarity feature
- * extractor, not a model trained on Magic cards specifically — its own semantic understanding of
- * images is what makes two photos of the same art land close together despite crop/lighting/angle
- * differences.
+ * reference index ([ArtIndexReader]) was built from — same ImageNet-pretrained model, same
+ * preprocessing (224x224, ImageNet mean/std normalization), so the two are directly comparable.
+ * This is an off-the-shelf general-purpose visual-similarity feature extractor, not a model
+ * trained on Magic cards specifically — its own semantic understanding of images is what makes two
+ * photos of the same art land close together despite crop/lighting/angle differences.
+ *
+ * [modelFile] is downloaded alongside the index rather than bundled in the APK — see
+ * [ArtIndexRepository]. ORT reads it straight off disk, so the 14MB never passes through the heap.
  */
-class ArtEmbedder(context: Context) {
+class ArtEmbedder(modelFile: File) {
     private val env = OrtEnvironment.getEnvironment()
-    private val session: OrtSession = context.assets.open("mobilenetv2.onnx").use { stream ->
-        env.createSession(stream.readBytes(), OrtSession.SessionOptions())
-    }
+    private val session: OrtSession = env.createSession(modelFile.absolutePath, OrtSession.SessionOptions())
 
     private val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
     private val std = floatArrayOf(0.229f, 0.224f, 0.225f)
