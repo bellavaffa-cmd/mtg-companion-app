@@ -150,7 +150,11 @@ data class ScryfallCard(
             ThemeTagRule("Removal", Regex("destroy target|exile target|deals? \\d+ damage to target", RegexOption.IGNORE_CASE)),
             ThemeTagRule("Ramp", Regex("search your library for a( basic)? land card|add \\{[wubrgc]\\}", RegexOption.IGNORE_CASE)),
             ThemeTagRule("Tokens", Regex("creates? [^.]*token", RegexOption.IGNORE_CASE)),
-            ThemeTagRule("Counterspell", Regex("counter target spell", RegexOption.IGNORE_CASE))
+            ThemeTagRule("Counterspell", Regex("counter target spell", RegexOption.IGNORE_CASE)),
+            ThemeTagRule(
+                "Board Wipe",
+                Regex("(destroy|exile) all (other )?(creatures|nonland permanents|permanents)|deals? \\d+ damage to each creature|each creature gets -\\d+/-\\d+", RegexOption.IGNORE_CASE)
+            )
         )
     }
 }

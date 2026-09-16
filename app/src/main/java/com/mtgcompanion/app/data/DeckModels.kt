@@ -69,7 +69,10 @@ data class DeckCardEntry(
     // Cached from ScryfallCard.tags (printed keywords + heuristic theme tags) at add-time, so the
     // zoom overlay can show tag chips without a network round-trip. Empty for entries added before
     // this field existed.
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    // A cut candidate: still in the deck (and in every stat) but flagged as the first thing to take
+    // out for something better. Always false for entries on a deck's considering list.
+    val replaceable: Boolean = false
 )
 
 /** Whether [a] and [b] can legally be co-commanders under the Partner mechanic. */
@@ -90,6 +93,18 @@ data class GameResult(
     val playedAt: Long = System.currentTimeMillis()
 )
 
+/**
+ * The deck's list as it stood at [savedAt]: card name -> copies (commanders included), keyed by
+ * name so that swapping a card's printing doesn't read as a change. Edits within one sitting
+ * collapse into a single version — see DeckRepository.
+ */
+data class DeckVersion(
+    val id: String,
+    val savedAt: Long,
+    val cards: Map<String, Int> = emptyMap(),
+    val commanders: List<String> = emptyList()
+)
+
 data class Deck(
     val id: String,
     val name: String,
@@ -102,7 +117,12 @@ data class Deck(
     val createdAt: Long = System.currentTimeMillis(),
     val tags: List<String> = emptyList(),
     val gameResults: List<GameResult> = emptyList(),
-    val ownership: String = DeckOwnership.DEFAULT.name
+    val ownership: String = DeckOwnership.DEFAULT.name,
+    // Cards the user thinks might work but hasn't committed to (a "maybeboard"). Deliberately kept
+    // out of [cards], so they never count toward size, curve, price, legality, bracket or combos.
+    val considering: List<DeckCardEntry> = emptyList(),
+    // Oldest first. Capped — see DeckRepository.
+    val versions: List<DeckVersion> = emptyList()
 ) {
     val mode: GameMode get() = GameMode.fromName(gameMode)
     val ownershipType: DeckOwnership get() = DeckOwnership.fromName(ownership)

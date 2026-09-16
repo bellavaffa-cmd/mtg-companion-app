@@ -305,6 +305,15 @@ class CardDetailViewModel(
         }
     }
 
+    /** Puts [card] on a deck's Considering list instead of in the deck itself. */
+    fun considerForDeck(deckId: String, card: ScryfallCard) {
+        viewModelScope.launch {
+            deckRepository.addToConsidering(deckId, card)
+            val deckName = decks.value.find { it.id == deckId }?.name ?: "the deck"
+            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added ${card.name} to Considering for \"$deckName\".")
+        }
+    }
+
     fun createDeckAndAdd(name: String, card: ScryfallCard) {
         viewModelScope.launch {
             val deck = deckRepository.createDeck(name)

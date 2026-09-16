@@ -5,6 +5,22 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.CardViewMode
+import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.CollectionType
+import com.mtgcompanion.app.data.DeckRole
+import com.mtgcompanion.app.data.MissingCard
+import com.mtgcompanion.app.data.NearMissCombo
+import com.mtgcompanion.app.data.RoleCount
+import com.mtgcompanion.app.data.VersionSummary
+import com.mtgcompanion.app.data.cardNameKeys
+import com.mtgcompanion.app.data.comboPieces
+import com.mtgcompanion.app.data.countRoles
+import com.mtgcompanion.app.data.manaBaseAdvice
+import com.mtgcompanion.app.data.missingCards
+import com.mtgcompanion.app.data.missingPieces
+import com.mtgcompanion.app.data.versionSummaries
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.ComboRepository
@@ -68,8 +84,33 @@ data class DeckAnalysis(
     val bracketReason: String = "",
     val gameChangers: List<String> = emptyList(),
     val combos: List<Variant> = emptyList(),
+    /** False when Commander Spellbook couldn't be reached — so "no combos" isn't claimed offline. */
+    val combosAvailable: Boolean = true,
+    /** Combos the deck is one card short of, most popular first. */
+    val nearMisses: List<NearMissCombo> = emptyList(),
+    /** Card name key -> complete combos that card is a piece of (see [cardNameKeys]). */
+    val comboPieces: Map<String, List<Variant>> = emptyMap(),
+    /** Name keys of deck cards that are part of a combo the deck is one card away from. */
+    val nearMissPieces: Set<String> = emptySet(),
+    /** Name keys of the cards that would complete a near-miss combo. */
+    val comboCompleters: Set<String> = emptySet(),
+    /** Plain-language mana base warnings, with mana symbols as `{U}`. */
+    val manaAdvice: List<String> = emptyList(),
     val legality: LegalityReport? = null
 )
+
+/** What each card does for the deck. [fromTagger] is false when counts came from the offline heuristic. */
+data class RoleReport(val counts: List<RoleCount>, val fromTagger: Boolean)
+
+/** A pricey card and cheaper cards that do the same job in the same colors. */
+data class BudgetSwap(val entry: DeckCardEntry, val priceUsd: Double, val role: DeckRole?, val alternatives: List<ScryfallCard>)
+
+sealed interface BudgetSwapState {
+    data object Idle : BudgetSwapState
+    data object Loading : BudgetSwapState
+    data class Done(val swaps: List<BudgetSwap>, val threshold: Double) : BudgetSwapState
+    data class Failed(val message: String) : BudgetSwapState
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DeckDetailViewModel(
@@ -131,10 +172,128 @@ class DeckDetailViewModel(
         buildAnalysis(d)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DeckAnalysis(loading = true))
 
-    /** scryfallId -> USD price for the deck's cards, for the enlarged-card value/total display. */
+    /** scryfallId -> USD price for the deck's and considering list's cards. */
     val prices: StateFlow<Map<String, Double>> = deck.mapLatest { d ->
-        fetchPrices(cardRepository, d?.cards.orEmpty().map { it.scryfallId })
+        fetchPrices(cardRepository, (d?.cards.orEmpty() + d?.considering.orEmpty()).map { it.scryfallId }.distinct())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /**
+     * Role counts against Commander targets. Separate from [analysis] because the first lookup for a
+     * big deck is a dozen Scryfall queries, and the rest of the stats shouldn't wait on it.
+     */
+    val roles: StateFlow<RoleReport?> = deck.mapLatest { d ->
+        if (d == null || d.cards.isEmpty()) return@mapLatest null
+        val nonLand = d.cards.filterNot { it.typeLine?.contains("Land", ignoreCase = true) == true }.map { it.name }
+        val tagged = resolveRoles(nonLand)
+        RoleReport(
+            counts = countRoles(d.cards, d.mode) { entry ->
+                if (tagged) roleCache[entry.name].orEmpty()
+                else DeckRole.TAGGED.filter { role -> role.heuristicTag in entry.tags }.toSet()
+            },
+            fromTagger = tagged
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Newest first, with what changed and the record played on each. */
+    val versionHistory: StateFlow<List<VersionSummary>> = deck.map { d -> d?.let { versionSummaries(it) }.orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Deck cards not covered by the user's owned binders and Physical decks. */
+    val missing: StateFlow<List<MissingCard>> =
+        combine(deck, repository.decksFlow, collectionRepository.collectionsFlow) { d, decks, collections ->
+            if (d == null) emptyList() else missingCards(d, collections, decks)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val wishlists: StateFlow<List<Collection>> = collectionRepository.collectionsFlow
+        .map { all -> all.filter { it.kind == CollectionType.WISHLIST } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _budgetSwaps = MutableStateFlow<BudgetSwapState>(BudgetSwapState.Idle)
+    val budgetSwaps: StateFlow<BudgetSwapState> = _budgetSwaps.asStateFlow()
+
+    /** Exact card name -> roles, as Scryfall's tagger has them. Survives edits, so each card is looked up once. */
+    private val roleCache = mutableMapOf<String, Set<DeckRole>>()
+
+    /**
+     * Fills [roleCache] for [names] from Scryfall oracle tags: for each role, one search per chunk of
+     * names (`otag:ramp (!"Sol Ring" or !"…")`), so a query returns only the deck cards that play
+     * that role. False if Scryfall couldn't be reached — callers fall back to heuristic tags.
+     */
+    private suspend fun resolveRoles(names: List<String>): Boolean {
+        // Exact-name search can't express a name that itself contains a double quote.
+        val unknown = names.filter { it !in roleCache && '"' !in it }.distinct()
+        if (unknown.isEmpty()) return true
+        return try {
+            val found = mutableMapOf<String, MutableSet<DeckRole>>()
+            for (role in DeckRole.TAGGED) {
+                for (chunk in unknown.chunked(ROLE_QUERY_CHUNK)) {
+                    val query = "otag:${role.otag} (" + chunk.joinToString(" or ") { "!\"$it\"" } + ")"
+                    cardRepository.search(query).cards.forEach { card -> found.getOrPut(card.name) { mutableSetOf() } += role }
+                    delay(SCRYFALL_SPACING_MILLIS)
+                }
+            }
+            unknown.forEach { roleCache[it] = found[it].orEmpty() }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * For each of the deck's priciest non-land cards at or above [thresholdUsd], looks for cheaper
+     * cards legal in this format, inside the commander's colors, that Scryfall's tagger says do the
+     * same job — or, for a card with no tagged role, that share its type and mana value.
+     */
+    fun findBudgetSwaps(thresholdUsd: Double) {
+        val d = deck.value ?: return
+        _budgetSwaps.value = BudgetSwapState.Loading
+        viewModelScope.launch {
+            try {
+                val priceById = prices.value
+                val commanderIds = setOfNotNull(d.commander?.scryfallId, d.partnerCommander?.scryfallId)
+                val candidates = d.cards
+                    .filter { it.scryfallId !in commanderIds && it.typeLine?.contains("Land", ignoreCase = true) != true }
+                    .mapNotNull { entry -> priceById[entry.scryfallId]?.takeIf { it >= thresholdUsd }?.let { entry to it } }
+                    .sortedByDescending { it.second }
+                    .take(MAX_BUDGET_SWAPS)
+                if (candidates.isEmpty()) {
+                    _budgetSwaps.value = BudgetSwapState.Done(emptyList(), thresholdUsd)
+                    return@launch
+                }
+                resolveRoles(candidates.map { it.first.name })
+                val full = cardRepository.getCardsByIds((candidates.map { it.first.scryfallId } + commanderIds).distinct()).associateBy { it.id }
+                val identity = (commanderIds.mapNotNull { full[it]?.colorIdentity }.flatten().takeIf { commanderIds.isNotEmpty() }
+                    ?: candidates.mapNotNull { full[it.first.scryfallId]?.colorIdentity }.flatten())
+                    .distinct().joinToString("").ifEmpty { "c" }
+                val alreadyHave = (d.cards + d.considering).flatMap { cardNameKeys(it.name) }.toSet()
+
+                val swaps = candidates.map { (entry, price) ->
+                    val role = roleCache[entry.name].orEmpty().let { roles -> DeckRole.TAGGED.firstOrNull { it in roles } }
+                    val card = full[entry.scryfallId]
+                    val jobFilter = role?.let { "otag:${it.otag}" } ?: run {
+                        val cmc = card?.cmc?.toInt() ?: 0
+                        "t:${primaryType(card?.typeLine).lowercase()} mv>=${(cmc - 1).coerceAtLeast(0)} mv<=${cmc + 1}"
+                    }
+                    val ceiling = String.format(java.util.Locale.US, "%.2f", (price * BUDGET_PRICE_FRACTION).coerceAtLeast(0.25))
+                    val query = "$jobFilter id<=$identity usd<$ceiling f:${d.mode.scryfallFormat} -!\"${entry.name.replace("\"", "")}\""
+                    val alternatives = try {
+                        cardRepository.search(query, order = "edhrec").cards
+                            .filterNot { alt -> cardNameKeys(alt.name).any { it in alreadyHave } }
+                            .take(ALTERNATIVES_PER_SWAP)
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                    delay(SCRYFALL_SPACING_MILLIS)
+                    BudgetSwap(entry, price, role, alternatives)
+                }
+                _budgetSwaps.value = BudgetSwapState.Done(swaps, thresholdUsd)
+            } catch (e: Exception) {
+                _budgetSwaps.value = BudgetSwapState.Failed(
+                    if (com.mtgcompanion.app.data.isOffline(e)) "You're offline — budget swaps need an internet connection." else "Couldn't look up alternatives."
+                )
+            }
+        }
+    }
 
     /** EDHREC "top cards" suggestions for this deck's commander (null if no commander/data). */
     val suggestions: StateFlow<List<EdhrecCardView>?> = deck.mapLatest { d ->
@@ -217,9 +376,23 @@ class DeckDetailViewModel(
         val commanderNames = listOfNotNull(d.commander?.name, d.partnerCommander?.name)
         val commanderIds = setOfNotNull(d.commander?.scryfallId, d.partnerCommander?.scryfallId)
         val nonCommanderNames = d.cards.filterNot { it.scryfallId in commanderIds }.map { it.name }
-        val combos = comboRepository.findCombosInDeck(commanderNames, nonCommanderNames)
+        val deckCombos = comboRepository.findCombosInDeck(commanderNames, nonCommanderNames)
+        val combos = deckCombos?.included.orEmpty()
+
+        // One-card-away combos: what the deck's missing, and which deck cards are waiting on it.
+        val inDeckKeys = d.cards.flatMap { cardNameKeys(it.name) }.toSet()
+        val nearMisses = deckCombos?.almostIncluded.orEmpty()
+            .map { NearMissCombo(it, missingPieces(it, inDeckKeys)) }
+            .filter { it.missing.size == 1 }
+            .sortedByDescending { it.combo.popularity ?: 0 }
+        val nearMissPieces = nearMisses.flatMap { near ->
+            near.combo.uses.flatMap { cardNameKeys(it.card.name) }.filter { it in inDeckKeys }
+        }.toSet()
+        val comboCompleters = nearMisses.flatMap { near -> near.missing.flatMap { cardNameKeys(it) } }.toSet()
 
         val (bracket, bracketName, reason) = estimateBracket(gameChangers.size, combos.size)
+        val pipList = pipTotals.entries.filter { it.value > 0 }.map { it.key to it.value }
+        val sourceList = colorSourceTotals.entries.filter { it.value > 0 }.map { it.key to it.value }
 
         return DeckAnalysis(
             loading = false,
@@ -227,17 +400,23 @@ class DeckDetailViewModel(
             manaCurve = curveBuckets.toList(),
             avgManaValue = if (nonLandCount > 0) cmcSum / nonLandCount else 0.0,
             colorCounts = colorTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
-            colorPipCounts = pipTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
+            colorPipCounts = pipList,
             typeCounts = typeTotals.entries.sortedByDescending { it.value }.map { it.key to it.value },
             totalUsd = totalUsd,
             deckSize = nonLandCount + landCount,
             landCount = landCount,
-            colorSourceCounts = colorSourceTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
+            colorSourceCounts = sourceList,
             bracket = bracket,
             bracketName = bracketName,
             bracketReason = reason,
             gameChangers = gameChangers.distinct(),
             combos = combos,
+            combosAvailable = deckCombos != null,
+            nearMisses = nearMisses,
+            comboPieces = comboPieces(combos),
+            nearMissPieces = nearMissPieces,
+            comboCompleters = comboCompleters,
+            manaAdvice = manaBaseAdvice(pipList, sourceList, landCount, d.mode),
             legality = evaluateLegality(d, byId)
         )
     }
@@ -255,6 +434,67 @@ class DeckDetailViewModel(
     fun addCard(card: ScryfallCard, onWarning: ((String) -> Unit)? = null) {
         deck.value?.let { d -> duplicateWarning(d, card)?.let { onWarning?.invoke(it) } }
         viewModelScope.launch { repository.addCardToDeck(deckId, card) }
+    }
+
+    // ---- Cut candidates, considering, swaps ----
+
+    fun setReplaceable(scryfallId: String, replaceable: Boolean) {
+        viewModelScope.launch { repository.setReplaceable(deckId, scryfallId, replaceable) }
+    }
+
+    fun moveToConsidering(scryfallId: String) {
+        viewModelScope.launch { repository.moveToConsidering(deckId, scryfallId) }
+    }
+
+    fun addConsideredToDeck(scryfallId: String) {
+        viewModelScope.launch { repository.addConsideredToDeck(deckId, scryfallId) }
+    }
+
+    fun removeFromConsidering(scryfallId: String) {
+        viewModelScope.launch { repository.removeFromConsidering(deckId, scryfallId) }
+    }
+
+    fun swap(outScryfallId: String, inScryfallId: String) {
+        viewModelScope.launch { repository.swap(deckId, outScryfallId, inScryfallId) }
+    }
+
+    fun consider(card: ScryfallCard) {
+        viewModelScope.launch { repository.addToConsidering(deckId, card) }
+    }
+
+    /** Adds a card known only by name (EDHREC suggestions, combo pieces) to the considering list. */
+    fun considerByName(name: String, onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            val card = lookupCard(name)
+            if (card == null) {
+                onResult("Couldn't find $name.")
+            } else {
+                repository.addToConsidering(deckId, card)
+                onResult("Added ${card.name} to Considering.")
+            }
+        }
+    }
+
+    // ---- Missing cards ----
+
+    /** Adds every missing card (in the copies still needed) to [wishlistId], or to a new wishlist named [newName]. */
+    fun addMissingToWishlist(wishlistId: String?, newName: String?, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            val cards = missing.value
+            if (cards.isEmpty()) {
+                onDone("Nothing missing.")
+                return@launch
+            }
+            val target = wishlistId
+                ?: collectionRepository.createCollection(newName?.takeIf { it.isNotBlank() } ?: "${deck.value?.name ?: "Deck"} wishlist", CollectionType.WISHLIST).id
+            cards.forEach { (entry, need) ->
+                collectionRepository.addEntry(
+                    target,
+                    CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = need, foilQuantity = 0, backImageUrl = entry.backImageUrl, tags = entry.tags)
+                )
+            }
+            onDone("Added ${cards.size} card${if (cards.size == 1) "" else "s"} to the wishlist.")
+        }
     }
 
     /** Resolves this deck's cards to full Scryfall data (set + collector number) for exact-printing export. */
@@ -340,31 +580,12 @@ class DeckDetailViewModel(
                 onResult(null)
                 return@launch
             }
-            val ownedByName = mutableMapOf<String, Int>()
-            collectionRepository.collectionsFlow.first().forEach { collection ->
-                collection.entries.forEach { entry ->
-                    val key = entry.name.lowercase()
-                    ownedByName[key] = (ownedByName[key] ?: 0) + entry.quantity + entry.foilQuantity
-                }
-            }
-            repository.decksFlow.first()
-                .filter { it.ownershipType == DeckOwnership.PHYSICAL }
-                .forEach { physicalDeck ->
-                    physicalDeck.cards.forEach { entry ->
-                        val key = entry.name.lowercase()
-                        ownedByName[key] = (ownedByName[key] ?: 0) + entry.quantity
-                    }
-                }
-            val missing = d.cards.mapNotNull { entry ->
-                val owned = ownedByName[entry.name.lowercase()] ?: 0
-                val need = entry.quantity - owned
-                if (need > 0) entry.name to need else null
-            }
+            val missing = missingCards(d, collectionRepository.collectionsFlow.first(), repository.decksFlow.first())
             if (missing.isEmpty()) {
                 onResult(null)
                 return@launch
             }
-            val cLines = missing.joinToString("||") { (name, qty) -> "$qty $name" }
+            val cLines = missing.joinToString("||") { "${it.need} ${it.entry.name}" }
             onResult("https://store.tcgplayer.com/massentry?c=" + java.net.URLEncoder.encode(cLines, "UTF-8"))
         }
     }
@@ -482,15 +703,13 @@ class DeckDetailViewModel(
     }
 }
 
-/**
- * Keys for comparing a card name across sources. Includes the front face on its own because a
- * double-faced card is "Adventurous Eater // Have a Bite" to Scryfall but often just
- * "Adventurous Eater" to EDHREC, and the two should still count as the same card.
- */
-private fun cardNameKeys(name: String): Set<String> {
-    val full = name.trim().lowercase()
-    return setOf(full, full.substringBefore(" // ").trim())
-}
+private const val ROLE_QUERY_CHUNK = 30
+/** Scryfall asks for 50–100ms between requests. */
+private const val SCRYFALL_SPACING_MILLIS = 90L
+private const val MAX_BUDGET_SWAPS = 8
+private const val ALTERNATIVES_PER_SWAP = 4
+/** Alternatives must cost under this fraction of the original — a swap has to actually save money. */
+private const val BUDGET_PRICE_FRACTION = 0.4
 
 /** One decklist line: how many copies, the card name, and the printing if the export named one. */
 private data class ParsedLine(

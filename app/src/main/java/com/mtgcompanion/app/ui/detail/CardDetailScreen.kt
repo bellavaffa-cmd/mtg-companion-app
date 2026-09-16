@@ -334,6 +334,10 @@ fun CardDetailScreen(
                 showDeckPicker = false
                 target?.let { viewModel.addToDeck(deckId, it) }
             },
+            onConsiderDeck = { deckId ->
+                showDeckPicker = false
+                target?.let { viewModel.considerForDeck(deckId, it) }
+            },
             onCreateDeck = { name ->
                 showDeckPicker = false
                 target?.let { viewModel.createDeckAndAdd(name, it) }
@@ -764,6 +768,7 @@ private fun DeckPickerDialog(
     decks: List<Deck>,
     onDismiss: () -> Unit,
     onPickDeck: (String) -> Unit,
+    onConsiderDeck: (String) -> Unit,
     onCreateDeck: (String) -> Unit
 ) {
     var newDeckName by remember { mutableStateOf("") }
@@ -773,16 +778,29 @@ private fun DeckPickerDialog(
         title = { Text("Add to deck", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
         text = {
             Column {
-                decks.forEach { deck ->
+                if (decks.isNotEmpty()) {
                     Text(
-                        deck.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextPrimary,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPickDeck(deck.id) }
-                            .padding(vertical = 10.dp)
+                        "Tap a deck to add the card, or CONSIDER to put it on that deck's Considering list.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextMuted,
+                        modifier = Modifier.padding(bottom = 4.dp)
                     )
+                }
+                decks.forEach { deck ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            deck.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextPrimary,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onPickDeck(deck.id) }
+                                .padding(vertical = 10.dp)
+                        )
+                        TextButton(onClick = { onConsiderDeck(deck.id) }) {
+                            Text("CONSIDER", color = Gold, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                 }
                 if (decks.isNotEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))

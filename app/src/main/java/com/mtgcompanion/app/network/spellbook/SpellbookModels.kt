@@ -50,5 +50,7 @@ data class FindMyCombosResponse(val results: FindMyCombosResults? = null)
 
 data class FindMyCombosResults(
     /** Combos fully present in the deck. */
-    val included: List<Variant> = emptyList()
+    val included: List<Variant> = emptyList(),
+    /** Combos the deck is exactly one card short of, within its current colors. */
+    val almostIncluded: List<Variant> = emptyList()
 )

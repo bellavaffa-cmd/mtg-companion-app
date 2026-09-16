@@ -183,15 +183,153 @@ class DeckRepository(private val context: Context) {
         }
     }
 
-    /** Overwrite the whole deck list — used when restoring/pulling from Drive sync. */
-    suspend fun replaceAll(decks: List<Deck>) {
-        update { decks }
+    // ---- Cut candidates & considering ----
+
+    suspend fun setReplaceable(deckId: String, scryfallId: String, replaceable: Boolean) {
+        updateDeck(deckId) { deck ->
+            deck.copy(cards = deck.cards.map { if (it.scryfallId == scryfallId) it.copy(replaceable = replaceable) else it })
+        }
     }
 
-    private suspend fun update(transform: (List<Deck>) -> List<Deck>) {
+    /** Adds [card] to the deck's considering list; already-considered cards are left as they are. */
+    suspend fun addToConsidering(deckId: String, card: ScryfallCard) {
+        addConsideringEntry(
+            deckId,
+            DeckCardEntry(card.id, card.name, card.displayImageUrl, 1, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl, card.tags)
+        )
+    }
+
+    suspend fun addConsideringEntry(deckId: String, entry: DeckCardEntry) {
+        updateDeck(deckId) { deck -> deck.copy(considering = deck.considering.withConsidered(entry)) }
+    }
+
+    suspend fun removeFromConsidering(deckId: String, scryfallId: String) {
+        updateDeck(deckId) { deck -> deck.copy(considering = deck.considering.filterNot { it.scryfallId == scryfallId }) }
+    }
+
+    /** Takes a card (all copies) out of the deck and parks it on the considering list instead. */
+    suspend fun moveToConsidering(deckId: String, scryfallId: String) {
+        updateDeck(deckId) { deck ->
+            val entry = deck.cards.find { it.scryfallId == scryfallId } ?: return@updateDeck deck
+            deck.withoutCard(scryfallId).copy(considering = deck.considering.withConsidered(entry))
+        }
+    }
+
+    /** Commits a considered card to the deck, taking it off the considering list. */
+    suspend fun addConsideredToDeck(deckId: String, scryfallId: String) {
+        updateDeck(deckId) { deck ->
+            val entry = deck.considering.find { it.scryfallId == scryfallId } ?: return@updateDeck deck
+            deck.copy(
+                cards = deck.cards.withCard(entry),
+                considering = deck.considering.filterNot { it.scryfallId == scryfallId }
+            )
+        }
+    }
+
+    /**
+     * One step: [outScryfallId] leaves the deck for the considering list and [inScryfallId] leaves
+     * the considering list for the deck — so nothing is lost, and the change can be swapped back.
+     */
+    suspend fun swap(deckId: String, outScryfallId: String, inScryfallId: String) {
+        updateDeck(deckId) { deck ->
+            val outgoing = deck.cards.find { it.scryfallId == outScryfallId } ?: return@updateDeck deck
+            val incoming = deck.considering.find { it.scryfallId == inScryfallId } ?: return@updateDeck deck
+            val withoutOut = deck.withoutCard(outScryfallId)
+            withoutOut.copy(
+                cards = withoutOut.cards.withCard(incoming),
+                considering = deck.considering.filterNot { it.scryfallId == inScryfallId }.withConsidered(outgoing)
+            )
+        }
+    }
+
+    /** Overwrite the whole deck list — used when restoring/pulling from Drive sync. */
+    suspend fun replaceAll(decks: List<Deck>) {
+        // What's pulled from Drive already carries its own version history; recording a new version
+        // here would log a sync as if the user had edited the deck.
+        update(recordVersions = false) { decks }
+    }
+
+    private suspend fun updateDeck(deckId: String, transform: (Deck) -> Deck) {
+        update { decks -> decks.map { if (it.id == deckId) transform(it) else it } }
+    }
+
+    private suspend fun update(recordVersions: Boolean = true, transform: (List<Deck>) -> List<Deck>) {
         context.decksDataStore.edit { prefs ->
             val current = prefs[key]?.let { runCatching { adapter.fromJson(it)?.decks }.getOrNull() } ?: emptyList()
-            prefs[key] = adapter.toJson(DeckStore(transform(current)))
+            val next = transform(current)
+            val recorded = if (recordVersions) {
+                next.map { after -> withVersion(current.find { it.id == after.id }, after) }
+            } else next
+            prefs[key] = adapter.toJson(DeckStore(recorded))
+        }
+    }
+
+    companion object {
+        /** Edits closer together than this belong to the same sitting, and share one version. */
+        private const val SESSION_MILLIS = 30 * 60 * 1000L
+        private const val MAX_VERSIONS = 40
+        const val BASELINE_PREFIX = "baseline:"
+
+        private fun DeckCardEntry.considered() = copy(replaceable = false)
+
+        /** A considering list with [entry] on it — it's a list of candidates, so no duplicate rows. */
+        private fun List<DeckCardEntry>.withConsidered(entry: DeckCardEntry): List<DeckCardEntry> =
+            if (any { it.scryfallId == entry.scryfallId }) this else this + entry.considered()
+
+        private fun List<DeckCardEntry>.withCard(entry: DeckCardEntry): List<DeckCardEntry> =
+            if (any { it.scryfallId == entry.scryfallId }) {
+                map { if (it.scryfallId == entry.scryfallId) it.copy(quantity = it.quantity + entry.quantity) else it }
+            } else this + entry.considered()
+
+        private fun Deck.withoutCard(scryfallId: String) = copy(
+            cards = cards.filterNot { it.scryfallId == scryfallId },
+            commander = commander?.takeUnless { it.scryfallId == scryfallId },
+            partnerCommander = partnerCommander?.takeUnless { it.scryfallId == scryfallId }
+        )
+
+        private fun snapshotOf(deck: Deck): DeckVersion {
+            val cards = LinkedHashMap<String, Int>()
+            deck.cards.forEach { cards[it.name] = (cards[it.name] ?: 0) + it.quantity }
+            return DeckVersion(
+                id = "",
+                savedAt = 0L,
+                cards = cards,
+                commanders = listOfNotNull(deck.commander?.name, deck.partnerCommander?.name)
+            )
+        }
+
+        /**
+         * Records [after]'s list as a version when it actually differs from [before]'s — changes to
+         * tags, flags, the considering list or a card's printing don't count. Edits within one
+         * sitting replace that sitting's version instead of piling up one per tap. A deck edited for
+         * the first time since versions existed gets its prior list saved first, so there's a
+         * "before" to compare against.
+         */
+        internal fun withVersion(before: Deck?, after: Deck): Deck {
+            val snapshot = snapshotOf(after)
+            val previous = before?.let { snapshotOf(it) }
+            if (previous != null && previous.cards == snapshot.cards && previous.commanders == snapshot.commanders) return after
+            if (snapshot.cards.isEmpty() && after.versions.isEmpty()) return after
+
+            val now = System.currentTimeMillis()
+            var versions = after.versions
+            if (versions.isEmpty() && previous != null && previous.cards.isNotEmpty()) {
+                versions = versions + previous.copy(id = BASELINE_PREFIX + UUID.randomUUID(), savedAt = now - 1)
+            }
+            val last = versions.lastOrNull()
+            // A baseline is the list from before versions existed — never fold new edits into it. Nor
+            // into a version that's had a game logged on it: folding would move that version's time
+            // past the game and credit the game to the version before.
+            val sameSitting = last != null &&
+                !last.id.startsWith(BASELINE_PREFIX) &&
+                now - last.savedAt < SESSION_MILLIS &&
+                after.gameResults.none { it.playedAt >= last.savedAt }
+            versions = if (sameSitting) {
+                versions.dropLast(1) + snapshot.copy(id = last!!.id, savedAt = now)
+            } else {
+                versions + snapshot.copy(id = UUID.randomUUID().toString(), savedAt = now)
+            }
+            return after.copy(versions = versions.takeLast(MAX_VERSIONS))
         }
     }
 }

@@ -5,6 +5,9 @@ import com.mtgcompanion.app.network.spellbook.DeckCardRef
 import com.mtgcompanion.app.network.spellbook.FindMyCombosRequest
 import com.mtgcompanion.app.network.spellbook.Variant
 
+/** [included]: complete combos in a deck. [almostIncluded]: combos it's exactly one card short of. */
+data class DeckCombos(val included: List<Variant>, val almostIncluded: List<Variant>)
+
 class ComboRepository {
     private val api = NetworkModule.spellbookApi
 
@@ -13,17 +16,22 @@ class ComboRepository {
         return api.findCombosForCard(query).results
     }
 
-    /** Combos fully contained in a deck (commanders + the rest of the cards). */
-    suspend fun findCombosInDeck(commanderNames: List<String>, cardNames: List<String>): List<Variant> {
-        if (cardNames.isEmpty() && commanderNames.isEmpty()) return emptyList()
+    /**
+     * Combos a deck contains (commanders + the rest of the cards), plus those it's a single card
+     * away from. Null when the lookup fails — distinct from "no combos", so callers don't tell the
+     * user a deck has none just because they're offline.
+     */
+    suspend fun findCombosInDeck(commanderNames: List<String>, cardNames: List<String>): DeckCombos? {
+        if (cardNames.isEmpty() && commanderNames.isEmpty()) return DeckCombos(emptyList(), emptyList())
         val body = FindMyCombosRequest(
             commanders = commanderNames.map { DeckCardRef(it) },
             main = cardNames.map { DeckCardRef(it) }
         )
         return try {
-            api.findMyCombos(body).results?.included.orEmpty()
+            val results = api.findMyCombos(body).results
+            DeckCombos(results?.included.orEmpty(), results?.almostIncluded.orEmpty())
         } catch (e: Exception) {
-            emptyList()
+            null
         }
     }
 

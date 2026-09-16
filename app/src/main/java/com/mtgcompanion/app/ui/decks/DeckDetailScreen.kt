@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -62,7 +63,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -98,6 +99,8 @@ import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.LegalityIssue
 import com.mtgcompanion.app.data.LegalityIssueKind
 import com.mtgcompanion.app.data.partnersWith
+import com.mtgcompanion.app.data.VersionSummary
+import com.mtgcompanion.app.data.cardNameKeys
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
@@ -130,6 +133,10 @@ import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
+/** Tab order. The Considering tab sits right beside Cards, since the two are worked together. */
+private val DECK_TABS = listOf("CARDS", "CONSIDERING", "STATS", "REC", "LEGAL")
+private const val TAB_CONSIDERING = 1
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DeckDetailScreen(
@@ -143,7 +150,16 @@ fun DeckDetailScreen(
     val cardGroups by viewModel.cardGroups.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val prices by viewModel.prices.collectAsState()
-    val pagerState = rememberPagerState(pageCount = { 4 })
+    val pagerState = rememberPagerState(pageCount = { DECK_TABS.size })
+    val missing by viewModel.missing.collectAsState()
+    val wishlists by viewModel.wishlists.collectAsState()
+    // Swap flows: a cut candidate choosing its replacement, or a considered card choosing what it replaces.
+    var swapOut by remember { mutableStateOf<DeckCardEntry?>(null) }
+    var swapIn by remember { mutableStateOf<DeckCardEntry?>(null) }
+    // A combo piece the user asked to mark as a cut candidate, pending their confirmation.
+    var comboWarningFor by remember { mutableStateOf<DeckCardEntry?>(null) }
+    var showMissing by remember { mutableStateOf(false) }
+    val toast = { message: String -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
     val scope = rememberCoroutineScope()
     var menuOpen by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -220,17 +236,8 @@ fun DeckDetailScreen(
                             onClick = { menuOpen = false; showGoldfish = true }
                         )
                         DropdownMenuItem(
-                            text = { Text("Buy missing cards", color = TextPrimary) },
-                            onClick = {
-                                menuOpen = false
-                                viewModel.buildMissingCardsUrl { url ->
-                                    if (url == null) {
-                                        Toast.makeText(context, "You already own every card in this deck.", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                    }
-                                }
-                            }
+                            text = { Text("Cards I don't own", color = TextPrimary) },
+                            onClick = { menuOpen = false; showMissing = true }
                         )
                         DropdownMenuItem(
                             text = { Text("Delete deck", color = Color(0xFFD3402F)) },
@@ -245,14 +252,14 @@ fun DeckDetailScreen(
         val currentDeck = deck ?: return@Scaffold
 
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
-            TabRow(selectedTabIndex = pagerState.currentPage, containerColor = Bg, contentColor = Gold) {
-                listOf("CARDS", "STATS", "REC", "LEGAL").forEachIndexed { index, label ->
+            ScrollableTabRow(selectedTabIndex = pagerState.currentPage, containerColor = Bg, contentColor = Gold, edgePadding = 8.dp) {
+                DECK_TABS.forEachIndexed { index, label ->
                     Tab(
                         selected = pagerState.currentPage == index,
                         onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
                         text = {
                             Text(
-                                label,
+                                if (index == TAB_CONSIDERING && currentDeck.considering.isNotEmpty()) "$label (${currentDeck.considering.size})" else label,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (pagerState.currentPage == index) Gold else TextMuted
                             )
@@ -280,13 +287,39 @@ fun DeckDetailScreen(
                                 onMove = { moveTarget = it },
                                 onRemove = { removeCardTarget = it },
                                 onSetCommander = { viewModel.setCommander(it) },
-                                onSetPartnerCommander = { viewModel.setPartnerCommander(it) }
+                                onSetPartnerCommander = { viewModel.setPartnerCommander(it) },
+                                hasConsidering = currentDeck.considering.isNotEmpty(),
+                                onToggleReplaceable = { card ->
+                                    val combos = cardNameKeys(card.name).flatMap { analysis.comboPieces[it].orEmpty() }.distinctBy { it.id }
+                                    when {
+                                        card.replaceable -> viewModel.setReplaceable(card.scryfallId, false)
+                                        combos.isNotEmpty() -> comboWarningFor = card
+                                        else -> viewModel.setReplaceable(card.scryfallId, true)
+                                    }
+                                },
+                                onMoveToConsidering = { viewModel.moveToConsidering(it.scryfallId); toast("Moved ${it.name} to Considering.") },
+                                onSwap = { swapOut = it }
                             )
                         },
                         viewModel
                     )
-                    1 -> StatsTab(analysis, currentDeck, viewModel)
-                    2 -> AnalysisTab(analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel)
+                    TAB_CONSIDERING -> ConsideringTab(
+                        deck = currentDeck,
+                        analysis = analysis,
+                        prices = prices,
+                        onZoom = { zoom = "consider" to it },
+                        onAddToDeck = { viewModel.addConsideredToDeck(it.scryfallId); toast("Added ${it.name} to the deck.") },
+                        onSwapIn = { swapIn = it },
+                        onRemove = { viewModel.removeFromConsidering(it.scryfallId) }
+                    )
+                    2 -> StatsTab(analysis, currentDeck, viewModel)
+                    3 -> AnalysisTab(
+                        analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel,
+                        onConsiderName = { name -> viewModel.considerByName(name, toast) },
+                        onConsiderCard = { card -> viewModel.consider(card); toast("Added ${card.name} to Considering.") },
+                        onMarkCut = { entry -> viewModel.setReplaceable(entry.scryfallId, true) },
+                        onViewDetails = onViewDetails
+                    )
                     else -> LegalityTab(analysis, viewModel)
                 }
             }
@@ -318,6 +351,21 @@ fun DeckDetailScreen(
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
+            } else if (source == "consider") {
+                val considering = currentDeck.considering
+                val zoomCards = considering.map { entry ->
+                    ZoomCard(
+                        imageUrl = entry.imageUrl,
+                        cardName = entry.name,
+                        priceUsd = prices[entry.scryfallId],
+                        onViewDetails = { zoom = null; onViewDetails(entry.name) },
+                        sources = cardSources[entry.scryfallId].orEmpty(),
+                        backImageUrl = entry.backImageUrl,
+                        tags = entry.tags,
+                        onFindSimilar = { zoom = null; similarSearchFor = entry.name }
+                    )
+                }
+                CardZoomDialog(zoomCards, considering.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
             } else {
                 val sug = suggestions.orEmpty()
                 val zoomCards = sug.map { suggestion ->
@@ -415,6 +463,72 @@ fun DeckDetailScreen(
         }
         if (showGoldfish) {
             GoldfishDialog(deck = currentDeck, onDismiss = { showGoldfish = false })
+        }
+
+        swapOut?.let { outgoing ->
+            if (currentDeck.considering.isEmpty()) {
+                SwapPickerDialog(
+                    title = "Nothing to swap in yet",
+                    message = "Add cards to this deck's Considering list first — from a card's page, the REC tab, or budget swaps.",
+                    options = emptyList(),
+                    onPick = {},
+                    onDismiss = { swapOut = null }
+                )
+            } else {
+                SwapPickerDialog(
+                    title = "Replace ${outgoing.name} with…",
+                    message = "${outgoing.name} moves to Considering, so you can swap it back later.",
+                    options = currentDeck.considering,
+                    onPick = { incoming ->
+                        viewModel.swap(outgoing.scryfallId, incoming.scryfallId)
+                        toast("Swapped in ${incoming.name} for ${outgoing.name}.")
+                        swapOut = null
+                    },
+                    onDismiss = { swapOut = null }
+                )
+            }
+        }
+
+        swapIn?.let { incoming ->
+            val commanderIds = setOfNotNull(currentDeck.commander?.scryfallId, currentDeck.partnerCommander?.scryfallId)
+            SwapPickerDialog(
+                title = "Swap ${incoming.name} in for…",
+                message = "The card you pick moves to Considering. Cut candidates are listed first.",
+                options = currentDeck.cards.filterNot { it.scryfallId in commanderIds },
+                onPick = { outgoing ->
+                    viewModel.swap(outgoing.scryfallId, incoming.scryfallId)
+                    toast("Swapped in ${incoming.name} for ${outgoing.name}.")
+                    swapIn = null
+                },
+                onDismiss = { swapIn = null }
+            )
+        }
+
+        comboWarningFor?.let { card ->
+            ComboPieceWarningDialog(
+                cardName = card.name,
+                combos = cardNameKeys(card.name).flatMap { analysis.comboPieces[it].orEmpty() }.distinctBy { it.id },
+                onConfirm = { viewModel.setReplaceable(card.scryfallId, true); comboWarningFor = null },
+                onDismiss = { comboWarningFor = null }
+            )
+        }
+
+        if (showMissing) {
+            MissingCardsDialog(
+                missing = missing,
+                wishlists = wishlists,
+                onAddToWishlist = { wishlistId, newName ->
+                    viewModel.addMissingToWishlist(wishlistId, newName) { message -> toast(message) }
+                    showMissing = false
+                },
+                onBuy = {
+                    viewModel.buildMissingCardsUrl { url ->
+                        if (url != null) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    }
+                    showMissing = false
+                },
+                onDismiss = { showMissing = false }
+            )
         }
     }
 }
@@ -893,9 +1007,14 @@ private fun CardsTab(
 ) {
     var query by remember { mutableStateOf("") }
     val trimmed = query.trim()
+    var filter by remember { mutableStateOf(CardFilter.ALL) }
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val cardGroups by viewModel.cardGroups.collectAsState()
+    fun isComboPiece(card: DeckCardEntry) = cardNameKeys(card.name).any { it in analysis.comboPieces }
+    fun isNearMiss(card: DeckCardEntry) = cardNameKeys(card.name).any { it in analysis.nearMissPieces }
+    val cutCount = deck.cards.count { it.replaceable }
+    val comboCount = deck.cards.count { isComboPiece(it) }
 
     // Grouped by type instantly from cached data, refined once analysis resolves from Scryfall;
     // only falls back to one flat list for entries with no type info at all yet.
@@ -907,7 +1026,14 @@ private fun CardsTab(
         }
         )
         .mapNotNull { group ->
-            val cards = group.cards.filter { trimmed.isBlank() || it.name.contains(trimmed, ignoreCase = true) }
+            val cards = group.cards.filter { card ->
+                (trimmed.isBlank() || card.name.contains(trimmed, ignoreCase = true)) &&
+                    when (filter) {
+                        CardFilter.ALL -> true
+                        CardFilter.CUT -> card.replaceable
+                        CardFilter.COMBO -> isComboPiece(card)
+                    }
+            }
             if (cards.isEmpty()) null else group.copy(cards = cards)
         }
 
@@ -962,6 +1088,15 @@ private fun CardsTab(
                     .fillMaxWidth()
                     .padding(start = 20.dp, end = 20.dp, top = 16.dp)
             )
+            if (cutCount > 0 || comboCount > 0 || filter != CardFilter.ALL) {
+                CardFilterChips(
+                    selected = filter,
+                    cutCount = cutCount,
+                    comboCount = comboCount,
+                    onSelect = { filter = it },
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp)
+                )
+            }
         }
 
         LazyColumn(
@@ -981,7 +1116,12 @@ private fun CardsTab(
             if (groups.isEmpty()) {
                 item {
                     Text(
-                        "No cards match \"$trimmed\".",
+                        when {
+                            trimmed.isNotBlank() -> "No cards match \"$trimmed\"."
+                            filter == CardFilter.CUT -> "No cut candidates. Long-press a card and choose Mark as cut candidate."
+                            filter == CardFilter.COMBO -> "No combo pieces detected in this deck."
+                            else -> "No cards."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted
                     )
@@ -1003,7 +1143,9 @@ private fun CardsTab(
                             card = card,
                             isCommander = card.scryfallId == deck.commander?.scryfallId || card.scryfallId == deck.partnerCommander?.scryfallId,
                             onClick = { onZoomCard(card.scryfallId) },
-                            actions = cardActions(card)
+                            actions = cardActions(card),
+                            comboPiece = isComboPiece(card),
+                            nearMiss = isNearMiss(card)
                         )
                     }
                 } else {
@@ -1017,7 +1159,9 @@ private fun CardsTab(
                                 viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
                             },
                             onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
-                            onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) }
+                            onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) },
+                            comboPiece = isComboPiece(card),
+                            nearMiss = isNearMiss(card)
                         )
                     }
                 }
@@ -1033,6 +1177,9 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         return
     }
     var showLogResult by remember { mutableStateOf(false) }
+    val roles by viewModel.roles.collectAsState()
+    val versionHistory by viewModel.versionHistory.collectAsState()
+    var openVersion by remember { mutableStateOf<VersionSummary?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -1098,6 +1245,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                 }
             }
         }
+        item { VersionHistoryPanel(versionHistory, onOpen = { openVersion = it }) }
         item {
             Panel {
                 SectionLabel("COMMANDER BRACKET")
@@ -1140,6 +1288,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                 )
             }
         }
+        item { RolesPanel(roles) }
         item {
             Panel {
                 SectionLabel("COLORS")
@@ -1249,6 +1398,15 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                         color = TextDim,
                         modifier = Modifier.padding(top = 8.dp)
                     )
+                    ManaAdviceList(analysis.manaAdvice)
+                    if (analysis.manaAdvice.isNotEmpty()) {
+                        Text(
+                            "Sources count lands only — mana rocks and creatures that tap for mana aren't included.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextDim,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
                 }
             }
         }
@@ -1269,6 +1427,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
             onDismiss = { showLogResult = false }
         )
     }
+    openVersion?.let { VersionDetailDialog(it, onDismiss = { openVersion = null }) }
 }
 
 @Composable
@@ -1330,7 +1489,11 @@ private fun AnalysisTab(
     analysis: DeckAnalysis,
     suggestions: List<EdhrecCardView>?,
     onZoomSugg: (String) -> Unit,
-    viewModel: DeckDetailViewModel
+    viewModel: DeckDetailViewModel,
+    onConsiderName: (String) -> Unit,
+    onConsiderCard: (ScryfallCard) -> Unit,
+    onMarkCut: (DeckCardEntry) -> Unit,
+    onViewDetails: (String) -> Unit
 ) {
     if (analysis.loading) {
         LoadingBox()
@@ -1338,6 +1501,7 @@ private fun AnalysisTab(
     }
     val viewMode by viewModel.recViewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
+    val budgetSwaps by viewModel.budgetSwaps.collectAsState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1345,7 +1509,9 @@ private fun AnalysisTab(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { SectionLabel("COMBOS (${analysis.combos.size})") }
-        if (analysis.combos.isEmpty()) {
+        if (!analysis.combosAvailable) {
+            item { Text("Couldn't reach Commander Spellbook — check your connection.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
+        } else if (analysis.combos.isEmpty()) {
             item { Text("No complete combos detected in this deck.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
         } else {
             items(analysis.combos.take(10), key = { it.id }) { combo ->
@@ -1356,6 +1522,14 @@ private fun AnalysisTab(
                 }
             }
         }
+        nearMissSection(analysis.nearMisses, analysis.combosAvailable, onConsider = onConsiderName)
+        budgetSwapsSection(
+            state = budgetSwaps,
+            onFind = viewModel::findBudgetSwaps,
+            onConsider = onConsiderCard,
+            onMarkCut = onMarkCut,
+            onViewDetails = onViewDetails
+        )
         item { SectionLabel("EDHREC SUGGESTIONS") }
         val sug = suggestions
         when {
@@ -1369,11 +1543,11 @@ private fun AnalysisTab(
             sug.isEmpty() -> item { Text("No suggestions found.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
             viewMode == CardViewMode.GRID -> {
                 cardGrid(sug, columns = gridColumns, key = { it.id ?: it.name }) { view ->
-                    SuggestionTile(view, onClick = { onZoomSugg(view.id ?: view.name) })
+                    SuggestionTile(view, onClick = { onZoomSugg(view.id ?: view.name) }, onConsider = { onConsiderName(view.name) })
                 }
             }
             else -> items(sug, key = { it.id ?: it.name }) { view ->
-                SuggestionRow(view, onClick = { onZoomSugg(view.id ?: view.name) })
+                SuggestionRow(view, onClick = { onZoomSugg(view.id ?: view.name) }, onConsider = { onConsiderName(view.name) })
             }
         }
     }
@@ -1382,14 +1556,14 @@ private fun AnalysisTab(
 // ---- shared bits ----
 
 @Composable
-private fun LoadingBox() {
+internal fun LoadingBox() {
     Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(color = Gold)
     }
 }
 
 @Composable
-private fun Panel(content: @Composable ColumnScope.() -> Unit) {
+internal fun Panel(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1400,7 +1574,7 @@ private fun Panel(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(text, style = MaterialTheme.typography.titleMedium)
 }
 
@@ -1460,7 +1634,7 @@ private fun StatBar(label: String, count: Int, max: Int) {
 
 
 @Composable
-private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit) {
+private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit, onConsider: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -1485,11 +1659,12 @@ private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit) {
                 color = TextMuted
             )
         }
+        TextButton(onClick = onConsider) { Text("CONSIDER", color = Gold, style = MaterialTheme.typography.labelMedium) }
     }
 }
 
 @Composable
-private fun SuggestionTile(view: EdhrecCardView, onClick: () -> Unit) {
+private fun SuggestionTile(view: EdhrecCardView, onClick: () -> Unit, onConsider: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         AsyncImage(
             model = view.scryfallImageUrl,
@@ -1506,11 +1681,20 @@ private fun SuggestionTile(view: EdhrecCardView, onClick: () -> Unit) {
             modifier = Modifier.padding(top = 4.dp)
         )
         val pct = view.inclusionPercent
-        Text(
-            if (pct != null) "$pct%" else "${view.numDecks ?: 0}",
-            style = MaterialTheme.typography.labelMedium,
-            color = TextMuted
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (pct != null) "$pct%" else "${view.numDecks ?: 0}",
+                style = MaterialTheme.typography.labelMedium,
+                color = TextMuted,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "CONSIDER",
+                style = MaterialTheme.typography.labelMedium,
+                color = Gold,
+                modifier = Modifier.clickable(onClick = onConsider).padding(vertical = 2.dp)
+            )
+        }
     }
 }
 
@@ -1523,7 +1707,9 @@ private fun DeckCardRow(
     actions: List<CardMenuAction>,
     onToggleCommander: () -> Unit,
     onIncrement: () -> Unit,
-    onDecrement: () -> Unit
+    onDecrement: () -> Unit,
+    comboPiece: Boolean = false,
+    nearMiss: Boolean = false
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -1553,14 +1739,16 @@ private fun DeckCardRow(
                 )
                 if (card.backImageUrl != null) FlipBadge()
             }
-            Text(
-                card.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    card.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.padding(top = 3.dp))
+            }
             if (card.canBeCommander) {
                 IconButton(onClick = onToggleCommander, modifier = Modifier.size(30.dp)) {
                     Icon(
@@ -1588,7 +1776,14 @@ private fun DeckCardRow(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DeckCardTile(card: DeckCardEntry, isCommander: Boolean = false, onClick: () -> Unit, actions: List<CardMenuAction>) {
+private fun DeckCardTile(
+    card: DeckCardEntry,
+    isCommander: Boolean = false,
+    onClick: () -> Unit,
+    actions: List<CardMenuAction>,
+    comboPiece: Boolean = false,
+    nearMiss: Boolean = false
+) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -1644,6 +1839,7 @@ private fun DeckCardTile(card: DeckCardEntry, isCommander: Boolean = false, onCl
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp)
             )
+            DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.padding(top = 2.dp))
         }
         CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = actions)
     }
@@ -1661,9 +1857,24 @@ private fun deckCardActions(
     onMove: (DeckCardEntry) -> Unit,
     onRemove: (DeckCardEntry) -> Unit,
     onSetCommander: (DeckCardEntry?) -> Unit,
-    onSetPartnerCommander: (DeckCardEntry?) -> Unit
+    onSetPartnerCommander: (DeckCardEntry?) -> Unit,
+    hasConsidering: Boolean,
+    onToggleReplaceable: (DeckCardEntry) -> Unit,
+    onMoveToConsidering: (DeckCardEntry) -> Unit,
+    onSwap: (DeckCardEntry) -> Unit
 ): List<CardMenuAction> {
     val actions = mutableListOf<CardMenuAction>()
+    if (!isCommander && !isPartnerCommander) {
+        actions += if (entry.replaceable) {
+            CardMenuAction("Not a cut candidate", Icons.Filled.SwapHoriz) { onToggleReplaceable(entry) }
+        } else {
+            CardMenuAction("Mark as cut candidate", Icons.Filled.SwapHoriz) { onToggleReplaceable(entry) }
+        }
+        if (hasConsidering) {
+            actions += CardMenuAction("Swap with a considered card", Icons.Filled.SwapHoriz) { onSwap(entry) }
+        }
+        actions += CardMenuAction("Move to Considering", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToConsidering(entry) }
+    }
     if (entry.canBeCommander && mode == GameMode.COMMANDER) {
         actions += if (isCommander) {
             CardMenuAction("Remove as commander", Icons.Filled.Star) { onSetCommander(null) }
