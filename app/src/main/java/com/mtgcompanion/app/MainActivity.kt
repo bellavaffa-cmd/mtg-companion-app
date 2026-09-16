@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
                         updateManager = app.updateManager,
                         offlineCardRepository = app.offlineCardRepository,
                         playerProfileRepository = app.playerProfileRepository,
+                        lifeCounterSettingsRepository = app.lifeCounterSettingsRepository,
                         artIndexRepository = app.artIndexRepository
                     )
                 }

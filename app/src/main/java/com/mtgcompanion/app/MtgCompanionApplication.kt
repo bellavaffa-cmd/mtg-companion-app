@@ -16,6 +16,7 @@ import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.SyncStateRepository
 import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
+import com.mtgcompanion.app.ui.lifecounter.LifeCounterSettingsRepository
 import com.mtgcompanion.app.network.NetworkModule
 import com.mtgcompanion.app.update.UpdateManager
 
@@ -32,6 +33,7 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
     val updateManager by lazy { UpdateManager(this) }
     val offlineCardRepository by lazy { OfflineCardRepository(this) }
     val playerProfileRepository by lazy { PlayerProfileRepository(this) }
+    val lifeCounterSettingsRepository by lazy { LifeCounterSettingsRepository(this) }
     val artIndexRepository by lazy { ArtIndexRepository(this) }
 
     override fun onCreate() {

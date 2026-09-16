@@ -87,6 +87,7 @@ import com.mtgcompanion.app.ui.detail.CardDetailViewModel
 import com.mtgcompanion.app.ui.home.HomeScreen
 import com.mtgcompanion.app.ui.home.HomeViewModel
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterScreen
+import com.mtgcompanion.app.ui.lifecounter.LifeCounterSettingsRepository
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterViewModel
 import com.mtgcompanion.app.ui.rules.RulesScreen
 import com.mtgcompanion.app.ui.rules.RulesViewModel
@@ -145,6 +146,7 @@ fun MtgNavGraph(
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
     playerProfileRepository: PlayerProfileRepository,
+    lifeCounterSettingsRepository: LifeCounterSettingsRepository,
     artIndexRepository: ArtIndexRepository
 ) {
     val navController = rememberNavController()
@@ -322,7 +324,7 @@ fun MtgNavGraph(
             }
 
             composable(Routes.LIFE_COUNTER) {
-                val viewModel: LifeCounterViewModel = viewModel(factory = LifeCounterViewModel.Factory(playerProfileRepository))
+                val viewModel: LifeCounterViewModel = viewModel(factory = LifeCounterViewModel.Factory(playerProfileRepository, lifeCounterSettingsRepository))
                 LifeCounterScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
 
