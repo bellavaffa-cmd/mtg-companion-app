@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.search
 
+import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
 import com.mtgcompanion.app.ui.common.adaptiveGridColumns
 import android.widget.Toast
@@ -299,7 +300,7 @@ private fun CardResultRow(
                     model = card.displayImageUrl.toArtCropUrl(),
                     contentDescription = card.name,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier
+                    modifier = Modifier.zoomSource(card.displayImageUrl)
                         .size(width = 72.dp, height = 52.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .let { if (card.isRareOrMythic) it.foilShine() else it }
@@ -352,7 +353,7 @@ private fun CardResultTile(
                     model = card.displayImageUrl,
                     contentDescription = card.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier
+                    modifier = Modifier.zoomSource(card.displayImageUrl)
                         .fillMaxWidth()
                         .aspectRatio(0.72f)
                         .clip(RoundedCornerShape(14.dp))

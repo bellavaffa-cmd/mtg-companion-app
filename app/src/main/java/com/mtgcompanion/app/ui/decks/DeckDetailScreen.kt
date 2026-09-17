@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.common.zoomSource
 import androidx.compose.foundation.layout.BoxWithConstraints
 import com.mtgcompanion.app.ui.common.gridColumnsFor
 import com.mtgcompanion.app.ui.common.listColumnsFor
@@ -1691,7 +1692,7 @@ private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit, onConsider:
             model = view.scryfallImageUrl.toArtCropUrl(),
             contentDescription = view.name,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
+            modifier = Modifier.zoomSource(view.scryfallImageUrl).size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(view.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
@@ -1713,7 +1714,7 @@ private fun SuggestionTile(view: EdhrecCardView, onClick: () -> Unit, onConsider
             model = view.scryfallImageUrl,
             contentDescription = view.name,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
+            modifier = Modifier.zoomSource(view.scryfallImageUrl).fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
         )
         Text(
             view.name,
@@ -1779,7 +1780,7 @@ private fun DeckCardRow(
                     model = card.imageUrl.toArtCropUrl(),
                     seed = card.name,
                     contentDescription = card.name,
-                    modifier = Modifier.size(width = 60.dp, height = 46.dp).clip(RoundedCornerShape(11.dp))
+                    modifier = Modifier.zoomSource(card.imageUrl).size(width = 60.dp, height = 46.dp).clip(RoundedCornerShape(11.dp))
                 )
                 if (card.backImageUrl != null) FlipBadge()
             }
@@ -1847,7 +1848,7 @@ private fun DeckCardTile(
                     model = card.imageUrl,
                     contentDescription = card.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
+                    modifier = Modifier.zoomSource(card.imageUrl).fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
                 )
                 Text(
                     "×${card.quantity}",

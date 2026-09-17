@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.nav
 
+import com.mtgcompanion.app.ui.common.CardZoomHost
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import com.mtgcompanion.app.ui.common.SetPasswordDialog
@@ -193,6 +194,8 @@ fun MtgNavGraph(
     val updateState by updateManager.state.collectAsState()
     LaunchedEffect(Unit) { updateManager.checkForUpdate() }
 
+    // Enlarged cards draw above everything here, bars included, so they can grow out of their thumbnails.
+    CardZoomHost {
     Scaffold(
         containerColor = Bg,
         // The system bars are hidden app-wide (MainActivity), so these are normally zero — but a
@@ -434,6 +437,7 @@ fun MtgNavGraph(
         }
         }
         }
+    }
     }
 
     val passwordRecovery by supabaseSync.auth.passwordRecovery.collectAsState()

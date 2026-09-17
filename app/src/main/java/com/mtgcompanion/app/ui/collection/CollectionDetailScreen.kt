@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
 import com.mtgcompanion.app.ui.common.adaptiveGridColumns
 import androidx.compose.foundation.BorderStroke
@@ -306,7 +307,7 @@ private fun CollectionCardRow(
                     model = entry.imageUrl.toArtCropUrl(),
                     contentDescription = entry.name,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
+                    modifier = Modifier.zoomSource(entry.imageUrl).size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
                 )
                 if (entry.backImageUrl != null) FlipBadge()
             }
@@ -356,7 +357,7 @@ private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, acti
                     model = entry.imageUrl,
                     contentDescription = entry.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
+                    modifier = Modifier.zoomSource(entry.imageUrl).fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
                 )
                 Text(
                     "×$totalQty",

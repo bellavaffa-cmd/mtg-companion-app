@@ -1,5 +1,32 @@
 package com.mtgcompanion.app.ui.common
 
+import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import kotlinx.coroutines.withTimeoutOrNull
+import coil.request.ImageRequest
+import coil.imageLoader
+import androidx.compose.ui.platform.LocalContext
+import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filterNotNull
+import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.lerp
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -142,34 +169,108 @@ data class ZoomCard(
 )
 
 /**
- * Full-screen overlay that enlarges a card. Opens on [initialIndex] within [cards] and lets the
- * user swipe left/right to page through the rest of the list. Below each card it shows its value,
- * total value, and (when editable) a quantity stepper. Tap the card to dismiss.
+ * Enlarges a card over everything else. Opens on [initialIndex] within [cards] and lets the user
+ * swipe left/right through the rest of the list; below each card it shows its value, total value
+ * and (when editable) a quantity stepper. Tap the card or press back to dismiss.
+ *
+ * Compose it while the zoom should show, the way a dialog is used. It draws in the app's
+ * [CardZoomHost] rather than a window of its own, so a thumbnail marked with [zoomSource] grows into
+ * the enlarged card and the card shrinks back into whichever thumbnail was swiped to. Inside another
+ * dialog's window (no host there) it falls back to a plain dialog.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Unit) {
     if (cards.isEmpty()) return
-    val pagerState = rememberPagerState(
-        initialPage = initialIndex.coerceIn(0, cards.size - 1),
-        pageCount = { cards.size }
-    )
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        // Pops the whole overlay in from a slight scale/fade rather than snapping into view instantly.
-        val entrance = remember { Animatable(0f) }
-        LaunchedEffect(Unit) {
-            entrance.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow))
+    val host = LocalCardZoomHost.current
+    if (host == null || host.view !== LocalView.current) {
+        Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            CardZoomHost { CardZoomDialog(cards, initialIndex, onDismiss) }
         }
+        return
+    }
+    val entry = remember { ZoomEntry(initialIndex.coerceIn(0, cards.size - 1), cards, onDismiss) }
+    SideEffect {
+        entry.cards = cards
+        entry.onDismiss = onDismiss
+    }
+    DisposableEffect(host, entry) {
+        host.show(entry)
+        onDispose { host.hide(entry) }
+    }
+}
+
+/** Scryfall card images are 488 x 680. */
+private const val CARD_ASPECT = 488f / 680f
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boolean) {
+    val cards = entry.cards
+    if (cards.isEmpty()) {
+        LaunchedEffect(Unit) { host.finish(entry) }
+        return
+    }
+    val pagerState = rememberPagerState(initialPage = entry.initialPage, pageCount = { entry.cards.size })
+    val progress = entry.progress
+    // The current page's enlarged card, in host coordinates: where a flying card lands.
+    var target by remember { mutableStateOf<Rect?>(null) }
+    // The card in flight: its thumbnail's key and the image it shows on the way.
+    var flightKey by remember { mutableStateOf<String?>(null) }
+    var flightModel by remember { mutableStateOf<Any?>(null) }
+    // What each page is showing right now (front, back face or a previewed printing).
+    val shownModels = remember { HashMap<Int, Any?>() }
+    // Where the thumbnail was last seen, in case it leaves the screen mid-flight.
+    val lastFrom = remember { arrayOfNulls<Rect>(1) }
+    val context = LocalContext.current
+
+    LaunchedEffect(entry.closing) {
+        // Wait until the enlarged card has been laid out, so there's somewhere to fly to.
+        snapshotFlow { target }.filterNotNull().first()
+        val page = pagerState.currentPage
+        val key = entry.cards.getOrNull(page)?.imageUrl
+        val model = if (entry.closing) shownModels[page] ?: key else key
+        val hasThumbnail = host.sourceRect(key) != null
+        if (hasThumbnail) {
+            // A list row's thumbnail is an art crop, so the full card may not be loaded yet. Give it
+            // a moment's head start; if it's slower, the flight shows the row's art until it arrives.
+            withTimeoutOrNull(150) { context.imageLoader.execute(ImageRequest.Builder(context).data(model).build()) }
+        }
+        flightKey = if (hasThumbnail) key else null
+        flightModel = model
+        entry.flying = hasThumbnail
+        if (hasThumbnail) host.hiddenKey = key
+        try {
+            if (entry.closing) {
+                progress.animateTo(0f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow))
+            } else {
+                progress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+            }
+        } finally {
+            entry.flying = false
+            if (host.hiddenKey == key) host.hiddenKey = null
+            if (entry.closing) host.finish(entry)
+        }
+    }
+
+    BackHandler(enabled = onTop && !entry.closing) { entry.onDismiss() }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            // Swallows touches so nothing underneath reacts while the zoom is up (or going away).
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = progress.value.coerceIn(0f, 1f) }
+                .background(Color.Black.copy(alpha = 0.9f))
+        )
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.9f * entrance.value.coerceIn(0f, 1f)))
-                .graphicsLayer {
-                    alpha = entrance.value.coerceIn(0f, 1f)
-                    val scale = 0.9f + 0.1f * entrance.value
-                    scaleX = scale
-                    scaleY = scale
-                }
+                .graphicsLayer { alpha = progress.value.coerceIn(0f, 1f) }
+                .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
         ) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 val card = cards[page]
@@ -178,6 +279,8 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                 var previewed by remember(card) { mutableStateOf<ScryfallCard?>(null) }
                 // Which face is showing, for a transform/modal-DFC/flip card. Resets per card too.
                 var flipped by remember(card) { mutableStateOf(false) }
+                val model = previewed?.displayImageUrl ?: (if (flipped) card.backImageUrl else card.imageUrl)
+                shownModels[page] = model
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
@@ -186,19 +289,39 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                             .clickable(
                                 indication = null,
                                 interactionSource = remember { MutableInteractionSource() }
-                            ) { onDismiss() },
+                            ) { entry.onDismiss() },
                         contentAlignment = Alignment.Center
                     ) {
-                        AsyncImage(
-                            model = previewed?.displayImageUrl ?: (if (flipped) card.backImageUrl else card.imageUrl),
-                            contentDescription = null,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .fillMaxWidth(0.92f)
-                                .padding(horizontal = 24.dp, vertical = 16.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .foilShine()
-                        )
+                        Box(
+                            Modifier.fillMaxHeight().fillMaxWidth(0.92f).padding(horizontal = 24.dp, vertical = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AsyncImage(
+                                model = model,
+                                contentDescription = card.cardName,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .aspectRatio(CARD_ASPECT)
+                                    .onGloballyPositioned {
+                                        if (page == pagerState.currentPage) {
+                                            target = Rect(it.positionInWindow() - host.origin, it.size.toSize())
+                                        }
+                                    }
+                                    // The flying copy stands in for this one until it lands. Without a
+                                    // thumbnail to fly from, the card pops in from slightly smaller instead
+                                    // (scaled after measuring, so the flight target stays true).
+                                    .graphicsLayer {
+                                        alpha = if (entry.flying && page == pagerState.currentPage) 0f else 1f
+                                        if (flightKey == null) {
+                                            val scale = 0.9f + 0.1f * progress.value
+                                            scaleX = scale
+                                            scaleY = scale
+                                        }
+                                    }
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .foilShine()
+                            )
+                        }
                         if (card.backImageUrl != null) {
                             val flipHaptic = LocalHapticFeedback.current
                             IconButton(
@@ -244,7 +367,49 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
                 }
             }
         }
+        if (entry.flying) {
+            val shape = RoundedCornerShape(20.dp)
+            AsyncImage(
+                model = remember(flightModel, flightKey) {
+                    ImageRequest.Builder(context)
+                        .data(flightModel)
+                        .placeholderMemoryCacheKey(flightKey.toArtCropUrl())
+                        .build()
+                },
+                contentDescription = null,
+                // The rect is card-shaped, so Crop shows the whole card — and lets the art-crop
+                // placeholder fill the card rather than sit in a band across its middle.
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .layout { measurable, _ ->
+                        val to = target
+                        // Re-read every frame: the thumbnail's list may still be moving (a screen
+                        // transition, say). If it has gone, land where it was last seen.
+                        val from = host.sourceRect(flightKey)?.fitCard()?.also { lastFrom[0] = it } ?: lastFrom[0]
+                        if (to == null || from == null) {
+                            val placeable = measurable.measure(Constraints.fixed(0, 0))
+                            return@layout layout(0, 0) { placeable.place(0, 0) }
+                        }
+                        val r = lerp(from, to, progress.value)
+                        val placeable = measurable.measure(
+                            Constraints.fixed(r.width.roundToInt().coerceAtLeast(1), r.height.roundToInt().coerceAtLeast(1))
+                        )
+                        layout(0, 0) { placeable.place(r.left.roundToInt(), r.top.roundToInt()) }
+                    }
+                    .graphicsLayer {
+                        this.shape = shape
+                        clip = true
+                    }
+            )
+        }
     }
+}
+
+/** The largest card-shaped rect centred in this one — thumbnails in list rows are art crops. */
+private fun Rect.fitCard(): Rect {
+    val w = minOf(width, height * CARD_ASPECT)
+    val h = w / CARD_ASPECT
+    return Rect(center.x - w / 2, center.y - h / 2, center.x + w / 2, center.y + h / 2)
 }
 
 @Composable

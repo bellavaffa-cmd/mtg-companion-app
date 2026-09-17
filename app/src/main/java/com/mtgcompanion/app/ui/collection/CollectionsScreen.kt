@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
 import com.mtgcompanion.app.ui.common.adaptiveGridColumns
 import com.mtgcompanion.app.ui.common.SegmentedTabs
@@ -350,7 +351,7 @@ private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit, onViewDetails: (
                     model = card.imageUrl.toArtCropUrl(),
                     contentDescription = card.name,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
+                    modifier = Modifier.zoomSource(card.imageUrl).size(width = 72.dp, height = 52.dp).clip(RoundedCornerShape(10.dp))
                 )
                 if (card.backImageUrl != null) FlipBadge()
             }
@@ -392,7 +393,7 @@ private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit, onViewDetails: 
                     model = card.imageUrl,
                     contentDescription = card.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
+                    modifier = Modifier.zoomSource(card.imageUrl).fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
                 )
                 Text(
                     "×${card.total}",

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.detail
 
+import com.mtgcompanion.app.ui.common.zoomSource
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.BoxWithConstraints
 import com.mtgcompanion.app.ui.common.gridColumnsFor
@@ -543,7 +544,7 @@ private fun EdhrecTile(view: EdhrecCardView, onClick: () -> Unit) {
         AsyncImage(
             model = view.scryfallImageUrl,
             contentDescription = view.name,
-            modifier = Modifier
+            modifier = Modifier.zoomSource(view.scryfallImageUrl)
                 .fillMaxWidth()
                 .aspectRatio(0.72f)
                 .clip(RoundedCornerShape(14.dp))
@@ -575,7 +576,7 @@ private fun SimilarCardTile(card: ScryfallCard, onClick: () -> Unit) {
         AsyncImage(
             model = card.displayImageUrl,
             contentDescription = card.name,
-            modifier = Modifier
+            modifier = Modifier.zoomSource(card.displayImageUrl)
                 .fillMaxWidth()
                 .aspectRatio(0.72f)
                 .clip(RoundedCornerShape(14.dp))
