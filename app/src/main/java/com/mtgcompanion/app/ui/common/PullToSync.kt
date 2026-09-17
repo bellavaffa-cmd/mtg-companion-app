@@ -110,14 +110,23 @@ fun PullToSyncBox(
                 if (phase != SyncPhase.Idle) return@pullToRefresh
                 phase = SyncPhase.Syncing
                 scope.launch {
-                    val started = System.currentTimeMillis()
-                    val result = onSync()
-                    val elapsed = System.currentTimeMillis() - started
-                    if (elapsed < MIN_SYNC_MILLIS) delay(MIN_SYNC_MILLIS - elapsed)
-                    phase = SyncPhase.Done(result)
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    delay(if (result.kind == SyncPullResult.Kind.OK) 1_200 else 2_200)
-                    phase = SyncPhase.Idle
+                    // Whatever happens, the indicator has to come back to rest — otherwise the
+                    // spinner sticks and pulling never works again this session.
+                    try {
+                        val started = System.currentTimeMillis()
+                        val result = try {
+                            onSync()
+                        } catch (e: Exception) {
+                            SyncPullResult(SyncPullResult.Kind.FAILED, e.message ?: "Couldn't sync")
+                        }
+                        val elapsed = System.currentTimeMillis() - started
+                        if (elapsed < MIN_SYNC_MILLIS) delay(MIN_SYNC_MILLIS - elapsed)
+                        phase = SyncPhase.Done(result)
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        delay(if (result.kind == SyncPullResult.Kind.OK) 1_200 else 2_200)
+                    } finally {
+                        phase = SyncPhase.Idle
+                    }
                 }
             }
         )

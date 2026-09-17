@@ -45,7 +45,9 @@ fun CardZoomHost(content: @Composable () -> Unit) {
                 }
         ) {
             content()
-            val top = host.entries.lastOrNull { !it.closing }
+            // The topmost zoom still on screen — including one that's flying away, so back doesn't
+            // fall through to the screen behind it.
+            val top = host.entries.lastOrNull { !it.closing } ?: host.entries.lastOrNull()
             host.entries.forEach { entry ->
                 key(entry) { ZoomOverlay(host, entry, onTop = entry === top) }
             }

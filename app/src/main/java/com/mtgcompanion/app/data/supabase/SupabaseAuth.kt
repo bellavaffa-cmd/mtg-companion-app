@@ -288,14 +288,25 @@ class SupabaseAuth(private val context: Context) {
             // one has moved on, the session is still good and the newer token is the one to use.
             val latest = context.supabaseAuthStore.data.first()[refreshKey]
             if (latest != null && latest != refresh) {
-                runCatching { refreshWith(latest) }.getOrNull()
-            } else {
-                // The refresh token really was revoked or expired — the user has to sign in again.
-                android.util.Log.w("SupabaseAuth", "Signed out: ${e.httpCode} ${e.errorCode} ${e.serverMessage}")
-                endSession(signedOutReason(e))
-                null
+                try {
+                    return refreshWith(latest)
+                } catch (retry: SupabaseAuthException) {
+                    if (!retry.sessionGone) {
+                        throw SyncServerUnavailableException("The account server isn't responding — will try again shortly.")
+                    }
+                    signOutWithReason(retry)
+                    return null
+                }
             }
+            // The refresh token really was revoked or expired — the user has to sign in again.
+            signOutWithReason(e)
+            null
         }
+    }
+
+    private suspend fun signOutWithReason(e: SupabaseAuthException) {
+        android.util.Log.w("SupabaseAuth", "Signed out: ${e.httpCode} ${e.errorCode} ${e.serverMessage}")
+        endSession(signedOutReason(e))
     }
 
     private suspend fun refreshWith(refreshToken: String): String {
@@ -316,7 +327,7 @@ class SupabaseAuth(private val context: Context) {
     }
 
     /** The server rejected the current access token (clock skew, revoked early): refresh it on next use. */
-    suspend fun invalidateAccessToken() {
+    suspend fun invalidateAccessToken() = refreshMutex.withLock {
         context.supabaseAuthStore.edit { it[expiresKey] = 0L }
     }
 
@@ -324,7 +335,10 @@ class SupabaseAuth(private val context: Context) {
         val user = json.getJSONObject("user")
         val account = SupabaseAccount(user.getString("id"), user.optString("email"))
         val expiresIn = json.optLong("expires_in", 3600)
+        _signedOutNotice.value = null
         context.supabaseAuthStore.edit {
+            it.remove(signedOutReasonKey)
+            it.remove(signedOutAtKey)
             it[accessKey] = json.getString("access_token")
             it[refreshKey] = json.getString("refresh_token")
             it[expiresKey] = System.currentTimeMillis() + expiresIn * 1000

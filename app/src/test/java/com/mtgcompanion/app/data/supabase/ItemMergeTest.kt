@@ -30,7 +30,7 @@ class ItemMergeTest {
             theirs = deck(listOf(card("a"), card("c"))),
             minePreferred = true
         )
-        assertEquals(listOf("ax1", "cx1", "bx1"), names(merged))
+        assertEquals(listOf("ax1", "bx1", "cx1"), names(merged))
     }
 
     @Test
@@ -105,6 +105,35 @@ class ItemMergeTest {
     }
 
     @Test
+    fun `two cuts of the same card leave the lower count, not nothing`() {
+        val merged = ItemMerge.mergeDecks(
+            base = deck(listOf(card("a", 4))),
+            mine = deck(listOf(card("a", 1))),
+            theirs = deck(listOf(card("a", 2))),
+            minePreferred = true
+        )
+        assertEquals(listOf("ax1"), names(merged))
+    }
+
+    @Test
+    fun `marking a card replaceable survives a merge`() {
+        val base = deck(listOf(card("a")))
+        val mine = deck(listOf(card("a").copy(replaceable = true)))
+        val merged = ItemMerge.mergeDecks(base, mine, base, minePreferred = false)
+        assertEquals(true, merged.cards.single().replaceable)
+    }
+
+    @Test
+    fun `both devices produce the same card order`() {
+        val base = deck(listOf(card("a"), card("b")))
+        val mine = deck(listOf(card("a"), card("b"), card("m")))
+        val theirs = deck(listOf(card("a"), card("b"), card("t")))
+        val onMine = ItemMerge.mergeDecks(base, mine, theirs, minePreferred = true)
+        val onTheirs = ItemMerge.mergeDecks(base, theirs, mine, minePreferred = false)
+        assertEquals(onMine.cards.map { it.scryfallId }, onTheirs.cards.map { it.scryfallId })
+    }
+
+    @Test
     fun `the considering list merges like the deck itself`() {
         val merged = ItemMerge.mergeDecks(
             base = deck(emptyList()).copy(considering = listOf(card("a"))),
@@ -112,7 +141,7 @@ class ItemMergeTest {
             theirs = deck(emptyList()).copy(considering = listOf(card("a"), card("c"))),
             minePreferred = true
         )
-        assertEquals(listOf("a", "c", "b"), merged.considering.map { it.scryfallId })
+        assertEquals(listOf("a", "b", "c"), merged.considering.map { it.scryfallId })
     }
 
     @Test

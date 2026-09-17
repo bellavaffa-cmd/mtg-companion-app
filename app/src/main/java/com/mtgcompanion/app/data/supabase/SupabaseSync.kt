@@ -128,8 +128,7 @@ class SupabaseSync(
      */
     suspend fun refresh(): CloudSyncStatus? {
         if (!auth.configured || auth.account.value == null) return null
-        runSync()
-        return _status.value
+        return runSync()
     }
 
     /**
@@ -212,13 +211,14 @@ class SupabaseSync(
     }
 
     /** A [quiet] pass (the periodic check) is skipped if one is already running and doesn't show as syncing. */
-    private suspend fun runSync(quiet: Boolean = false) {
-        if (quiet && mutex.isLocked) return
-        mutex.withLock { syncPass(quiet) }
+    /** Returns the status this pass ended with, or null if it was skipped. */
+    private suspend fun runSync(quiet: Boolean = false): CloudSyncStatus? {
+        if (quiet && mutex.isLocked) return null
+        return mutex.withLock { syncPass(quiet) }
     }
 
-    private suspend fun syncPass(quiet: Boolean) {
-        val account = auth.account.value ?: return
+    private suspend fun syncPass(quiet: Boolean): CloudSyncStatus {
+        val account = auth.account.value ?: return _status.value
         if (!quiet) _status.value = _status.value.copy(syncing = true, message = null, failed = false)
         try {
             var state = loadState()
@@ -277,9 +277,12 @@ class SupabaseSync(
             var pushedCount = 0
             var changedCollections = false
             rows.forEach { row ->
-                cursor = row.serverUpdatedAt
                 val localEdit = pending[row.key]
                 val baseJson = state.items[row.key]?.base
+                val mineJson = local[row.key]
+                // This device has diverged if its copy differs from the version both sides last
+                // agreed on — which stays true even when a push was skipped as stale server-side.
+                val diverged = mineJson != null && baseJson != null && mineJson != baseJson
                 if (row.kind == "deck") {
                     val index = deckList.indexOfFirst { it.id == row.id }
                     if (row.deleted) {
@@ -288,24 +291,27 @@ class SupabaseSync(
                         if (index >= 0) { deckList.removeAt(index); changedDecks = true; pulledCount++ }
                         items[row.key] = ItemMeta(0, row.editedMs, deleted = true)
                     } else {
+                        // A row this device can't read is left for a later pass rather than skipped
+                        // for good, so the cursor stays behind it.
                         val theirs = row.data?.let { runCatching { deckAdapter.fromJson(it) }.getOrNull() } ?: return@forEach
                         val theirJson = deckAdapter.toJson(theirs)
-                        val mineJson = local[row.key]
                         val base = baseJson?.let { runCatching { deckAdapter.fromJson(it) }.getOrNull() }
                         // Both devices changed this deck since they last agreed: keep both sets of edits.
-                        if (localEdit != null && mineJson != null && base != null && mineJson != theirJson) {
-                            val mine = deckAdapter.fromJson(mineJson) ?: return@forEach
-                            val merged = ItemMerge.mergeDecks(base, mine, theirs, minePreferred = localEdit > row.editedMs)
+                        if (diverged && base != null && mineJson != theirJson) {
+                            val mine = deckAdapter.fromJson(mineJson!!) ?: return@forEach
+                            val merged = ItemMerge.mergeDecks(base, mine, theirs, minePreferred = (localEdit ?: 0L) > row.editedMs)
                             val mergedJson = deckAdapter.toJson(merged)
                             if (mergedJson != mineJson) {
                                 if (index >= 0) deckList[index] = merged else deckList.add(merged)
                                 changedDecks = true
                                 pulledCount++
                             }
-                            // Push the merged version (it's newer than both), and keep theirs as the new base.
+                            // Push the merged version, stamped past their edit so the server can't
+                            // reject it as stale, and keep their version as the new base.
                             local[row.key] = mergedJson
-                            pending[row.key] = now
+                            pending[row.key] = maxOf(now, row.editedMs + 1)
                             items[row.key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
+                            cursor = row.serverUpdatedAt
                             return@forEach
                         }
                         if (localEdit != null && localEdit > row.editedMs) return@forEach // ours is newer; pushed below
@@ -326,11 +332,10 @@ class SupabaseSync(
                     } else {
                         val theirs = row.data?.let { runCatching { collectionAdapter.fromJson(it) }.getOrNull() } ?: return@forEach
                         val theirJson = collectionAdapter.toJson(theirs)
-                        val mineJson = local[row.key]
                         val base = baseJson?.let { runCatching { collectionAdapter.fromJson(it) }.getOrNull() }
-                        if (localEdit != null && mineJson != null && base != null && mineJson != theirJson) {
-                            val mine = collectionAdapter.fromJson(mineJson) ?: return@forEach
-                            val merged = ItemMerge.mergeCollections(base, mine, theirs, minePreferred = localEdit > row.editedMs)
+                        if (diverged && base != null && mineJson != theirJson) {
+                            val mine = collectionAdapter.fromJson(mineJson!!) ?: return@forEach
+                            val merged = ItemMerge.mergeCollections(base, mine, theirs, minePreferred = (localEdit ?: 0L) > row.editedMs)
                             val mergedJson = collectionAdapter.toJson(merged)
                             if (mergedJson != mineJson) {
                                 if (index >= 0) collectionList[index] = merged else collectionList.add(merged)
@@ -338,8 +343,9 @@ class SupabaseSync(
                                 pulledCount++
                             }
                             local[row.key] = mergedJson
-                            pending[row.key] = now
+                            pending[row.key] = maxOf(now, row.editedMs + 1)
                             items[row.key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
+                            cursor = row.serverUpdatedAt
                             return@forEach
                         }
                         if (localEdit != null && localEdit > row.editedMs) return@forEach
@@ -351,6 +357,7 @@ class SupabaseSync(
                         items[row.key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
                     }
                 }
+                cursor = row.serverUpdatedAt
                 pending.remove(row.key)
             }
             // Record the pulled state before writing it locally, so the change observer sees it as synced.
@@ -378,7 +385,10 @@ class SupabaseSync(
                         pushed[key] = ItemMeta(0, editedMs, deleted = true)
                     } else {
                         item.put("deleted", false).put("data", JSONObject(json))
-                        pushed[key] = ItemMeta(json.hashCode(), editedMs, base = json)
+                        // Not `base = json`: the server may have skipped this push as stale. The base
+                        // moves only when a pull brings back what the server actually holds, so a
+                        // skipped push still reads as diverged and gets merged.
+                        pushed[key] = ItemMeta(json.hashCode(), editedMs, base = state.items[key]?.base)
                     }
                     batch.put(item)
                 }
@@ -404,6 +414,7 @@ class SupabaseSync(
         } catch (e: Exception) {
             _status.value = _status.value.copy(syncing = false, message = "Sync failed: ${e.message ?: e.javaClass.simpleName}", failed = true)
         }
+        return _status.value
     }
 
     private data class RemoteRow(

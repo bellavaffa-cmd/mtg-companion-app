@@ -18,7 +18,8 @@ import com.mtgcompanion.app.data.GameResult
  * The rules, in short:
  *  - A card added on one side is kept.
  *  - A card removed on one side stays removed, even if the other side changed its count.
- *  - Counts that both sides changed add up: +1 here and +2 there lands on +3.
+ *  - Counts that both sides changed add up: +1 here and +2 there lands on +3; two cuts that would
+ *    take it below zero settle on the lower count rather than removing the card.
  *  - A field both sides changed differently (a deck's name, say) goes to the more recent edit.
  * The web app merges the same way — see MtgCompanionWeb/src/sync/mergeItems.ts.
  */
@@ -39,8 +40,9 @@ object ItemMerge {
     }
 
     /**
-     * Merges card entries keyed by printing. The other device's order is kept, with cards this device
-     * added appended, so both devices end up with the same list in the same order.
+     * Merges card entries keyed by printing. The order both devices last agreed on is kept, with
+     * whatever either side added appended by id, so both devices end up with the same list in the
+     * same order.
      */
     private fun <T : Any> mergeEntries(
         base: List<T>,
@@ -54,7 +56,10 @@ object ItemMerge {
         val baseMap = base.associateBy(id)
         val mineMap = mine.associateBy(id)
         val theirsMap = theirs.associateBy(id)
-        val order = (theirs + mine).map(id).distinct()
+        // Both devices must land on the same order, so start from the order they agreed on and
+        // append what either side added, by id — never "their order, then mine".
+        val added = ((theirs + mine).map(id).distinct() - base.map(id).toSet()).sorted()
+        val order = base.map(id) + added
 
         return order.mapNotNull { key ->
             val b = baseMap[key]
@@ -76,7 +81,14 @@ object ItemMerge {
                     val merged = withCounts(
                         mergeRest(b, m!!, t!!),
                         counts(t).indices.map { i ->
-                            (counts(t)[i] + (counts(m)[i] - counts(b)[i])).coerceAtLeast(0)
+                            val summed = counts(t)[i] + (counts(m)[i] - counts(b)[i])
+                            // Both sides cut the same card: take the lower count rather than letting
+                            // two reductions cancel it out of the deck entirely.
+                            if (summed <= 0 && counts(m)[i] > 0 && counts(t)[i] > 0) {
+                                minOf(counts(m)[i], counts(t)[i])
+                            } else {
+                                summed.coerceAtLeast(0)
+                            }
                         }
                     )
                     // Every count down to zero means both sides emptied it out — that's a removal.
@@ -104,7 +116,8 @@ object ItemMerge {
                 typeLine = pick(b.typeLine, m.typeLine, t.typeLine, minePreferred),
                 partnerAbility = pick(b.partnerAbility, m.partnerAbility, t.partnerAbility, minePreferred),
                 backImageUrl = pick(b.backImageUrl, m.backImageUrl, t.backImageUrl, minePreferred),
-                tags = pick(b.tags, m.tags, t.tags, minePreferred)
+                tags = pick(b.tags, m.tags, t.tags, minePreferred),
+                replaceable = pick(b.replaceable, m.replaceable, t.replaceable, minePreferred)
             )
         }
     )

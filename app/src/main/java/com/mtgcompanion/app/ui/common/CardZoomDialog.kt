@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.common
 
+import kotlinx.coroutines.launch
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import kotlinx.coroutines.withTimeoutOrNull
 import coil.request.ImageRequest
@@ -223,36 +224,57 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
     val lastFrom = remember { arrayOfNulls<Rect>(1) }
     val context = LocalContext.current
 
-    LaunchedEffect(entry.closing) {
+    // One effect for the whole life of the overlay: dismissing mid-flight turns the opening animation
+    // around instead of cancelling it, so the card always shrinks back rather than vanishing.
+    LaunchedEffect(Unit) {
         // Wait until the enlarged card has been laid out, so there's somewhere to fly to.
         snapshotFlow { target }.filterNotNull().first()
-        val page = pagerState.currentPage
-        val key = entry.cards.getOrNull(page)?.imageUrl
-        val model = if (entry.closing) shownModels[page] ?: key else key
-        val hasThumbnail = host.sourceRect(key) != null
-        if (hasThumbnail) {
-            // A list row's thumbnail is an art crop, so the full card may not be loaded yet. Give it
-            // a moment's head start; if it's slower, the flight shows the row's art until it arrives.
-            withTimeoutOrNull(150) { context.imageLoader.execute(ImageRequest.Builder(context).data(model).build()) }
-        }
-        flightKey = if (hasThumbnail) key else null
-        flightModel = model
-        entry.flying = hasThumbnail
-        if (hasThumbnail) host.hiddenKey = key
-        try {
-            if (entry.closing) {
-                progress.animateTo(0f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow))
-            } else {
-                progress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+        var closing = entry.closing
+        while (true) {
+            val page = pagerState.currentPage
+            val key = entry.cards.getOrNull(page)?.imageUrl
+            val model = if (closing) shownModels[page] ?: key else key
+            val hasThumbnail = host.sourceRect(key) != null
+            if (hasThumbnail) {
+                // A list row's thumbnail is an art crop, so the full card may not be loaded yet. Give it
+                // a moment's head start; if it's slower, the flight shows the row's art until it arrives.
+                withTimeoutOrNull(150) { context.imageLoader.execute(ImageRequest.Builder(context).data(model).build()) }
             }
-        } finally {
-            entry.flying = false
-            if (host.hiddenKey == key) host.hiddenKey = null
-            if (entry.closing) host.finish(entry)
+            flightKey = if (hasThumbnail) key else null
+            flightModel = model
+            entry.flying = hasThumbnail
+            if (hasThumbnail) host.hiddenKey = key
+            try {
+                if (closing) {
+                    progress.animateTo(0f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow))
+                } else {
+                    // A dismiss while the card is still growing stops it where it is, and the loop
+                    // below flies it back from there.
+                    val opening = launch { progress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) }
+                    val watcher = launch {
+                        snapshotFlow { entry.closing }.first { it }
+                        opening.cancel()
+                    }
+                    opening.join()
+                    watcher.cancel()
+                }
+            } finally {
+                entry.flying = false
+                if (host.hiddenKey == key) host.hiddenKey = null
+            }
+            if (closing) {
+                host.finish(entry)
+                return@LaunchedEffect
+            }
+            // Opened; wait for the call site to let go, then fly back.
+            snapshotFlow { entry.closing }.first { it }
+            closing = true
         }
     }
 
-    BackHandler(enabled = onTop && !entry.closing) { entry.onDismiss() }
+    // Back closes the top zoom; while one is already flying away it's swallowed rather than
+    // falling through to the screen underneath.
+    BackHandler(enabled = onTop) { if (!entry.closing) entry.onDismiss() }
 
     Box(
         Modifier
