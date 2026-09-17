@@ -175,7 +175,10 @@ class SupabaseAuth(private val context: Context) {
         saveSession(post("/auth/v1/token?grant_type=password", body))
     }
 
-    /** Signs out on the server (best effort) and forgets the session on this device. */
+    /**
+     * Signs this device out on the server (best effort) and forgets its session. scope=local: the
+     * default (global) would also sign out every other device on the account.
+     */
     suspend fun signOut() {
         val token = context.supabaseAuthStore.data.first()[accessKey]
         if (token != null) {
@@ -183,7 +186,7 @@ class SupabaseAuth(private val context: Context) {
                 withContext(Dispatchers.IO) {
                     http.newCall(
                         Request.Builder()
-                            .url(BuildConfig.SUPABASE_URL + "/auth/v1/logout")
+                            .url(BuildConfig.SUPABASE_URL + "/auth/v1/logout?scope=local")
                             .header("apikey", BuildConfig.SUPABASE_ANON_KEY)
                             .header("Authorization", "Bearer $token")
                             .post("".toRequestBody(JSON_MEDIA))

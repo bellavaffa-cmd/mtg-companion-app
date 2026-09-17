@@ -94,7 +94,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
-import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.DriveImporter
 import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
@@ -170,7 +170,7 @@ fun MtgNavGraph(
     settingsRepository: SettingsRepository,
     collectionRepository: CollectionRepository,
     deckRepository: DeckRepository,
-    driveSyncManager: DriveSyncManager,
+    driveImporter: DriveImporter,
     supabaseSync: SupabaseSync,
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
@@ -217,7 +217,7 @@ fun MtgNavGraph(
                 val viewModel: HomeViewModel = viewModel(
                     factory = HomeViewModel.Factory(
                         deckRepository, collectionRepository, settingsRepository,
-                        offlineCardRepository, driveSyncManager
+                        offlineCardRepository, driveImporter
                     )
                 )
                 HomeScreen(
@@ -369,7 +369,7 @@ fun MtgNavGraph(
 
             destination(Routes.SETTINGS) {
                 SettingsScreen(
-                    syncManager = driveSyncManager,
+                    driveImporter = driveImporter,
                     supabaseSync = supabaseSync,
                     updateManager = updateManager,
                     offlineCardRepository = offlineCardRepository,

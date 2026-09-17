@@ -12,7 +12,7 @@ import coil.decode.SvgDecoder
 import coil.disk.DiskCache
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
-import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.DriveImporter
 import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.SyncStateRepository
@@ -29,8 +29,9 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
     val settingsRepository by lazy { SettingsRepository(this) }
     val collectionRepository by lazy { CollectionRepository(this) }
     val deckRepository by lazy { DeckRepository(this) }
-    val driveSyncManager by lazy {
-        DriveSyncManager(this, deckRepository, collectionRepository, SyncStateRepository(this))
+    /** One-time import from the retired Google Drive sync. */
+    val driveImporter by lazy {
+        DriveImporter(this, deckRepository, collectionRepository, SyncStateRepository(this))
     }
     /** Account + per-deck cloud sync (Supabase). Inert when this build has no Supabase project configured. */
     val supabaseSync by lazy { SupabaseSync(this, SupabaseAuth(this), deckRepository, collectionRepository) }

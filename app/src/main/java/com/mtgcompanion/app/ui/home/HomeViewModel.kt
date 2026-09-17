@@ -8,7 +8,7 @@ import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
-import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.DriveImporter
 import com.mtgcompanion.app.data.NewsItem
 import com.mtgcompanion.app.data.NewsRepository
 import com.mtgcompanion.app.data.SettingsRepository
@@ -43,7 +43,7 @@ class HomeViewModel(
     private val cardRepository: CardRepository,
     private val settingsRepository: SettingsRepository,
     offlineCardRepository: OfflineCardRepository,
-    driveSyncManager: DriveSyncManager,
+    driveImporter: DriveImporter,
     private val newsRepository: NewsRepository = NewsRepository()
 ) : ViewModel() {
 
@@ -94,12 +94,12 @@ class HomeViewModel(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MatchSummary())
 
-    /** A stale offline database or a Drive sync problem, surfaced proactively; null when all's well. */
-    val alert: StateFlow<String?> = combine(offlineCardRepository.status, driveSyncManager.status) { offline, sync ->
+    /** Something to do in Settings (tapping it opens Settings); null when all's well. */
+    val alert: StateFlow<String?> = combine(offlineCardRepository.status, driveImporter.usedDrive) { offline, usedDrive ->
         val staleDays = if (offline.hasData) TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - offline.updatedAt) else -1
         when {
-            sync.connectedEmail != null && !sync.syncing && sync.message != null && sync.message != "Synced" ->
-                "Drive sync: ${sync.message}"
+            usedDrive ->
+                "Google Drive sync has been replaced by account sync. Tap to import your Drive backup in Settings."
             offline.hasData && staleDays >= 30 ->
                 "Offline card database is $staleDays days old — update it in Settings."
             else -> null
@@ -140,13 +140,13 @@ class HomeViewModel(
         private val collectionRepository: CollectionRepository,
         private val settingsRepository: SettingsRepository,
         private val offlineCardRepository: OfflineCardRepository,
-        private val driveSyncManager: DriveSyncManager
+        private val driveImporter: DriveImporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             HomeViewModel(
                 deckRepository, collectionRepository, CardRepository(),
-                settingsRepository, offlineCardRepository, driveSyncManager
+                settingsRepository, offlineCardRepository, driveImporter
             ) as T
     }
 }

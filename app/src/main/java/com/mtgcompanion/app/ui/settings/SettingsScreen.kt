@@ -78,7 +78,7 @@ import com.mtgcompanion.app.BuildConfig
 import com.mtgcompanion.app.data.AccentTheme
 import com.mtgcompanion.app.data.AppBrightness
 import com.mtgcompanion.app.data.CardViewMode
-import com.mtgcompanion.app.data.DriveSyncManager
+import com.mtgcompanion.app.data.DriveImporter
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.GRID_COLUMNS_RANGE
 import com.mtgcompanion.app.data.SettingsRepository
@@ -101,7 +101,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    syncManager: DriveSyncManager,
+    driveImporter: DriveImporter,
     supabaseSync: SupabaseSync,
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
@@ -131,15 +131,14 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
-            SettingsCategory("Account & sync") { AccountSyncSection(supabaseSync) }
+            SettingsCategory("Account & sync") {
+                AccountSyncSection(supabaseSync)
+                DriveImportSection(driveImporter, supabaseSync)
+            }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
             SettingsCategory("Appearance") { AppearanceSection(settingsRepository) }
-
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-
-            SettingsCategory("Google Drive Sync") { DriveSyncSection(syncManager) }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
@@ -778,64 +777,93 @@ private fun AccountSyncSection(sync: SupabaseSync) {
     }
 }
 
+/**
+ * Only for people who used the retired Google Drive sync: imports their last Drive backup once
+ * (adding what's missing on this phone), then disconnects Google.
+ */
 @Composable
-private fun DriveSyncSection(syncManager: DriveSyncManager) {
-    val status by syncManager.status.collectAsState()
-    val signInLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        val result0 = runCatching { task.getResult(ApiException::class.java) }
-        syncManager.reportSignIn(result0.getOrNull(), result0.exceptionOrNull())
-    }
+private fun DriveImportSection(importer: DriveImporter, sync: SupabaseSync) {
+    val usedDrive by importer.usedDrive.collectAsState()
+    val account by sync.auth.account.collectAsState()
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    // Google may need the user to approve Drive access again mid-import; the launcher is created
+    // below, after the function that needs it.
+    val launchGoogle = remember { arrayOfNulls<(android.content.Intent) -> Unit>(1) }
 
-    Text(
-        "Back up your decks and collection to your Google Drive and keep them in sync across " +
-            "devices. Once connected, changes sync automatically.",
-        style = MaterialTheme.typography.bodySmall
-    )
-
-    if (status.connectedEmail == null) {
-        Button(
-            onClick = { signInLauncher.launch(syncManager.signInClient().signInIntent) },
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-        ) { Text("Connect Google Drive", style = MaterialTheme.typography.labelLarge, color = Bg) }
-    } else {
-        Text(
-            "Connected as ${status.connectedEmail}",
-            style = MaterialTheme.typography.bodySmall,
-            color = GoldLight
-        )
-        if (status.lastSyncedAt > 0) {
-            Text(
-                "Last synced ${DateUtils.getRelativeTimeSpanString(status.lastSyncedAt)}",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextDim
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(
-                onClick = { syncManager.syncNow() },
-                enabled = !status.syncing,
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) {
-                if (status.syncing) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Bg)
-                } else {
-                    Text("Sync now", style = MaterialTheme.typography.labelLarge, color = Bg)
+    fun startImport() {
+        busy = true
+        notice = null
+        scope.launch {
+            notice = try {
+                val result = importer.import { key -> sync.isDeletedInCloud(key) }
+                val added = listOfNotNull(
+                    result.addedDecks.takeIf { it > 0 }?.let { if (it == 1) "1 deck" else "$it decks" },
+                    result.addedCollections.takeIf { it > 0 }?.let { if (it == 1) "1 binder" else "$it binders" }
+                )
+                when {
+                    !result.foundBackup -> "No Google Drive backup found, so there was nothing to import. Google Drive is disconnected."
+                    added.isEmpty() -> "Everything in your Google Drive backup is already on this phone. Google Drive is disconnected."
+                    else -> "Imported ${added.joinToString(" and ")} from Google Drive. " +
+                        if (account != null) "They'll sync to your account." else "Sign in above to sync them to your account."
                 }
+            } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
+                e.intent?.let { intent -> launchGoogle[0]?.invoke(intent) }
+                null
+            } catch (e: java.io.IOException) {
+                "Can't reach Google Drive — check your connection."
+            } catch (e: Exception) {
+                e.message ?: "Import failed."
             }
-            OutlinedButton(
-                onClick = { syncManager.signOut() },
-                shape = RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
-            ) { Text("Disconnect", style = MaterialTheme.typography.labelLarge) }
+            busy = false
         }
     }
-    status.message?.let {
-        Text(it, color = Gold, style = MaterialTheme.typography.bodySmall)
+
+    val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && importer.isGoogleSignedIn) {
+            startImport()
+        } else if (result.data != null) {
+            val error = runCatching { GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java) }.exceptionOrNull()
+            notice = error?.let { importer.signInError(it) }
+        }
     }
+    launchGoogle[0] = { intent -> googleLauncher.launch(intent) }
+
+    if (!usedDrive && notice == null) return
+
+    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).height(1.dp).background(BorderColor))
+    if (usedDrive) {
+        Text("Moving from Google Drive sync", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Google Drive sync has been replaced by account sync. Import your last Google Drive backup once: " +
+                "decks and binders that aren't on this phone are added, and everything already here stays as it is. " +
+                "The app then disconnects from Google Drive.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(
+                onClick = {
+                    if (importer.isGoogleSignedIn) startImport()
+                    else googleLauncher.launch(importer.signInClient().signInIntent)
+                },
+                enabled = !busy,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = OnGold)
+            ) {
+                if (busy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = OnGold)
+                else Text("Import from Google Drive", style = MaterialTheme.typography.labelLarge)
+            }
+            TextButton(
+                onClick = {
+                    scope.launch {
+                        importer.disconnect()
+                        notice = "Google Drive disconnected without importing. Your old backup stays in your Google Drive."
+                    }
+                },
+                enabled = !busy
+            ) { Text("Skip", style = MaterialTheme.typography.labelLarge, color = TextMuted) }
+        }
+    }
+    notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = TextMuted) }
 }

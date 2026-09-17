@@ -61,8 +61,8 @@ internal data class CloudSyncState(
  * time of the edit — the server enforces it too (push_library_items), so a slow device can't clobber
  * a newer change. Runs on launch, a moment after local edits, and when the app returns to the front.
  *
- * Works alongside Drive sync; the local DataStores stay the source the UI reads from, so everything
- * keeps working offline and while signed out.
+ * The local DataStores stay the source the UI reads from, so everything keeps working offline and
+ * while signed out.
  */
 class SupabaseSync(
     private val context: Context,
@@ -135,6 +135,9 @@ class SupabaseSync(
             _status.value = CloudSyncStatus()
         }
     }
+
+    /** Whether this device last saw [key] ("deck:<id>" / "collection:<id>") deleted on the server. */
+    suspend fun isDeletedInCloud(key: String): Boolean = loadState().items[key]?.deleted == true
 
     private suspend fun observeLocalChanges() {
         combine(deckRepository.decksFlow, collectionRepository.collectionsFlow) { d, c -> d to c }

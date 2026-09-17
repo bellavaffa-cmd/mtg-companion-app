@@ -155,7 +155,7 @@ dependencies {
     // and match it against a visual-fingerprint index — see data/artrecognition/.
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.29.0'
 
-    // Google Sign-In for Drive access; Drive itself is called via REST over the existing OkHttp,
+    // Google Sign-In for importing the retired Drive sync's backup; Drive itself is called via REST over the existing OkHttp,
     // avoiding the heavyweight google-api-services-drive client libraries.
     implementation 'com.google.android.gms:play-services-auth:21.2.0'
 }

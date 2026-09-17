@@ -142,6 +142,7 @@ fun HomeScreen(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(18.dp))
                     .background(colors.warning.copy(alpha = 0.14f))
+                    .clickable(onClick = onOpenSettings)
                     .padding(14.dp)
                     .riseIn(1)
             ) {

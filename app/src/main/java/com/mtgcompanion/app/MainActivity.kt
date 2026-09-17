@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
                         settingsRepository = app.settingsRepository,
                         collectionRepository = app.collectionRepository,
                         deckRepository = app.deckRepository,
-                        driveSyncManager = app.driveSyncManager,
+                        driveImporter = app.driveImporter,
                         supabaseSync = app.supabaseSync,
                         updateManager = app.updateManager,
                         offlineCardRepository = app.offlineCardRepository,

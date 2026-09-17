@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.first
 
 private val Context.syncDataStore by preferencesDataStore(name = "sync")
 
-/** Bookkeeping for Drive sync: what we last pushed/pulled and when the library last changed locally. */
+/** Bookkeeping left by the retired Drive sync; only [SyncState.lastSyncedAt] is still read (did this device use it?). */
 data class SyncState(
     val lastSyncedHash: String = "",
     val lastSyncedRev: Long = 0L,
