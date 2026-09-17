@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.nav
 
+import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.ui.common.LocalNavAnimatedScope
 import com.mtgcompanion.app.ui.common.LocalSharedTransitionScope
 import androidx.navigation.NavBackStackEntry
@@ -167,6 +168,7 @@ fun MtgNavGraph(
     collectionRepository: CollectionRepository,
     deckRepository: DeckRepository,
     driveSyncManager: DriveSyncManager,
+    supabaseSync: SupabaseSync,
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
     playerProfileRepository: PlayerProfileRepository,
@@ -365,6 +367,7 @@ fun MtgNavGraph(
             destination(Routes.SETTINGS) {
                 SettingsScreen(
                     syncManager = driveSyncManager,
+                    supabaseSync = supabaseSync,
                     updateManager = updateManager,
                     offlineCardRepository = offlineCardRepository,
                     artIndexRepository = artIndexRepository,

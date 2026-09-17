@@ -1,5 +1,14 @@
 package com.mtgcompanion.app.ui.settings
 
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import com.mtgcompanion.app.ui.theme.LocalAppColors
+import com.mtgcompanion.app.data.supabase.SupabaseSync
 import androidx.compose.ui.unit.sp
 import com.mtgcompanion.app.ui.theme.OnGold
 import android.text.format.DateUtils
@@ -92,6 +101,7 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsScreen(
     syncManager: DriveSyncManager,
+    supabaseSync: SupabaseSync,
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
     artIndexRepository: ArtIndexRepository,
@@ -120,6 +130,10 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
+            SettingsCategory("Account & sync") { AccountSyncSection(supabaseSync) }
+
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
+
             SettingsCategory("Appearance") { AppearanceSection(settingsRepository) }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
@@ -579,6 +593,149 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
     }
     state.message?.let {
         Text(it, color = Gold, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/**
+ * Sign in with email + password to sync decks and binders through Supabase. Signing out keeps
+ * everything on this device; it only stops syncing.
+ */
+@Composable
+private fun AccountSyncSection(sync: SupabaseSync) {
+    val app = LocalAppColors.current
+    val account by sync.auth.account.collectAsState()
+    val status by sync.status.collectAsState()
+    val scope = rememberCoroutineScope()
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    // Set after creating an account, or when sign-in says the email isn't confirmed yet.
+    var awaitingConfirmation by rememberSaveable { mutableStateOf(false) }
+
+    if (!sync.auth.configured) {
+        Text("Cloud sync isn't set up in this build.", style = MaterialTheme.typography.bodySmall)
+        return
+    }
+
+    val signedIn = account
+    if (signedIn == null) {
+        Text(
+            "Sign in to keep your decks and binders in sync across your devices. Each deck syncs on its " +
+                "own, so edits on two phones don't overwrite each other. Everything still works offline.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        OutlinedTextField(
+            value = email,
+            onValueChange = { email = it; notice = null },
+            label = { Text("Email", color = TextMuted) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it; notice = null },
+            label = { Text("Password", color = TextMuted) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+            modifier = Modifier.fillMaxWidth()
+        )
+        val canSubmit = !busy && email.contains("@") && password.length >= 6
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        notice = try {
+                            sync.signIn(email, password)
+                            password = ""
+                            awaitingConfirmation = false
+                            null
+                        } catch (e: Exception) {
+                            if (e.message?.contains("Confirm your email", ignoreCase = true) == true) awaitingConfirmation = true
+                            if (e is java.io.IOException) "Can't reach the server — check your connection." else e.message
+                        }
+                        busy = false
+                    }
+                },
+                enabled = canSubmit,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = OnGold)
+            ) {
+                if (busy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = OnGold)
+                else Text("Sign in", style = MaterialTheme.typography.labelLarge)
+            }
+            TextButton(
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        notice = try {
+                            if (sync.signUp(email, password)) {
+                                password = ""
+                                null
+                            } else {
+                                awaitingConfirmation = true
+                                "Account created. Open the confirmation link we emailed to $email on this phone — it brings you straight back here, signed in."
+                            }
+                        } catch (e: Exception) {
+                            if (e is java.io.IOException) "Can't reach the server — check your connection." else e.message
+                        }
+                        busy = false
+                    }
+                },
+                enabled = canSubmit
+            ) { Text("Create account", style = MaterialTheme.typography.labelLarge, color = if (canSubmit) Gold else TextDim) }
+        }
+        Text("Passwords need at least 6 characters.", style = MaterialTheme.typography.labelMedium, color = TextDim)
+        notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = app.warning) }
+        if (awaitingConfirmation && email.contains("@")) {
+            TextButton(
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        notice = try {
+                            sync.resendConfirmation(email)
+                            "Sent a new confirmation email to $email. Older links won't work."
+                        } catch (e: Exception) {
+                            if (e is java.io.IOException) "Can't reach the server — check your connection." else e.message
+                        }
+                        busy = false
+                    }
+                },
+                enabled = !busy
+            ) { Text("Resend confirmation email", style = MaterialTheme.typography.labelLarge, color = Gold) }
+        }
+    } else {
+        Text("Signed in as ${signedIn.email}", style = MaterialTheme.typography.bodyMedium)
+        val line = when {
+            status.syncing -> "Syncing…"
+            status.failed -> status.message ?: "Sync failed"
+            status.lastSyncedAt > 0 && System.currentTimeMillis() - status.lastSyncedAt < 60_000 -> "Synced just now"
+            status.lastSyncedAt > 0 -> "Synced ${DateUtils.getRelativeTimeSpanString(status.lastSyncedAt)}"
+            else -> "Not synced yet"
+        }
+        Text(line, style = MaterialTheme.typography.bodySmall, color = if (status.failed) app.warning else TextMuted)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(
+                onClick = { sync.syncNow() },
+                enabled = !status.syncing,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = OnGold)
+            ) {
+                if (status.syncing) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = OnGold)
+                else Text("Sync now", style = MaterialTheme.typography.labelLarge)
+            }
+            TextButton(onClick = { scope.launch { sync.signOut() } }) {
+                Text("Sign out", style = MaterialTheme.typography.labelLarge, color = TextMuted)
+            }
+        }
+        Text(
+            "Signing out keeps your decks and binders on this phone; it only stops syncing.",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextDim
+        )
     }
 }
 

@@ -3,6 +3,14 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// Supabase project (accounts + sync). supabase.properties is gitignored; without it the build still
+// works and the app simply hides sign-in.
+def supabasePropertiesFile = rootProject.file('supabase.properties')
+def supabaseProperties = new Properties()
+if (supabasePropertiesFile.exists()) {
+    supabaseProperties.load(new FileInputStream(supabasePropertiesFile))
+}
+
 def keystorePropertiesFile = rootProject.file('keystore.properties')
 def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
@@ -25,6 +33,9 @@ android {
         // divides into one APK each. It has to stay: the universal APK packages every ABI the
         // project has native libs for, regardless of the splits `include` list, so without this
         // onnxruntime's unused 32-bit x86 libs (~38MB) would land back in it.
+        buildConfigField 'String', 'SUPABASE_URL', "\"${supabaseProperties.getProperty('supabaseUrl', '')}\""
+        buildConfigField 'String', 'SUPABASE_ANON_KEY', "\"${supabaseProperties.getProperty('supabaseAnonKey', '')}\""
+
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
         }

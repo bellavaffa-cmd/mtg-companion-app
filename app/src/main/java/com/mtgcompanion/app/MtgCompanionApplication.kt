@@ -1,5 +1,7 @@
 package com.mtgcompanion.app
 
+import com.mtgcompanion.app.data.supabase.SupabaseSync
+import com.mtgcompanion.app.data.supabase.SupabaseAuth
 import android.app.Application
 import android.os.Build
 import coil.ImageLoader
@@ -30,6 +32,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
     val driveSyncManager by lazy {
         DriveSyncManager(this, deckRepository, collectionRepository, SyncStateRepository(this))
     }
+    /** Account + per-deck cloud sync (Supabase). Inert when this build has no Supabase project configured. */
+    val supabaseSync by lazy { SupabaseSync(this, SupabaseAuth(this), deckRepository, collectionRepository) }
     val updateManager by lazy { UpdateManager(this) }
     val offlineCardRepository by lazy { OfflineCardRepository(this) }
     val playerProfileRepository by lazy { PlayerProfileRepository(this) }
@@ -41,6 +45,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         // Give the network layer a Context so it can create its on-disk HTTP cache and check
         // connectivity. Must run before any repository/Coil request.
         NetworkModule.init(this)
+        // Start cloud sync (restores the session and syncs if signed in).
+        supabaseSync
     }
 
     override fun newImageLoader(): ImageLoader =

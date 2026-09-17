@@ -1,5 +1,9 @@
 package com.mtgcompanion.app
 
+import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
+import android.widget.Toast
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -34,6 +38,7 @@ class MainActivity : ComponentActivity() {
         }
         hideSystemBars()
         val app = application as MtgCompanionApplication
+        handleAuthLink(intent)
 
         setContent {
             MtgCompanionTheme(settingsRepository = app.settingsRepository) {
@@ -51,6 +56,7 @@ class MainActivity : ComponentActivity() {
                         collectionRepository = app.collectionRepository,
                         deckRepository = app.deckRepository,
                         driveSyncManager = app.driveSyncManager,
+                        supabaseSync = app.supabaseSync,
                         updateManager = app.updateManager,
                         offlineCardRepository = app.offlineCardRepository,
                         playerProfileRepository = app.playerProfileRepository,
@@ -60,6 +66,35 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuthLink(intent)
+    }
+
+    /** mtgcompanion://auth-callback#access_token=… from a confirmation email: sign in and say so. */
+    private fun handleAuthLink(intent: Intent?) {
+        val link = intent?.data ?: return
+        if (link.scheme != "mtgcompanion" || link.host != "auth-callback") return
+        intent.data = null // don't re-handle it on a configuration change
+        val sync = (application as MtgCompanionApplication).supabaseSync
+        lifecycleScope.launch {
+            val message = try {
+                "Email confirmed — signed in as ${sync.completeLinkSignIn(link).email}. Syncing your decks…"
+            } catch (e: Exception) {
+                if (e is java.io.IOException) "Couldn't reach the server to finish signing in. Check your connection, then sign in from Settings."
+                else e.message ?: "Couldn't finish signing in."
+            }
+            Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Coming back to the app is when another device's edits are most likely waiting.
+    override fun onResume() {
+        super.onResume()
+        (application as MtgCompanionApplication).supabaseSync.onAppResumed()
     }
 
     // Dialogs, the keyboard and other apps' windows can bring the bars back while they have focus;

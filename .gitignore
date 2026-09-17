@@ -15,3 +15,6 @@ keystore.properties
 *.keystore
 *.jks
 *.apk
+
+# Supabase project URL + anon key (read into BuildConfig)
+supabase.properties
