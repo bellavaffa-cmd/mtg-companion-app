@@ -19,6 +19,23 @@ data class TableRow(val cells: List<SeatCell>)
 
 data class TableLayout(val id: String, val rows: List<TableRow>) {
     val playerCount: Int get() = rows.sumOf { row -> row.cells.count { it.seat != null } }
+
+    /** Spoken name for the seating picker, e.g. "4 players, one at each end". */
+    val description: String
+        get() {
+            val players = if (playerCount == 1) "1 player" else "$playerCount players"
+            val shape = when (id.substringAfter('-')) {
+                "facing" -> "facing each other"
+                "sides" -> "side by side"
+                "top" -> "one at the top"
+                "bottom" -> "one at the bottom"
+                "gap" -> "with an empty seat"
+                "grid" -> "in a grid"
+                "ends" -> "one at each end"
+                else -> null
+            }
+            return if (shape == null) players else "$players, $shape"
+        }
 }
 
 /**

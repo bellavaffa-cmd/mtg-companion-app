@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -384,6 +387,10 @@ private fun LayoutThumbnail(layout: TableLayout, selected: Boolean, onClick: () 
             .clip(RoundedCornerShape(12.dp))
             .background(if (selected) TableColors.Accent else Color.Transparent)
             .clickable(onClick = onClick)
+            .semantics {
+                contentDescription = layout.description
+                this.selected = selected
+            }
             .padding(5.dp)
     ) {
         layout.rows.forEach { row ->

@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -617,6 +619,7 @@ private fun MenuButton(open: Boolean, onClick: () -> Unit, modifier: Modifier = 
             .clip(CircleShape)
             .background(Color.Black.copy(alpha = 0.3f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .semantics { contentDescription = if (open) "Close game menu" else "Game menu" }
     ) {
         Box(
             Modifier
