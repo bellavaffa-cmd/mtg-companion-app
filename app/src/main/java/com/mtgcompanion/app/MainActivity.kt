@@ -81,8 +81,11 @@ class MainActivity : ComponentActivity() {
         intent.data = null // don't re-handle it on a configuration change
         val sync = (application as MtgCompanionApplication).supabaseSync
         lifecycleScope.launch {
+            val isRecovery = (link.fragment ?: link.query).orEmpty().contains("type=recovery")
             val message = try {
-                "Email confirmed — signed in as ${sync.completeLinkSignIn(link).email}. Syncing your decks…"
+                val email = sync.completeLinkSignIn(link).email
+                if (isRecovery) "Signed in as $email — choose a new password."
+                else "Email confirmed — signed in as $email. Syncing your decks…"
             } catch (e: Exception) {
                 if (e is java.io.IOException) "Couldn't reach the server to finish signing in. Check your connection, then sign in from Settings."
                 else e.message ?: "Couldn't finish signing in."

@@ -118,6 +118,8 @@ class SupabaseSync(
 
     suspend fun resendConfirmation(email: String) = auth.resendConfirmation(email)
 
+    suspend fun sendPasswordReset(email: String) = auth.sendPasswordReset(email)
+
     /** Signs in from an email link that reopened the app, then syncs. */
     suspend fun completeLinkSignIn(link: android.net.Uri): SupabaseAccount {
         val account = auth.completeFromLink(link)

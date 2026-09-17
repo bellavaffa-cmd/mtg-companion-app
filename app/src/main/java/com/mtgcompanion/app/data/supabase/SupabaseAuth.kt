@@ -63,6 +63,14 @@ class SupabaseAuth(private val context: Context) {
     private val _account = MutableStateFlow<SupabaseAccount?>(null)
     val account: StateFlow<SupabaseAccount?> = _account.asStateFlow()
 
+    /** True after a password-reset link signed the user in: the app should ask for a new password. */
+    private val _passwordRecovery = MutableStateFlow(false)
+    val passwordRecovery: StateFlow<Boolean> = _passwordRecovery.asStateFlow()
+
+    fun dismissPasswordRecovery() {
+        _passwordRecovery.value = false
+    }
+
     suspend fun restore() {
         val prefs = context.supabaseAuthStore.data.first()
         val id = prefs[userIdKey]
@@ -82,6 +90,36 @@ class SupabaseAuth(private val context: Context) {
             saveSession(json)
             true
         } else false
+    }
+
+    /**
+     * Emails a password-reset link. Its link reopens the app signed in, and the app then asks for a
+     * new password. Supabase answers the same whether or not the email has an account, so this
+     * doesn't reveal who's registered.
+     */
+    suspend fun sendPasswordReset(email: String) {
+        post("/auth/v1/recover?redirect_to=" + Uri.encode(AUTH_REDIRECT_URL), JSONObject().put("email", email.trim()))
+    }
+
+    /** Sets a new password for the signed-in account. */
+    suspend fun updatePassword(newPassword: String) {
+        val token = accessToken() ?: throw SupabaseAuthException("You're signed out — request a new reset link.")
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(BuildConfig.SUPABASE_URL + "/auth/v1/user")
+                .header("apikey", BuildConfig.SUPABASE_ANON_KEY)
+                .header("Authorization", "Bearer $token")
+                .put(JSONObject().put("password", newPassword).toString().toRequestBody(JSON_MEDIA))
+                .build()
+            http.newCall(request).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
+                    throw SupabaseAuthException(friendlyError(response.code, json))
+                }
+            }
+        }
+        _passwordRecovery.value = false
     }
 
     /** Sends the sign-up confirmation email again (the new one links back into the app). */
@@ -128,6 +166,7 @@ class SupabaseAuth(private val context: Context) {
                 .put("expires_in", params["expires_in"]?.toLongOrNull() ?: 3600L)
                 .put("user", user)
         )
+        if (params["type"] == "recovery") _passwordRecovery.value = true
         return _account.value!!
     }
 
@@ -213,6 +252,8 @@ class SupabaseAuth(private val context: Context) {
             raw.contains("Email not confirmed", ignoreCase = true) -> "Confirm your email first — open the link Supabase sent you, then sign in."
             raw.contains("already registered", ignoreCase = true) -> "That email already has an account. Sign in instead."
             raw.contains("Password should be", ignoreCase = true) -> raw
+            raw.contains("should be different from the old password", ignoreCase = true) -> "That's your current password — choose a different one."
+            raw.contains("reauthentication", ignoreCase = true) -> "For security, sign out and use Forgot password to set a new one."
             raw.contains("rate limit", ignoreCase = true) || code == 429 -> "Too many attempts. Wait a minute and try again."
             raw.isNotBlank() -> raw
             else -> "Sign-in failed (HTTP $code)."

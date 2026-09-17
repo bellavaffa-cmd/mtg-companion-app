@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.settings
 
+import com.mtgcompanion.app.ui.common.SetPasswordDialog
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
@@ -612,6 +613,7 @@ private fun AccountSyncSection(sync: SupabaseSync) {
     var notice by remember { mutableStateOf<String?>(null) }
     // Set after creating an account, or when sign-in says the email isn't confirmed yet.
     var awaitingConfirmation by rememberSaveable { mutableStateOf(false) }
+    var changingPassword by remember { mutableStateOf(false) }
 
     if (!sync.auth.configured) {
         Text("Cloud sync isn't set up in this build.", style = MaterialTheme.typography.bodySmall)
@@ -688,7 +690,28 @@ private fun AccountSyncSection(sync: SupabaseSync) {
                 enabled = canSubmit
             ) { Text("Create account", style = MaterialTheme.typography.labelLarge, color = if (canSubmit) Gold else TextDim) }
         }
-        Text("Passwords need at least 6 characters.", style = MaterialTheme.typography.labelMedium, color = TextDim)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Passwords need at least 6 characters.", style = MaterialTheme.typography.labelMedium, color = TextDim, modifier = Modifier.weight(1f))
+            TextButton(
+                onClick = {
+                    if (!email.contains("@")) {
+                        notice = "Enter your email above first, then tap Forgot password."
+                    } else {
+                        busy = true
+                        scope.launch {
+                            notice = try {
+                                sync.sendPasswordReset(email)
+                                "If $email has an account, a reset link is on its way. Open it on this phone to choose a new password."
+                            } catch (e: Exception) {
+                                if (e is java.io.IOException) "Can't reach the server — check your connection." else e.message
+                            }
+                            busy = false
+                        }
+                    }
+                },
+                enabled = !busy
+            ) { Text("Forgot password?", style = MaterialTheme.typography.labelLarge, color = Gold) }
+        }
         notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = app.warning) }
         if (awaitingConfirmation && email.contains("@")) {
             TextButton(
@@ -727,9 +750,25 @@ private fun AccountSyncSection(sync: SupabaseSync) {
                 if (status.syncing) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = OnGold)
                 else Text("Sync now", style = MaterialTheme.typography.labelLarge)
             }
+            TextButton(onClick = { changingPassword = true }) {
+                Text("Change password", style = MaterialTheme.typography.labelLarge, color = Gold)
+            }
             TextButton(onClick = { scope.launch { sync.signOut() } }) {
                 Text("Sign out", style = MaterialTheme.typography.labelLarge, color = TextMuted)
             }
+        }
+        if (changingPassword) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            SetPasswordDialog(
+                auth = sync.auth,
+                title = "Change password",
+                explanation = "Choose a new password for ${signedIn.email}.",
+                onDismiss = { changingPassword = false },
+                onDone = { message ->
+                    changingPassword = false
+                    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                }
+            )
         }
         Text(
             "Signing out keeps your decks and binders on this phone; it only stops syncing.",

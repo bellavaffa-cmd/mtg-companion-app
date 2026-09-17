@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.nav
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import com.mtgcompanion.app.ui.common.SetPasswordDialog
 import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.ui.common.LocalNavAnimatedScope
 import com.mtgcompanion.app.ui.common.LocalSharedTransitionScope
@@ -378,6 +381,18 @@ fun MtgNavGraph(
         }
         }
         }
+    }
+
+    val passwordRecovery by supabaseSync.auth.passwordRecovery.collectAsState()
+    if (passwordRecovery) {
+        val context = LocalContext.current
+        SetPasswordDialog(
+            auth = supabaseSync.auth,
+            title = "Choose a new password",
+            explanation = "You're signed in from the reset link. Set a new password to use next time.",
+            onDismiss = { supabaseSync.auth.dismissPasswordRecovery() },
+            onDone = { message -> Toast.makeText(context, message, Toast.LENGTH_LONG).show() }
+        )
     }
 
     val update = updateState.available
