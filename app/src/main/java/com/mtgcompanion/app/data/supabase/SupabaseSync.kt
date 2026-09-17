@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.data.supabase
 
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -38,7 +40,10 @@ data class CloudSyncStatus(
     val syncing: Boolean = false,
     val lastSyncedAt: Long = 0L,
     val message: String? = null,
-    val failed: Boolean = false
+    val failed: Boolean = false,
+    /** Decks and binders the last pass brought down from other devices, and sent up from this one. */
+    val pulled: Int = 0,
+    val pushed: Int = 0
 )
 
 /** What this device last agreed with the server for one item. [hash] is 0 for a deletion. */
@@ -59,7 +64,8 @@ internal data class CloudSyncState(
  * Keeps decks and binders in sync with Supabase, one row per item, so edits to different decks on
  * different devices never overwrite each other. Same-item conflicts resolve last-edit-wins by the
  * time of the edit — the server enforces it too (push_library_items), so a slow device can't clobber
- * a newer change. Runs on launch, a moment after local edits, and when the app returns to the front.
+ * a newer change. Runs on launch, a moment after local edits, when the app returns to the front, and
+ * every [POLL_INTERVAL_MS] while it stays in the front so other devices' edits show up without reopening it.
  *
  * The local DataStores stay the source the UI reads from, so everything keeps working offline and
  * while signed out.
@@ -77,6 +83,14 @@ class SupabaseSync(
     private val deckAdapter: JsonAdapter<Deck> = localMoshi.adapter(Deck::class.java)
     private val collectionAdapter: JsonAdapter<Collection> = localMoshi.adapter(Collection::class.java)
     private var lastResumeSync = 0L
+    private var pollJob: Job? = null
+
+    companion object {
+        /** How often the app checks for other devices' edits while it's in the front. */
+        const val POLL_INTERVAL_MS = 20_000L
+        /** Returning to the app checks at once, unless a check ran moments ago. */
+        private const val RESUME_SYNC_GAP_MS = 5_000L
+    }
 
     private val _status = MutableStateFlow(CloudSyncStatus())
     val status: StateFlow<CloudSyncStatus> = _status.asStateFlow()
@@ -96,12 +110,42 @@ class SupabaseSync(
         scope.launch { runSync() }
     }
 
-    /** Called when the app comes back to the foreground; throttled so flipping apps doesn't spam the server. */
+    /**
+     * A sync the user asked for (pull to refresh): waits for it to finish and returns the outcome, or
+     * null when there's no account to sync with.
+     */
+    suspend fun refresh(): CloudSyncStatus? {
+        if (!auth.configured || auth.account.value == null) return null
+        runSync()
+        return _status.value
+    }
+
+    /**
+     * Called when the app comes to the foreground: checks for other devices' edits straight away (unless
+     * a check ran moments ago) and then every [POLL_INTERVAL_MS] until [onAppPaused].
+     */
     fun onAppResumed() {
         val now = System.currentTimeMillis()
-        if (now - lastResumeSync < 30_000) return
-        lastResumeSync = now
-        if (auth.account.value != null) syncNow()
+        if (now - lastResumeSync >= RESUME_SYNC_GAP_MS) {
+            lastResumeSync = now
+            if (auth.account.value != null) syncNow()
+        }
+        pollJob?.cancel()
+        pollJob = scope.launch {
+            while (isActive) {
+                delay(POLL_INTERVAL_MS)
+                if (auth.account.value != null) {
+                    lastResumeSync = System.currentTimeMillis()
+                    runSync(quiet = true)
+                }
+            }
+        }
+    }
+
+    /** The app left the foreground: stop checking in the background. */
+    fun onAppPaused() {
+        pollJob?.cancel()
+        pollJob = null
     }
 
     suspend fun signIn(email: String, password: String) {
@@ -155,9 +199,15 @@ class SupabaseSync(
         context.supabaseSyncStore.edit { it[stateKey] = stateAdapter.toJson(state) }
     }
 
-    private suspend fun runSync() = mutex.withLock {
-        val account = auth.account.value ?: return@withLock
-        _status.value = _status.value.copy(syncing = true, message = null, failed = false)
+    /** A [quiet] pass (the periodic check) is skipped if one is already running and doesn't show as syncing. */
+    private suspend fun runSync(quiet: Boolean = false) {
+        if (quiet && mutex.isLocked) return
+        mutex.withLock { syncPass(quiet) }
+    }
+
+    private suspend fun syncPass(quiet: Boolean) {
+        val account = auth.account.value ?: return
+        if (!quiet) _status.value = _status.value.copy(syncing = true, message = null, failed = false)
         try {
             var state = loadState()
             // A different account on this device starts from a clean slate (its items get merged in).
@@ -200,6 +250,8 @@ class SupabaseSync(
             val collectionList = collections.toMutableList()
             var cursor = state.cursor
             var changedDecks = false
+            var pulledCount = 0
+            var pushedCount = 0
             var changedCollections = false
             rows.forEach { row ->
                 cursor = row.serverUpdatedAt
@@ -208,7 +260,7 @@ class SupabaseSync(
                 if (row.kind == "deck") {
                     val index = deckList.indexOfFirst { it.id == row.id }
                     if (row.deleted) {
-                        if (index >= 0) { deckList.removeAt(index); changedDecks = true }
+                        if (index >= 0) { deckList.removeAt(index); changedDecks = true; pulledCount++ }
                         items[row.key] = ItemMeta(0, row.editedMs, deleted = true)
                     } else {
                         val deck = row.data?.let { runCatching { deckAdapter.fromJson(it) }.getOrNull() } ?: return@forEach
@@ -217,13 +269,14 @@ class SupabaseSync(
                         if (local[row.key]?.hashCode() != hash) {
                             if (index >= 0) deckList[index] = deck else deckList.add(deck)
                             changedDecks = true
+                            pulledCount++
                         }
                         items[row.key] = ItemMeta(hash, row.editedMs)
                     }
                 } else {
                     val index = collectionList.indexOfFirst { it.id == row.id }
                     if (row.deleted) {
-                        if (index >= 0) { collectionList.removeAt(index); changedCollections = true }
+                        if (index >= 0) { collectionList.removeAt(index); changedCollections = true; pulledCount++ }
                         items[row.key] = ItemMeta(0, row.editedMs, deleted = true)
                     } else {
                         val collection = row.data?.let { runCatching { collectionAdapter.fromJson(it) }.getOrNull() } ?: return@forEach
@@ -231,6 +284,7 @@ class SupabaseSync(
                         if (local[row.key]?.hashCode() != hash) {
                             if (index >= 0) collectionList[index] = collection else collectionList.add(collection)
                             changedCollections = true
+                            pulledCount++
                         }
                         items[row.key] = ItemMeta(hash, row.editedMs)
                     }
@@ -266,11 +320,14 @@ class SupabaseSync(
                     batch.put(item)
                 }
                 push(token, batch)
+                pushedCount = pending.size
                 state = state.copy(items = state.items + pushed, pending = emptyMap())
             }
             state = state.copy(lastSyncedAt = System.currentTimeMillis())
             saveState(state)
-            _status.value = CloudSyncStatus(syncing = false, lastSyncedAt = state.lastSyncedAt, message = "Synced")
+            _status.value = CloudSyncStatus(
+                syncing = false, lastSyncedAt = state.lastSyncedAt, message = "Synced", pulled = pulledCount, pushed = pushedCount
+            )
         } catch (e: SupabaseAuthException) {
             _status.value = _status.value.copy(syncing = false, message = e.message, failed = true)
         } catch (e: IOException) {

@@ -100,6 +100,11 @@ class MainActivity : ComponentActivity() {
         (application as MtgCompanionApplication).supabaseSync.onAppResumed()
     }
 
+    override fun onPause() {
+        super.onPause()
+        (application as MtgCompanionApplication).supabaseSync.onAppPaused()
+    }
+
     // Dialogs, the keyboard and other apps' windows can bring the bars back while they have focus;
     // re-hide whenever this window regains it.
     override fun onWindowFocusChanged(hasFocus: Boolean) {
