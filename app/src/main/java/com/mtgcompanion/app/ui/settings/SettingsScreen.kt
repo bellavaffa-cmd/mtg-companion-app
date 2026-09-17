@@ -608,6 +608,7 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
 private fun AccountSyncSection(sync: SupabaseSync) {
     val app = LocalAppColors.current
     val account by sync.auth.account.collectAsState()
+    val signedOutNotice by sync.auth.signedOutNotice.collectAsState()
     val status by sync.status.collectAsState()
     val scope = rememberCoroutineScope()
     var email by rememberSaveable { mutableStateOf("") }
@@ -625,6 +626,28 @@ private fun AccountSyncSection(sync: SupabaseSync) {
 
     val signedIn = account
     if (signedIn == null) {
+        // An unexpected sign-out says what the server told us, rather than just showing the form again.
+        signedOutNotice?.let { notice ->
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(app.surface2)
+                    .padding(14.dp)
+            ) {
+                Text("You were signed out", style = MaterialTheme.typography.titleSmall, color = TextPrimary)
+                Text(notice.reason, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "On " + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+                        .format(java.util.Date(notice.atMillis)) + ". Your decks and binders are still on this device.",
+                    style = MaterialTheme.typography.labelMedium
+                )
+                TextButton(onClick = { sync.auth.dismissSignedOutNotice() }, modifier = Modifier.align(Alignment.End)) {
+                    Text("Dismiss", color = Gold)
+                }
+            }
+        }
         Text(
             "Sign in to keep your decks and binders in sync across your devices. Each deck syncs on its " +
                 "own and are merged card by card, so edits on two phones don't overwrite each other. Everything still works offline.",

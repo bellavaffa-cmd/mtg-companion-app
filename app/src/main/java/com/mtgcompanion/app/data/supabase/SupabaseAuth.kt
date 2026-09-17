@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.data.supabase
 
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
 import android.net.Uri
 import android.content.Context
 import androidx.datastore.preferences.core.edit
@@ -57,6 +60,9 @@ class SupabaseAuthException(
     }
 }
 
+/** Why the device stopped being signed in, and when — shown in Settings until dismissed. */
+data class SignedOutNotice(val reason: String, val atMillis: Long)
+
 /** The account server answered with an error that isn't about this session (overloaded, rate limited…). */
 class SyncServerUnavailableException(message: String) : IOException(message)
 
@@ -87,10 +93,20 @@ class SupabaseAuth(private val context: Context) {
     private val expiresKey = longPreferencesKey("expires_at_ms")
     private val userIdKey = stringPreferencesKey("user_id")
     private val emailKey = stringPreferencesKey("email")
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val refreshMutex = Mutex()
+    private val signedOutReasonKey = stringPreferencesKey("signed_out_reason")
+    private val signedOutAtKey = longPreferencesKey("signed_out_at")
 
     private val _account = MutableStateFlow<SupabaseAccount?>(null)
     val account: StateFlow<SupabaseAccount?> = _account.asStateFlow()
+
+    /**
+     * Why the device was signed out without being asked, if that's what happened — shown in Settings
+     * until dismissed, so an unexpected sign-out says what the server told us rather than nothing.
+     */
+    private val _signedOutNotice = MutableStateFlow<SignedOutNotice?>(null)
+    val signedOutNotice: StateFlow<SignedOutNotice?> = _signedOutNotice.asStateFlow()
 
     /** True after a password-reset link signed the user in: the app should ask for a new password. */
     private val _passwordRecovery = MutableStateFlow(false)
@@ -105,6 +121,33 @@ class SupabaseAuth(private val context: Context) {
         val id = prefs[userIdKey]
         val email = prefs[emailKey]
         _account.value = if (id != null && email != null && prefs[refreshKey] != null) SupabaseAccount(id, email) else null
+        val reason = prefs[signedOutReasonKey]
+        _signedOutNotice.value = if (_account.value == null && reason != null) {
+            SignedOutNotice(reason, prefs[signedOutAtKey] ?: 0L)
+        } else null
+    }
+
+    fun dismissSignedOutNotice() {
+        _signedOutNotice.value = null
+        scope.launch {
+            context.supabaseAuthStore.edit {
+                it.remove(signedOutReasonKey)
+                it.remove(signedOutAtKey)
+            }
+        }
+    }
+
+    /** Clears the session and remembers [reason], so Settings can explain the sign-out. */
+    private suspend fun endSession(reason: String?) {
+        context.supabaseAuthStore.edit { prefs ->
+            prefs.clear()
+            if (reason != null) {
+                prefs[signedOutReasonKey] = reason
+                prefs[signedOutAtKey] = System.currentTimeMillis()
+            }
+        }
+        _account.value = null
+        _signedOutNotice.value = reason?.let { SignedOutNotice(it, System.currentTimeMillis()) }
     }
 
     /**
@@ -224,8 +267,7 @@ class SupabaseAuth(private val context: Context) {
                 }
             }
         }
-        context.supabaseAuthStore.edit { it.clear() }
-        _account.value = null
+        endSession(reason = null)
     }
 
     /** A valid access token, refreshing it first if it's about to expire; null when signed out. */
@@ -236,19 +278,41 @@ class SupabaseAuth(private val context: Context) {
         val expiresAt = prefs[expiresKey] ?: 0L
         if (access != null && System.currentTimeMillis() < expiresAt - 60_000) return access
         return try {
-            val json = post("/auth/v1/token?grant_type=refresh_token", JSONObject().put("refresh_token", refresh))
-            saveSession(json)
-            json.getString("access_token")
+            refreshWith(refresh)
         } catch (e: SupabaseAuthException) {
             if (!e.sessionGone) {
                 // A server hiccup (5xx, rate limit) mustn't cost the user their session; try again later.
                 throw SyncServerUnavailableException("The account server isn't responding — will try again shortly.")
             }
-            // The refresh token was revoked or expired — the user has to sign in again.
-            context.supabaseAuthStore.edit { it.clear() }
-            _account.value = null
-            null
+            // Something else may have rotated the token while this call was in flight; if the stored
+            // one has moved on, the session is still good and the newer token is the one to use.
+            val latest = context.supabaseAuthStore.data.first()[refreshKey]
+            if (latest != null && latest != refresh) {
+                runCatching { refreshWith(latest) }.getOrNull()
+            } else {
+                // The refresh token really was revoked or expired — the user has to sign in again.
+                android.util.Log.w("SupabaseAuth", "Signed out: ${e.httpCode} ${e.errorCode} ${e.serverMessage}")
+                endSession(signedOutReason(e))
+                null
+            }
         }
+    }
+
+    private suspend fun refreshWith(refreshToken: String): String {
+        val json = post("/auth/v1/token?grant_type=refresh_token", JSONObject().put("refresh_token", refreshToken))
+        saveSession(json)
+        return json.getString("access_token")
+    }
+
+    /** Plain-English version of why the server ended the session. */
+    private fun signedOutReason(e: SupabaseAuthException): String = when {
+        e.errorCode == "refresh_token_already_used" || e.serverMessage.contains("already used", ignoreCase = true) ->
+            "The server saw this device's sign-in used twice and ended it. This can happen if the app was closed mid-sync, or if you changed your password on another device."
+        e.errorCode == "user_banned" -> "This account has been suspended."
+        e.errorCode == "user_not_found" -> "This account no longer exists."
+        e.errorCode in setOf("session_not_found", "session_expired") || e.serverMessage.contains("not found", ignoreCase = true) ->
+            "The sign-in was no longer valid — it may have been ended by a password change or by signing out everywhere."
+        else -> "The server ended this sign-in (${e.errorCode ?: "HTTP ${e.httpCode}"})."
     }
 
     /** The server rejected the current access token (clock skew, revoked early): refresh it on next use. */
