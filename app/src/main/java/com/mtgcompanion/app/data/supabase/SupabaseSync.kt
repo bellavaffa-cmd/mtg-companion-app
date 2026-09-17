@@ -183,6 +183,13 @@ class SupabaseSync(
             state.items.forEach { (key, meta) ->
                 if (!meta.deleted && key !in local) pending.putIfAbsent(key, now)
             }
+            // Keep when each change was first noticed before going near the network. Otherwise an edit
+            // made offline is stamped with the time the device next reaches the server, and could
+            // overwrite a newer edit of the same deck made on another device in the meantime.
+            if (pending != state.pending) {
+                state = state.copy(pending = pending)
+                saveState(state)
+            }
 
             // 2. Pull everything newer than the cursor, applying remote changes that aren't older
             //    than a pending local edit of the same item.
