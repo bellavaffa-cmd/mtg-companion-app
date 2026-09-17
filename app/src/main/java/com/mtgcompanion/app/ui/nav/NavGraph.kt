@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.nav
 
+import com.mtgcompanion.app.ui.common.SyncPullResult
+import com.mtgcompanion.app.ui.common.PullToSyncBox
 import com.mtgcompanion.app.ui.common.CardZoomHost
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
@@ -251,7 +253,13 @@ fun MtgNavGraph(
                 NavRail(selected = destination, onNavigate = onNavigate)
             }
         }
-        SharedTransitionLayout(Modifier.weight(1f)) {
+        // Pull down at the top of a library screen to sync decks and binders with the account.
+        PullToSyncBox(
+            enabled = supabaseSync.auth.configured && currentRoute in pullToSyncRoutes,
+            onSync = { pullToSync(supabaseSync) },
+            modifier = Modifier.weight(1f)
+        ) {
+        SharedTransitionLayout(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalSharedTransitionScope provides this) {
         NavHost(
             navController = navController,
@@ -437,6 +445,7 @@ fun MtgNavGraph(
         }
         }
         }
+        }
     }
     }
 
@@ -546,6 +555,25 @@ private fun UpdateDialog(
 }
 
 /** A nav destination that also exposes its enter/exit animation scope for [sharedArt] transitions. */
+/** Library screens where pulling down past the top syncs with the account. */
+private val pullToSyncRoutes = setOf(
+    Routes.HOME, Routes.DECKS, Routes.DECK_DETAIL, Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.SETTINGS
+)
+
+private suspend fun pullToSync(sync: SupabaseSync): SyncPullResult {
+    val status = sync.refresh()
+        ?: return SyncPullResult(SyncPullResult.Kind.SIGNED_OUT, "Sign in under Settings to sync")
+    return when {
+        status.failed && status.message?.startsWith("Offline") == true ->
+            SyncPullResult(SyncPullResult.Kind.FAILED, "You're offline")
+        status.failed -> SyncPullResult(SyncPullResult.Kind.FAILED, status.message ?: "Couldn't sync")
+        status.pulled > 0 ->
+            SyncPullResult(SyncPullResult.Kind.OK, "${status.pulled} ${if (status.pulled == 1) "change" else "changes"} from your other devices")
+        status.pushed > 0 -> SyncPullResult(SyncPullResult.Kind.OK, "Synced")
+        else -> SyncPullResult(SyncPullResult.Kind.OK, "Up to date")
+    }
+}
+
 private fun NavGraphBuilder.destination(
     route: String,
     arguments: List<NamedNavArgument> = emptyList(),
