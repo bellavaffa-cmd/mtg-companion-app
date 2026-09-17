@@ -16,14 +16,12 @@ import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
-import com.mtgcompanion.app.data.TcgPlayerRepository
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.buildCardSources
 import com.mtgcompanion.app.network.edhrec.EdhrecCardList
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.ScryfallIdentifier
 import com.mtgcompanion.app.network.spellbook.Variant
-import com.mtgcompanion.app.network.tcgplayer.TcgPriceResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,8 +50,6 @@ data class CardDetailUiState(
     val suggestionCards: Map<String, ScryfallCard> = emptyMap(),
     val combos: List<Variant> = emptyList(),
     val combosLoading: Boolean = false,
-    val tcgPrices: List<TcgPriceResult>? = null,
-    val tcgPricesConfigured: Boolean = false,
     val prints: List<ScryfallCard> = emptyList(),
     val addedToCollectionMessage: String? = null,
     val addedToDeckMessage: String? = null
@@ -64,7 +60,6 @@ class CardDetailViewModel(
     private val cardRepository: CardRepository,
     private val edhrecRepository: EdhrecRepository,
     private val comboRepository: ComboRepository,
-    private val tcgPlayerRepository: TcgPlayerRepository,
     private val collectionRepository: CollectionRepository,
     private val deckRepository: DeckRepository,
     private val offlineRepository: OfflineCardRepository,
@@ -136,7 +131,6 @@ class CardDetailViewModel(
                 loadPrints()
                 loadSimilar(card)
                 if (card.canBeCommander) loadEdhrec()
-                card.tcgplayerId?.let { loadTcgPrice(it) }
             } catch (e: Exception) {
                 // Offline: fall back to the locally downloaded card database if it's there.
                 val offlineCard = if (isOffline(e)) offlineRepository.getByName(cardName) else null
@@ -259,21 +253,6 @@ class CardDetailViewModel(
     /** Switch the detail view (and what gets added to a deck/binder) to a chosen printing/art. */
     fun selectPrinting(card: ScryfallCard) {
         _uiState.value = _uiState.value.copy(card = card)
-        card.tcgplayerId?.let { loadTcgPrice(it) }
-    }
-
-    private fun loadTcgPrice(productId: Long) {
-        viewModelScope.launch {
-            val prices = try {
-                tcgPlayerRepository.getMarketPrice(productId)
-            } catch (e: Exception) {
-                null
-            }
-            _uiState.value = _uiState.value.copy(
-                tcgPrices = prices,
-                tcgPricesConfigured = prices != null
-            )
-        }
     }
 
     // [card] is passed in rather than read from the state: the enlarged card can add a suggested
@@ -340,7 +319,6 @@ class CardDetailViewModel(
                 cardRepository = CardRepository(),
                 edhrecRepository = EdhrecRepository(),
                 comboRepository = ComboRepository(),
-                tcgPlayerRepository = TcgPlayerRepository(settingsRepository),
                 collectionRepository = collectionRepository,
                 deckRepository = deckRepository,
                 offlineRepository = offlineRepository,

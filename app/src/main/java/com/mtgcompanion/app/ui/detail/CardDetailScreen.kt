@@ -840,18 +840,6 @@ private fun PricesSection(state: CardDetailUiState, onOpenTcgplayer: () -> Unit)
             prices?.usdFoil?.toDoubleOrNull()?.let { PriceTile("USD foil", it, "$") }
             prices?.eur?.toDoubleOrNull()?.let { PriceTile("EUR", it, "€") }
         }
-        if (state.tcgPricesConfigured && state.tcgPrices != null) {
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp).height(1.dp).background(BorderColor))
-            Text("TCGplayer market", style = MaterialTheme.typography.labelMedium, color = TextDim)
-            state.tcgPrices.forEach { result ->
-                Text(
-                    "${result.subTypeName ?: "Normal"}: market $${result.marketPrice ?: "-"} " +
-                        "(low $${result.lowPrice ?: "-"} / high $${result.highPrice ?: "-"})",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-            }
-        }
         Button(
             onClick = onOpenTcgplayer,
             shape = RoundedCornerShape(14.dp),

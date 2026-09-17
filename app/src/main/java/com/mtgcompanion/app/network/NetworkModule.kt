@@ -7,7 +7,6 @@ import com.mtgcompanion.app.network.edhrec.EdhrecApi
 import com.mtgcompanion.app.network.mtgjson.MtgJsonApi
 import com.mtgcompanion.app.network.scryfall.ScryfallApi
 import com.mtgcompanion.app.network.spellbook.SpellbookApi
-import com.mtgcompanion.app.network.tcgplayer.TcgPlayerApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.Cache
@@ -132,10 +131,6 @@ object NetworkModule {
 
     val edhrecApi: EdhrecApi by lazy {
         retrofitFor("https://json.edhrec.com/").create(EdhrecApi::class.java)
-    }
-
-    val tcgPlayerApi: TcgPlayerApi by lazy {
-        retrofitFor("https://api.tcgplayer.com/").create(TcgPlayerApi::class.java)
     }
 
     /** MTGJSON's static precon/theme-deck data — exact decklists (cards + quantities + Scryfall ids). */

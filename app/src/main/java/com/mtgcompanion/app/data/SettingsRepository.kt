@@ -47,8 +47,6 @@ enum class AccentTheme(val label: String) {
 
 class SettingsRepository(private val context: Context) {
 
-    private val clientIdKey = stringPreferencesKey("tcgplayer_client_id")
-    private val clientSecretKey = stringPreferencesKey("tcgplayer_client_secret")
     private val searchViewModeKey = stringPreferencesKey("search_view_mode")
     private val collectionViewModeKey = stringPreferencesKey("collection_view_mode")
     private val deckViewModeKey = stringPreferencesKey("deck_view_mode")
@@ -62,8 +60,6 @@ class SettingsRepository(private val context: Context) {
     private val cardOfDayNameKey = stringPreferencesKey("card_of_day_name")
     private val cardOfDayImageUrlKey = stringPreferencesKey("card_of_day_image_url")
 
-    val tcgPlayerClientId: Flow<String?> = context.dataStore.data.map { it[clientIdKey] }
-    val tcgPlayerClientSecret: Flow<String?> = context.dataStore.data.map { it[clientSecretKey] }
 
     val searchViewMode: Flow<CardViewMode> = context.dataStore.data.map { CardViewMode.fromName(it[searchViewModeKey]) }
     val collectionViewMode: Flow<CardViewMode> = context.dataStore.data.map { CardViewMode.fromName(it[collectionViewModeKey]) }
@@ -131,23 +127,4 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    suspend fun currentCredentials(): Pair<String, String>? {
-        val id = tcgPlayerClientId.first()
-        val secret = tcgPlayerClientSecret.first()
-        return if (!id.isNullOrBlank() && !secret.isNullOrBlank()) id to secret else null
-    }
-
-    suspend fun saveTcgPlayerCredentials(clientId: String, clientSecret: String) {
-        context.dataStore.edit {
-            it[clientIdKey] = clientId
-            it[clientSecretKey] = clientSecret
-        }
-    }
-
-    suspend fun clearTcgPlayerCredentials() {
-        context.dataStore.edit {
-            it.remove(clientIdKey)
-            it.remove(clientSecretKey)
-        }
-    }
 }
