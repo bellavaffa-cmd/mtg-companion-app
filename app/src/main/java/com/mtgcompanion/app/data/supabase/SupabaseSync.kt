@@ -47,7 +47,17 @@ data class CloudSyncStatus(
 )
 
 /** What this device last agreed with the server for one item. [hash] is 0 for a deletion. */
-internal data class ItemMeta(val hash: Int = 0, val editedMs: Long = 0L, val deleted: Boolean = false)
+internal data class ItemMeta(
+    val hash: Int = 0,
+    val editedMs: Long = 0L,
+    val deleted: Boolean = false,
+    /**
+     * The item's JSON as last agreed with the server. When this device and another have both changed
+     * the same deck since then, this is what the merge compares them against (see [ItemMerge]).
+     * Null for items last synced by an older version, which fall back to newest-edit-wins.
+     */
+    val base: String? = null
+)
 
 /** Per-device sync bookkeeping, stored as one JSON blob. Keys are "deck:<id>" / "collection:<id>". */
 internal data class CloudSyncState(
@@ -62,7 +72,9 @@ internal data class CloudSyncState(
 
 /**
  * Keeps decks and binders in sync with Supabase, one row per item, so edits to different decks on
- * different devices never overwrite each other. Same-item conflicts resolve last-edit-wins by the
+ * different devices never overwrite each other. Two devices that changed the SAME deck since they
+ * last agreed have their edits merged card by card (see [ItemMerge]); only a field both changed
+ * differently falls back to the more recent edit. Same-item conflicts resolve last-edit-wins by the
  * time of the edit — the server enforces it too (push_library_items), so a slow device can't clobber
  * a newer change. Runs on launch, a moment after local edits, when the app returns to the front, and
  * every [POLL_INTERVAL_MS] while it stays in the front so other devices' edits show up without reopening it.
@@ -215,7 +227,8 @@ class SupabaseSync(
 
             val decks = deckRepository.decksFlow.first()
             val collections = collectionRepository.collectionsFlow.first()
-            val local = LinkedHashMap<String, String>() // key -> JSON
+            // key -> JSON. A merge below replaces an entry here, so the merged version is what gets pushed.
+            val local = LinkedHashMap<String, String>()
             decks.forEach { local["deck:${it.id}"] = deckAdapter.toJson(it) }
             collections.forEach { local["collection:${it.id}"] = collectionAdapter.toJson(it) }
 
@@ -266,37 +279,76 @@ class SupabaseSync(
             rows.forEach { row ->
                 cursor = row.serverUpdatedAt
                 val localEdit = pending[row.key]
-                if (localEdit != null && localEdit > row.editedMs) return@forEach // ours is newer; pushed below
+                val baseJson = state.items[row.key]?.base
                 if (row.kind == "deck") {
                     val index = deckList.indexOfFirst { it.id == row.id }
                     if (row.deleted) {
+                        // A deck deleted elsewhere goes, unless this device edited it more recently.
+                        if (localEdit != null && localEdit > row.editedMs) return@forEach
                         if (index >= 0) { deckList.removeAt(index); changedDecks = true; pulledCount++ }
                         items[row.key] = ItemMeta(0, row.editedMs, deleted = true)
                     } else {
-                        val deck = row.data?.let { runCatching { deckAdapter.fromJson(it) }.getOrNull() } ?: return@forEach
-                        val hash = deckAdapter.toJson(deck).hashCode()
+                        val theirs = row.data?.let { runCatching { deckAdapter.fromJson(it) }.getOrNull() } ?: return@forEach
+                        val theirJson = deckAdapter.toJson(theirs)
+                        val mineJson = local[row.key]
+                        val base = baseJson?.let { runCatching { deckAdapter.fromJson(it) }.getOrNull() }
+                        // Both devices changed this deck since they last agreed: keep both sets of edits.
+                        if (localEdit != null && mineJson != null && base != null && mineJson != theirJson) {
+                            val mine = deckAdapter.fromJson(mineJson) ?: return@forEach
+                            val merged = ItemMerge.mergeDecks(base, mine, theirs, minePreferred = localEdit > row.editedMs)
+                            val mergedJson = deckAdapter.toJson(merged)
+                            if (mergedJson != mineJson) {
+                                if (index >= 0) deckList[index] = merged else deckList.add(merged)
+                                changedDecks = true
+                                pulledCount++
+                            }
+                            // Push the merged version (it's newer than both), and keep theirs as the new base.
+                            local[row.key] = mergedJson
+                            pending[row.key] = now
+                            items[row.key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
+                            return@forEach
+                        }
+                        if (localEdit != null && localEdit > row.editedMs) return@forEach // ours is newer; pushed below
                         // Our own push coming back, or already identical: just record agreement.
-                        if (local[row.key]?.hashCode() != hash) {
-                            if (index >= 0) deckList[index] = deck else deckList.add(deck)
+                        if (mineJson != theirJson) {
+                            if (index >= 0) deckList[index] = theirs else deckList.add(theirs)
                             changedDecks = true
                             pulledCount++
                         }
-                        items[row.key] = ItemMeta(hash, row.editedMs)
+                        items[row.key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
                     }
                 } else {
                     val index = collectionList.indexOfFirst { it.id == row.id }
                     if (row.deleted) {
+                        if (localEdit != null && localEdit > row.editedMs) return@forEach
                         if (index >= 0) { collectionList.removeAt(index); changedCollections = true; pulledCount++ }
                         items[row.key] = ItemMeta(0, row.editedMs, deleted = true)
                     } else {
-                        val collection = row.data?.let { runCatching { collectionAdapter.fromJson(it) }.getOrNull() } ?: return@forEach
-                        val hash = collectionAdapter.toJson(collection).hashCode()
-                        if (local[row.key]?.hashCode() != hash) {
-                            if (index >= 0) collectionList[index] = collection else collectionList.add(collection)
+                        val theirs = row.data?.let { runCatching { collectionAdapter.fromJson(it) }.getOrNull() } ?: return@forEach
+                        val theirJson = collectionAdapter.toJson(theirs)
+                        val mineJson = local[row.key]
+                        val base = baseJson?.let { runCatching { collectionAdapter.fromJson(it) }.getOrNull() }
+                        if (localEdit != null && mineJson != null && base != null && mineJson != theirJson) {
+                            val mine = collectionAdapter.fromJson(mineJson) ?: return@forEach
+                            val merged = ItemMerge.mergeCollections(base, mine, theirs, minePreferred = localEdit > row.editedMs)
+                            val mergedJson = collectionAdapter.toJson(merged)
+                            if (mergedJson != mineJson) {
+                                if (index >= 0) collectionList[index] = merged else collectionList.add(merged)
+                                changedCollections = true
+                                pulledCount++
+                            }
+                            local[row.key] = mergedJson
+                            pending[row.key] = now
+                            items[row.key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
+                            return@forEach
+                        }
+                        if (localEdit != null && localEdit > row.editedMs) return@forEach
+                        if (mineJson != theirJson) {
+                            if (index >= 0) collectionList[index] = theirs else collectionList.add(theirs)
                             changedCollections = true
                             pulledCount++
                         }
-                        items[row.key] = ItemMeta(hash, row.editedMs)
+                        items[row.key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
                     }
                 }
                 pending.remove(row.key)
@@ -315,7 +367,8 @@ class SupabaseSync(
                 pending.forEach { (key, editedAt) ->
                     val (kind, id) = key.split(":", limit = 2)
                     val editedMs = if (editedAt == 0L) now else editedAt
-                    val json = when (kind) {
+                    // A merged item was written into `local` above; otherwise take the live one.
+                    val json = local[key] ?: when (kind) {
                         "deck" -> deckList.firstOrNull { it.id == id }?.let { deckAdapter.toJson(it) }
                         else -> collectionList.firstOrNull { it.id == id }?.let { collectionAdapter.toJson(it) }
                     }
@@ -325,7 +378,7 @@ class SupabaseSync(
                         pushed[key] = ItemMeta(0, editedMs, deleted = true)
                     } else {
                         item.put("deleted", false).put("data", JSONObject(json))
-                        pushed[key] = ItemMeta(json.hashCode(), editedMs)
+                        pushed[key] = ItemMeta(json.hashCode(), editedMs, base = json)
                     }
                     batch.put(item)
                 }

@@ -4,7 +4,9 @@
 -- Safe to re-run: every statement is idempotent.
 --
 -- Each deck or binder is stored whole as JSON in `data`, so fields a newer app version adds survive
--- older clients. Conflicts resolve per item, last edit wins: `edited_ms` is the wall-clock time of the
+-- older clients. The apps merge two devices' edits to the same deck card by card before pushing the
+-- result (see ItemMerge.kt / mergeItems.ts); the server just keeps the newer write, so a device that
+-- hasn't merged yet can't clobber one that has. `edited_ms` is the wall-clock time of the
 -- edit on the device that made it, and push_library_items() only overwrites a row with a newer edit.
 -- Deleting an item leaves a tombstone (deleted = true, data = null) so other devices delete it too.
 

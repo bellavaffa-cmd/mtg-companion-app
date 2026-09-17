@@ -627,7 +627,7 @@ private fun AccountSyncSection(sync: SupabaseSync) {
     if (signedIn == null) {
         Text(
             "Sign in to keep your decks and binders in sync across your devices. Each deck syncs on its " +
-                "own, so edits on two phones don't overwrite each other. Everything still works offline.",
+                "own and are merged card by card, so edits on two phones don't overwrite each other. Everything still works offline.",
             style = MaterialTheme.typography.bodySmall
         )
         OutlinedTextField(
