@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.adaptiveListColumns
+import com.mtgcompanion.app.ui.common.adaptiveGridColumns
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -90,6 +92,8 @@ fun CollectionDetailScreen(
     val prices by viewModel.prices.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
+    val gridCols = adaptiveGridColumns(gridColumns)
+    val listCols = adaptiveListColumns()
     val moveTargets by viewModel.moveTargets.collectAsState()
     val cardSources by viewModel.cardSources.collectAsState()
     // The card whose move-destination picker is open.
@@ -173,7 +177,7 @@ fun CollectionDetailScreen(
                         )
                     }
                     if (viewMode == CardViewMode.GRID) {
-                        cardGrid(entries, columns = gridColumns, key = { it.scryfallId }) { entry ->
+                        cardGrid(entries, columns = gridCols, key = { it.scryfallId }) { entry ->
                             CollectionCardTile(
                                 entry = entry,
                                 onClick = { zoomId = entry.scryfallId },
@@ -181,7 +185,7 @@ fun CollectionDetailScreen(
                             )
                         }
                     } else {
-                        items(entries, key = { it.scryfallId }) { entry ->
+                        cardGrid(entries, columns = listCols, key = { it.scryfallId }) { entry ->
                             CollectionCardRow(
                                 entry = entry,
                                 onClick = { zoomId = entry.scryfallId },

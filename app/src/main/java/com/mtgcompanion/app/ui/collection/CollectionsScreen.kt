@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.adaptiveListColumns
+import com.mtgcompanion.app.ui.common.adaptiveGridColumns
 import com.mtgcompanion.app.ui.common.SegmentedTabs
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -170,6 +172,7 @@ private fun CollectionsTab(
 ) {
     // Binder pending a delete-confirmation, if any.
     var confirmDelete by remember { mutableStateOf<Collection?>(null) }
+    val listCols = adaptiveListColumns()
 
     if (collections.isEmpty()) {
         Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
@@ -181,7 +184,7 @@ private fun CollectionsTab(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(collections, key = { it.id }) { collection ->
+            cardGrid(collections, columns = listCols, key = { it.id }) { collection ->
                 CollectionRow(
                     collection = collection,
                     onClick = { onCollectionClick(collection.id) },
@@ -223,6 +226,8 @@ private fun AllCardsTab(
     var zoomId by remember { mutableStateOf<String?>(null) }
     // Name of the card whose "find similar" overlay is open, if any.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
+    val gridCols = adaptiveGridColumns(gridColumns)
+    val listCols = adaptiveListColumns()
 
     if (allCards.isEmpty()) {
         Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
@@ -272,11 +277,11 @@ private fun AllCardsTab(
                 }
             } else {
                 if (viewMode == CardViewMode.GRID) {
-                    cardGrid(filtered, columns = gridColumns, key = { it.scryfallId }) { card ->
+                    cardGrid(filtered, columns = gridCols, key = { it.scryfallId }) { card ->
                         AllCardTile(card = card, onClick = { zoomId = card.scryfallId }, onViewDetails = { onViewDetails(card.name) })
                     }
                 } else {
-                    items(filtered, key = { it.scryfallId }) { card ->
+                    cardGrid(filtered, columns = listCols, key = { it.scryfallId }) { card ->
                         AllCardRow(card = card, onClick = { zoomId = card.scryfallId }, onViewDetails = { onViewDetails(card.name) })
                     }
                 }

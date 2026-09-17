@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.search
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import com.mtgcompanion.app.ui.common.readableWidth
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.filled.MenuBook
@@ -144,11 +146,12 @@ fun SearchScreen(
             }
         }
     ) { padding ->
+        // The filter form keeps a readable width on tablets and wider, centred.
+        Box(Modifier.fillMaxSize().background(Bg).padding(padding), contentAlignment = Alignment.TopCenter) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Bg)
-                .padding(padding)
+                .readableWidth(820.dp)
+                .fillMaxHeight()
                 .let { if (mode == SearchMode.CARDS) it.verticalScroll(rememberScrollState()) else it }
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
@@ -276,6 +279,7 @@ fun SearchScreen(
 
                 Spacer(Modifier.size(12.dp))
             }
+        }
         }
     }
 }

@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.decks
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import com.mtgcompanion.app.ui.common.gridColumnsFor
+import com.mtgcompanion.app.ui.common.listColumnsFor
+import com.mtgcompanion.app.ui.common.LocalLayoutSize
+import com.mtgcompanion.app.ui.common.LayoutSize
 import com.mtgcompanion.app.ui.theme.Surface3
 import com.mtgcompanion.app.ui.theme.Surface2
 import com.mtgcompanion.app.ui.theme.NumberStyle
@@ -159,7 +164,6 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 
 /** Tab order. The Considering tab sits right beside Cards, since the two are worked together. */
 private val DECK_TABS = listOf("Cards", "Considering", "Stats", "Suggestions", "Legality")
-private const val TAB_CONSIDERING = 1
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -174,7 +178,10 @@ fun DeckDetailScreen(
     val cardGroups by viewModel.cardGroups.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val prices by viewModel.prices.collectAsState()
-    val pagerState = rememberPagerState(pageCount = { DECK_TABS.size })
+    val layout = LocalLayoutSize.current
+    // On a desktop-width window Stats sits in a panel beside the cards, so it isn't a tab there.
+    val tabs = if (layout == LayoutSize.DESKTOP) DECK_TABS.filter { it != "Stats" } else DECK_TABS
+    val pagerState = rememberPagerState(pageCount = { tabs.size })
     val missing by viewModel.missing.collectAsState()
     val wishlists by viewModel.wishlists.collectAsState()
     // Swap flows: a cut candidate choosing its replacement, or a considered card choosing what it replaces.
@@ -216,7 +223,7 @@ fun DeckDetailScreen(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             val density = LocalDensity.current
-            val expanded = 284.dp
+            val expanded = if (layout.isWide) 320.dp else 284.dp
             val collapsed = 64.dp
             val limit = with(density) { (collapsed - expanded).toPx() }
             SideEffect {
@@ -267,18 +274,19 @@ fun DeckDetailScreen(
     ) { padding ->
         val currentDeck = deck ?: return@Scaffold
 
-        Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
+        Row(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
+        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
             SegmentedTabs(
-                labels = DECK_TABS,
-                selected = pagerState.currentPage,
+                labels = tabs,
+                selected = pagerState.currentPage.coerceAtMost(tabs.size - 1),
                 onSelect = { index -> scope.launch { pagerState.animateScrollToPage(index) } },
-                counts = mapOf(TAB_CONSIDERING to currentDeck.considering.size),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                counts = mapOf(tabs.indexOf("Considering") to currentDeck.considering.size),
+                modifier = Modifier.padding(horizontal = if (layout.isWide) layout.pagePadding - 4.dp else 16.dp, vertical = 8.dp)
             )
 
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                when (page) {
-                    0 -> CardsTab(
+                when (tabs.getOrNull(page)) {
+                    "Cards" -> CardsTab(
                         currentDeck,
                         analysis,
                         onZoomCard = { zoom = "card" to it },
@@ -311,7 +319,7 @@ fun DeckDetailScreen(
                         },
                         viewModel
                     )
-                    TAB_CONSIDERING -> ConsideringTab(
+                    "Considering" -> ConsideringTab(
                         deck = currentDeck,
                         analysis = analysis,
                         prices = prices,
@@ -320,8 +328,8 @@ fun DeckDetailScreen(
                         onSwapIn = { swapIn = it },
                         onRemove = { viewModel.removeFromConsidering(it.scryfallId) }
                     )
-                    2 -> StatsTab(analysis, currentDeck, viewModel)
-                    3 -> AnalysisTab(
+                    "Stats" -> StatsTab(analysis, currentDeck, viewModel)
+                    "Suggestions" -> AnalysisTab(
                         analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel,
                         onConsiderName = { name -> viewModel.considerByName(name, toast) },
                         onConsiderCard = { card -> viewModel.consider(card); toast("Added ${card.name} to Considering.") },
@@ -331,6 +339,13 @@ fun DeckDetailScreen(
                     else -> LegalityTab(analysis, viewModel)
                 }
             }
+        }
+        if (layout == LayoutSize.DESKTOP) {
+            // Stats beside the cards, the way the web app's deck page shows them.
+            Box(Modifier.width(360.dp).fillMaxHeight()) {
+                StatsTab(analysis, currentDeck, viewModel)
+            }
+        }
         }
 
         zoom?.let { (source, key) ->
@@ -1116,6 +1131,9 @@ private fun CardsTab(
             }
         }
 
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+        val listCols = listColumnsFor(maxWidth - 40.dp)
+        val gridCols = gridColumnsFor(maxWidth - 40.dp, gridColumns)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(20.dp),
@@ -1154,7 +1172,7 @@ private fun CardsTab(
                     }
                 }
                 if (viewMode == CardViewMode.GRID) {
-                    cardGrid(group.cards, columns = gridColumns, key = { it.scryfallId }) { card ->
+                    cardGrid(group.cards, columns = gridCols, key = { it.scryfallId }) { card ->
                         DeckCardTile(
                             card = card,
                             isCommander = card.scryfallId == deck.commander?.scryfallId || card.scryfallId == deck.partnerCommander?.scryfallId,
@@ -1165,7 +1183,7 @@ private fun CardsTab(
                         )
                     }
                 } else {
-                    items(group.cards, key = { it.scryfallId }) { card ->
+                    cardGrid(group.cards, columns = listCols, key = { it.scryfallId }) { card ->
                         DeckCardRow(
                             card = card,
                             isCommander = card.scryfallId == deck.commander?.scryfallId || card.scryfallId == deck.partnerCommander?.scryfallId,
@@ -1182,6 +1200,7 @@ private fun CardsTab(
                     }
                 }
             }
+        }
         }
     }
 }

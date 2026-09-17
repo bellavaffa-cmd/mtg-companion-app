@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.search
 
+import com.mtgcompanion.app.ui.common.adaptiveListColumns
+import com.mtgcompanion.app.ui.common.adaptiveGridColumns
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -92,6 +94,8 @@ fun SearchResultsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
+    val gridCols = adaptiveGridColumns(gridColumns)
+    val listCols = adaptiveListColumns()
     val context = LocalContext.current
     val addTargets by viewModel.addTargets.collectAsState()
     val cardSources by viewModel.cardSources.collectAsState()
@@ -187,7 +191,7 @@ fun SearchResultsScreen(
                             EmptyState(icon = Icons.Filled.SearchOff, title = "No cards match.")
                         }
                     } else if (viewMode == CardViewMode.GRID) {
-                        cardGrid(state.cards, columns = gridColumns, key = { it.id }) { card ->
+                        cardGrid(state.cards, columns = gridCols, key = { it.id }) { card ->
                             CardResultTile(
                                 card = card,
                                 onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },
@@ -196,7 +200,7 @@ fun SearchResultsScreen(
                             )
                         }
                     } else {
-                        items(state.cards, key = { it.id }) { card ->
+                        cardGrid(state.cards, columns = listCols, key = { it.id }) { card ->
                             CardResultRow(
                                 card = card,
                                 onClick = { zoomIndex = resultCards.indexOfFirst { it.id == card.id } },

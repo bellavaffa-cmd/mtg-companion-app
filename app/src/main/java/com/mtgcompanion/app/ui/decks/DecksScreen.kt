@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.decks
 
+import androidx.compose.foundation.layout.widthIn
+import com.mtgcompanion.app.ui.common.LocalLayoutSize
+import com.mtgcompanion.app.ui.common.LayoutSize
 import com.mtgcompanion.app.ui.theme.OnGold
 import com.mtgcompanion.app.ui.theme.NumberStyle
 import com.mtgcompanion.app.ui.theme.LocalAppColors
@@ -106,12 +109,18 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrow
             (query.isBlank() || deck.name.contains(query.trim(), ignoreCase = true) || deck.commander?.name?.contains(query.trim(), ignoreCase = true) == true)
     }
 
+    val layout = LocalLayoutSize.current
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        // Two tiles across on a phone, three on a tablet, as many ~200dp tiles as fit on wider screens.
+        columns = when (layout) {
+            LayoutSize.PHONE -> GridCells.Fixed(2)
+            LayoutSize.TABLET -> GridCells.Fixed(3)
+            LayoutSize.DESKTOP -> GridCells.Adaptive(200.dp)
+        },
         modifier = Modifier.fillMaxSize().background(Bg),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(start = layout.pagePadding, end = layout.pagePadding, bottom = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (layout.isWide) 16.dp else 10.dp),
+        verticalArrangement = Arrangement.spacedBy(if (layout.isWide) 16.dp else 10.dp)
     ) {
         item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 18.dp, bottom = 4.dp)) {
@@ -128,7 +137,12 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrow
                     ) { Icon(Icons.Filled.Add, contentDescription = "New deck", tint = app.onAccent) }
                 }
                 if (decks.isNotEmpty()) {
-                    SearchPill(query = query, onQueryChange = { query = it }, placeholder = "Search decks or commanders", modifier = Modifier.riseIn(1))
+                    SearchPill(
+                        query = query,
+                        onQueryChange = { query = it },
+                        placeholder = "Search decks or commanders",
+                        modifier = Modifier.then(if (layout.isWide) Modifier.widthIn(max = 520.dp) else Modifier).riseIn(1)
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState()).riseIn(2)) {
                         PillChip("All", ownership == null, onClick = { ownership = null }, count = decks.size)
                         DeckOwnership.entries.forEach { type ->

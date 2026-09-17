@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.settings
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import com.mtgcompanion.app.ui.common.readableWidth
 import com.mtgcompanion.app.ui.common.SetPasswordDialog
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -123,11 +125,12 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
+        // On a wide window the settings stay a comfortable reading width, centred.
+        Box(Modifier.fillMaxSize().background(Bg).padding(padding), contentAlignment = Alignment.TopCenter) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Bg)
-                .padding(padding)
+                .readableWidth()
+                .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
@@ -155,6 +158,7 @@ fun SettingsScreen(
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
             SettingsCategory("App Updates") { AppUpdatesSection(updateManager) }
+        }
         }
     }
 }

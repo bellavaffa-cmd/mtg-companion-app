@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.home
 
+import com.mtgcompanion.app.ui.common.LocalLayoutSize
+import com.mtgcompanion.app.ui.common.LayoutSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
@@ -109,27 +113,70 @@ fun HomeScreen(
         }
     }
 
+    val layout = LocalLayoutSize.current
+    val wide = layout.isWide
+    val pad = layout.pagePadding
+    val continueDeck = lastOpenedDeck ?: decks.firstOrNull()
+    val statSize = if (layout == LayoutSize.DESKTOP) 48 else 32
+
+    val statDecks: @Composable (Modifier) -> Unit = { m ->
+        StatFigure(value = { CountUpText(deckCount.toDouble(), NumberStyle(statSize), colors.textPrimary) }, label = "Decks", modifier = m.clickable(onClick = onOpenDecks))
+    }
+    val statBinders: @Composable (Modifier) -> Unit = { m ->
+        StatFigure(value = { CountUpText(binderCount.toDouble(), NumberStyle(statSize), colors.textPrimary) }, label = "Binders", modifier = m.clickable(onClick = onOpenCollection))
+    }
+    val statValue: @Composable (Modifier) -> Unit = { m ->
+        StatFigure(
+            value = {
+                val v = collectionValue
+                if (v != null) CountUpText(v, NumberStyle(statSize), colors.textPrimary, format = { "$" + "%,.0f".format(it) })
+                else Text("—", style = NumberStyle(statSize), color = colors.textDim)
+            },
+            label = "Collection value",
+            modifier = m.clickable(onClick = onOpenCollection)
+        )
+    }
+    val statRecord: @Composable (Modifier) -> Unit = { m ->
+        StatFigure(
+            value = {
+                if (matchSummary.total > 0) {
+                    Text("${matchSummary.wins}–${matchSummary.losses}" + if (matchSummary.draws > 0) "–${matchSummary.draws}" else "", style = NumberStyle(statSize), color = colors.textPrimary)
+                } else {
+                    Text("—", style = NumberStyle(statSize), color = colors.textDim)
+                }
+            },
+            label = if (matchSummary.total > 0) "Match record · ${matchSummary.wins * 100 / matchSummary.total}% wins" else "Match record",
+            modifier = m
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Bg)
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(bottom = if (wide) 40.dp else 24.dp),
+        verticalArrangement = Arrangement.spacedBy(if (wide) 18.dp else 12.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 18.dp).riseIn(0)
+            modifier = Modifier.fillMaxWidth().padding(start = if (wide) pad else 20.dp, end = if (wide) pad else 12.dp, top = if (wide) 26.dp else 18.dp).riseIn(0)
         ) {
             Column(Modifier.weight(1f)) {
                 Text(greeting.uppercase(), style = EyebrowStyle, color = colors.textMuted)
-                Text("MTG Companion", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    if (layout == LayoutSize.DESKTOP) "Welcome back" else "MTG Companion",
+                    style = if (wide) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineSmall
+                )
             }
-            Box(
-                Modifier.size(42.dp).clip(CircleShape).background(colors.surface).clickable(onClick = onOpenSettings),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = colors.textPrimary, modifier = Modifier.size(21.dp))
+            // Wide layouts reach Settings from the rail or sidebar.
+            if (!wide) {
+                Box(
+                    Modifier.size(42.dp).clip(CircleShape).background(colors.surface).clickable(onClick = onOpenSettings),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = colors.textPrimary, modifier = Modifier.size(21.dp))
+                }
             }
         }
 
@@ -138,7 +185,7 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = pad)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(18.dp))
                     .background(colors.warning.copy(alpha = 0.14f))
@@ -151,84 +198,146 @@ fun HomeScreen(
             }
         }
 
-        val continueDeck = lastOpenedDeck ?: decks.firstOrNull()
-        continueDeck?.let { deck ->
-            ContinueHero(
-                deck = deck,
-                colors = deckColors[deck.id].orEmpty(),
-                isLast = lastOpenedDeck != null,
-                onClick = { onOpenDeck(deck.id) },
-                modifier = Modifier.padding(horizontal = 16.dp).riseIn(1)
-            )
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 16.dp).riseIn(2)) {
-            StatFigure(
-                value = { CountUpText(deckCount.toDouble(), NumberStyle(32), colors.textPrimary) },
-                label = "Decks",
-                modifier = Modifier.weight(1f).clickable(onClick = onOpenDecks)
-            )
-            StatFigure(
-                value = { CountUpText(binderCount.toDouble(), NumberStyle(32), colors.textPrimary) },
-                label = "Binders",
-                modifier = Modifier.weight(1f).clickable(onClick = onOpenCollection)
-            )
-            StatFigure(
-                value = {
-                    val v = collectionValue
-                    if (v != null) CountUpText(v, NumberStyle(32), colors.textPrimary, format = { "$" + "%,.0f".format(it) })
-                    else Text("—", style = NumberStyle(32), color = colors.textDim)
-                },
-                label = "Collection value",
-                modifier = Modifier.weight(1.25f).clickable(onClick = onOpenCollection)
-            )
-        }
-
-        if (matchSummary.total > 0) {
+        if (layout == LayoutSize.DESKTOP) {
+            // The hero beside a 2×2 block of figures.
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).padding(14.dp).riseIn(3)
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(horizontal = pad).fillMaxWidth().height(320.dp).riseIn(1)
             ) {
-                Text(
-                    "${matchSummary.wins}–${matchSummary.losses}" + if (matchSummary.draws > 0) "–${matchSummary.draws}" else "",
-                    style = NumberStyle(30),
-                    color = colors.textPrimary
+                if (continueDeck != null) {
+                    ContinueHero(
+                        deck = continueDeck,
+                        colors = deckColors[continueDeck.id].orEmpty(),
+                        isLast = lastOpenedDeck != null,
+                        onClick = { onOpenDeck(continueDeck.id) },
+                        modifier = Modifier.weight(2f).fillMaxHeight()
+                    )
+                }
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        statDecks(Modifier.weight(1f).fillMaxHeight())
+                        statBinders(Modifier.weight(1f).fillMaxHeight())
+                    }
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        statValue(Modifier.weight(1f).fillMaxHeight())
+                        statRecord(Modifier.weight(1f).fillMaxHeight())
+                    }
+                }
+            }
+        } else {
+            continueDeck?.let { deck ->
+                ContinueHero(
+                    deck = deck,
+                    colors = deckColors[deck.id].orEmpty(),
+                    isLast = lastOpenedDeck != null,
+                    onClick = { onOpenDeck(deck.id) },
+                    modifier = Modifier.padding(horizontal = pad).height(if (wide) 280.dp else 232.dp).riseIn(1)
                 )
-                Column(Modifier.weight(1f)) {
-                    Text("Match record", style = MaterialTheme.typography.titleSmall)
-                    Text("${matchSummary.wins * 100 / matchSummary.total}% win rate across all decks", style = MaterialTheme.typography.bodySmall)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(if (wide) 12.dp else 8.dp), modifier = Modifier.padding(horizontal = pad).riseIn(2)) {
+                statDecks(Modifier.weight(1f))
+                statBinders(Modifier.weight(1f))
+                statValue(Modifier.weight(1.25f))
+                if (wide) statRecord(Modifier.weight(1.25f))
+            }
+            if (!wide && matchSummary.total > 0) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).padding(14.dp).riseIn(3)
+                ) {
+                    Text(
+                        "${matchSummary.wins}–${matchSummary.losses}" + if (matchSummary.draws > 0) "–${matchSummary.draws}" else "",
+                        style = NumberStyle(30),
+                        color = colors.textPrimary
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text("Match record", style = MaterialTheme.typography.titleSmall)
+                        Text("${matchSummary.wins * 100 / matchSummary.total}% win rate across all decks", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
 
         if (decks.isNotEmpty()) {
-            SectionHeader("Your decks", action = "See all", onAction = onOpenDecks, modifier = Modifier.padding(start = 20.dp, end = 10.dp, top = 12.dp).riseIn(3))
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.riseIn(4)
-            ) {
-                items(decks, key = { it.id }) { deck ->
-                    MiniDeckTile(deck, deckColors[deck.id].orEmpty(), onClick = { onOpenDeck(deck.id) }, shareArt = deck.id != continueDeck?.id)
+            SectionHeader(
+                "Your decks",
+                action = "See all",
+                onAction = onOpenDecks,
+                modifier = Modifier.padding(start = if (wide) pad else 20.dp, end = if (wide) pad - 10.dp else 10.dp, top = 12.dp).riseIn(3)
+            )
+            if (wide) {
+                // A grid of tiles filling the width instead of a sideways-scrolling row.
+                BoxWithConstraints(Modifier.padding(horizontal = pad).fillMaxWidth().riseIn(4)) {
+                    val columns = if (layout == LayoutSize.TABLET) 3 else (maxWidth / 180.dp).toInt().coerceIn(4, 8)
+                    val rows = if (layout == LayoutSize.TABLET) 2 else 1
+                    val shown: List<Deck?> = (decks + listOf<Deck?>(null)).take(columns * rows)
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        shown.chunked(columns).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                row.forEach { deck ->
+                                    val tileModifier = Modifier.weight(1f).aspectRatio(0.8f)
+                                    if (deck != null) {
+                                        MiniDeckTile(deck, deckColors[deck.id].orEmpty(), onClick = { onOpenDeck(deck.id) }, shareArt = deck.id != continueDeck?.id, modifier = tileModifier)
+                                    } else {
+                                        NewDeckTile(onClick = onOpenDecks, modifier = tileModifier)
+                                    }
+                                }
+                                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
                 }
-                item(key = "new") { NewDeckTile(onClick = onOpenDecks) }
+            } else {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.riseIn(4)
+                ) {
+                    items(decks, key = { it.id }) { deck ->
+                        MiniDeckTile(deck, deckColors[deck.id].orEmpty(), onClick = { onOpenDeck(deck.id) }, shareArt = deck.id != continueDeck?.id)
+                    }
+                    item(key = "new") { NewDeckTile(onClick = onOpenDecks) }
+                }
             }
         }
 
-        cardOfDay?.let { card ->
-            SectionHeader("Card of the day", modifier = Modifier.padding(start = 20.dp, end = 10.dp, top = 12.dp).riseIn(5))
-            CardOfDayTile(card, onClick = { onViewCard(card.name) }, modifier = Modifier.padding(horizontal = 16.dp).riseIn(5))
-        }
+        if (wide) {
+            // Card of the day beside the table tools.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier.padding(horizontal = pad).fillMaxWidth().riseIn(5)
+            ) {
+                Column(Modifier.weight(7f)) {
+                    cardOfDay?.let { card ->
+                        SectionHeader("Card of the day", modifier = Modifier.padding(bottom = 10.dp))
+                        CardOfDayTile(card, onClick = { onViewCard(card.name) })
+                    }
+                }
+                Column(Modifier.weight(5f)) {
+                    SectionHeader("At the table", modifier = Modifier.padding(bottom = 10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LifeCounterTile(onClick = onOpenLifeCounter, modifier = Modifier.weight(1f))
+                        RulesTile(onClick = onOpenRules, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        } else {
+            cardOfDay?.let { card ->
+                SectionHeader("Card of the day", modifier = Modifier.padding(start = 20.dp, end = 10.dp, top = 12.dp).riseIn(5))
+                CardOfDayTile(card, onClick = { onViewCard(card.name) }, modifier = Modifier.padding(horizontal = 16.dp).riseIn(5))
+            }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).riseIn(6)) {
-            LifeCounterTile(onClick = onOpenLifeCounter, modifier = Modifier.weight(1f))
-            RulesTile(onClick = onOpenRules, modifier = Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).riseIn(6)) {
+                LifeCounterTile(onClick = onOpenLifeCounter, modifier = Modifier.weight(1f))
+                RulesTile(onClick = onOpenRules, modifier = Modifier.weight(1f))
+            }
         }
 
         if (news.isNotEmpty()) {
-            SectionHeader("Latest news", modifier = Modifier.padding(start = 20.dp, end = 10.dp, top = 12.dp).riseIn(7))
-            NewsList(news, modifier = Modifier.padding(horizontal = 16.dp).riseIn(7), onOpenArticle = { url ->
+            SectionHeader("Latest news", modifier = Modifier.padding(start = if (wide) pad else 20.dp, end = 10.dp, top = 12.dp).riseIn(7))
+            NewsList(news, modifier = Modifier.padding(horizontal = pad).riseIn(7), onOpenArticle = { url ->
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             })
         }
@@ -243,7 +352,6 @@ private fun ContinueHero(deck: Deck, colors: List<String>, isLast: Boolean, onCl
         modifier
             .pressScale(interaction)
             .fillMaxWidth()
-            .height(232.dp)
             .clip(RoundedCornerShape(26.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
     ) {
@@ -278,12 +386,11 @@ private fun ContinueHero(deck: Deck, colors: List<String>, isLast: Boolean, onCl
 }
 
 @Composable
-private fun MiniDeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit, shareArt: Boolean) {
+private fun MiniDeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit, shareArt: Boolean, modifier: Modifier = Modifier.size(width = 136.dp, height = 172.dp)) {
     val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier
+        modifier
             .pressScale(interaction)
-            .size(width = 136.dp, height = 172.dp)
             .clip(RoundedCornerShape(20.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
     ) {
@@ -303,13 +410,12 @@ private fun MiniDeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit, 
 }
 
 @Composable
-private fun NewDeckTile(onClick: () -> Unit) {
+private fun NewDeckTile(onClick: () -> Unit, modifier: Modifier = Modifier.size(width = 136.dp, height = 172.dp)) {
     val app = LocalAppColors.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
-        modifier = Modifier
-            .size(width = 136.dp, height = 172.dp)
+        modifier = modifier
             .clip(RoundedCornerShape(20.dp))
             .background(app.surface)
             .clickable(onClick = onClick)

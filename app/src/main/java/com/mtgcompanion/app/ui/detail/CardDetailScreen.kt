@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.detail
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
+import com.mtgcompanion.app.ui.common.gridColumnsFor
+import com.mtgcompanion.app.ui.common.LocalLayoutSize
+import com.mtgcompanion.app.ui.common.LayoutSize
 import kotlinx.coroutines.launch
 import com.mtgcompanion.app.ui.theme.Surface2
 import com.mtgcompanion.app.ui.theme.OnGold
@@ -202,14 +207,9 @@ fun CardDetailScreen(
                     section.cardviews.take(TILES_PER_SECTION).map { view -> section.tileKey(view) to view }
                 }
 
-                LazyVerticalGrid(
-                    // Fixed column count from the shared grid-size setting, same as every other tab.
-                    columns = GridCells.Fixed(gridColumns),
-                    modifier = Modifier.fillMaxSize().background(Bg).padding(padding),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                // The page's own sections (header, printings, add buttons, prices) and the browsing
+                // sections below them (EDHREC, combos, similar cards), shared by both layouts.
+                val cardSections: androidx.compose.foundation.lazy.grid.LazyGridScope.() -> Unit = {
                     fullSpanItem { CardHeader(card) }
                     if (state.prints.size > 1) {
                         fullSpanItem {
@@ -230,6 +230,8 @@ fun CardDetailScreen(
                         card.purchaseUris?.tcgplayer?.let { openUrl(context, it) }
                     }) }
 
+                }
+                val browseSections: androidx.compose.foundation.lazy.grid.LazyGridScope.() -> Unit = {
                     if (card.canBeCommander) {
                         fullSpanItem {
                             CommanderViewToggle(
@@ -281,6 +283,41 @@ fun CardDetailScreen(
                         items(state.similarCards, key = { it.id }) { similar ->
                             SimilarCardTile(similar, onClick = { similarZoomId = similar.id })
                         }
+                    }
+                                }
+
+                if (LocalLayoutSize.current.isWide) {
+                    // Tablet and desktop: the card and its prices stay put on the left while the
+                    // suggestions scroll on the right — the web app's two-column card view.
+                    val layout = LocalLayoutSize.current
+                    Row(Modifier.fillMaxSize().background(Bg).padding(padding)) {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(1),
+                            modifier = Modifier.width(if (layout == LayoutSize.DESKTOP) 440.dp else 360.dp).fillMaxHeight(),
+                            contentPadding = PaddingValues(start = layout.pagePadding - 12.dp, end = 12.dp, top = 16.dp, bottom = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) { cardSections() }
+                        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(gridColumnsFor(maxWidth - 40.dp, gridColumns)),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(start = 12.dp, end = layout.pagePadding - 12.dp, top = 16.dp, bottom = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) { browseSections() }
+                        }
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        // Fixed column count from the shared grid-size setting, same as every other tab.
+                        columns = GridCells.Fixed(gridColumns),
+                        modifier = Modifier.fillMaxSize().background(Bg).padding(padding),
+                        contentPadding = PaddingValues(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        cardSections()
+                        browseSections()
                     }
                 }
 

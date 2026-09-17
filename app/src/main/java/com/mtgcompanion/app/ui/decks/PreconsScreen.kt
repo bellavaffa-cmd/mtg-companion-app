@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.common.cardGrid
+import com.mtgcompanion.app.ui.common.adaptiveListColumns
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -81,6 +83,7 @@ fun PreconsScreen(viewModel: PreconsViewModel, onBack: () -> Unit, onImported: (
     var query by remember { mutableStateOf("") }
     var viewing by remember { mutableStateOf<PreconInfo?>(null) }
     val context = LocalContext.current
+    val listCols = adaptiveListColumns()
 
     fun runImport(precon: PreconInfo) {
         viewModel.importAsDeck(
@@ -150,7 +153,7 @@ fun PreconsScreen(viewModel: PreconsViewModel, onBack: () -> Unit, onImported: (
                     contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(filtered, key = { it.fileName }) { precon ->
+                    cardGrid(filtered, columns = listCols, key = { it.fileName }) { precon ->
                         PreconRow(precon, onClick = { viewing = precon }, onImport = { runImport(precon) })
                     }
                 }

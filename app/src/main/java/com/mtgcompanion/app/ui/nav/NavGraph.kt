@@ -5,6 +5,9 @@ import androidx.compose.ui.platform.LocalContext
 import com.mtgcompanion.app.ui.common.SetPasswordDialog
 import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.ui.common.LocalNavAnimatedScope
+import com.mtgcompanion.app.ui.common.LayoutSize
+import com.mtgcompanion.app.ui.common.LocalLayoutSize
+import com.mtgcompanion.app.ui.common.currentLayoutSize
 import com.mtgcompanion.app.ui.common.LocalSharedTransitionScope
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NamedNavArgument
@@ -179,7 +182,12 @@ fun MtgNavGraph(
     artIndexRepository: ArtIndexRepository
 ) {
     val navController = rememberNavController()
-    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+    val backStackEntry = navController.currentBackStackEntryAsState().value
+    val currentRoute = backStackEntry?.destination?.route
+    // Phone, tablet or desktop-width layout, following the window as it rotates or resizes.
+    val layoutSize = currentLayoutSize()
+    // Scan's camera and the life counter's table run edge to edge, without the rail or sidebar.
+    val showWideNav = layoutSize.isWide && currentRoute != Routes.SCAN && currentRoute != Routes.LIFE_COUNTER
 
     // Check GitHub for a newer release once on launch; the dialog below shows if one is found.
     val updateState by updateManager.state.collectAsState()
@@ -192,20 +200,63 @@ fun MtgNavGraph(
         // to run edge to edge, so it gets none.
         contentWindowInsets = if (currentRoute == Routes.LIFE_COUNTER) WindowInsets(0) else WindowInsets.systemBars.union(WindowInsets.displayCutout),
         bottomBar = {
-            if (currentRoute in bottomNavRoutes) {
+            if (layoutSize == LayoutSize.PHONE && currentRoute in bottomNavRoutes) {
                 MtgBottomBar(currentRoute = currentRoute, navController = navController)
             }
         }
     ) { padding ->
-        SharedTransitionLayout {
+        CompositionLocalProvider(LocalLayoutSize provides layoutSize) {
+        Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+        if (showWideNav) {
+            val destination = when (currentRoute) {
+                Routes.HOME -> NavDestination.HOME
+                Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
+                Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS -> NavDestination.DECKS
+                Routes.COLLECTION, Routes.COLLECTION_DETAIL -> NavDestination.COLLECTION
+                Routes.RULES -> NavDestination.RULES
+                Routes.SETTINGS -> NavDestination.SETTINGS
+                else -> null
+            }
+            val onNavigate: (NavDestination) -> Unit = { target ->
+                when (target) {
+                    NavDestination.HOME -> navController.navigateToTab(Routes.HOME)
+                    NavDestination.SEARCH -> navController.navigateToTab(Routes.SEARCH)
+                    NavDestination.SCAN -> navController.navigateToTab(Routes.SCAN)
+                    NavDestination.DECKS -> navController.navigateToTab(Routes.DECKS)
+                    NavDestination.COLLECTION -> navController.navigateToTab(Routes.COLLECTION)
+                    NavDestination.LIFE_COUNTER -> navController.navigate(Routes.LIFE_COUNTER)
+                    NavDestination.RULES -> navController.navigateToTab(Routes.RULES)
+                    NavDestination.SETTINGS -> navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
+                }
+            }
+            if (layoutSize == LayoutSize.DESKTOP) {
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                val lastDeckId by settingsRepository.lastOpenedDeckId.collectAsState(initial = null)
+                val account by supabaseSync.auth.account.collectAsState()
+                val syncStatus by supabaseSync.status.collectAsState()
+                NavSidebar(
+                    selected = destination,
+                    selectedDeckId = if (currentRoute == Routes.DECK_DETAIL) backStackEntry?.arguments?.getString("deckId") else null,
+                    recentDecks = decks.sortedByDescending { it.id == lastDeckId }.take(6),
+                    account = account,
+                    accountsAvailable = supabaseSync.auth.configured,
+                    syncStatus = syncStatus,
+                    onNavigate = onNavigate,
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) { launchSingleTop = true } }
+                )
+            } else {
+                NavRail(selected = destination, onNavigate = onNavigate)
+            }
+        }
+        SharedTransitionLayout(Modifier.weight(1f)) {
         CompositionLocalProvider(LocalSharedTransitionScope provides this) {
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,
-            // This padding already clears the status bar (and the nav bar or bottom bar), so mark
-            // those insets consumed — otherwise every screen's own Scaffold/TopAppBar pads for the
-            // status bar a second time, leaving an empty band above each title.
-            modifier = Modifier.padding(padding).consumeWindowInsets(padding),
+            // The Row above already applied this padding (it clears the status bar and the bottom bar)
+            // and marked those insets consumed — otherwise every screen's own Scaffold/TopAppBar pads
+            // for the status bar a second time, leaving an empty band above each title.
+            modifier = Modifier.fillMaxSize(),
             // A hard cut between screens reads as unfinished; a quick fade+slide gives every
             // push/pop (tab switches included) the same lightweight "moving deeper" feel.
             enterTransition = { fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 10 } },
@@ -378,6 +429,8 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() }
                 )
             }
+        }
+        }
         }
         }
         }

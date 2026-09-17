@@ -1,5 +1,7 @@
 ﻿package com.mtgcompanion.app.ui.rules
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import com.mtgcompanion.app.ui.common.readableWidth
 import androidx.compose.ui.unit.sp
 import com.mtgcompanion.app.ui.theme.OnGold
 import androidx.compose.foundation.BorderStroke
@@ -74,7 +76,8 @@ fun RulesScreen(viewModel: RulesViewModel) {
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding).padding(20.dp)) {
+        Box(Modifier.fillMaxSize().background(Bg).padding(padding), contentAlignment = Alignment.TopCenter) {
+        Column(modifier = Modifier.readableWidth(880.dp).fillMaxHeight().padding(20.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModeChip("Keywords", mode == RulesMode.KEYWORDS) { viewModel.setMode(RulesMode.KEYWORDS) }
                 ModeChip("Card rulings", mode == RulesMode.RULINGS) { viewModel.setMode(RulesMode.RULINGS) }
@@ -116,6 +119,7 @@ fun RulesScreen(viewModel: RulesViewModel) {
             } else {
                 RulingsBody(rulings)
             }
+        }
         }
     }
 }
