@@ -243,8 +243,18 @@ class SupabaseSync(
 
             // 2. Pull everything newer than the cursor, applying remote changes that aren't older
             //    than a pending local edit of the same item.
-            val token = auth.accessToken() ?: throw SupabaseAuthException("Signed out — sign in again to sync.")
-            val rows = pull(token, state.cursor)
+            var token = auth.accessToken() ?: throw SupabaseAuthException("Signed out — sign in again to sync.")
+            // A 401 means this access token was refused (a clock that's off, say): refresh once and retry.
+            suspend fun freshToken(): String {
+                auth.invalidateAccessToken()
+                return auth.accessToken() ?: throw SupabaseAuthException("Signed out — sign in again to sync.")
+            }
+            val rows = try {
+                pull(token, state.cursor)
+            } catch (e: UnauthorizedException) {
+                token = freshToken()
+                pull(token, state.cursor)
+            }
             val items = state.items.toMutableMap()
             val deckList = decks.toMutableList()
             val collectionList = collections.toMutableList()
@@ -319,7 +329,12 @@ class SupabaseSync(
                     }
                     batch.put(item)
                 }
-                push(token, batch)
+                try {
+                    push(token, batch)
+                } catch (e: UnauthorizedException) {
+                    token = freshToken()
+                    push(token, batch)
+                }
                 pushedCount = pending.size
                 state = state.copy(items = state.items + pushed, pending = emptyMap())
             }
@@ -331,7 +346,8 @@ class SupabaseSync(
         } catch (e: SupabaseAuthException) {
             _status.value = _status.value.copy(syncing = false, message = e.message, failed = true)
         } catch (e: IOException) {
-            _status.value = _status.value.copy(syncing = false, message = "Offline — will sync when you're back online.", failed = true)
+            val message = if (e is SyncServerUnavailableException) e.message else "Offline — will sync when you're back online."
+            _status.value = _status.value.copy(syncing = false, message = message, failed = true)
         } catch (e: Exception) {
             _status.value = _status.value.copy(syncing = false, message = "Sync failed: ${e.message ?: e.javaClass.simpleName}", failed = true)
         }
@@ -365,6 +381,7 @@ class SupabaseSync(
                 .get().build()
             val page = auth.http.newCall(request).execute().use { response ->
                 val text = response.body?.string().orEmpty()
+                if (response.code == 401) throw UnauthorizedException(serverError(response.code, text))
                 if (!response.isSuccessful) throw IllegalStateException(serverError(response.code, text))
                 JSONArray(text)
             }
@@ -393,7 +410,9 @@ class SupabaseSync(
             .post(JSONObject().put("items", items).toString().toRequestBody(JSON_MEDIA))
             .build()
         auth.http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IllegalStateException(serverError(response.code, response.body?.string().orEmpty()))
+            val text = response.body?.string().orEmpty()
+            if (response.code == 401) throw UnauthorizedException(serverError(response.code, text))
+            if (!response.isSuccessful) throw IllegalStateException(serverError(response.code, text))
         }
     }
 
@@ -402,9 +421,12 @@ class SupabaseSync(
         return when {
             code == 404 || message.contains("library_items", ignoreCase = true) && message.contains("does not exist", ignoreCase = true) ->
                 "The sync tables aren't set up yet — run the SQL setup script in Supabase."
-            code == 401 -> "Session expired — sign in again."
+            code == 401 -> "The server didn't accept this sign-in. Try again, or sign out and back in."
             message.isNotBlank() -> "$message (HTTP $code)"
             else -> "Server error (HTTP $code)"
         }
     }
 }
+
+/** A data request's access token was refused (HTTP 401). */
+private class UnauthorizedException(message: String) : Exception(message)

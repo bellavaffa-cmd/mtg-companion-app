@@ -28,8 +28,37 @@ private val Context.supabaseAuthStore by preferencesDataStore(name = "supabase_a
 /** The signed-in account, or null. */
 data class SupabaseAccount(val userId: String, val email: String)
 
-/** A problem the user can act on ("Wrong email or password"), kept separate from bugs. */
-class SupabaseAuthException(message: String) : Exception(message)
+/**
+ * A problem the user can act on ("Wrong email or password"), kept separate from bugs. [httpCode],
+ * [errorCode] and [serverMessage] describe the server's answer, when there was one.
+ */
+class SupabaseAuthException(
+    message: String,
+    val httpCode: Int = 0,
+    val errorCode: String? = null,
+    val serverMessage: String = ""
+) : Exception(message) {
+    /**
+     * Whether the server says this session is gone for good (revoked, expired, already-used refresh
+     * token), as opposed to being briefly unable to answer — only then should the device sign out.
+     */
+    val sessionGone: Boolean
+        get() = httpCode in 400..403 && (
+            errorCode in SESSION_GONE_CODES ||
+                serverMessage.contains("refresh token", ignoreCase = true) ||
+                serverMessage.contains("invalid_grant", ignoreCase = true)
+            )
+
+    private companion object {
+        val SESSION_GONE_CODES = setOf(
+            "refresh_token_not_found", "refresh_token_already_used", "session_not_found", "session_expired",
+            "user_not_found", "user_banned", "invalid_grant"
+        )
+    }
+}
+
+/** The account server answered with an error that isn't about this session (overloaded, rate limited…). */
+class SyncServerUnavailableException(message: String) : IOException(message)
 
 internal val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 
@@ -211,11 +240,20 @@ class SupabaseAuth(private val context: Context) {
             saveSession(json)
             json.getString("access_token")
         } catch (e: SupabaseAuthException) {
+            if (!e.sessionGone) {
+                // A server hiccup (5xx, rate limit) mustn't cost the user their session; try again later.
+                throw SyncServerUnavailableException("The account server isn't responding — will try again shortly.")
+            }
             // The refresh token was revoked or expired — the user has to sign in again.
             context.supabaseAuthStore.edit { it.clear() }
             _account.value = null
             null
         }
+    }
+
+    /** The server rejected the current access token (clock skew, revoked early): refresh it on next use. */
+    suspend fun invalidateAccessToken() {
+        context.supabaseAuthStore.edit { it[expiresKey] = 0L }
     }
 
     private suspend fun saveSession(json: JSONObject) {
@@ -241,7 +279,15 @@ class SupabaseAuth(private val context: Context) {
         http.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
-            if (!response.isSuccessful) throw SupabaseAuthException(friendlyError(response.code, json))
+            if (!response.isSuccessful) {
+                val raw = listOf("msg", "error_description", "message", "error").joinToString(" ") { json.optString(it) }
+                throw SupabaseAuthException(
+                    friendlyError(response.code, json),
+                    httpCode = response.code,
+                    errorCode = json.optString("error_code").ifBlank { json.optString("error").ifBlank { null } },
+                    serverMessage = raw
+                )
+            }
             json
         }
     }
