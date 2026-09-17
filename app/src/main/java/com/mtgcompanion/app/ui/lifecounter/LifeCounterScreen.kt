@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -132,6 +133,8 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
 
     val seatBounds = remember { mutableStateMapOf<Int, Rect>() }
     var tableBounds by remember { mutableStateOf(Rect.Zero) }
+    // Centre of the centre bar, where the menu button sits (root coordinates).
+    var menuAnchor by remember { mutableStateOf<Offset?>(null) }
 
     // The phone lies on the table between players, so a stray back press or edge swipe shouldn't end
     // the game: the first press only arms exit, and a second within the window leaves. Registered
@@ -172,20 +175,6 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
             if (gameModeState.mode != GameModeKind.NONE) {
                 GameModeBanner(state = gameModeState, onClick = { showGameMode = true })
             }
-            if (settings.turnTrackerEnabled || settings.gameTimerEnabled) {
-                TurnStrip(
-                    showTurns = settings.turnTrackerEnabled,
-                    showTimer = settings.gameTimerEnabled,
-                    turnNumber = turnNumber,
-                    currentPlayer = players.firstOrNull { it.id == currentTurnPlayerId },
-                    turnSeconds = turnSeconds,
-                    matchSeconds = matchSeconds,
-                    running = timerRunning,
-                    onToggleTimer = viewModel::toggleTimer,
-                    onNextTurn = viewModel::nextTurn
-                )
-            }
-
             Box(
                 Modifier
                     .weight(1f)
@@ -193,41 +182,55 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                     .onGloballyPositioned { tableBounds = it.boundsInRoot() }
             ) {
                 if (ready) {
-                    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(TableGap)) {
-                        layout.rows.forEach { row ->
-                            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TableGap)) {
-                                row.cells.forEach { cell ->
-                                    val player = cell.seat?.let { seat -> players.firstOrNull { it.id == seat } }
-                                    if (player == null) {
-                                        Box(Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(24.dp)).background(TableColors.Surface))
-                                    } else {
-                                        val reason = player.lossReason(settings.autoKill)
-                                        PlayerTile(
-                                            player = player,
-                                            opponents = players.filter { it.id != player.id },
-                                            settings = settings,
-                                            isActiveTurn = settings.turnTrackerEnabled && player.id == currentTurnPlayerId,
-                                            isMonarch = player.id == monarchPlayerId,
-                                            hasInitiative = player.id == initiativePlayerId,
-                                            defeatMessage = reason?.let { defeatMessageFor(player, it, settings, gameNumber, messageTick) },
-                                            victoryMessage = if (player.id == winnerId) victoryMessageFor(player, settings, gameNumber, messageTick) else null,
-                                            profiles = profiles,
-                                            actions = viewModel.actionsFor(player.id, openKeypad = { keypadPlayerId = player.id }),
-                                            onTokenTap = { kind ->
-                                                tokenStart = seatBounds[player.id]?.center
-                                                floatingToken = kind
-                                            },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .fillMaxSize()
-                                                .onGloballyPositioned { seatBounds[player.id] = it.boundsInRoot() }
-                                                .faceSeat(cell.facing)
-                                        )
-                                    }
-                                }
-                            }
+                    val showStrip = settings.turnTrackerEnabled || settings.gameTimerEnabled
+                    val seat: @Composable (SeatCell, Modifier) -> Unit = { cell, cellModifier ->
+                        val player = cell.seat?.let { seatId -> players.firstOrNull { it.id == seatId } }
+                        if (player == null) {
+                            Box(cellModifier.clip(RoundedCornerShape(24.dp)).background(TableColors.Surface))
+                        } else {
+                            val reason = player.lossReason(settings.autoKill)
+                            PlayerTile(
+                                player = player,
+                                opponents = players.filter { it.id != player.id },
+                                settings = settings,
+                                isActiveTurn = settings.turnTrackerEnabled && player.id == currentTurnPlayerId,
+                                isMonarch = player.id == monarchPlayerId,
+                                hasInitiative = player.id == initiativePlayerId,
+                                defeatMessage = reason?.let { defeatMessageFor(player, it, settings, gameNumber, messageTick) },
+                                victoryMessage = if (player.id == winnerId) victoryMessageFor(player, settings, gameNumber, messageTick) else null,
+                                profiles = profiles,
+                                actions = viewModel.actionsFor(player.id, openKeypad = { keypadPlayerId = player.id }),
+                                onTokenTap = { kind ->
+                                    tokenStart = seatBounds[player.id]?.center
+                                    floatingToken = kind
+                                },
+                                modifier = cellModifier
+                                    .onGloballyPositioned { seatBounds[player.id] = it.boundsInRoot() }
+                                    .faceSeat(cell.facing)
+                            )
                         }
                     }
+                    val bar: @Composable (Boolean, Modifier) -> Unit = { vertical, barModifier ->
+                        CentreBar(
+                            vertical = vertical,
+                            showStrip = showStrip,
+                            onAnchor = { menuAnchor = it },
+                            modifier = barModifier
+                        ) {
+                            TurnStrip(
+                                showTurns = settings.turnTrackerEnabled,
+                                showTimer = settings.gameTimerEnabled,
+                                turnNumber = turnNumber,
+                                currentPlayer = players.firstOrNull { it.id == currentTurnPlayerId },
+                                turnSeconds = turnSeconds,
+                                matchSeconds = matchSeconds,
+                                running = timerRunning,
+                                onToggleTimer = viewModel::toggleTimer,
+                                onNextTurn = viewModel::nextTurn
+                            )
+                        }
+                    }
+                    TableSurface(layout = layout, seat = seat, bar = bar)
                 }
 
                 dayNight?.let { state ->
@@ -259,7 +262,7 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                             RadialItem("Seating", TableColors.MenuSeating, 165f) { showSeating = true }
                         ),
                         onPicked = { menuOpen = false },
-                        modifier = Modifier.align(Alignment.Center)
+                        modifier = Modifier.align(Alignment.Center).offset { menuOffset(menuAnchor, tableBounds) }
                     )
                 }
                 androidx.compose.animation.AnimatedVisibility(
@@ -298,7 +301,11 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                     )
                 }
 
-                MenuButton(open = menuOpen, onClick = { menuOpen = !menuOpen }, modifier = Modifier.align(Alignment.Center))
+                MenuButton(
+                    open = menuOpen,
+                    onClick = { menuOpen = !menuOpen },
+                    modifier = Modifier.align(Alignment.Center).offset { menuOffset(menuAnchor, tableBounds) }
+                )
 
                 androidx.compose.animation.AnimatedVisibility(
                     visible = exitArmed,
@@ -420,6 +427,131 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
 }
 
 private val TableGap = 10.dp
+
+/** Thickness of the centre bar when it shows the turn tracker or timer. */
+private val BarThickness = 38.dp
+
+/**
+ * Lays the table out for the phone's current orientation. In portrait, facing pairs sit along the
+ * long left and right edges with the centre bar running down between them, and end seats span the
+ * top and bottom. Turned to landscape, the seating turns with the phone: the pairs sit along the long
+ * top and bottom edges with the bar across the middle, and end seats move to the left and right.
+ * Seatings without pairs (one or two players at the ends) keep their top/bottom arrangement.
+ */
+@Composable
+private fun TableSurface(
+    layout: TableLayout,
+    seat: @Composable (SeatCell, Modifier) -> Unit,
+    bar: @Composable (vertical: Boolean, Modifier) -> Unit
+) {
+    val sections = remember(layout) { layout.sections() }
+    val hasPairs = sections.any { it is TableSection.Pairs }
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        val landscape = maxWidth > maxHeight
+        if (!landscape || !hasPairs) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(TableGap)) {
+                // Without pairs the bar goes between the end seats (or above a lone seat).
+                val barAfter = if (hasPairs) -1 else (sections.size / 2 - 1)
+                if (!hasPairs && barAfter < 0) bar(false, Modifier.fillMaxWidth())
+                sections.forEachIndexed { index, section ->
+                    when (section) {
+                        is TableSection.End -> seat(section.cell, Modifier.weight(1f).fillMaxWidth())
+                        is TableSection.Pairs -> Row(
+                            Modifier.weight(section.rows.size.toFloat()).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(TableGap)
+                        ) {
+                            Column(Modifier.weight(1f).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(TableGap)) {
+                                section.rows.forEach { row -> seat(row.cells[0], Modifier.weight(1f).fillMaxWidth()) }
+                            }
+                            bar(true, Modifier.fillMaxHeight())
+                            Column(Modifier.weight(1f).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(TableGap)) {
+                                section.rows.forEach { row -> seat(row.cells[1], Modifier.weight(1f).fillMaxWidth()) }
+                            }
+                        }
+                    }
+                    if (index == barAfter) bar(false, Modifier.fillMaxWidth())
+                }
+            }
+        } else {
+            // A clockwise quarter turn (ROTATION_270) mirrors the counter-clockwise one, so each player's
+            // tile stays on their side of the table whichever way the phone was turned.
+            @Suppress("DEPRECATION")
+            val clockwise = view.display?.rotation == android.view.Surface.ROTATION_270
+            val ordered = if (clockwise) sections.reversed() else sections
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(TableGap)) {
+                ordered.forEach { section ->
+                    when (section) {
+                        is TableSection.End -> seat(
+                            section.cell.copy(facing = section.cell.facing.turned(clockwise)),
+                            Modifier.weight(1f).fillMaxHeight()
+                        )
+                        is TableSection.Pairs -> Column(
+                            Modifier.weight(section.rows.size.toFloat()).fillMaxHeight(),
+                            verticalArrangement = Arrangement.spacedBy(TableGap)
+                        ) {
+                            val columns = if (clockwise) section.rows.reversed() else section.rows
+                            val topIndex = if (clockwise) 0 else 1
+                            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TableGap)) {
+                                columns.forEach { row ->
+                                    val cell = row.cells[topIndex]
+                                    seat(cell.copy(facing = cell.facing.turned(clockwise)), Modifier.weight(1f).fillMaxHeight())
+                                }
+                            }
+                            bar(false, Modifier.fillMaxWidth())
+                            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TableGap)) {
+                                columns.forEach { row ->
+                                    val cell = row.cells[1 - topIndex]
+                                    seat(cell.copy(facing = cell.facing.turned(clockwise)), Modifier.weight(1f).fillMaxHeight())
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The bar between facing players: the turn tracker and timer when either is on, read along the bar
+ * (turned sideways when the bar runs down a portrait table). Reports its centre so the menu button
+ * can sit on it.
+ */
+@Composable
+private fun CentreBar(
+    vertical: Boolean,
+    showStrip: Boolean,
+    onAnchor: (Offset) -> Unit,
+    modifier: Modifier = Modifier,
+    strip: @Composable () -> Unit
+) {
+    val thickness = if (showStrip) BarThickness else 0.dp
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .then(if (vertical) Modifier.width(thickness) else Modifier.height(thickness))
+            // positionInRoot, not boundsInRoot: with the strip off the bar has no thickness, and a zero-size
+            // box has empty bounds.
+            .onGloballyPositioned { onAnchor(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) }
+    ) {
+        if (showStrip) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(TableColors.Surface)
+                    .then(if (vertical) Modifier.faceSeat(SeatFacing.RIGHT) else Modifier)
+            ) { strip() }
+        }
+    }
+}
+
+/** How far the menu button (centred on the table) must move to sit on the centre bar. */
+private fun menuOffset(anchor: Offset?, table: Rect): IntOffset {
+    if (anchor == null || table == Rect.Zero) return IntOffset.Zero
+    return IntOffset((anchor.x - table.center.x).roundToInt(), (anchor.y - table.center.y).roundToInt())
+}
 
 private fun LifeCounterViewModel.actionsFor(id: Int, openKeypad: () -> Unit) = PlayerTileActions(
     adjustLife = { adjust(id, it) },
@@ -619,6 +751,9 @@ private fun ToolBar(items: List<ToolItem>, onPicked: () -> Unit) {
 
 // ---- Table strips ----
 
+/** Room left in the middle of the bar for the menu button that sits over it. */
+private val MenuSlot = 72.dp
+
 @Composable
 private fun TurnStrip(
     showTurns: Boolean,
@@ -631,26 +766,68 @@ private fun TurnStrip(
     onToggleTimer: () -> Unit,
     onNextTurn: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        if (showTurns) {
-            Box(Modifier.size(14.dp).clip(CircleShape).background(currentPlayer?.let { paletteColor(it.colorIndex) } ?: TableColors.Line))
-            TableLabel("Turn $turnNumber · ${currentPlayer?.displayName ?: ""}", 26.sp, maxLines = 1, modifier = Modifier.weight(1f))
-        }
-        if (showTimer) {
-            TableLabel("${formatElapsed(turnSeconds)} / ${formatElapsed(matchSeconds)}", 26.sp, color = TableColors.TextMuted, modifier = if (showTurns) Modifier else Modifier.weight(1f))
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(34.dp).clip(CircleShape).background(TableColors.SurfaceRaised).clickable(onClick = onToggleTimer)
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The bar can be the whole table's length or only as long as one facing pair (ends
+        // seatings), so the strip sheds detail as it gets shorter.
+        val compact = maxWidth < 520.dp
+        val tight = maxWidth < 400.dp
+        val textSize = if (tight) 13.sp else 16.sp
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxSize().padding(horizontal = if (tight) 8.dp else 10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (tight) 4.dp else 6.dp),
+                modifier = Modifier.weight(1f)
             ) {
-                Icon(if (running) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (running) "Pause timer" else "Resume timer", tint = Color.White, modifier = Modifier.size(20.dp))
+                if (showTurns) {
+                    Box(Modifier.size(if (tight) 6.dp else 8.dp).clip(CircleShape).background(currentPlayer?.let { paletteColor(it.colorIndex) } ?: TableColors.Line))
+                    TableLabel(
+                        if (tight) "T$turnNumber · ${currentPlayer?.displayName ?: ""}" else "Turn $turnNumber · ${currentPlayer?.displayName ?: ""}",
+                        textSize,
+                        maxLines = 1
+                    )
+                }
             }
-        }
-        if (showTurns) {
-            PillButton("Next turn", TableColors.Yellow, textColor = Color.Black, onClick = onNextTurn, textSize = 20.sp)
+            androidx.compose.foundation.layout.Spacer(Modifier.width(MenuSlot))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (tight) 4.dp else 6.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                if (showTimer) {
+                    if (tight) {
+                        // No room for a pause button: the turn time itself toggles the timer.
+                        TableLabel(
+                            formatElapsed(turnSeconds),
+                            textSize,
+                            color = if (running) TableColors.TextMuted else TableColors.Yellow,
+                            maxLines = 1,
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onToggleTimer).padding(horizontal = 2.dp)
+                        )
+                    } else {
+                        TableLabel("${formatElapsed(turnSeconds)} / ${formatElapsed(matchSeconds)}", textSize, color = TableColors.TextMuted, maxLines = 1)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(24.dp).clip(CircleShape).background(TableColors.SurfaceRaised).clickable(onClick = onToggleTimer)
+                        ) {
+                            Icon(if (running) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (running) "Pause timer" else "Resume timer", tint = Color.White, modifier = Modifier.size(15.dp))
+                        }
+                    }
+                }
+                if (showTurns) {
+                    PillButton(
+                        if (compact) "Next" else "Next turn",
+                        TableColors.Yellow,
+                        textColor = Color.Black,
+                        onClick = onNextTurn,
+                        textSize = if (tight) 12.sp else 14.sp,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = if (tight) 8.dp else 10.dp, vertical = 3.dp)
+                    )
+                }
+            }
         }
     }
 }

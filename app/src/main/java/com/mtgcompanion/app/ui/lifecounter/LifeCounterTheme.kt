@@ -173,7 +173,8 @@ fun PillButton(
     modifier: Modifier = Modifier,
     textColor: Color = Color.White,
     enabled: Boolean = true,
-    textSize: TextUnit = 24.sp
+    textSize: TextUnit = 24.sp,
+    contentPadding: androidx.compose.foundation.layout.PaddingValues = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 9.dp)
 ) {
     val press = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
@@ -190,7 +191,7 @@ fun PillButton(
                 }
                 onClick()
             }
-            .padding(horizontal = 20.dp, vertical = 9.dp)
+            .padding(contentPadding)
     ) {
         TableLabel(label, textSize, color = textColor, maxLines = 1)
     }

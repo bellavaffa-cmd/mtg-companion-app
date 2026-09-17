@@ -114,3 +114,49 @@ fun Modifier.faceSeat(facing: SeatFacing): Modifier = when (facing) {
         }
     }
 }
+
+/**
+ * A stretch of the table: one full-length [End] seat (the tiles at the short ends in portrait), or a
+ * run of [Pairs] rows whose two seats face each other across the centre bar.
+ */
+sealed interface TableSection {
+    data class End(val cell: SeatCell) : TableSection
+    data class Pairs(val rows: List<TableRow>) : TableSection
+}
+
+/** Groups the layout's rows into end seats and runs of facing pairs, top to bottom (portrait). */
+fun TableLayout.sections(): List<TableSection> {
+    val out = mutableListOf<TableSection>()
+    var run = mutableListOf<TableRow>()
+    rows.forEach { row ->
+        if (row.cells.size >= 2) {
+            run += row
+        } else {
+            if (run.isNotEmpty()) { out += TableSection.Pairs(run); run = mutableListOf() }
+            row.cells.firstOrNull()?.let { out += TableSection.End(it) }
+        }
+    }
+    if (run.isNotEmpty()) out += TableSection.Pairs(run)
+    return out
+}
+
+/**
+ * Where a seat's edge ends up once the phone is turned a quarter turn on the table: [clockwise] is
+ * the phone turned clockwise (display ROTATION_270), otherwise counter-clockwise (ROTATION_90).
+ * Players don't move, so each tile follows its player to the new screen edge.
+ */
+fun SeatFacing.turned(clockwise: Boolean): SeatFacing = if (clockwise) {
+    when (this) {
+        SeatFacing.TOP -> SeatFacing.RIGHT
+        SeatFacing.RIGHT -> SeatFacing.BOTTOM
+        SeatFacing.BOTTOM -> SeatFacing.LEFT
+        SeatFacing.LEFT -> SeatFacing.TOP
+    }
+} else {
+    when (this) {
+        SeatFacing.TOP -> SeatFacing.LEFT
+        SeatFacing.LEFT -> SeatFacing.BOTTOM
+        SeatFacing.BOTTOM -> SeatFacing.RIGHT
+        SeatFacing.RIGHT -> SeatFacing.TOP
+    }
+}
