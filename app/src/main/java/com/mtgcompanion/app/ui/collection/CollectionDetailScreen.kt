@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
@@ -85,7 +86,8 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 fun CollectionDetailScreen(
     viewModel: CollectionDetailViewModel,
     onBack: () -> Unit,
-    onViewDetails: (String) -> Unit
+    onViewDetails: (String) -> Unit,
+    onShare: (() -> Unit)? = null
 ) {
     val collection by viewModel.collection.collectAsState()
     val entries by viewModel.entries.collectAsState()
@@ -122,6 +124,11 @@ fun CollectionDetailScreen(
                 },
                 actions = {
                     SyncIconButton()
+                    if (onShare != null) {
+                        IconButton(onClick = onShare) {
+                            Icon(Icons.Filled.GroupAdd, contentDescription = "Share with friends", tint = TextPrimary)
+                        }
+                    }
                     IconButton(onClick = { confirmDeleteBinder = true }) {
                         Icon(Icons.Filled.Delete, contentDescription = "Delete binder", tint = TextDim)
                     }

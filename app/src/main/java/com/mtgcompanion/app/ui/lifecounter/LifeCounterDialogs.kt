@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.data.social.SocialApi
+import com.mtgcompanion.app.ui.social.QrCode
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -275,6 +277,39 @@ internal fun NumberField(value: String, width: Int, onValueChange: (String) -> U
 @Composable
 internal fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     TableLabel(text, 30.sp, color = TableColors.TextMuted, modifier = modifier.fillMaxWidth().padding(top = 26.dp, bottom = 10.dp))
+}
+
+// ---- A seat's QR code ----
+
+/**
+ * The QR code a player scans with their own phone to sit at [seat] with their profile. Closes by
+ * itself once they've joined (the screen watches the table while it's up).
+ */
+@Composable
+internal fun SeatCodeOverlay(seat: Int, playerName: String, code: String?, error: String?, onDismiss: () -> Unit) {
+    TableOverlay(title = "Seat $seat · $playerName", onClose = onDismiss) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp)
+        ) {
+            when {
+                error != null -> TableLabel(error, 22.sp, color = TableColors.TextMuted, align = TextAlign.Center)
+                code == null -> TableLabel("Opening the table…", 22.sp, color = TableColors.TextMuted)
+                else -> {
+                    Box(Modifier.clip(RoundedCornerShape(20.dp)).background(Color.White).padding(10.dp)) {
+                        QrCode(SocialApi.seatLink(code, seat), 260.dp, "QR code to sit at seat $seat")
+                    }
+                    TableLabel(
+                        "Scan with the MTG Companion app (Friends → Scan QR code) or any phone camera. Waiting for them to join…",
+                        20.sp,
+                        color = TableColors.TextMuted,
+                        align = TextAlign.Center
+                    )
+                }
+            }
+        }
+    }
 }
 
 // ---- Game history ----

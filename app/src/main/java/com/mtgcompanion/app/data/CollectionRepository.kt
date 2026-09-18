@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.data
 
+import com.mtgcompanion.app.data.social.CollectionChange
+import com.mtgcompanion.app.data.social.applyCollectionChanges
+
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -96,6 +99,16 @@ class CollectionRepository(private val context: Context) {
                 entries + entry
             }
         }
+    }
+
+    /**
+     * Moves cards in and out of binders in one change — the user's side of a trade. Answers the
+     * cards there weren't enough copies of to take out (see applyCollectionChanges).
+     */
+    suspend fun applyTrade(changes: List<CollectionChange>): List<CollectionChange> {
+        var short = emptyList<CollectionChange>()
+        update { current -> applyCollectionChanges(current, changes).also { short = it.short }.collections }
+        return short
     }
 
     /** Overwrite all collections — used when restoring/pulling from Drive sync. */

@@ -171,7 +171,8 @@ private val DECK_TABS = listOf("Cards", "Considering", "Stats", "Suggestions", "
 fun DeckDetailScreen(
     viewModel: DeckDetailViewModel,
     onBack: () -> Unit,
-    onViewDetails: (String) -> Unit
+    onViewDetails: (String) -> Unit,
+    onShare: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val deck by viewModel.deck.collectAsState()
@@ -252,6 +253,12 @@ fun DeckDetailScreen(
                             text = { Text("Import decklist", color = TextPrimary) },
                             onClick = { menuOpen = false; showImport = true }
                         )
+                        if (onShare != null) {
+                            DropdownMenuItem(
+                                text = { Text("Share with friends", color = TextPrimary) },
+                                onClick = { menuOpen = false; onShare() }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Export decklist", color = TextPrimary) },
                             onClick = { menuOpen = false; showExport = true }

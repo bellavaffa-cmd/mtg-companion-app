@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.data.social.Match
+import com.mtgcompanion.app.data.social.SocialApi
+import com.mtgcompanion.app.data.social.SocialRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -38,6 +41,9 @@ data class CommanderSource(val opponentId: Int, val slot: Int = 0)
 /** Why a player is out, which also picks which list their defeat message is drawn from. */
 enum class LossReason { LIFE, POISON, COMMANDER_DAMAGE, KILLED }
 
+/** Someone with an account sitting at a seat, having scanned its QR code. */
+data class LinkedPlayer(val userId: String, val username: String, val displayName: String, val avatarPath: String?)
+
 /**
  * [commanderDamage] maps each commander that has hit this player to the damage it has dealt.
  * [colorIndex] indexes into the screen's player color palette — kept as a plain index here rather
@@ -59,7 +65,9 @@ data class PlayerLife(
     val backgroundImageUri: String? = null,
     val name: String? = null,
     val victoryMessage: String? = null,
-    val defeatMessage: String? = null
+    val defeatMessage: String? = null,
+    /** The account sitting here, when someone joined the seat by QR code: its name and picture show on the tile. */
+    val linked: LinkedPlayer? = null
 ) {
     fun counter(kind: PlayerCounter): Int = counters[kind] ?: 0
 
@@ -150,7 +158,8 @@ data class HighRollResult(val rolls: Map<Int, List<Int>>, val winnerId: Int)
 class LifeCounterViewModel(
     private val cardRepository: CardRepository = CardRepository(),
     private val profileRepository: PlayerProfileRepository,
-    private val settingsRepository: LifeCounterSettingsRepository
+    private val settingsRepository: LifeCounterSettingsRepository,
+    private val social: SocialRepository? = null
 ) : ViewModel() {
     private val _settings = MutableStateFlow(LifeCounterSettings())
     val settings: StateFlow<LifeCounterSettings> = _settings.asStateFlow()
@@ -265,7 +274,15 @@ class LifeCounterViewModel(
         val count = TableLayouts.byId(settings.layoutId).playerCount
         val life = settings.startingLifeFor(count)
         val colors = if (settings.shuffleColors) List(PLAYER_COLOR_COUNT) { it }.shuffled() else List(PLAYER_COLOR_COUNT) { it }
-        _players.value = (1..count).map { id -> PlayerLife(id = id, life = life, colorIndex = colors[(id - 1) % colors.size]) }
+        // A restart at the same table keeps who's sitting where; a different number of seats is a new table.
+        val before = _players.value
+        val sameTable = _match.value != null && before.size == count
+        if (!sameTable) endMatch()
+        _players.value = (1..count).map { id ->
+            val fresh = PlayerLife(id = id, life = life, colorIndex = colors[(id - 1) % colors.size])
+            val linked = if (sameTable) before.firstOrNull { it.id == id }?.linked else null
+            if (linked == null) fresh else fresh.copy(linked = linked, name = linked.displayName, backgroundImageUri = SocialApi.avatarUrl(linked.avatarPath))
+        }
         _gameNumber.value += 1
         _currentTurnPlayerId.value = 1
         _turnNumber.value = 1
@@ -641,6 +658,92 @@ class LifeCounterViewModel(
         _gameMode.value = GameModeState()
     }
 
+    // ---- Players joining with their profiles (QR code per seat) ----
+
+    private val _match = MutableStateFlow<Match?>(null)
+    /** The table players join by QR code, once the host has shown one. */
+    val match: StateFlow<Match?> = _match.asStateFlow()
+
+    private val _seatCode = MutableStateFlow<Int?>(null)
+    /** The seat whose QR code is showing. */
+    val seatCode: StateFlow<Int?> = _seatCode.asStateFlow()
+
+    private val _seatError = MutableStateFlow<String?>(null)
+    val seatError: StateFlow<String?> = _seatError.asStateFlow()
+
+    val canLinkSeats: Boolean get() = social?.configured == true
+
+    /** Shows [seat]'s QR code, opening a table on the server first if there isn't one yet. */
+    fun showSeatCode(seat: Int) {
+        val social = social ?: return
+        _seatError.value = null
+        _seatCode.value = seat
+        if (_match.value != null) return
+        if (social.userId == null) {
+            _seatError.value = "Sign in on this device (Settings) to let players join with their profiles."
+            return
+        }
+        viewModelScope.launch {
+            try {
+                _match.value = social.api.startMatch(_players.value.size)
+            } catch (e: Exception) {
+                _seatError.value = e.message ?: "Something went wrong."
+            }
+        }
+    }
+
+    fun closeSeatCode() { _seatCode.value = null }
+
+    /** Frees a seat: the player goes back to a plain seat. */
+    fun unlinkSeat(seat: Int) {
+        applyLink(seat, null)
+        val m = _match.value ?: return
+        val social = social ?: return
+        viewModelScope.launch { runCatching { social.api.clearMatchSeat(m.id, seat) } }
+    }
+
+    /** One look at who sits where; the screen calls this on a timer while it's in front. */
+    suspend fun pollSeats() {
+        val social = social ?: return
+        val m = _match.value ?: return
+        val seats = runCatching { social.api.matchSeats(m.id) }.getOrNull() ?: return
+        if (_match.value?.id != m.id) return
+        for (p in _players.value) {
+            val seated = seats.firstOrNull { it.seat == p.id }?.profile
+            val next = seated?.let { LinkedPlayer(it.userId, it.username, it.displayName, it.avatarPath) }
+            if (next != p.linked) applyLink(p.id, next)
+        }
+        val showing = _seatCode.value
+        if (showing != null && seats.any { it.seat == showing }) _seatCode.value = null
+    }
+
+    /**
+     * Seats [linked] at [seat]: their name, and their picture as the tile's background. A picture the
+     * player chose themselves stays unless the profile brings one; unlinking takes the profile's away.
+     */
+    private fun applyLink(seat: Int, linked: LinkedPlayer?) = updatePlayer(seat) { p ->
+        val oldAvatar = SocialApi.avatarUrl(p.linked?.avatarPath)
+        val ownBackground = p.backgroundImageUri.takeIf { it != oldAvatar }
+        p.copy(
+            linked = linked,
+            name = linked?.displayName ?: if (p.linked != null) null else p.name,
+            backgroundImageUri = SocialApi.avatarUrl(linked?.avatarPath) ?: ownBackground
+        )
+    }
+
+    /** Nobody can join a table the game has moved on from. */
+    private fun endMatch() {
+        val m = _match.value ?: return
+        _match.value = null
+        _seatCode.value = null
+        social?.endMatchInBackground(m.id)
+    }
+
+    override fun onCleared() {
+        endMatch()
+        super.onCleared()
+    }
+
     private fun player(id: Int): PlayerLife? = _players.value.firstOrNull { it.id == id }
 
     private inline fun updatePlayer(id: Int, transform: (PlayerLife) -> PlayerLife) {
@@ -672,10 +775,11 @@ class LifeCounterViewModel(
 
     class Factory(
         private val profileRepository: PlayerProfileRepository,
-        private val settingsRepository: LifeCounterSettingsRepository
+        private val settingsRepository: LifeCounterSettingsRepository,
+        private val social: SocialRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            LifeCounterViewModel(profileRepository = profileRepository, settingsRepository = settingsRepository) as T
+            LifeCounterViewModel(profileRepository = profileRepository, settingsRepository = settingsRepository, social = social) as T
     }
 }

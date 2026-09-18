@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Icon
@@ -91,7 +92,10 @@ fun HomeScreen(
     onOpenLifeCounter: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenDeck: (String) -> Unit,
-    onViewCard: (String) -> Unit
+    onViewCard: (String) -> Unit,
+    onOpenFriends: (() -> Unit)? = null,
+    /** Friend requests and trades waiting on the user. */
+    friendsWaiting: Int = 0
 ) {
     val deckCount by viewModel.deckCount.collectAsState()
     val binderCount by viewModel.binderCount.collectAsState()
@@ -171,7 +175,21 @@ fun HomeScreen(
                 )
             }
             SyncIconButton(filled = true)
-            // Wide layouts reach Settings from the rail or sidebar.
+            // Wide layouts reach Friends and Settings from the rail or sidebar.
+            if (!wide && onOpenFriends != null) {
+                Spacer(Modifier.width(8.dp))
+                Box {
+                    Box(
+                        Modifier.size(42.dp).clip(CircleShape).background(colors.surface).clickable(onClick = onOpenFriends),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Group, contentDescription = if (friendsWaiting > 0) "Friends, $friendsWaiting waiting" else "Friends", tint = colors.textPrimary, modifier = Modifier.size(21.dp))
+                    }
+                    if (friendsWaiting > 0) {
+                        Box(Modifier.align(Alignment.TopEnd).size(11.dp).clip(CircleShape).background(colors.bg).padding(2.dp).clip(CircleShape).background(colors.accent))
+                    }
+                }
+            }
             if (!wide) {
                 Spacer(Modifier.width(8.dp))
                 Box(

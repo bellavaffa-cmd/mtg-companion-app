@@ -2,6 +2,7 @@ package com.mtgcompanion.app
 
 import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
+import com.mtgcompanion.app.data.social.SocialRepository
 import android.app.Application
 import android.os.Build
 import coil.ImageLoader
@@ -40,6 +41,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
     val playerProfileRepository by lazy { PlayerProfileRepository(this) }
     val lifeCounterSettingsRepository by lazy { LifeCounterSettingsRepository(this) }
     val artIndexRepository by lazy { ArtIndexRepository(this) }
+    /** Friends, pods, sharing, trades and life counter seats (Supabase). */
+    val socialRepository by lazy { SocialRepository(supabaseSync.auth) }
 
     override fun onCreate() {
         super.onCreate()

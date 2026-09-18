@@ -106,6 +106,17 @@ import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.DriveImporter
 import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.data.social.ShareKind
+import com.mtgcompanion.app.data.social.SharedSummary
+import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.ui.social.FriendScreen
+import com.mtgcompanion.app.ui.social.FriendsScreen
+import com.mtgcompanion.app.ui.social.QrScanScreen
+import com.mtgcompanion.app.ui.social.ShareDialog
+import com.mtgcompanion.app.ui.social.SharedItemScreen
+import com.mtgcompanion.app.ui.social.SharedSource
+import com.mtgcompanion.app.ui.social.TradeComposerScreen
+import com.mtgcompanion.app.ui.social.TradesScreen
 import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
@@ -160,6 +171,17 @@ private object Routes {
     const val SCAN = "scan"
     const val RULES = "rules"
     const val LIFE_COUNTER = "life_counter"
+    const val FRIENDS = "friends"
+    const val FRIEND = "friend/{userId}"
+    const val TRADES = "trades"
+    const val TRADE_NEW = "trade_new/{userId}"
+    const val SHARED = "shared/{owner}/{kind}/{itemId}"
+    const val SHARED_LINK = "shared_link/{token}"
+    const val QR_SCAN = "qr_scan"
+    fun friend(userId: String) = "friend/$userId"
+    fun tradeNew(userId: String) = "trade_new/$userId"
+    fun shared(owner: String, kind: String, itemId: String) = "shared/$owner/$kind/" + URLEncoder.encode(itemId, StandardCharsets.UTF_8.name())
+    fun sharedLink(token: String) = "shared_link/$token"
     const val DETAIL = "detail/{cardName}"
     const val DECK_DETAIL = "deck/{deckId}"
     const val COLLECTION_DETAIL = "collection/{collectionId}"
@@ -171,7 +193,7 @@ private object Routes {
 // Routes that show the bottom nav bar. Scan is excluded so its camera runs full-screen (it has its
 // own back button); Settings shows the bar so you can jump to another tab from it.
 private val bottomNavRoutes = setOf(
-    Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.RULES
+    Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.RULES, Routes.FRIENDS
 )
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -186,7 +208,8 @@ fun MtgNavGraph(
     offlineCardRepository: OfflineCardRepository,
     playerProfileRepository: PlayerProfileRepository,
     lifeCounterSettingsRepository: LifeCounterSettingsRepository,
-    artIndexRepository: ArtIndexRepository
+    artIndexRepository: ArtIndexRepository,
+    socialRepository: SocialRepository
 ) {
     val navController = rememberNavController()
     val backStackEntry = navController.currentBackStackEntryAsState().value
@@ -227,6 +250,7 @@ fun MtgNavGraph(
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.SETTINGS -> NavDestination.SETTINGS
+                Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED -> NavDestination.FRIENDS
                 else -> null
             }
             val onNavigate: (NavDestination) -> Unit = { target ->
@@ -238,6 +262,7 @@ fun MtgNavGraph(
                     NavDestination.COLLECTION -> navController.navigateToTab(Routes.COLLECTION)
                     NavDestination.LIFE_COUNTER -> navController.navigate(Routes.LIFE_COUNTER)
                     NavDestination.RULES -> navController.navigateToTab(Routes.RULES)
+                    NavDestination.FRIENDS -> navController.navigateToTab(Routes.FRIENDS)
                     NavDestination.SETTINGS -> navController.navigateToTab(Routes.SETTINGS)
                 }
             }
@@ -312,7 +337,9 @@ fun MtgNavGraph(
                     onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) },
                     onOpenSettings = { navController.navigateToTab(Routes.SETTINGS) },
                     onOpenDeck = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
-                    onViewCard = { name -> navController.navigate(Routes.detail(name)) }
+                    onViewCard = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenFriends = if (supabaseSync.auth.configured) ({ navController.navigateToTab(Routes.FRIENDS) }) else null,
+                    friendsWaiting = socialRepository.inbox.collectAsState().value.total
                 )
             }
 
@@ -362,11 +389,25 @@ fun MtgNavGraph(
                 val viewModel: CollectionDetailViewModel = viewModel(
                     factory = CollectionDetailViewModel.Factory(collectionId, collectionRepository, deckRepository, settingsRepository)
                 )
+                var sharing by remember { mutableStateOf(false) }
+                val binder by viewModel.collection.collectAsState()
                 CollectionDetailScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
-                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
+                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
+                    onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null
                 )
+                if (sharing) {
+                    ShareDialog(
+                        social = socialRepository,
+                        sync = supabaseSync,
+                        kind = ShareKind.COLLECTION,
+                        itemId = collectionId,
+                        name = binder?.name ?: "Binder",
+                        onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) },
+                        onClose = { sharing = false }
+                    )
+                }
             }
 
             destination(Routes.DECKS) {
@@ -403,11 +444,25 @@ fun MtgNavGraph(
                 )
                 // Remembered for Home's "continue where you left off" tile.
                 LaunchedEffect(deckId) { settingsRepository.setLastOpenedDeckId(deckId) }
+                var sharing by remember { mutableStateOf(false) }
+                val sharedDeck by viewModel.deck.collectAsState()
                 DeckDetailScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
-                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
+                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
+                    onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null
                 )
+                if (sharing) {
+                    ShareDialog(
+                        social = socialRepository,
+                        sync = supabaseSync,
+                        kind = ShareKind.DECK,
+                        itemId = deckId,
+                        name = sharedDeck?.name ?: "Deck",
+                        onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) },
+                        onClose = { sharing = false }
+                    )
+                }
             }
 
             destination(Routes.SCAN) {
@@ -445,7 +500,7 @@ fun MtgNavGraph(
             }
 
             destination(Routes.LIFE_COUNTER) {
-                val viewModel: LifeCounterViewModel = viewModel(factory = LifeCounterViewModel.Factory(playerProfileRepository, lifeCounterSettingsRepository))
+                val viewModel: LifeCounterViewModel = viewModel(factory = LifeCounterViewModel.Factory(playerProfileRepository, lifeCounterSettingsRepository, socialRepository))
                 LifeCounterScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
 
@@ -457,7 +512,100 @@ fun MtgNavGraph(
                     offlineCardRepository = offlineCardRepository,
                     artIndexRepository = artIndexRepository,
                     settingsRepository = settingsRepository,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) }
+                )
+            }
+
+            val signIn = { navController.navigateToTab(Routes.SETTINGS) }
+            val openShared = { s: SharedSummary -> navController.navigate(Routes.shared(s.owner, s.kind.wire, s.itemId)) }
+
+            destination(Routes.FRIENDS) {
+                FriendsScreen(
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onScanQr = { navController.navigate(Routes.QR_SCAN) },
+                    onOpenFriend = { id -> navController.navigate(Routes.friend(id)) },
+                    onOpenShared = openShared,
+                    onOpenTrades = { navController.navigate(Routes.TRADES) }
+                )
+            }
+
+            destination(Routes.FRIEND, arguments = listOf(navArgument("userId") { type = NavType.StringType })) { entry ->
+                FriendScreen(
+                    social = socialRepository,
+                    friendId = entry.arguments?.getString("userId").orEmpty(),
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onOpenShared = openShared,
+                    onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) }
+                )
+            }
+
+            destination(Routes.TRADES) {
+                TradesScreen(
+                    social = socialRepository,
+                    collectionRepository = collectionRepository,
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onCounter = { id -> navController.navigate(Routes.tradeNew(id)) }
+                )
+            }
+
+            destination(Routes.TRADE_NEW, arguments = listOf(navArgument("userId") { type = NavType.StringType })) { entry ->
+                TradeComposerScreen(
+                    social = socialRepository,
+                    collectionRepository = collectionRepository,
+                    friendId = entry.arguments?.getString("userId").orEmpty(),
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onSent = {
+                        navController.navigate(Routes.TRADES) { popUpTo(Routes.FRIENDS) }
+                    }
+                )
+            }
+
+            destination(
+                Routes.SHARED,
+                arguments = listOf(
+                    navArgument("owner") { type = NavType.StringType },
+                    navArgument("kind") { type = NavType.StringType },
+                    navArgument("itemId") { type = NavType.StringType }
+                )
+            ) { entry ->
+                val args = entry.arguments
+                SharedItemScreen(
+                    social = socialRepository,
+                    deckRepository = deckRepository,
+                    source = SharedSource.FromFriend(
+                        owner = args?.getString("owner").orEmpty(),
+                        kind = ShareKind.of(args?.getString("kind").orEmpty()),
+                        itemId = URLDecoder.decode(args?.getString("itemId").orEmpty(), StandardCharsets.UTF_8.name())
+                    ),
+                    onBack = { navController.popBackStack() },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
+                    onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) }
+                )
+            }
+
+            destination(Routes.SHARED_LINK, arguments = listOf(navArgument("token") { type = NavType.StringType })) { entry ->
+                SharedItemScreen(
+                    social = socialRepository,
+                    deckRepository = deckRepository,
+                    source = SharedSource.FromLink(entry.arguments?.getString("token").orEmpty()),
+                    onBack = { navController.popBackStack() },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
+                    onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) }
+                )
+            }
+
+            destination(Routes.QR_SCAN) {
+                QrScanScreen(
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) { popUpTo(Routes.QR_SCAN) { inclusive = true } } }
                 )
             }
         }
@@ -688,7 +836,7 @@ private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean
  * that tab brought Settings back rather than the tab (only restarting the app got out of it).
  */
 private val tabRoutes = setOf(
-    Routes.HOME, Routes.SEARCH, Routes.SCAN, Routes.DECKS, Routes.COLLECTION, Routes.RULES, Routes.SETTINGS
+    Routes.HOME, Routes.SEARCH, Routes.SCAN, Routes.DECKS, Routes.COLLECTION, Routes.RULES, Routes.FRIENDS, Routes.SETTINGS
 )
 
 private fun NavHostController.navigateToTab(route: String) {

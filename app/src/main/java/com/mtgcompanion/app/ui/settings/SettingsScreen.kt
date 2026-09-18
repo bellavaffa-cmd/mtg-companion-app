@@ -40,6 +40,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.GridView
@@ -109,7 +112,8 @@ fun SettingsScreen(
     offlineCardRepository: OfflineCardRepository,
     artIndexRepository: ArtIndexRepository,
     settingsRepository: SettingsRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenFriends: (() -> Unit)? = null
 ) {
     Scaffold(
         containerColor = Bg,
@@ -136,6 +140,13 @@ fun SettingsScreen(
         ) {
             SettingsCategory("Account & sync") {
                 AccountSyncSection(supabaseSync)
+                if (onOpenFriends != null && supabaseSync.auth.configured) {
+                    OutlinedButton(onClick = onOpenFriends, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Icon(Icons.Filled.Group, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Friends, sharing and trades", color = TextPrimary)
+                    }
+                }
                 DriveImportSection(driveImporter, supabaseSync)
             }
 

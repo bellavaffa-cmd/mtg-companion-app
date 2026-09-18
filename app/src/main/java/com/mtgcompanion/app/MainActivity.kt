@@ -61,7 +61,8 @@ class MainActivity : ComponentActivity() {
                         offlineCardRepository = app.offlineCardRepository,
                         playerProfileRepository = app.playerProfileRepository,
                         lifeCounterSettingsRepository = app.lifeCounterSettingsRepository,
-                        artIndexRepository = app.artIndexRepository
+                        artIndexRepository = app.artIndexRepository,
+                        socialRepository = app.socialRepository
                     )
                 }
             }
@@ -98,6 +99,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         (application as MtgCompanionApplication).supabaseSync.onAppResumed()
+        // Friend requests or trades may have come in meanwhile: the badge checks.
+        (application as MtgCompanionApplication).socialRepository.refreshInboxInBackground()
     }
 
     override fun onPause() {

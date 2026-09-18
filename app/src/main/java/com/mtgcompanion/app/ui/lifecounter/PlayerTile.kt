@@ -127,7 +127,11 @@ class PlayerTileActions(
     val setDefeatMessage: (String) -> Unit,
     val setBackgroundImage: (String?) -> Unit,
     val saveProfile: () -> Unit,
-    val loadProfile: (PlayerProfile) -> Unit
+    val loadProfile: (PlayerProfile) -> Unit,
+    /** Shows this seat's QR code, for a player to join with their profile; null when accounts aren't set up. */
+    val linkSeat: (() -> Unit)? = null,
+    /** Frees the seat from the profile sitting there. */
+    val unlinkSeat: () -> Unit = {}
 )
 
 /**
@@ -756,8 +760,20 @@ private fun OptionsCard(player: PlayerLife, autoKill: Boolean, actions: PlayerTi
             )
         }
 
-        CardSection("Name")
-        CardTextField(value = name, placeholder = "Player ${player.id}") { name = it; actions.setName(it) }
+        val linked = player.linked
+        if (linked != null) {
+            CardSection("Playing")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${linked.displayName} · @${linked.username}", style = tableText(18.sp, Color.White), maxLines = 1, modifier = Modifier.weight(1f))
+                OptionTile("Free seat", TableColors.SurfaceRaised, Color.White, onClick = actions.unlinkSeat)
+            }
+        } else {
+            CardSection("Name")
+            CardTextField(value = name, placeholder = "Player ${player.id}") { name = it; actions.setName(it) }
+            actions.linkSeat?.let { link ->
+                OptionTile("Join with a profile (QR code)", TableColors.Yellow, Color.Black, onClick = link, modifier = Modifier.fillMaxWidth())
+            }
+        }
 
         CardSection("Counters")
         PlayerCounter.entries.forEach { kind ->

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Person
@@ -58,7 +59,7 @@ import com.mtgcompanion.app.ui.theme.BebasNumbers
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 
 /** The top-level places the rail and sidebar link to. */
-enum class NavDestination { HOME, SEARCH, SCAN, DECKS, COLLECTION, LIFE_COUNTER, RULES, SETTINGS }
+enum class NavDestination { HOME, SEARCH, SCAN, DECKS, COLLECTION, LIFE_COUNTER, RULES, FRIENDS, SETTINGS }
 
 /** The app mark: a gold rounded square with the numbers face's "M", as on the web app. */
 @Composable
@@ -112,6 +113,7 @@ fun NavRail(selected: NavDestination?, onNavigate: (NavDestination) -> Unit) {
         Spacer(Modifier.height(20.dp))
         RailItem(Icons.Filled.Favorite, "Life", false) { onNavigate(NavDestination.LIFE_COUNTER) }
         RailItem(Icons.Filled.MenuBook, "Rules", selected == NavDestination.RULES) { onNavigate(NavDestination.RULES) }
+        RailItem(Icons.Filled.Group, "Friends", selected == NavDestination.FRIENDS) { onNavigate(NavDestination.FRIENDS) }
         RailItem(Icons.Filled.Settings, "Settings", selected == NavDestination.SETTINGS) { onNavigate(NavDestination.SETTINGS) }
     }
 }
@@ -180,6 +182,7 @@ fun NavSidebar(
             SideItem(Icons.Filled.Collections, "Collection", selected == NavDestination.COLLECTION) { onNavigate(NavDestination.COLLECTION) }
             SideItem(Icons.Filled.Favorite, "Life counter", false) { onNavigate(NavDestination.LIFE_COUNTER) }
             SideItem(Icons.Filled.MenuBook, "Rules", selected == NavDestination.RULES) { onNavigate(NavDestination.RULES) }
+            SideItem(Icons.Filled.Group, "Friends", selected == NavDestination.FRIENDS) { onNavigate(NavDestination.FRIENDS) }
 
             if (recentDecks.isNotEmpty()) {
                 Text(

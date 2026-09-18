@@ -90,6 +90,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -117,6 +120,22 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
     val dayNight by viewModel.dayNight.collectAsState()
     val history by viewModel.history.collectAsState()
     val highRollRequested by viewModel.highRollRequested.collectAsState()
+    val seatCode by viewModel.seatCode.collectAsState()
+    val seatMatch by viewModel.match.collectAsState()
+    val seatError by viewModel.seatError.collectAsState()
+
+    // Once a table is open, keep up with who sits where: often while a seat's code is showing, now
+    // and then otherwise, and never while the app isn't in front.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(seatMatch?.id, seatCode) {
+        if (seatMatch == null) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                viewModel.pollSeats()
+                delay(if (seatCode != null) 2_000 else 20_000)
+            }
+        }
+    }
 
     var menuOpen by remember { mutableStateOf(false) }
     var showDice by remember { mutableStateOf(false) }
@@ -380,6 +399,15 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
         if (showHistory) {
             GameHistoryOverlay(entries = history, players = players, onDismiss = { showHistory = false })
         }
+        seatCode?.let { seat ->
+            SeatCodeOverlay(
+                seat = seat,
+                playerName = players.firstOrNull { it.id == seat }?.displayName ?: "Player $seat",
+                code = seatMatch?.code,
+                error = seatError,
+                onDismiss = viewModel::closeSeatCode
+            )
+        }
         if (showSeating) {
             SeatingOverlay(currentLayoutId = settings.layoutId, onSelect = viewModel::selectLayout, onDismiss = { showSeating = false })
         }
@@ -571,7 +599,9 @@ private fun LifeCounterViewModel.actionsFor(id: Int, openKeypad: () -> Unit) = P
     setDefeatMessage = { setDefeatMessage(id, it) },
     setBackgroundImage = { setBackgroundImage(id, it) },
     saveProfile = { saveProfile(id) },
-    loadProfile = { loadProfile(id, it) }
+    loadProfile = { loadProfile(id, it) },
+    linkSeat = if (canLinkSeats) ({ showSeatCode(id) }) else null,
+    unlinkSeat = { unlinkSeat(id) }
 )
 
 // ---- Defeat & victory messages ----
