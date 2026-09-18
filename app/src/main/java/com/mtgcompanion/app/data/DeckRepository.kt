@@ -269,10 +269,13 @@ class DeckRepository(private val context: Context) {
     }
 
     /** Overwrite the whole deck list — used when restoring/pulling from Drive sync. */
-    suspend fun replaceAll(decks: List<Deck>) {
-        // What's pulled from Drive already carries its own version history; recording a new version
-        // here would log a sync as if the user had edited the deck.
-        update(recordVersions = false) { decks }
+    /**
+     * Writes what a sync pulled, as a change to the decks as they are at that moment — so an edit made
+     * while the sync was running isn't overwritten. Records no version: what's pulled already carries
+     * its own version history, and a new one would log a sync as if the user had edited the deck.
+     */
+    suspend fun applySync(transform: (List<Deck>) -> List<Deck>) {
+        update(recordVersions = false, transform)
     }
 
     private suspend fun updateDeck(deckId: String, transform: (Deck) -> Deck) {

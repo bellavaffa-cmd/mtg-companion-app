@@ -99,8 +99,9 @@ class CollectionRepository(private val context: Context) {
     }
 
     /** Overwrite all collections — used when restoring/pulling from Drive sync. */
-    suspend fun replaceAll(collections: List<Collection>) {
-        update { collections }
+    /** Writes what a sync pulled, as a change to the binders as they are at that moment. */
+    suspend fun applySync(transform: (List<Collection>) -> List<Collection>) {
+        update(transform)
     }
 
     private fun readCollections(prefs: Preferences): List<Collection> {

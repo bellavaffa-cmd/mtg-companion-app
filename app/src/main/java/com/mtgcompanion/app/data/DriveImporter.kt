@@ -93,12 +93,12 @@ class DriveImporter(
         val decks = deckRepository.decksFlow.first()
         val deckIds = decks.map { it.id }.toSet()
         val newDecks = backup.decks.filter { it.id !in deckIds && !skip("deck:${it.id}") }
-        if (newDecks.isNotEmpty()) deckRepository.replaceAll(decks + newDecks)
+        if (newDecks.isNotEmpty()) deckRepository.applySync { current -> current + newDecks.filter { n -> current.none { it.id == n.id } } }
 
         val collections = collectionRepository.collectionsFlow.first()
         val collectionIds = collections.map { it.id }.toSet()
         val newCollections = backup.collections.filter { it.id !in collectionIds && !skip("collection:${it.id}") }
-        if (newCollections.isNotEmpty()) collectionRepository.replaceAll(collections + newCollections)
+        if (newCollections.isNotEmpty()) collectionRepository.applySync { current -> current + newCollections.filter { n -> current.none { it.id == n.id } } }
 
         disconnect()
         DriveImportResult(foundBackup = true, addedDecks = newDecks.size, addedCollections = newCollections.size)
