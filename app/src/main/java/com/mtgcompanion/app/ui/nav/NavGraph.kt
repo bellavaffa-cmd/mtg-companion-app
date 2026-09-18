@@ -17,6 +17,7 @@ import androidx.navigation.NamedNavArgument
 import androidx.navigation.NavGraphBuilder
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.mtgcompanion.app.ui.common.LocalSyncControl
 import com.mtgcompanion.app.ui.common.SyncControl
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -209,7 +210,8 @@ fun MtgNavGraph(
     playerProfileRepository: PlayerProfileRepository,
     lifeCounterSettingsRepository: LifeCounterSettingsRepository,
     artIndexRepository: ArtIndexRepository,
-    socialRepository: SocialRepository
+    socialRepository: SocialRepository,
+    pendingOpen: MutableStateFlow<String?>
 ) {
     val navController = rememberNavController()
     val backStackEntry = navController.currentBackStackEntryAsState().value
@@ -218,6 +220,15 @@ fun MtgNavGraph(
     val layoutSize = currentLayoutSize()
     // Scan's camera and the life counter's table run edge to edge, without the rail or sidebar.
     val showWideNav = layoutSize.isWide && currentRoute != Routes.SCAN && currentRoute != Routes.LIFE_COUNTER
+
+    // A tapped notification: open Friends, or Trades on top of it.
+    val openRequest by pendingOpen.collectAsState()
+    LaunchedEffect(openRequest) {
+        val open = openRequest ?: return@LaunchedEffect
+        pendingOpen.value = null
+        navController.navigateToTab(Routes.FRIENDS)
+        if (open == "trades") navController.navigate(Routes.TRADES) { launchSingleTop = true }
+    }
 
     // Check GitHub for a newer release once on launch; the dialog below shows if one is found.
     val updateState by updateManager.state.collectAsState()

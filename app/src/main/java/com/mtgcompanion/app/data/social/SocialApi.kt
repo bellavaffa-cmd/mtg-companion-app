@@ -148,6 +148,23 @@ class SocialApi(private val auth: SupabaseAuth) {
 
     suspend fun endMatch(matchId: String) { call("end_match", JSONObject().put("p_match", matchId)) }
 
+    // ---- Notifications ----
+
+    /** This device gets the signed-in account's notifications at [token] (its FCM registration token). */
+    suspend fun registerPushToken(token: String) {
+        call("register_push_token", JSONObject().put("p_platform", "fcm").put("p_token", token).put("p_subscription", JSONObject.NULL))
+    }
+
+    suspend fun unregisterPushToken(token: String) { call("unregister_push_token", JSONObject().put("p_token", token)) }
+
+    /** Which kinds of notification the account gets, on every device: friend requests, trades. */
+    suspend fun notificationPrefs(): Pair<Boolean, Boolean> =
+        JSONObject(call("notification_prefs")).let { it.optBoolean("friends", true) to it.optBoolean("trades", true) }
+
+    suspend fun setNotificationPrefs(friends: Boolean, trades: Boolean): Pair<Boolean, Boolean> =
+        JSONObject(call("set_notification_prefs", JSONObject().put("p_friends", friends).put("p_trades", trades)))
+            .let { it.optBoolean("friends", true) to it.optBoolean("trades", true) }
+
     // ---- Trades ----
 
     suspend fun proposeTrade(to: String, want: List<TradeCard>, give: List<TradeCard>, message: String, replyTo: String?): String =

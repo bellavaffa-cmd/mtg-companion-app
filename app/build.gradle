@@ -11,6 +11,24 @@ if (supabasePropertiesFile.exists()) {
     supabaseProperties.load(new FileInputStream(supabasePropertiesFile))
 }
 
+// Firebase (phone notifications). google-services.json from the Firebase console, in the project
+// root or app/; gitignored. Read here into BuildConfig rather than through the google-services
+// plugin, so a build without it (CI, a fresh clone) still works and just has no notifications.
+def firebaseJsonFile = [rootProject.file('google-services.json'), file('google-services.json')].find { it.exists() }
+def firebaseConfig = [appId: '', apiKey: '', projectId: '', senderId: '']
+if (firebaseJsonFile != null) {
+    def json = new groovy.json.JsonSlurper().parse(firebaseJsonFile)
+    def client = json.client.find { it.client_info.android_client_info.package_name == 'com.mtgcompanion.app' }
+    if (client != null) {
+        firebaseConfig = [
+            appId: client.client_info.mobilesdk_app_id,
+            apiKey: client.api_key[0].current_key,
+            projectId: json.project_info.project_id,
+            senderId: json.project_info.project_number
+        ]
+    }
+}
+
 def keystorePropertiesFile = rootProject.file('keystore.properties')
 def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
@@ -35,6 +53,10 @@ android {
         // onnxruntime's unused 32-bit x86 libs (~38MB) would land back in it.
         buildConfigField 'String', 'SUPABASE_URL', "\"${supabaseProperties.getProperty('supabaseUrl', '')}\""
         buildConfigField 'String', 'SUPABASE_ANON_KEY', "\"${supabaseProperties.getProperty('supabaseAnonKey', '')}\""
+        buildConfigField 'String', 'FIREBASE_APP_ID', "\"${firebaseConfig.appId}\""
+        buildConfigField 'String', 'FIREBASE_API_KEY', "\"${firebaseConfig.apiKey}\""
+        buildConfigField 'String', 'FIREBASE_PROJECT_ID', "\"${firebaseConfig.projectId}\""
+        buildConfigField 'String', 'FIREBASE_SENDER_ID', "\"${firebaseConfig.senderId}\""
 
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
@@ -155,6 +177,8 @@ dependencies {
     // QR codes: reading them (friends, life counter seats, share links) and drawing them.
     implementation 'com.google.mlkit:barcode-scanning:17.3.0'
     implementation 'com.google.zxing:core:3.5.3'
+    // Phone notifications (friend requests, trades) - see data/social/PushNotifications.kt.
+    implementation 'com.google.firebase:firebase-messaging:24.0.3'
 
     // Art-recognition fallback for the scanner: an ImageNet-pretrained MobileNetV2 (downloaded
     // alongside the index, not bundled) run entirely on-device to embed a photographed card's art

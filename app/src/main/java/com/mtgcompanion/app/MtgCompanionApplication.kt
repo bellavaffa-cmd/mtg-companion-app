@@ -2,7 +2,15 @@ package com.mtgcompanion.app
 
 import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
+import com.mtgcompanion.app.data.social.PushNotifications
 import com.mtgcompanion.app.data.social.SocialRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import android.app.Application
 import android.os.Build
 import coil.ImageLoader
@@ -43,6 +51,9 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
     val artIndexRepository by lazy { ArtIndexRepository(this) }
     /** Friends, pods, sharing, trades and life counter seats (Supabase). */
     val socialRepository by lazy { SocialRepository(supabaseSync.auth) }
+    /** The screen a tapped notification asked for ("friends" / "trades"), until the app has opened it. */
+    val pendingOpen = MutableStateFlow<String?>(null)
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
@@ -51,6 +62,16 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         NetworkModule.init(this)
         // Start cloud sync (restores the session and syncs if signed in).
         supabaseSync
+        // Notifications follow the account: a device signed in gets them, a device signed out doesn't.
+        PushNotifications.init(this)
+        appScope.launch {
+            var wasSignedIn = false
+            supabaseSync.auth.account.map { it?.userId }.distinctUntilChanged().collect { userId ->
+                if (userId != null) PushNotifications.syncToken(this@MtgCompanionApplication, socialRepository)
+                else if (wasSignedIn) PushNotifications.onSignedOut()
+                wasSignedIn = userId != null
+            }
+        }
     }
 
     override fun newImageLoader(): ImageLoader =

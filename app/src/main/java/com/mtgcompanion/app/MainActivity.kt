@@ -21,6 +21,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.mtgcompanion.app.data.social.PushNotifications
 import com.mtgcompanion.app.ui.nav.MtgNavGraph
 import com.mtgcompanion.app.ui.theme.MtgCompanionTheme
 
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
         hideSystemBars()
         val app = application as MtgCompanionApplication
         handleAuthLink(intent)
+        handleNotificationTap(intent)
 
         setContent {
             MtgCompanionTheme(settingsRepository = app.settingsRepository) {
@@ -62,7 +64,8 @@ class MainActivity : ComponentActivity() {
                         playerProfileRepository = app.playerProfileRepository,
                         lifeCounterSettingsRepository = app.lifeCounterSettingsRepository,
                         artIndexRepository = app.artIndexRepository,
-                        socialRepository = app.socialRepository
+                        socialRepository = app.socialRepository,
+                        pendingOpen = app.pendingOpen
                     )
                 }
             }
@@ -73,6 +76,14 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleAuthLink(intent)
+        handleNotificationTap(intent)
+    }
+
+    /** A tapped notification opens the screen it's about (the nav graph picks this up). */
+    private fun handleNotificationTap(intent: Intent?) {
+        val open = intent?.getStringExtra(PushNotifications.EXTRA_OPEN) ?: return
+        intent.removeExtra(PushNotifications.EXTRA_OPEN) // not again on a configuration change
+        (application as MtgCompanionApplication).pendingOpen.value = open
     }
 
     /** mtgcompanion://auth-callback#access_token=… from a confirmation email: sign in and say so. */

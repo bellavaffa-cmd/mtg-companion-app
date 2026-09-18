@@ -229,6 +229,8 @@ private fun FriendsContent(
             }
         }
 
+        item { Spacer(Modifier.height(4.dp)); NotificationsSection(social) }
+
         item { SectionHeader(if (overview.sharedWithMe.isEmpty()) "Shared with you" else "Shared with you · ${overview.sharedWithMe.size}") }
         if (overview.sharedWithMe.isEmpty()) {
             item { Notice("Decks and binders friends share with you show up here.") }

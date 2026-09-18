@@ -19,5 +19,8 @@ keystore.properties
 # Supabase project URL + anon key (read into BuildConfig)
 supabase.properties
 
+# Firebase project config for notifications (read into BuildConfig)
+google-services.json
+
 # Supabase CLI local cache
 supabase/.temp/
