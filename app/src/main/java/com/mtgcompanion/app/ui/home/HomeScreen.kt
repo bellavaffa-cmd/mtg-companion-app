@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.home
 
+import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.LocalLayoutSize
 import com.mtgcompanion.app.ui.common.LayoutSize
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -169,8 +170,10 @@ fun HomeScreen(
                     style = if (wide) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineSmall
                 )
             }
+            SyncIconButton(filled = true)
             // Wide layouts reach Settings from the rail or sidebar.
             if (!wide) {
+                Spacer(Modifier.width(8.dp))
                 Box(
                     Modifier.size(42.dp).clip(CircleShape).background(colors.surface).clickable(onClick = onOpenSettings),
                     contentAlignment = Alignment.Center

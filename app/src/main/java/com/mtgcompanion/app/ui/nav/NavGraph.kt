@@ -16,6 +16,9 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NamedNavArgument
 import androidx.navigation.NavGraphBuilder
 import androidx.compose.runtime.CompositionLocalProvider
+import kotlinx.coroutines.flow.MutableSharedFlow
+import com.mtgcompanion.app.ui.common.LocalSyncControl
+import com.mtgcompanion.app.ui.common.SyncControl
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import com.mtgcompanion.app.ui.common.pressScale
@@ -257,11 +260,24 @@ fun MtgNavGraph(
                 NavRail(selected = destination, onNavigate = onNavigate)
             }
         }
+        // The sync button in screen headers asks the pull-to-sync indicator to run.
+        val syncRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+        val syncAccount by supabaseSync.auth.account.collectAsState()
+        val syncState by supabaseSync.status.collectAsState()
+        val syncControl = if (!supabaseSync.auth.configured) null else SyncControl(
+            signedIn = syncAccount != null,
+            syncing = syncState.syncing,
+            failed = syncState.failed,
+            onSync = { syncRequests.tryEmit(Unit) },
+            onSignIn = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } }
+        )
+        CompositionLocalProvider(LocalSyncControl provides syncControl) {
         // Pull down at the top of a library screen to sync decks and binders with the account.
         PullToSyncBox(
             enabled = supabaseSync.auth.configured && currentRoute in pullToSyncRoutes,
             onSync = { pullToSync(supabaseSync) },
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            requests = syncRequests
         ) {
         SharedTransitionLayout(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalSharedTransitionScope provides this) {
@@ -444,6 +460,7 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() }
                 )
             }
+        }
         }
         }
         }

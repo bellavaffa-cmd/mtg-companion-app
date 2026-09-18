@@ -60,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -87,6 +88,8 @@ fun PullToSyncBox(
     enabled: Boolean,
     onSync: suspend () -> SyncPullResult,
     modifier: Modifier = Modifier,
+    /** Syncs asked for elsewhere (the sync button): same indicator, without the pull. */
+    requests: Flow<Unit>? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val state = rememberPullToRefreshState()
@@ -101,15 +104,10 @@ fun PullToSyncBox(
             .collect { armed -> if (armed && phase == SyncPhase.Idle) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
     }
 
-    Box(
-        modifier.pullToRefresh(
-            isRefreshing = phase != SyncPhase.Idle,
-            state = state,
-            enabled = enabled,
-            onRefresh = {
-                if (phase != SyncPhase.Idle) return@pullToRefresh
-                phase = SyncPhase.Syncing
-                scope.launch {
+    fun start() {
+        if (phase != SyncPhase.Idle) return
+        phase = SyncPhase.Syncing
+        scope.launch {
                     // Whatever happens, the indicator has to come back to rest — otherwise the
                     // spinner sticks and pulling never works again this session.
                     try {
@@ -127,8 +125,17 @@ fun PullToSyncBox(
                     } finally {
                         phase = SyncPhase.Idle
                     }
-                }
-            }
+        }
+    }
+
+    LaunchedEffect(requests) { requests?.collect { start() } }
+
+    Box(
+        modifier.pullToRefresh(
+            isRefreshing = phase != SyncPhase.Idle,
+            state = state,
+            enabled = enabled,
+            onRefresh = { start() }
         )
     ) {
         content()

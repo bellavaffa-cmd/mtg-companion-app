@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.common.SyncIconButton
 import androidx.compose.foundation.layout.widthIn
 import com.mtgcompanion.app.ui.common.LocalLayoutSize
 import com.mtgcompanion.app.ui.common.LayoutSize
@@ -126,6 +127,8 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrow
             Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 18.dp, bottom = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.riseIn(0)) {
                     Text("Decks", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                    SyncIconButton(filled = true)
+                    Spacer(Modifier.width(8.dp))
                     Box(
                         Modifier.size(42.dp).clip(CircleShape).background(app.surface).clickable(onClick = onBrowsePrecons),
                         contentAlignment = Alignment.Center

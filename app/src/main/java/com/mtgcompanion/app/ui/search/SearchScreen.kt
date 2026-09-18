@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.search
 
+import com.mtgcompanion.app.ui.common.SyncIconButton
 import androidx.compose.foundation.layout.fillMaxHeight
 import com.mtgcompanion.app.ui.common.readableWidth
 import androidx.compose.ui.unit.sp
@@ -114,6 +115,7 @@ fun SearchScreen(
                                 Text("Clear all", color = TextMuted, style = MaterialTheme.typography.labelLarge)
                             }
                         }
+                        SyncIconButton()
                         // Rules left the bottom bar to make room for the raised Scan button; it lives here now.
                         IconButton(onClick = onOpenRules) {
                             Icon(Icons.Filled.MenuBook, contentDescription = "Rules and glossary", tint = TextPrimary)

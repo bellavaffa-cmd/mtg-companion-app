@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
 import com.mtgcompanion.app.ui.common.adaptiveGridColumns
@@ -120,6 +121,7 @@ fun CollectionDetailScreen(
                     }
                 },
                 actions = {
+                    SyncIconButton()
                     IconButton(onClick = { confirmDeleteBinder = true }) {
                         Icon(Icons.Filled.Delete, contentDescription = "Delete binder", tint = TextDim)
                     }
