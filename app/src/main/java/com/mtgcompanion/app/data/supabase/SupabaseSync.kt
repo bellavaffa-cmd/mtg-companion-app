@@ -379,6 +379,9 @@ class SupabaseSync(
                 return true
             }
 
+            // Once a row can't be read, the cursor stays behind it — later rows are read again next
+            // time, which changes nothing — so an update that can read it still gets to see it.
+            var stuck = false
             (again + rows).forEach { row ->
                 val taken = if (row.kind == "deck") {
                     takeRow(row, deckAdapter, deckChanges, { mine ->
@@ -389,8 +392,11 @@ class SupabaseSync(
                         ItemMerge.mergeCollections(b, m, t, minePreferred = p)
                     }
                 }
-                // An unreadable row keeps the cursor behind it; a re-fetched one is older than the cursor.
-                if (taken && row.key in inPull) cursor = row.serverUpdatedAt
+                if (!taken) stuck = true
+                // A re-fetched row, or one re-read from the overlap, never moves the cursor backwards.
+                if (taken && !stuck && row.key in inPull && (cursor == null || row.serverUpdatedAt > cursor!!)) {
+                    cursor = row.serverUpdatedAt
+                }
             }
             // Record the pulled state before writing it locally, so the change observer sees it as synced.
             state = state.copy(items = items, pending = pending, cursor = cursor, refetch = emptyList())
@@ -475,10 +481,17 @@ class SupabaseSync(
         val key get() = "$kind:$id"
     }
 
-    /** Pages through rows newer than [cursor], oldest first. */
+    /**
+     * Pages through rows newer than [cursor], oldest first — starting [PULL_OVERLAP_SECONDS] earlier.
+     * A row is stamped when it's written but only seen once its push commits, so a slow push can land
+     * behind rows this device already pulled past. Reading a row again is harmless: one this device
+     * already has counts as agreed and changes nothing.
+     */
     private suspend fun pull(token: String, cursor: String?): List<RemoteRow> = withContext(Dispatchers.IO) {
         val out = mutableListOf<RemoteRow>()
-        var after = cursor
+        var after = cursor?.let {
+            runCatching { java.time.OffsetDateTime.parse(it).minusSeconds(PULL_OVERLAP_SECONDS).toString() }.getOrDefault(it)
+        }
         while (true) {
             val url = (BuildConfig.SUPABASE_URL + "/rest/v1/library_items").toHttpUrl().newBuilder()
                 .addQueryParameter("select", ROW_FIELDS)
@@ -560,6 +573,7 @@ class SupabaseSync(
 }
 
 private const val ROW_FIELDS = "kind,id,data,edited_ms,deleted,server_updated_at"
+private const val PULL_OVERLAP_SECONDS = 60L
 
 /** A data request's access token was refused (HTTP 401). */
 private class UnauthorizedException(message: String) : Exception(message)
