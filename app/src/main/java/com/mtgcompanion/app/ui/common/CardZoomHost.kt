@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.common
 
+import androidx.compose.runtime.mutableStateMapOf
 import android.view.View
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
@@ -62,7 +63,19 @@ class CardZoomHostState internal constructor(internal val view: View) {
     internal val entries = mutableStateListOf<ZoomEntry>()
 
     /** The thumbnail currently standing in for a flying card, so it isn't drawn twice. */
-    internal var hiddenKey by mutableStateOf<String?>(null)
+    private val hiddenKeys = mutableStateMapOf<String, Int>()
+
+    /** Hides [key]'s thumbnail while a card is flying to or from it; call [release] when it lands. */
+    internal fun hide(key: String) {
+        hiddenKeys[key] = (hiddenKeys[key] ?: 0) + 1
+    }
+
+    internal fun release(key: String) {
+        val count = (hiddenKeys[key] ?: return) - 1
+        if (count <= 0) hiddenKeys.remove(key) else hiddenKeys[key] = count
+    }
+
+    internal fun isHidden(key: String): Boolean = (hiddenKeys[key] ?: 0) > 0
 
     internal var origin = Offset.Zero
     internal var size = IntSize.Zero
@@ -138,5 +151,5 @@ fun Modifier.zoomSource(key: String?): Modifier {
     DisposableEffect(host, key) { onDispose { host.forget(key, token) } }
     return this
         .onGloballyPositioned { host.report(key, token, Rect(it.positionInWindow(), it.size.toSize())) }
-        .graphicsLayer { alpha = if (host.hiddenKey == key) 0f else 1f }
+        .graphicsLayer { alpha = if (host.isHidden(key)) 0f else 1f }
 }

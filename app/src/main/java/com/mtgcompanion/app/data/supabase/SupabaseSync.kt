@@ -283,6 +283,10 @@ class SupabaseSync(
                 // This device has diverged if its copy differs from the version both sides last
                 // agreed on — which stays true even when a push was skipped as stale server-side.
                 val diverged = mineJson != null && baseJson != null && mineJson != baseJson
+                // First sync on this device, and the same deck is already in the cloud (both copies
+                // came from somewhere else, like the old Drive sync). With no agreed version to compare
+                // against, keep every card from both rather than letting the cloud copy replace this one.
+                val firstMeeting = localEdit == 0L && mineJson != null && baseJson == null
                 if (row.kind == "deck") {
                     val index = deckList.indexOfFirst { it.id == row.id }
                     if (row.deleted) {
@@ -297,9 +301,15 @@ class SupabaseSync(
                         val theirJson = deckAdapter.toJson(theirs)
                         val base = baseJson?.let { runCatching { deckAdapter.fromJson(it) }.getOrNull() }
                         // Both devices changed this deck since they last agreed: keep both sets of edits.
-                        if (diverged && base != null && mineJson != theirJson) {
+                        if ((diverged && base != null || firstMeeting) && mineJson != theirJson) {
                             val mine = deckAdapter.fromJson(mineJson!!) ?: return@forEach
-                            val merged = ItemMerge.mergeDecks(base, mine, theirs, minePreferred = (localEdit ?: 0L) > row.editedMs)
+                            // First meeting: an empty base makes every card an addition from both sides,
+                            // and the cloud's name and settings win.
+                            val mergeBase = base ?: mine.copy(
+                                cards = emptyList(), considering = emptyList(), tags = emptyList(),
+                                gameResults = emptyList(), versions = emptyList()
+                            )
+                            val merged = ItemMerge.mergeDecks(mergeBase, mine, theirs, minePreferred = (localEdit ?: 0L) > row.editedMs)
                             val mergedJson = deckAdapter.toJson(merged)
                             if (mergedJson != mineJson) {
                                 if (index >= 0) deckList[index] = merged else deckList.add(merged)
@@ -333,9 +343,10 @@ class SupabaseSync(
                         val theirs = row.data?.let { runCatching { collectionAdapter.fromJson(it) }.getOrNull() } ?: return@forEach
                         val theirJson = collectionAdapter.toJson(theirs)
                         val base = baseJson?.let { runCatching { collectionAdapter.fromJson(it) }.getOrNull() }
-                        if (diverged && base != null && mineJson != theirJson) {
+                        if ((diverged && base != null || firstMeeting) && mineJson != theirJson) {
                             val mine = collectionAdapter.fromJson(mineJson!!) ?: return@forEach
-                            val merged = ItemMerge.mergeCollections(base, mine, theirs, minePreferred = (localEdit ?: 0L) > row.editedMs)
+                            val mergeBase = base ?: mine.copy(entries = emptyList())
+                            val merged = ItemMerge.mergeCollections(mergeBase, mine, theirs, minePreferred = (localEdit ?: 0L) > row.editedMs)
                             val mergedJson = collectionAdapter.toJson(merged)
                             if (mergedJson != mineJson) {
                                 if (index >= 0) collectionList[index] = merged else collectionList.add(merged)
@@ -392,13 +403,13 @@ class SupabaseSync(
                     }
                     batch.put(item)
                 }
-                try {
+                val written = try {
                     push(token, batch)
                 } catch (e: UnauthorizedException) {
                     token = freshToken()
                     push(token, batch)
                 }
-                pushedCount = pending.size
+                pushedCount = written
                 state = state.copy(items = state.items + pushed, pending = emptyMap())
             }
             state = state.copy(lastSyncedAt = System.currentTimeMillis())
@@ -466,7 +477,8 @@ class SupabaseSync(
         out
     }
 
-    private suspend fun push(token: String, items: JSONArray) = withContext(Dispatchers.IO) {
+    /** Returns how many rows the server wrote — it skips any item older than what it already holds. */
+    private suspend fun push(token: String, items: JSONArray): Int = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(BuildConfig.SUPABASE_URL + "/rest/v1/rpc/push_library_items")
             .header("apikey", BuildConfig.SUPABASE_ANON_KEY)
@@ -477,6 +489,7 @@ class SupabaseSync(
             val text = response.body?.string().orEmpty()
             if (response.code == 401) throw UnauthorizedException(serverError(response.code, text))
             if (!response.isSuccessful) throw IllegalStateException(serverError(response.code, text))
+            text.trim().toIntOrNull() ?: items.length()
         }
     }
 

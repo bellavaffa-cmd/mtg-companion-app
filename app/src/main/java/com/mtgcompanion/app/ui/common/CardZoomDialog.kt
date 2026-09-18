@@ -243,7 +243,7 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
             flightKey = if (hasThumbnail) key else null
             flightModel = model
             entry.flying = hasThumbnail
-            if (hasThumbnail) host.hiddenKey = key
+            val hidden = if (hasThumbnail && key != null) key.also { host.hide(it) } else null
             try {
                 if (closing) {
                     progress.animateTo(0f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow))
@@ -260,7 +260,7 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                 }
             } finally {
                 entry.flying = false
-                if (host.hiddenKey == key) host.hiddenKey = null
+                hidden?.let { host.release(it) }
             }
             if (closing) {
                 host.finish(entry)
