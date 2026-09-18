@@ -251,7 +251,7 @@ private fun RulingCard(ruling: ScryfallRuling) {
         val meta = listOfNotNull(
             ruling.source?.let { if (it == "wotc") "Wizards of the Coast" else it.replaceFirstChar { c -> c.uppercase() } },
             ruling.publishedAt
-        ).joinToString(" Â· ")
+        ).joinToString(" · ")
         if (meta.isNotBlank()) {
             Text(meta, style = MaterialTheme.typography.labelMedium, color = TextDim, modifier = Modifier.padding(top = 8.dp))
         }

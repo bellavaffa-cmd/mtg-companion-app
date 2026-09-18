@@ -37,11 +37,17 @@ class RulesViewModel(private val repository: CardRepository = CardRepository()) 
     private val _mode = MutableStateFlow(RulesMode.KEYWORDS)
     val mode: StateFlow<RulesMode> = _mode.asStateFlow()
 
-    private val _query = MutableStateFlow("")
-    val query: StateFlow<String> = _query.asStateFlow()
+    // Each tab keeps its own search: a keyword typed on one isn't a card name on the other.
+    private val keywordQuery = MutableStateFlow("")
+    private val rulingsQuery = MutableStateFlow("")
+
+    /** What the search box shows: the current tab's own query. */
+    val query: StateFlow<String> = combine(_mode, keywordQuery, rulingsQuery) { m, k, r ->
+        if (m == RulesMode.RULINGS) r else k
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
     /** Filtered keyword glossary — local and instant. */
-    val keywords: StateFlow<List<Keyword>> = _query
+    val keywords: StateFlow<List<Keyword>> = keywordQuery
         .map { Keywords.search(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Keywords.all)
 
@@ -51,7 +57,7 @@ class RulesViewModel(private val repository: CardRepository = CardRepository()) 
     init {
         // Fetch rulings as the user types a card name (only while on the Rulings tab).
         viewModelScope.launch {
-            combine(_query, _mode) { q, m -> q.trim() to m }
+            combine(rulingsQuery, _mode) { q, m -> q.trim() to m }
                 .debounce(350)
                 .distinctUntilChanged()
                 .collectLatest { (q, m) ->
@@ -65,7 +71,7 @@ class RulesViewModel(private val repository: CardRepository = CardRepository()) 
     }
 
     fun onQueryChange(newQuery: String) {
-        _query.value = newQuery
+        if (_mode.value == RulesMode.RULINGS) rulingsQuery.value = newQuery else keywordQuery.value = newQuery
     }
 
     fun setMode(newMode: RulesMode) {
