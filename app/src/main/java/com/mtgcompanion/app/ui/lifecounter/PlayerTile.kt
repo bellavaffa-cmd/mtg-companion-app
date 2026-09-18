@@ -132,7 +132,9 @@ class PlayerTileActions(
     /** Shows this seat's QR code, for a player to join with their profile; null when accounts aren't set up. */
     val linkSeat: (() -> Unit)? = null,
     /** Frees the seat from the profile sitting there. */
-    val unlinkSeat: () -> Unit = {}
+    val unlinkSeat: () -> Unit = {},
+    /** Opens the Giphy search for this tile's background; null when it isn't available (signed out). */
+    val searchGiphy: (() -> Unit)? = null
 )
 
 /**
@@ -813,6 +815,9 @@ private fun AppearanceCard(player: PlayerLife, profiles: List<PlayerProfile>, ac
             OptionTile("Choose photo", TableColors.SurfaceRaised, Color.White, onClick = {
                 photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             }, modifier = Modifier.weight(1f))
+            actions.searchGiphy?.let { search ->
+                OptionTile("Giphy", TableColors.SurfaceRaised, Color.White, onClick = search, modifier = Modifier.weight(1f))
+            }
             if (player.backgroundImageUri != null) {
                 OptionTile("Clear", TableColors.SurfaceRaised, Color.White, onClick = { actions.setBackgroundImage(null) }, modifier = Modifier.weight(1f))
             }

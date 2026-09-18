@@ -90,6 +90,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import kotlinx.coroutines.delay
+import com.mtgcompanion.app.data.social.Giphy
+import com.mtgcompanion.app.ui.social.GiphyPickerDialog
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -149,6 +151,8 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
     var confirmRestart by remember { mutableStateOf(false) }
     var replayTips by remember { mutableStateOf(false) }
     var keypadPlayerId by remember { mutableStateOf<Int?>(null) }
+    // The player whose background is being picked from Giphy.
+    var giphyPlayerId by remember { mutableStateOf<Int?>(null) }
     var floatingToken by remember { mutableStateOf<TokenKind?>(null) }
     var tokenStart by remember { mutableStateOf<Offset?>(null) }
 
@@ -220,7 +224,7 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                                 defeatMessage = reason?.let { defeatMessageFor(player, it, settings, gameNumber, messageTick) },
                                 victoryMessage = if (player.id == winnerId) victoryMessageFor(player, settings, gameNumber, messageTick) else null,
                                 profiles = profiles,
-                                actions = viewModel.actionsFor(player.id, openKeypad = { keypadPlayerId = player.id }),
+                                actions = viewModel.actionsFor(player.id, openKeypad = { keypadPlayerId = player.id }, searchGiphy = { giphyPlayerId = player.id }),
                                 onTokenTap = { kind ->
                                     tokenStart = seatBounds[player.id]?.center
                                     floatingToken = kind
@@ -398,6 +402,19 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
         }
         if (showHistory) {
             GameHistoryOverlay(entries = history, players = players, onDismiss = { showHistory = false })
+        }
+        giphyPlayerId?.let { id ->
+            viewModel.socialRepository?.let { social ->
+                GiphyPickerDialog(
+                    social = social,
+                    onPicked = { link ->
+                        if (Giphy.id(link) == null) throw IllegalArgumentException("That isn't a Giphy link.")
+                        viewModel.setBackgroundImage(id, Giphy.directUrl(link))
+                        giphyPlayerId = null
+                    },
+                    onDismiss = { giphyPlayerId = null }
+                )
+            }
         }
         seatCode?.let { seat ->
             SeatCodeOverlay(
@@ -583,7 +600,7 @@ private fun menuOffset(anchor: Offset?, table: Rect): IntOffset {
     return IntOffset((anchor.x - table.center.x).roundToInt(), (anchor.y - table.center.y).roundToInt())
 }
 
-private fun LifeCounterViewModel.actionsFor(id: Int, openKeypad: () -> Unit) = PlayerTileActions(
+private fun LifeCounterViewModel.actionsFor(id: Int, openKeypad: () -> Unit, searchGiphy: () -> Unit) = PlayerTileActions(
     adjustLife = { adjust(id, it) },
     openKeypad = openKeypad,
     adjustCommanderDamage = { source, delta -> adjustCommanderDamage(id, source, delta) },
@@ -601,7 +618,8 @@ private fun LifeCounterViewModel.actionsFor(id: Int, openKeypad: () -> Unit) = P
     saveProfile = { saveProfile(id) },
     loadProfile = { loadProfile(id, it) },
     linkSeat = if (canLinkSeats) ({ showSeatCode(id) }) else null,
-    unlinkSeat = { unlinkSeat(id) }
+    unlinkSeat = { unlinkSeat(id) },
+    searchGiphy = if (socialRepository != null) searchGiphy else null
 )
 
 // ---- Defeat & victory messages ----

@@ -2,6 +2,15 @@ package com.mtgcompanion.app.data.social
 
 import java.net.URI
 
+/** One GIF in the picker: [preview] is a small moving version for the grid. */
+data class GiphyGif(val id: String, val title: String, val preview: String, val width: Int, val height: Int) {
+    /** Its page on Giphy, which the rest of the app reads like a pasted link. */
+    val link: String get() = "https://giphy.com/gifs/$id"
+}
+
+/** A page of the picker's results; [next] is where the next page starts, or null at the end. */
+data class GiphyPage(val gifs: List<GiphyGif>, val next: Int?)
+
 /**
  * GIFs from Giphy by link: its page or the GIF itself. No Giphy account or key needed — these are
  * the public files Giphy serves for every GIF. Mirrors the web app's social/giphy.ts.

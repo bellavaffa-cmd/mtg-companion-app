@@ -5,6 +5,7 @@ import com.mtgcompanion.app.data.supabase.JSON_MEDIA
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -105,6 +106,35 @@ class SocialApi(private val auth: SupabaseAuth) {
             if (bytes.size <= MAX_AVATAR_BYTES && bytes.size >= 6 && String(bytes, 0, 3, Charsets.US_ASCII) == "GIF") return@withContext bytes
         }
         throw SocialException("giphy_missing", "Giphy doesn't have that GIF (or it's no longer there).")
+    }
+
+    /** Trending GIFs (blank [query]) or a search, 24 at a time, through the giphy Edge Function (which holds the key). */
+    suspend fun searchGiphy(query: String, offset: Int): GiphyPage = withContext(Dispatchers.IO) {
+        val token = auth.accessToken() ?: throw SocialException("not_signed_in", MESSAGES.getValue("not_signed_in"))
+        val url = (BuildConfig.SUPABASE_URL + "/functions/v1/giphy").toHttpUrl().newBuilder()
+            .addQueryParameter("q", query.trim())
+            .addQueryParameter("offset", offset.toString())
+            .build()
+        val request = Request.Builder().url(url)
+            .header("apikey", BuildConfig.SUPABASE_ANON_KEY)
+            .header("Authorization", "Bearer $token")
+            .get().build()
+        val response = try {
+            auth.http.newCall(request).execute()
+        } catch (e: IOException) {
+            throw SocialException("offline", "You're offline — try again when you're connected.")
+        }
+        response.use {
+            val body = runCatching { JSONObject(it.body?.string().orEmpty()) }.getOrNull() ?: JSONObject()
+            if (!it.isSuccessful) throw SocialException("giphy_search", body.optString("error").ifBlank { "GIF search failed (HTTP ${it.code})." })
+            val gifs = body.optJSONArray("gifs") ?: JSONArray()
+            GiphyPage(
+                gifs = (0 until gifs.length()).map { i ->
+                    gifs.getJSONObject(i).let { g -> GiphyGif(g.getString("id"), g.optString("title"), g.getString("preview"), g.optInt("width", 100), g.optInt("height", 100)) }
+                },
+                next = if (body.isNull("next")) null else body.optInt("next")
+            )
+        }
     }
 
     /** Deletes an old picture; failing just leaves an unused file behind. */

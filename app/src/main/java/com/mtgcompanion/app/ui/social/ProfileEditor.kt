@@ -149,9 +149,15 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
         )
         error?.let { Notice(it, warn = true) }
         if (giphyOpen) {
-            GiphyDialog(
+            GiphyPickerDialog(
                 social = social,
-                onPicked = { gif -> giphyGif = gif; picture = null; removePicture = false; error = null; giphyOpen = false },
+                onPicked = { link ->
+                    giphyGif = social.api.giphyGif(link)
+                    picture = null
+                    removePicture = false
+                    error = null
+                    giphyOpen = false
+                },
                 onDismiss = { giphyOpen = false }
             )
         }
@@ -189,65 +195,6 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
             )
         }
     }
-}
-
-/** Paste a Giphy link; the GIF is fetched (in a size that fits) for the profile picture. */
-@Composable
-private fun GiphyDialog(social: SocialRepository, onPicked: (ByteArray) -> Unit, onDismiss: () -> Unit) {
-    val colors = LocalAppColors.current
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val clipboard = LocalClipboardManager.current
-    var link by remember { mutableStateOf(clipboard.getText()?.text?.takeIf { Giphy.id(it) != null }.orEmpty()) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = colors.surface,
-        title = { Text("GIF from Giphy") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Find a GIF on Giphy, tap Share → Copy link, then paste it here.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textMuted
-                )
-                OutlinedTextField(
-                    value = link,
-                    onValueChange = { link = it; error = null },
-                    placeholder = { Text("https://giphy.com/gifs/…") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
-                    colors = socialFieldColors(),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TextButton(onClick = {
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Giphy.SITE))) }
-                }) { Text("Open Giphy", color = colors.accent) }
-                error?.let { Notice(it, warn = true) }
-                Text("Powered by GIPHY", style = MaterialTheme.typography.labelSmall, color = colors.textDim)
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = !busy && link.isNotBlank(),
-                onClick = {
-                    busy = true
-                    error = null
-                    scope.launch {
-                        try {
-                            onPicked(social.api.giphyGif(link))
-                        } catch (e: Exception) {
-                            error = e.message ?: "Something went wrong."
-                        } finally {
-                            busy = false
-                        }
-                    }
-                }
-            ) { Text(if (busy) "Getting it…" else "Use", color = colors.accent) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = colors.textMuted) } }
-    )
 }
 
 /**

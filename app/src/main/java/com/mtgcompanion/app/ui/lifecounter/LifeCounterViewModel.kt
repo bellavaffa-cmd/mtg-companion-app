@@ -673,6 +673,9 @@ class LifeCounterViewModel(
 
     val canLinkSeats: Boolean get() = social?.configured == true
 
+    /** For the Giphy search (tile backgrounds); signed in only, since it goes through the account. */
+    val socialRepository: SocialRepository? get() = social?.takeIf { it.userId != null }
+
     /** Shows [seat]'s QR code, opening a table on the server first if there isn't one yet. */
     fun showSeatCode(seat: Int) {
         val social = social ?: return
