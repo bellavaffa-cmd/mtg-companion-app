@@ -2,6 +2,7 @@ package com.mtgcompanion.app.ui.collection
 
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Inbox
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.zoomSource
@@ -100,7 +101,8 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 fun CollectionsScreen(
     viewModel: CollectionsViewModel,
     onCollectionClick: (String) -> Unit,
-    onViewDetails: (String) -> Unit
+    onViewDetails: (String) -> Unit,
+    onShareCollection: (() -> Unit)? = null
 ) {
     val collections by viewModel.collections.collectAsState()
     val allCards by viewModel.allCards.collectAsState()
@@ -123,6 +125,11 @@ fun CollectionsScreen(
                 title = { Text("Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 actions = {
                     SyncIconButton()
+                    if (onShareCollection != null) {
+                        IconButton(onClick = onShareCollection) {
+                            Icon(Icons.Filled.GroupAdd, contentDescription = "Share my collection", tint = TextPrimary)
+                        }
+                    }
                     IconButton(onClick = { viewModel.resetImport(); showImport = true }) {
                         Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Import cards from another app", tint = TextPrimary)
                     }

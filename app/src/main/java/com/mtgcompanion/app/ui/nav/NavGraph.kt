@@ -113,7 +113,9 @@ import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.ui.social.FriendScreen
 import com.mtgcompanion.app.ui.social.FriendsScreen
 import com.mtgcompanion.app.ui.social.QrScanScreen
+import com.mtgcompanion.app.ui.social.ShareCollectionDialog
 import com.mtgcompanion.app.ui.social.ShareDialog
+import com.mtgcompanion.app.ui.social.SharedCollectionScreen
 import com.mtgcompanion.app.ui.social.SharedItemScreen
 import com.mtgcompanion.app.ui.social.SharedSource
 import com.mtgcompanion.app.ui.social.TradeComposerScreen
@@ -178,6 +180,8 @@ private object Routes {
     const val TRADE_NEW = "trade_new/{userId}"
     const val SHARED = "shared/{owner}/{kind}/{itemId}"
     const val SHARED_LINK = "shared_link/{token}"
+    const val SHARED_COLLECTION = "shared_collection/{owner}"
+    fun sharedCollection(owner: String) = "shared_collection/$owner"
     const val QR_SCAN = "qr_scan"
     fun friend(userId: String) = "friend/$userId"
     fun tradeNew(userId: String) = "trade_new/$userId"
@@ -261,7 +265,7 @@ fun MtgNavGraph(
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.SETTINGS -> NavDestination.SETTINGS
-                Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED -> NavDestination.FRIENDS
+                Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
                 else -> null
             }
             val onNavigate: (NavDestination) -> Unit = { target ->
@@ -385,11 +389,21 @@ fun MtgNavGraph(
                 val viewModel: CollectionsViewModel = viewModel(
                     factory = CollectionsViewModel.Factory(collectionRepository, deckRepository, settingsRepository)
                 )
+                var sharingAll by remember { mutableStateOf(false) }
                 CollectionsScreen(
                     viewModel = viewModel,
                     onCollectionClick = { id -> navController.navigate(Routes.collectionDetail(id)) },
-                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
+                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
+                    onShareCollection = if (supabaseSync.auth.configured) ({ sharingAll = true }) else null
                 )
+                if (sharingAll) {
+                    ShareCollectionDialog(
+                        social = socialRepository,
+                        sync = supabaseSync,
+                        onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) },
+                        onClose = { sharingAll = false }
+                    )
+                }
             }
 
             destination(
@@ -541,6 +555,7 @@ fun MtgNavGraph(
                     onScanQr = { navController.navigate(Routes.QR_SCAN) },
                     onOpenFriend = { id -> navController.navigate(Routes.friend(id)) },
                     onOpenShared = openShared,
+                    onOpenSharedCollection = { owner -> navController.navigate(Routes.sharedCollection(owner)) },
                     onOpenTrades = { navController.navigate(Routes.TRADES) }
                 )
             }
@@ -548,10 +563,25 @@ fun MtgNavGraph(
             destination(Routes.FRIEND, arguments = listOf(navArgument("userId") { type = NavType.StringType })) { entry ->
                 FriendScreen(
                     social = socialRepository,
+                    sync = supabaseSync,
+                    collectionRepository = collectionRepository,
+                    deckRepository = deckRepository,
                     friendId = entry.arguments?.getString("userId").orEmpty(),
                     onBack = { navController.popBackStack() },
                     onSignIn = signIn,
                     onOpenShared = openShared,
+                    onOpenSharedCollection = { owner -> navController.navigate(Routes.sharedCollection(owner)) },
+                    onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) }
+                )
+            }
+
+            destination(Routes.SHARED_COLLECTION, arguments = listOf(navArgument("owner") { type = NavType.StringType })) { entry ->
+                val owner = entry.arguments?.getString("owner").orEmpty()
+                SharedCollectionScreen(
+                    social = socialRepository,
+                    owner = owner,
+                    onBack = { navController.popBackStack() },
+                    onOpenBinder = { id -> navController.navigate(Routes.shared(owner, ShareKind.COLLECTION.wire, id)) },
                     onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) }
                 )
             }

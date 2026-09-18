@@ -178,6 +178,27 @@ class SocialApi(private val auth: SupabaseAuth) {
         obj(call("set_library_share", JSONObject().put("p_kind", kind.wire).put("p_item_id", itemId).put("p_all_friends", allFriends).put("p_pod_ids", JSONArray(podIds)).put("p_link", link)))
             ?.let(::parseShare)
 
+    /** Shares one deck or binder with one friend, or stops; the share, or null once nothing shares it. */
+    suspend fun setItemFriendShare(kind: ShareKind, itemId: String, friend: String, on: Boolean): Share? =
+        obj(call("set_item_friend_share", JSONObject().put("p_kind", kind.wire).put("p_item_id", itemId).put("p_friend", friend).put("p_on", on)))
+            ?.let(::parseShare)
+
+    /** Shares the whole collection ([ShareKind.COLLECTION]) or all decks with [viewer] — null: all friends — or stops. */
+    suspend fun setShareAll(kind: ShareKind, viewer: String?, on: Boolean) {
+        call("set_share_all", JSONObject().put("p_kind", kind.wire).put("p_viewer", viewer ?: JSONObject.NULL).put("p_on", on))
+    }
+
+    /** Every binder [owner] shares with the user, in full; null when none is. */
+    suspend fun sharedCollection(owner: String): SharedCollection? =
+        obj(call("get_shared_collection", JSONObject().put("p_owner", owner)))?.let { o ->
+            val binders = o.optJSONArray("binders")
+            SharedCollection(
+                owner = parseProfile(o.getJSONObject("owner")),
+                whole = o.optBoolean("whole"),
+                binders = if (binders == null) emptyList() else (0 until binders.length()).map { binders.get(it).toString() }
+            )
+        }
+
     suspend fun sharedItem(owner: String, kind: ShareKind, itemId: String): SharedItem? =
         obj(call("get_shared_item", JSONObject().put("p_owner", owner).put("p_kind", kind.wire).put("p_item_id", itemId)))?.let(::parseSharedItem)
 

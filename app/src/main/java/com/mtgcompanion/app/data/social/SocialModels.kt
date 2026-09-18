@@ -37,10 +37,29 @@ data class SharedSummary(
     val itemId: String,
     val name: String?,
     val cover: String?,
-    val cards: Int
+    val cards: Int,
+    /** Shared as part of the owner's whole collection / all their decks. */
+    val whole: Boolean = false
 )
 
-data class Share(val kind: ShareKind, val itemId: String, val allFriends: Boolean, val podIds: List<String>, val linkToken: String?)
+data class Share(
+    val kind: ShareKind,
+    val itemId: String,
+    val allFriends: Boolean,
+    val podIds: List<String>,
+    val linkToken: String?,
+    /** Friends it's shared with one by one. */
+    val friendIds: List<String> = emptyList()
+)
+
+/**
+ * Every deck or binder of [kind] — a whole collection, or all decks, including ones made later —
+ * shared by [owner] with [viewer] (null: all their friends).
+ */
+data class ShareAll(val owner: String, val kind: ShareKind, val viewer: String?)
+
+/** Every binder a friend shares with the user, for looking through their collection as a whole. */
+data class SharedCollection(val owner: Profile, val whole: Boolean, val binders: List<String>)
 
 /** One line of a trade. [collectionId] is the giver's binder it comes out of. */
 data class TradeCard(
@@ -80,8 +99,18 @@ data class Overview(
     val pods: List<Pod>,
     val sharedWithMe: List<SharedSummary>,
     val myShares: List<Share>,
-    val trades: List<Trade>
+    val trades: List<Trade>,
+    /** Friends sharing their whole collection or all their decks with the user (viewer = the user). */
+    val sharedAllWithMe: List<ShareAll> = emptyList(),
+    /** What the user shares whole (owner = the user). */
+    val myShareAll: List<ShareAll> = emptyList()
 ) {
+    /** Whether the user shares every [kind] with [viewer] (a friend's id; null: all friends). */
+    fun sharesAll(kind: ShareKind, viewer: String?): Boolean = myShareAll.any { it.kind == kind && it.viewer == viewer }
+
+    /** Whether [owner] shares their whole collection with the user. */
+    fun wholeCollectionFrom(owner: String): Boolean = sharedAllWithMe.any { it.owner == owner && it.kind == ShareKind.COLLECTION }
+
     fun person(id: String): Profile? = if (me?.userId == id) me else people[id]
     val acceptedFriends: List<FriendLink> get() = friends.filter { it.accepted }
     fun isFriend(id: String) = friends.any { it.userId == id && it.accepted }
@@ -165,10 +194,16 @@ internal fun parseOverview(o: JSONObject): Overview {
             Pod(it.getString("id"), it.getString("name"), it.getString("owner"), it.optJSONArray("members").strings())
         },
         sharedWithMe = o.optJSONArray("shared_with_me").mapObjects {
-            SharedSummary(it.getString("owner"), ShareKind.of(it.getString("kind")), it.getString("item_id"), it.str("name"), it.str("cover"), it.optInt("cards"))
+            SharedSummary(it.getString("owner"), ShareKind.of(it.getString("kind")), it.getString("item_id"), it.str("name"), it.str("cover"), it.optInt("cards"), it.optBoolean("whole"))
         },
         myShares = o.optJSONArray("my_shares").mapObjects(::parseShare),
-        trades = o.optJSONArray("trades").mapObjects(::parseTrade)
+        trades = o.optJSONArray("trades").mapObjects(::parseTrade),
+        sharedAllWithMe = o.optJSONArray("shared_all_with_me").mapObjects {
+            ShareAll(it.getString("owner"), ShareKind.of(it.getString("kind")), o.optJSONObject("me")?.optString("user_id"))
+        },
+        myShareAll = o.optJSONArray("my_share_all").mapObjects {
+            ShareAll(o.optJSONObject("me")?.optString("user_id").orEmpty(), ShareKind.of(it.getString("kind")), it.str("viewer"))
+        }
     )
 }
 
@@ -177,5 +212,6 @@ internal fun parseShare(o: JSONObject) = Share(
     itemId = o.getString("item_id"),
     allFriends = o.optBoolean("all_friends"),
     podIds = o.optJSONArray("pod_ids").strings(),
-    linkToken = o.str("link_token")
+    linkToken = o.str("link_token"),
+    friendIds = o.optJSONArray("friend_ids").strings()
 )

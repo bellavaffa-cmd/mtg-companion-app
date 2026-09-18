@@ -34,7 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.mtgcompanion.app.data.CollectionRepository
+import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.social.ShareKind
+import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.data.social.SharedSummary
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.ui.common.SectionHeader
@@ -47,10 +50,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun FriendScreen(
     social: SocialRepository,
+    sync: SupabaseSync,
+    collectionRepository: CollectionRepository,
+    deckRepository: DeckRepository,
     friendId: String,
     onBack: () -> Unit,
     onSignIn: () -> Unit,
     onOpenShared: (SharedSummary) -> Unit,
+    onOpenSharedCollection: (String) -> Unit,
     onProposeTrade: (String) -> Unit
 ) {
     val colors = LocalAppColors.current
@@ -77,6 +84,7 @@ fun FriendScreen(
                     }
                     val shared = overview.sharedWithMe.filter { it.owner == friendId }
                     val binders = shared.count { it.kind == ShareKind.COLLECTION }
+                    val wholeCollection = overview.wholeCollectionFrom(friendId)
                     val pods = overview.pods.filter { friendId in it.members }
                     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         item {
@@ -105,7 +113,13 @@ fun FriendScreen(
                         }
                         item { SectionHeader("Shared with you") }
                         if (shared.isEmpty()) item { Notice("${friend.displayName} hasn't shared any decks or binders with you yet.") }
+                        if (wholeCollection || binders > 1) item(key = "whole") {
+                            WholeCollectionRow(friend.displayName, shared.filter { it.kind == ShareKind.COLLECTION }, wholeCollection) { onOpenSharedCollection(friendId) }
+                        }
                         shared.forEach { s -> item(key = "${s.kind}:${s.itemId}") { SharedRow(s, null) { onOpenShared(s) } } }
+                        item(key = "share-with") {
+                            ShareWithFriendSection(social, sync, collectionRepository, deckRepository, overview, friendId, friend.displayName)
+                        }
                         item {
                             LineButton(
                                 "Remove friend",

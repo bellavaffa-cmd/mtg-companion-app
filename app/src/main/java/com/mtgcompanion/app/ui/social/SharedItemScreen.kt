@@ -234,7 +234,7 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
 }
 
 @Composable
-fun ReadOnlyCardRow(name: String, imageUrl: String?, quantity: Int, foil: Int, onClick: () -> Unit) {
+fun ReadOnlyCardRow(name: String, imageUrl: String?, quantity: Int, foil: Int, detail: String? = null, onClick: () -> Unit) {
     val colors = LocalAppColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -248,6 +248,7 @@ fun ReadOnlyCardRow(name: String, imageUrl: String?, quantity: Int, foil: Int, o
                 Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = colors.accent, modifier = Modifier.size(14.dp))
                 Text("$foil foil", style = MaterialTheme.typography.labelMedium, color = colors.accent)
             }
+            if (detail != null) Text(detail, style = MaterialTheme.typography.labelSmall, color = colors.textDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (quantity > 0) Text("$quantity×", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(end = 8.dp))
     }

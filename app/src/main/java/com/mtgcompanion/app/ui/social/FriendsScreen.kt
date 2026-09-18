@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.ui.social
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -88,7 +91,8 @@ fun FriendsScreen(
     onScanQr: () -> Unit,
     onOpenFriend: (String) -> Unit,
     onOpenShared: (SharedSummary) -> Unit,
-    onOpenTrades: () -> Unit
+    onOpenTrades: () -> Unit,
+    onOpenSharedCollection: (String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     Scaffold(
@@ -105,7 +109,7 @@ fun FriendsScreen(
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.readableWidth(680.dp)) {
                 SocialGate(social, onSignIn) { overview ->
-                    FriendsContent(social, overview, onOpenFriend, onOpenShared, onOpenTrades)
+                    FriendsContent(social, overview, onOpenFriend, onOpenShared, onOpenTrades, onOpenSharedCollection)
                 }
             }
         }
@@ -118,7 +122,8 @@ private fun FriendsContent(
     overview: Overview,
     onOpenFriend: (String) -> Unit,
     onOpenShared: (SharedSummary) -> Unit,
-    onOpenTrades: () -> Unit
+    onOpenTrades: () -> Unit,
+    onOpenSharedCollection: (String) -> Unit
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
@@ -233,11 +238,22 @@ private fun FriendsContent(
             }
         }
 
-        item { SectionHeader(if (overview.sharedWithMe.isEmpty()) "Shared with you" else "Shared with you · ${overview.sharedWithMe.size}") }
-        if (overview.sharedWithMe.isEmpty()) {
+        // A friend's whole collection is one row here (it opens all of it); its binders are on their page.
+        val wholeOwners = overview.sharedAllWithMe.filter { it.kind == ShareKind.COLLECTION }.map { it.owner }.distinct()
+        val sharedRows = overview.sharedWithMe.filterNot { it.kind == ShareKind.COLLECTION && it.whole && it.owner in wholeOwners }
+        val sharedCount = wholeOwners.size + sharedRows.size
+        item { SectionHeader(if (sharedCount == 0) "Shared with you" else "Shared with you · $sharedCount") }
+        if (sharedCount == 0) {
             item { Notice("Decks and binders friends share with you show up here.") }
         }
-        overview.sharedWithMe.forEach { s ->
+        wholeOwners.forEach { owner ->
+            item(key = "whole-$owner") {
+                WholeCollectionRow(overview.person(owner)?.displayName ?: "A friend", overview.sharedWithMe.filter { it.owner == owner && it.kind == ShareKind.COLLECTION }, whole = true) {
+                    onOpenSharedCollection(owner)
+                }
+            }
+        }
+        sharedRows.forEach { s ->
             item(key = "sh-${s.owner}-${s.kind}-${s.itemId}") { SharedRow(s, overview.person(s.owner)) { onOpenShared(s) } }
         }
         item { Spacer(Modifier.height(24.dp)) }
@@ -284,6 +300,31 @@ private fun ProfileTab(social: SocialRepository, me: Profile, tabs: @Composable 
         }
         NotificationsSection(social)
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+/** A friend's collection as a whole — every binder they share with the user — opened as one. */
+@Composable
+fun WholeCollectionRow(name: String, binders: List<SharedSummary>, whole: Boolean, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(colors.surface)
+            .border(BorderStroke(1.dp, colors.accentDim), RoundedCornerShape(22.dp)).clickable(onClick = onClick).padding(10.dp)
+    ) {
+        Box(Modifier.size(width = 60.dp, height = 46.dp).clip(RoundedCornerShape(12.dp)).background(colors.surface2), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.CollectionsBookmark, contentDescription = null, tint = colors.accent)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(if (whole) "$name's collection" else "Everything $name shares", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOf(if (whole) "Whole collection" else "All shared binders", "${binders.size} ${if (binders.size == 1) "binder" else "binders"}", "${binders.sumOf { it.cards }} cards").joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textMuted
+            )
+        }
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
     }
 }
 

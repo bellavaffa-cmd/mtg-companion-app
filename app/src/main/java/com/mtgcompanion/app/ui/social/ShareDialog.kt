@@ -111,6 +111,19 @@ fun ShareDialog(
                     }
                 }
                 ShareSwitch("Anyone with the link", "Works without an account — turn it off to stop the link working", linkOn) { link = it }
+                // Friends who see it anyway: everything of this kind is shared with them, or this one by one.
+                val everything = o.myShareAll.filter { it.kind == kind }
+                val alsoWith = (everything.mapNotNull { it.viewer } + current?.friendIds.orEmpty()).distinct().map { o.person(it)?.displayName ?: "a friend" }
+                when {
+                    everything.any { it.viewer == null } -> Text(
+                        "${if (kind == ShareKind.DECK) "All your decks are" else "Your whole collection is"} shared with all your friends, so they see this $what anyway.",
+                        style = MaterialTheme.typography.bodySmall, color = colors.textDim
+                    )
+                    alsoWith.isNotEmpty() -> Text(
+                        "Also shared with ${alsoWith.joinToString()} — change that on their page in Friends.",
+                        style = MaterialTheme.typography.bodySmall, color = colors.textDim
+                    )
+                }
                 if (url != null) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
                         QrCode(url, 160.dp, "QR code for the link to $name")
@@ -152,12 +165,12 @@ fun ShareDialog(
 }
 
 @Composable
-private fun ShareSwitch(label: String, detail: String, on: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ShareSwitch(label: String, detail: String, on: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val colors = LocalAppColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth().clickable { onChange(!on) }.padding(vertical = 8.dp)
+        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!on) }.padding(vertical = 8.dp)
     ) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary)
@@ -166,7 +179,13 @@ private fun ShareSwitch(label: String, detail: String, on: Boolean, onChange: (B
         Switch(
             checked = on,
             onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(checkedTrackColor = colors.accent, checkedThumbColor = colors.onAccent)
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = colors.accent,
+                checkedThumbColor = colors.onAccent,
+                disabledCheckedTrackColor = colors.accent.copy(alpha = 0.45f),
+                disabledCheckedThumbColor = colors.onAccent
+            )
         )
     }
 }
