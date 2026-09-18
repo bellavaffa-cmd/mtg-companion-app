@@ -432,4 +432,11 @@ class SyncCoreTest(private val cas: Boolean) {
         assertEquals(true, belongsElsewhere(CloudSyncState(userId = "v"), null)) // signed out, yet an account's library
         assertEquals(true, belongsElsewhere(CloudSyncState(userId = "(removing)"), "u"))
     }
+
+    @Test
+    fun `kept edits survive being saved and read back`() {
+        val adapter = localMoshi.adapter(Rescue::class.java)
+        val rescue = Rescue("u", 123L, mapOf("deck:d1" to RescueItem("{\"id\":\"d1\"}", "{}"), "deck:d2" to RescueItem(null, null)))
+        assertEquals(rescue, adapter.fromJson(adapter.toJson(rescue)))
+    }
 }
