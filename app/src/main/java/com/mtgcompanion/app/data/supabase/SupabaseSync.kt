@@ -57,8 +57,16 @@ internal data class ItemMeta(
      * the same deck since then, this is what the merge compares them against (see [ItemMerge]).
      * Null for items last synced by an older version, which fall back to newest-edit-wins.
      */
-    val base: String? = null
+    val base: String? = null,
+    /**
+     * The edit time of the version in [base]. A push names it, and the server only lets the push
+     * overwrite that version (push_library_items_v2).
+     */
+    val baseMs: Long? = null
 )
+
+/** One item of a push whose answer hasn't come back: its stamp, and its JSON (null for a deletion). */
+internal data class SentItem(val ms: Long = 0L, val json: String? = null)
 
 /** Per-device sync bookkeeping, stored as one JSON blob. Keys are "deck:<id>" / "collection:<id>". */
 internal data class CloudSyncState(
@@ -73,7 +81,13 @@ internal data class CloudSyncState(
      * Items from a push the server partly skipped (it held a newer edit of some of them). The next
      * pass reads these rows back even if the cursor is past them, and merges where needed.
      */
-    val refetch: List<String> = emptyList()
+    val refetch: List<String> = emptyList(),
+    /**
+     * A push sent whose answer hasn't come back (it may be lost). The next pass reads those rows back
+     * to learn whether it landed — the row carries our stamp, or another device built on it — so our
+     * change is never counted twice.
+     */
+    val sent: Map<String, SentItem> = emptyMap()
 )
 
 /**
@@ -301,18 +315,20 @@ class SupabaseSync(
                 return auth.accessToken() ?: throw SupabaseAuthException("Signed out — sign in again to sync.")
             }
             val rows = try {
-                pull(token, state.cursor)
+                orWithoutCas { pull(token, state.cursor) }
             } catch (e: UnauthorizedException) {
                 token = freshToken()
-                pull(token, state.cursor)
+                orWithoutCas { pull(token, state.cursor) }
             }
-            // Rows a partly skipped push left behind, unless the cursor pull already brought a newer copy.
+            // Rows a skipped push left behind, and those of a push whose answer never came — unless
+            // the cursor pull already brought them.
             val inPull = rows.mapTo(HashSet()) { it.key }
-            val again = if (state.refetch.isEmpty()) emptyList() else try {
-                fetchRows(token, state.refetch)
+            val refetch = (state.refetch + state.sent.keys).distinct()
+            val again = if (refetch.isEmpty()) emptyList() else try {
+                orWithoutCas { fetchRows(token, refetch) }
             } catch (e: UnauthorizedException) {
                 token = freshToken()
-                fetchRows(token, state.refetch)
+                orWithoutCas { fetchRows(token, refetch) }
             }.filter { it.key !in inPull }
 
             val items = state.items.toMutableMap()
@@ -338,22 +354,26 @@ class SupabaseSync(
                     // Deleted elsewhere: it goes, unless this device edited it more recently.
                     if (localEdit != null && localEdit > row.editedMs) return true
                     if (mineJson != null) { changes[row.id] = null; pulledCount++ }
-                    items[key] = ItemMeta(0, row.editedMs, deleted = true)
+                    items[key] = ItemMeta(0, row.editedMs, deleted = true, baseMs = row.editedMs)
                     pending.remove(key)
                     return true
                 }
                 val theirs = row.data?.let { runCatching { adapter.fromJson(it) }.getOrNull() } ?: return false
                 val theirJson = adapter.toJson(theirs)
                 val meta = state.items[key]
+                val sent = state.sent[key]
+                // A push whose answer was lost did land: the row still carries its stamp and content.
+                val sentLanded = sent != null && sent.ms == row.editedMs && sent.json?.hashCode() == theirJson.hashCode()
                 // This device's own write coming back (or a row it already agreed on): stamped with the
                 // edit time it last pushed, and holding what it pushed. That's now the agreed version.
                 // The content check matters: another device merging from the same row can land on the
                 // very same stamp.
-                if (meta != null && !meta.deleted && meta.editedMs == row.editedMs &&
+                if (sentLanded || meta != null && !meta.deleted && meta.editedMs == row.editedMs &&
                     (meta.hash == theirJson.hashCode() || meta.base == theirJson)
                 ) {
-                    items[key] = meta.copy(base = theirJson)
-                    if (mineJson != null && mineJson.hashCode() != meta.hash) {
+                    val ownHash = if (sentLanded) sent!!.json!!.hashCode() else meta!!.hash
+                    items[key] = ItemMeta(ownHash, row.editedMs, base = theirJson, baseMs = row.editedMs)
+                    if (mineJson != null && mineJson.hashCode() != ownHash) {
                         // Edited again since: that edit is simply pushed — nothing from elsewhere to merge.
                         pending[key] = maxOf(pending[key] ?: now, row.editedMs + 1)
                     } else if (mineJson != null) {
@@ -361,7 +381,10 @@ class SupabaseSync(
                     }
                     return true
                 }
-                val baseJson = meta?.base
+                // Another device merged from a push of ours whose answer was lost: it landed, and it's
+                // the version to merge against — merging from the older one would count our change twice.
+                val builtOnOurs = sent != null && row.baseEditedMs != null && row.baseEditedMs == sent.ms
+                val baseJson = if (builtOnOurs) sent!!.json else meta?.base
                 val base = baseJson?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
                 // This device has diverged if its copy differs from the version both sides last
                 // agreed on — which stays true even when a push was skipped as stale server-side.
@@ -371,7 +394,7 @@ class SupabaseSync(
                 // sync). With nothing to compare against, keep every card from both rather than letting
                 // the cloud copy replace this one. Not tied to a pending edit: a first push the server
                 // skipped leaves none.
-                val firstMeeting = mineJson != null && meta == null
+                val firstMeeting = mineJson != null && meta == null && !builtOnOurs
                 // Both devices changed it since they last agreed: keep both sets of edits.
                 if ((diverged || firstMeeting) && mineJson != theirJson) {
                     val mine = adapter.fromJson(mineJson!!) ?: return false
@@ -384,12 +407,12 @@ class SupabaseSync(
                     // as stale, and keep their version as the new base.
                     local[key] = mergedJson
                     pending[key] = maxOf(now, row.editedMs + 1)
-                    items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
+                    items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson, baseMs = row.editedMs)
                     return true
                 }
                 if (localEdit != null && localEdit > row.editedMs) return true // ours is newer; pushed below
                 if (mineJson != theirJson) { changes[row.id] = theirs; pulledCount++ }
-                items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
+                items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson, baseMs = row.editedMs)
                 pending.remove(key)
                 return true
             }
@@ -431,10 +454,12 @@ class SupabaseSync(
                     applyRemoteChanges(current, before, collectionChanges, { it.id }) { b, m, t -> ItemMerge.mergeCollections(b, m, t, minePreferred = true) }
                 }
             }
-            state = state.copy(items = items, pending = pending, cursor = cursor, refetch = emptyList())
+            // Every unanswered push has now been read back (a row it never reached leaves its edit pending).
+            state = state.copy(items = items, pending = pending, cursor = cursor, refetch = emptyList(), sent = emptyMap())
             saveState(state)
 
-            // 3. Push what's still pending. The server skips anything older than what it has.
+            // 3. Push what's still pending. The server only overwrites the version each item was merged
+            //    from (or, before the compare-and-swap migration, anything older than the push).
             if (pending.isNotEmpty()) {
                 val batch = JSONArray()
                 val sent = LinkedHashMap<String, Pair<Long, String?>>()
@@ -443,47 +468,85 @@ class SupabaseSync(
                     val editedMs = if (editedAt == 0L) now else editedAt
                     // A merged item was written into `local` above.
                     val json = local[key]
+                    // The version this was merged from; the server only lets the push overwrite that one.
+                    val base = state.items[key]?.let { it.baseMs ?: it.editedMs }
                     val item = JSONObject().put("kind", kind).put("id", id).put("edited_ms", editedMs)
+                        .put("base_edited_ms", base ?: JSONObject.NULL)
                     if (json == null) item.put("deleted", true)
                     else item.put("deleted", false).put("data", JSONObject(json))
                     sent[key] = editedMs to json
                     batch.put(item)
                 }
-                val written = try {
-                    push(token, batch)
-                } catch (e: UnauthorizedException) {
-                    token = freshToken()
-                    push(token, batch)
+                // Note what's being sent first: if the answer is lost, the next pass can still tell
+                // whether it landed.
+                saveState(state.copy(sent = sent.mapValues { (_, v) -> SentItem(v.first, v.second) }))
+                val wrote: Set<String>? = if (casServer == false) null else try {
+                    try {
+                        pushV2(token, batch)
+                    } catch (e: UnauthorizedException) {
+                        token = freshToken()
+                        pushV2(token, batch)
+                    }.also { casServer = true }
+                } catch (e: CasUnavailableException) {
+                    casServer = false // no migration yet: push the old way
+                    null
                 }
-                pushedCount = written
-                // Which items landed. Usually all of them; if the server skipped some (it held a newer
-                // edit), read the rows straight back — each one still carrying our stamp is ours. Left to
-                // the next pass, another device could build on one of our writes first, and our change
-                // would count twice.
-                var landed: Set<String> = if (written == batch.length()) sent.keys else emptySet()
-                if (landed.size < sent.size) {
-                    landed = runCatching {
-                        fetchRows(token, sent.keys.toList())
-                            .filter { row -> sent[row.key]?.first == row.editedMs }
-                            .mapTo(HashSet()) { it.key }
-                    }.getOrDefault(emptySet()) // couldn't check: all read back next pass
+                if (wrote != null) {
+                    pushedCount = wrote.size
+                    val landedItems = LinkedHashMap<String, ItemMeta>()
+                    sent.forEach { (key, sentItem) ->
+                        if (key !in wrote) return@forEach
+                        val (editedMs, json) = sentItem
+                        landedItems[key] = if (json == null) ItemMeta(0, editedMs, deleted = true, baseMs = editedMs)
+                        else ItemMeta(json.hashCode(), editedMs, base = json, baseMs = editedMs)
+                    }
+                    // Skipped: the row moved on from the version this was merged from. Keep the edit and
+                    // its time; the next pass reads the row back and merges.
+                    val skipped = pending.filterKeys { it !in wrote }
+                    state = state.copy(
+                        items = state.items + landedItems,
+                        pending = skipped,
+                        refetch = skipped.keys.toList(),
+                        sent = emptyMap()
+                    )
+                } else {
+                    val written = try {
+                        push(token, batch)
+                    } catch (e: UnauthorizedException) {
+                        token = freshToken()
+                        push(token, batch)
+                    }
+                    pushedCount = written
+                    // Which items landed. Usually all of them; if the server skipped some (it held a newer
+                    // edit), read the rows straight back — each one still carrying our stamp is ours. Left to
+                    // the next pass, another device could build on one of our writes first, and our change
+                    // would count twice.
+                    var landed: Set<String> = if (written == batch.length()) sent.keys else emptySet()
+                    if (landed.size < sent.size) {
+                        landed = runCatching {
+                            fetchRows(token, sent.keys.toList())
+                                .filter { row -> sent[row.key]?.first == row.editedMs }
+                                .mapTo(HashSet()) { it.key }
+                        }.getOrDefault(emptySet()) // couldn't check: all read back next pass
+                    }
+                    val pushed = LinkedHashMap<String, ItemMeta>()
+                    sent.forEach { (key, sentItem) ->
+                        val (editedMs, json) = sentItem
+                        // A first push the server skipped (another device already put this item in the
+                        // cloud): still never agreed, so the next pass merges both copies as a first meeting.
+                        if (key !in landed && key !in state.items) return@forEach
+                        pushed[key] = if (json == null) ItemMeta(0, editedMs, deleted = true)
+                        // Written: the pushed version is now what both sides agree on. Skipped: the old base
+                        // stays, and the next pass reads the newer row back and merges.
+                        else ItemMeta(json.hashCode(), editedMs, base = if (key in landed) json else state.items[key]?.base)
+                    }
+                    state = state.copy(
+                        items = state.items + pushed,
+                        pending = emptyMap(),
+                        refetch = sent.keys.filter { it !in landed },
+                        sent = emptyMap()
+                    )
                 }
-                val pushed = LinkedHashMap<String, ItemMeta>()
-                sent.forEach { (key, sentItem) ->
-                    val (editedMs, json) = sentItem
-                    // A first push the server skipped (another device already put this item in the
-                    // cloud): still never agreed, so the next pass merges both copies as a first meeting.
-                    if (key !in landed && key !in state.items) return@forEach
-                    pushed[key] = if (json == null) ItemMeta(0, editedMs, deleted = true)
-                    // Written: the pushed version is now what both sides agree on. Skipped: the old base
-                    // stays, and the next pass reads the newer row back and merges.
-                    else ItemMeta(json.hashCode(), editedMs, base = if (key in landed) json else state.items[key]?.base)
-                }
-                state = state.copy(
-                    items = state.items + pushed,
-                    pending = emptyMap(),
-                    refetch = sent.keys.filter { it !in landed }
-                )
             }
             state = state.copy(lastSyncedAt = System.currentTimeMillis())
             saveState(state)
@@ -509,7 +572,9 @@ class SupabaseSync(
         val data: String?,
         val editedMs: Long,
         val deleted: Boolean,
-        val serverUpdatedAt: String
+        val serverUpdatedAt: String,
+        /** The version the writer merged from (servers with push_library_items_v2 only). */
+        val baseEditedMs: Long? = null
     ) {
         val key get() = "$kind:$id"
     }
@@ -527,7 +592,7 @@ class SupabaseSync(
         }
         while (true) {
             val url = (BuildConfig.SUPABASE_URL + "/rest/v1/library_items").toHttpUrl().newBuilder()
-                .addQueryParameter("select", ROW_FIELDS)
+                .addQueryParameter("select", rowFields())
                 .addQueryParameter("order", "server_updated_at.asc")
                 .addQueryParameter("limit", "500")
                 .apply { if (after != null) addQueryParameter("server_updated_at", "gt.$after") }
@@ -546,7 +611,7 @@ class SupabaseSync(
             val ids = chunk.map { it.substringAfter(':') }.distinct()
                 .joinToString(",") { "\"" + it.replace("\"", "\\\"") + "\"" }
             val url = (BuildConfig.SUPABASE_URL + "/rest/v1/library_items").toHttpUrl().newBuilder()
-                .addQueryParameter("select", ROW_FIELDS)
+                .addQueryParameter("select", rowFields())
                 .addQueryParameter("id", "in.($ids)")
                 .build()
             fetchPage(token, url).filter { it.key in chunk }
@@ -561,6 +626,7 @@ class SupabaseSync(
         val page = auth.http.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (response.code == 401) throw UnauthorizedException(serverError(response.code, text))
+            if (isMissingCas(text)) throw CasUnavailableException()
             if (!response.isSuccessful) throw IllegalStateException(serverError(response.code, text))
             JSONArray(text)
         }
@@ -572,8 +638,54 @@ class SupabaseSync(
                 data = if (o.isNull("data")) null else o.get("data").toString(),
                 editedMs = o.optLong("edited_ms"),
                 deleted = o.optBoolean("deleted"),
-                serverUpdatedAt = o.getString("server_updated_at")
+                serverUpdatedAt = o.getString("server_updated_at"),
+                baseEditedMs = if (o.has("base_edited_ms") && !o.isNull("base_edited_ms")) o.getLong("base_edited_ms") else null
             )
+        }
+    }
+
+    /**
+     * Whether the server has compare-and-swap pushes (supabase/migrations/…_library_sync_cas.sql).
+     * Until it does, sync works as before; learned from the first request that needs it.
+     */
+    @Volatile private var casServer: Boolean? = null
+
+    private fun rowFields() = if (casServer == false) ROW_FIELDS else "$ROW_FIELDS,base_edited_ms"
+
+    /** An unknown column (42703) or function (PGRST202): the migration hasn't been run. */
+    private fun isMissingCas(body: String): Boolean =
+        runCatching { JSONObject(body).optString("code") }.getOrNull() in setOf("42703", "PGRST202")
+
+    /** Runs [call], and once more the old way if the server turns out not to have the migration. */
+    private suspend fun <T> orWithoutCas(call: suspend () -> T): T = try {
+        call()
+    } catch (e: CasUnavailableException) {
+        if (casServer == false) throw IllegalStateException("The sync server couldn't read the request.")
+        casServer = false
+        call()
+    }
+
+    /**
+     * Pushes [items], each overwriting only the version it was merged from (its base_edited_ms).
+     * Returns the keys the server wrote; anything else it skipped.
+     */
+    private suspend fun pushV2(token: String, items: JSONArray): Set<String> = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(BuildConfig.SUPABASE_URL + "/rest/v1/rpc/push_library_items_v2")
+            .header("apikey", BuildConfig.SUPABASE_ANON_KEY)
+            .header("Authorization", "Bearer $token")
+            .post(JSONObject().put("items", items).toString().toRequestBody(JSON_MEDIA))
+            .build()
+        auth.http.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (response.code == 401) throw UnauthorizedException(serverError(response.code, text))
+            if (isMissingCas(text)) throw CasUnavailableException()
+            if (!response.isSuccessful) throw IllegalStateException(serverError(response.code, text))
+            val list = JSONArray(text)
+            (0 until list.length()).mapTo(HashSet()) { i ->
+                val o = list.getJSONObject(i)
+                o.getString("kind") + ":" + o.getString("id")
+            }
         }
     }
 
@@ -607,6 +719,9 @@ class SupabaseSync(
 
 private const val ROW_FIELDS = "kind,id,data,edited_ms,deleted,server_updated_at"
 private const val PULL_OVERLAP_SECONDS = 60L
+
+/** The server doesn't have the compare-and-swap migration yet. */
+private class CasUnavailableException : Exception("The sync server hasn't been updated yet.")
 
 /** A data request's access token was refused (HTTP 401). */
 private class UnauthorizedException(message: String) : Exception(message)
