@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.data.supabase
 
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import android.content.Context
 import androidx.datastore.preferences.core.edit
@@ -234,7 +235,9 @@ class SupabaseSync(
             .collectLatest {
                 if (auth.account.value == null) return@collectLatest
                 delay(2_000) // debounce: collectLatest restarts this if another edit lands first
-                runSync()
+                // Run the pass outside collectLatest: its own library write emits here, and a pass
+                // cancelled halfway through could leave pulled changes recorded but not written.
+                scope.launch { runSync() }
             }
     }
 
@@ -342,17 +345,33 @@ class SupabaseSync(
                 val theirs = row.data?.let { runCatching { adapter.fromJson(it) }.getOrNull() } ?: return false
                 val theirJson = adapter.toJson(theirs)
                 val meta = state.items[key]
-                // A row stamped with the edit time this device last pushed is its own write coming back
-                // (or one it already agreed on): that's now the agreed version, so it can't count twice.
-                val baseJson = if (meta != null && !meta.deleted && meta.editedMs == row.editedMs) theirJson else meta?.base
+                // This device's own write coming back (or a row it already agreed on): stamped with the
+                // edit time it last pushed, and holding what it pushed. That's now the agreed version.
+                // The content check matters: another device merging from the same row can land on the
+                // very same stamp.
+                if (meta != null && !meta.deleted && meta.editedMs == row.editedMs &&
+                    (meta.hash == theirJson.hashCode() || meta.base == theirJson)
+                ) {
+                    items[key] = meta.copy(base = theirJson)
+                    if (mineJson != null && mineJson.hashCode() != meta.hash) {
+                        // Edited again since: that edit is simply pushed — nothing from elsewhere to merge.
+                        pending[key] = maxOf(pending[key] ?: now, row.editedMs + 1)
+                    } else if (mineJson != null) {
+                        pending.remove(key)
+                    }
+                    return true
+                }
+                val baseJson = meta?.base
                 val base = baseJson?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
                 // This device has diverged if its copy differs from the version both sides last
                 // agreed on — which stays true even when a push was skipped as stale server-side.
                 val diverged = mineJson != null && base != null && mineJson != baseJson
-                // First sync on this device, and the same item is already in the cloud (both copies
-                // came from somewhere else, like the old Drive sync). With no agreed version to compare
-                // against, keep every card from both rather than letting the cloud copy replace this one.
-                val firstMeeting = localEdit == 0L && mineJson != null && baseJson == null
+                // This device has the item but has never agreed a version of it with the server — its
+                // first sync, say, with the same deck already in the cloud (both from the old Drive
+                // sync). With nothing to compare against, keep every card from both rather than letting
+                // the cloud copy replace this one. Not tied to a pending edit: a first push the server
+                // skipped leaves none.
+                val firstMeeting = mineJson != null && meta == null
                 // Both devices changed it since they last agreed: keep both sets of edits.
                 if ((diverged || firstMeeting) && mineJson != theirJson) {
                     val mine = adapter.fromJson(mineJson!!) ?: return false
@@ -368,11 +387,7 @@ class SupabaseSync(
                     items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
                     return true
                 }
-                if (localEdit != null && localEdit > row.editedMs) {
-                    // Ours is newer and pushed below; an echo of our own last push still counts as agreed.
-                    if (meta != null && baseJson != meta.base) items[key] = meta.copy(base = baseJson)
-                    return true
-                }
+                if (localEdit != null && localEdit > row.editedMs) return true // ours is newer; pushed below
                 if (mineJson != theirJson) { changes[row.id] = theirs; pulledCount++ }
                 items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson)
                 pending.remove(key)
@@ -398,9 +413,10 @@ class SupabaseSync(
                     cursor = row.serverUpdatedAt
                 }
             }
-            // Record the pulled state before writing it locally, so the change observer sees it as synced.
-            state = state.copy(items = items, pending = pending, cursor = cursor, refetch = emptyList())
-            saveState(state)
+            // Write what was pulled into the library first, then record it as agreed. The other way
+            // round, a pass stopped in between (the app killed, say) leaves it marked agreed but never
+            // written — and the next pass pushes the old copies back over it. This way round, the
+            // worst case is pushing what was just pulled, which changes nothing.
             // Written as changes to the library as it is now, not as it was when this pass started: an
             // item edited meanwhile gets the remote version merged in, and nothing else is touched.
             if (deckChanges.isNotEmpty()) {
@@ -415,6 +431,8 @@ class SupabaseSync(
                     applyRemoteChanges(current, before, collectionChanges, { it.id }) { b, m, t -> ItemMerge.mergeCollections(b, m, t, minePreferred = true) }
                 }
             }
+            state = state.copy(items = items, pending = pending, cursor = cursor, refetch = emptyList())
+            saveState(state)
 
             // 3. Push what's still pending. The server skips anything older than what it has.
             if (pending.isNotEmpty()) {
@@ -438,20 +456,33 @@ class SupabaseSync(
                     push(token, batch)
                 }
                 pushedCount = written
-                // Everything was written: the pushed versions are now what both sides agree on.
-                // Otherwise there's no telling which ones the server skipped, so the old bases stay and
-                // the next pass reads those rows back — its own writes are recognised by their edit
-                // time, and anything newer gets merged.
-                val allWritten = written == batch.length()
-                val pushed = sent.mapValues { (key, sentItem) ->
+                // Which items landed. Usually all of them; if the server skipped some (it held a newer
+                // edit), read the rows straight back — each one still carrying our stamp is ours. Left to
+                // the next pass, another device could build on one of our writes first, and our change
+                // would count twice.
+                var landed: Set<String> = if (written == batch.length()) sent.keys else emptySet()
+                if (landed.size < sent.size) {
+                    landed = runCatching {
+                        fetchRows(token, sent.keys.toList())
+                            .filter { row -> sent[row.key]?.first == row.editedMs }
+                            .mapTo(HashSet()) { it.key }
+                    }.getOrDefault(emptySet()) // couldn't check: all read back next pass
+                }
+                val pushed = LinkedHashMap<String, ItemMeta>()
+                sent.forEach { (key, sentItem) ->
                     val (editedMs, json) = sentItem
-                    if (json == null) ItemMeta(0, editedMs, deleted = true)
-                    else ItemMeta(json.hashCode(), editedMs, base = if (allWritten) json else state.items[key]?.base)
+                    // A first push the server skipped (another device already put this item in the
+                    // cloud): still never agreed, so the next pass merges both copies as a first meeting.
+                    if (key !in landed && key !in state.items) return@forEach
+                    pushed[key] = if (json == null) ItemMeta(0, editedMs, deleted = true)
+                    // Written: the pushed version is now what both sides agree on. Skipped: the old base
+                    // stays, and the next pass reads the newer row back and merges.
+                    else ItemMeta(json.hashCode(), editedMs, base = if (key in landed) json else state.items[key]?.base)
                 }
                 state = state.copy(
                     items = state.items + pushed,
                     pending = emptyMap(),
-                    refetch = if (allWritten) emptyList() else sent.keys.toList()
+                    refetch = sent.keys.filter { it !in landed }
                 )
             }
             state = state.copy(lastSyncedAt = System.currentTimeMillis())
@@ -464,6 +495,8 @@ class SupabaseSync(
         } catch (e: IOException) {
             val message = if (e is SyncServerUnavailableException) e.message else "Offline — will sync when you're back online."
             _status.value = _status.value.copy(syncing = false, message = message, failed = true)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _status.value = _status.value.copy(syncing = false, message = "Sync failed: ${e.message ?: e.javaClass.simpleName}", failed = true)
         }
