@@ -324,7 +324,7 @@ fun MtgNavGraph(
                     viewModel = viewModel,
                     onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
                     onOpenResults = { navController.navigate(Routes.SEARCH_RESULTS) },
-                    onOpenRules = { navController.navigate(Routes.RULES) }
+                    onOpenRules = { navController.navigateToTab(Routes.RULES) }
                 )
             }
 
@@ -695,7 +695,10 @@ private fun NavHostController.navigateToTab(route: String) {
     // The tab you're already in goes back to its first screen (a deck's page -> the deck list),
     // rather than restoring where it was.
     val currentTab = currentBackStack.value.lastOrNull { it.destination.route in tabRoutes }?.destination?.route
-    if (route == currentTab && popBackStack(route, inclusive = false)) return
+    if (route == currentTab) {
+        popBackStack(route, inclusive = false) // nothing to pop when already there
+        return
+    }
     navigate(route) {
         popUpTo(graph.startDestinationId) { saveState = true }
         launchSingleTop = true

@@ -10,7 +10,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -18,6 +17,7 @@ import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -33,16 +33,22 @@ import java.util.concurrent.atomic.AtomicInteger
 internal class SupabaseRealtime(private val auth: SupabaseAuth, private val scope: CoroutineScope) {
 
     private companion object {
+        /** Phoenix drops a connection it hasn't heard from in a while. */
         const val HEARTBEAT_MS = 25_000L
-        /** Sign-in tokens last an hour: rejoin with a fresh one well before that. */
-        const val REJOIN_MS = 45 * 60_000L
+        /**
+         * How often the sign-in is checked. accessToken() renews it in its last minute, and a renewed
+         * one is handed to Realtime right away — otherwise Realtime ends the subscription when the old
+         * one expires.
+         */
+        const val TOKEN_CHECK_MS = 30_000L
         /** Waits before reconnecting after a drop, growing with each failed attempt. */
         val RETRY_MS = longArrayOf(2_000, 5_000, 15_000, 30_000)
     }
 
-    private enum class Outcome { DROPPED, REJOIN, UNAVAILABLE }
+    private enum class Outcome { DROPPED, UNAVAILABLE }
 
-    // No read timeout: the connection sits quiet between changes. WebSocket pings keep it open.
+    // No read timeout: the connection sits quiet between changes. WebSocket pings keep it open, and
+    // notice (and close) one that died without closing.
     private val client = auth.http.newBuilder()
         .readTimeout(0, TimeUnit.SECONDS)
         .pingInterval(HEARTBEAT_MS, TimeUnit.MILLISECONDS)
@@ -57,13 +63,22 @@ internal class SupabaseRealtime(private val auth: SupabaseAuth, private val scop
 
     /**
      * Listens for changes to [userId]'s library rows until [stop], calling [onChange] for each (and
-     * after a reconnect, as changes may have been missed while it was down).
+     * after a reconnect, as changes may have been missed while it was down). Called from both the
+     * main thread and the account watcher, so it's synchronized: never two connections.
      */
+    @Synchronized
     fun start(userId: String, onChange: () -> Unit) {
         if (job?.isActive == true) return
-        job = scope.launch { listen(userId, onChange) }
+        job = scope.launch {
+            try {
+                listen(userId, onChange)
+            } finally {
+                live = false
+            }
+        }
     }
 
+    @Synchronized
     fun stop() {
         job?.cancel()
         job = null
@@ -74,30 +89,30 @@ internal class SupabaseRealtime(private val auth: SupabaseAuth, private val scop
         var attempt = 0
         var everJoined = false
         while (currentCoroutineContext().isActive) {
-            val token = runCatching { auth.accessToken() }.getOrNull() ?: return // signed out
-            val outcome = connection(userId, token, onChange) {
+            val token = try {
+                auth.accessToken() ?: return // signed out: nothing to listen for
+            } catch (e: Exception) {
+                null // offline, or the sign-in server busy: try again shortly
+            }
+            val outcome = if (token == null) Outcome.DROPPED else connection(userId, token, onChange) {
                 attempt = 0
                 if (everJoined) onChange() // back after a drop: catch up on anything missed
                 everJoined = true
             }
             live = false
-            when (outcome) {
-                // Realtime couldn't set up the subscription (the table isn't published for it): stop
-                // trying; the regular checks carry on.
-                Outcome.UNAVAILABLE -> return
-                Outcome.REJOIN -> continue
-                Outcome.DROPPED -> {
-                    delay(RETRY_MS[minOf(attempt, RETRY_MS.size - 1)])
-                    attempt++
-                }
-            }
+            // Realtime can't subscribe to the table (it isn't published for it): stop trying; the
+            // regular checks carry on.
+            if (outcome == Outcome.UNAVAILABLE) return
+            delay(RETRY_MS[minOf(attempt, RETRY_MS.size - 1)])
+            attempt++
         }
     }
 
-    /** One connection: join, then keep it alive until it drops, is refused, or it's time for a fresh token. */
+    /** One connection: join, then keep it alive (and its sign-in fresh) until it drops or is refused. */
     private suspend fun connection(userId: String, token: String, onChange: () -> Unit, onJoined: () -> Unit): Outcome = coroutineScope {
         val topic = "realtime:library-$userId"
         val ref = AtomicInteger(0)
+        val closed = AtomicBoolean(false)
         val done = CompletableDeferred<Outcome>()
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -116,16 +131,20 @@ internal class SupabaseRealtime(private val auth: SupabaseAuth, private val scop
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (closed.get()) return // a late message from a connection being shut down
                 val message = runCatching { JSONObject(text) }.getOrNull() ?: return
                 if (message.optString("topic") != topic) return
-                val status = message.optJSONObject("payload")?.optString("status")
+                val payload = message.optJSONObject("payload")
+                val status = payload?.optString("status")
                 when (message.optString("event")) {
                     "phx_reply" -> when {
                         status == "ok" && !live -> { live = true; onJoined() }
                         status == "error" -> done.complete(Outcome.DROPPED) // refused: retry with a fresh sign-in
                     }
                     "postgres_changes" -> onChange()
-                    "system" -> if (status == "error") done.complete(Outcome.UNAVAILABLE)
+                    "system" -> if (status == "error") {
+                        done.complete(if (payload.optString("extension") == "postgres_changes") Outcome.UNAVAILABLE else Outcome.DROPPED)
+                    }
                     "phx_error", "phx_close" -> done.complete(Outcome.DROPPED)
                 }
             }
@@ -136,17 +155,31 @@ internal class SupabaseRealtime(private val auth: SupabaseAuth, private val scop
         val url = BuildConfig.SUPABASE_URL.trimEnd('/').replaceFirst("http", "ws") +
             "/realtime/v1/websocket?apikey=" + Uri.encode(BuildConfig.SUPABASE_ANON_KEY) + "&vsn=1.0.0"
         val socket = client.newWebSocket(Request.Builder().url(url).build(), listener)
-        // Phoenix drops a channel it hasn't heard from in a while.
         val heartbeat = launch {
             while (isActive) {
                 delay(HEARTBEAT_MS)
                 socket.send(JSONObject().put("topic", "phoenix").put("event", "heartbeat").put("payload", JSONObject()).put("ref", ref.incrementAndGet().toString()).toString())
             }
         }
+        val renewal = launch {
+            var sent = token
+            while (isActive) {
+                delay(TOKEN_CHECK_MS)
+                val fresh = runCatching { auth.accessToken() }.getOrNull() ?: continue
+                if (fresh == sent) continue
+                sent = fresh
+                socket.send(
+                    JSONObject().put("topic", topic).put("event", "access_token").put("ref", ref.incrementAndGet().toString())
+                        .put("payload", JSONObject().put("access_token", fresh)).toString()
+                )
+            }
+        }
         try {
-            withTimeoutOrNull(REJOIN_MS) { done.await() } ?: Outcome.REJOIN
+            done.await()
         } finally {
+            closed.set(true)
             heartbeat.cancel()
+            renewal.cancel()
             socket.cancel()
         }
     }

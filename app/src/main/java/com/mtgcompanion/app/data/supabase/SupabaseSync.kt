@@ -163,6 +163,8 @@ class SupabaseSync(
         private const val LIVE_CHANGE_DELAY_MS = 400L
         /** Returning to the app checks at once, unless a check ran moments ago. */
         private const val RESUME_SYNC_GAP_MS = 5_000L
+        /** Stands in for an account while the library is being removed (see [removeLocalLibrary]). */
+        private const val REMOVING = "(removing)"
     }
 
     private val _status = MutableStateFlow(CloudSyncStatus())
@@ -172,6 +174,13 @@ class SupabaseSync(
         if (auth.configured) {
             scope.launch {
                 auth.restore()
+                // A removal that didn't finish (the app killed partway), or bookkeeping from an account
+                // that's no longer the one signed in: that library isn't this account's — finish
+                // removing it before anything syncs.
+                val stored = loadState()
+                if (stored.userId != null && stored.userId != auth.account.value?.userId) {
+                    mutex.withLock { removeLocalLibrary() }
+                }
                 _status.value = _status.value.copy(lastSyncedAt = loadState().lastSyncedAt)
                 if (auth.account.value != null) runSync()
                 observeLocalChanges()
@@ -204,6 +213,9 @@ class SupabaseSync(
      * make the next sign-in read the empty library as deletions.
      */
     private suspend fun removeLocalLibrary() {
+        // Marked first. If the app is killed partway, the next start finishes the job — and with the
+        // bookkeeping already gone, a half-emptied library can't be read as deletions to push.
+        saveState(CloudSyncState(userId = REMOVING))
         deckRepository.applySync { emptyList() }
         collectionRepository.applySync { emptyList() }
         context.supabaseSyncStore.edit { it.clear() }
@@ -353,7 +365,11 @@ class SupabaseSync(
         if (!quiet) _status.value = _status.value.copy(syncing = true, message = null, failed = false)
         try {
             var state = loadState()
-            // A different account on this device starts from a clean slate (its items get merged in).
+            // Bookkeeping from another account (an email link signed straight into a different one,
+            // say) or an unfinished removal: that library isn't this account's. It goes, rather than
+            // being merged into this account.
+            if (state.userId != null && state.userId != account.userId) removeLocalLibrary()
+            // Never synced on this device: start from a clean slate (what's here gets merged in).
             if (state.userId != account.userId) state = CloudSyncState(userId = account.userId)
 
             val decks = deckRepository.decksFlow.first()
@@ -372,6 +388,14 @@ class SupabaseSync(
 
             // 2. Pull everything newer than the cursor, plus rows to read back by key, and take them in.
             var token = auth.accessToken() ?: throw SupabaseAuthException("Signed out — sign in again to sync.")
+            // Signed out, or into another account, while this pass waited: it must not sync this
+            // library with that sign-in.
+            fun sameAccount() = auth.account.value?.userId == account.userId
+            fun stopHere(): CloudSyncStatus {
+                _status.value = _status.value.copy(syncing = false)
+                return _status.value
+            }
+            if (!sameAccount()) return stopHere()
             // A 401 means this access token was refused (a clock that's off, say): refresh once and retry.
             suspend fun freshToken(): String {
                 auth.invalidateAccessToken()
@@ -390,6 +414,7 @@ class SupabaseSync(
                 token = freshToken()
                 orWithoutCas { fetchRows(token, refetch) }
             }
+            if (!sameAccount()) return stopHere()
             val pulled = core.pull(state, local, rows, again, now)
             // Write what was pulled into the library first, then record it as agreed. The other way
             // round, a pass stopped in between (the app killed, say) leaves it marked agreed but never
@@ -416,7 +441,7 @@ class SupabaseSync(
             //    from (or, before the compare-and-swap migration, anything older than the push).
             var pushedCount = 0
             val batch = core.pushBatch(state, pulled.local, now)
-            if (batch.isNotEmpty()) {
+            if (batch.isNotEmpty() && sameAccount()) {
                 val body = JSONArray().apply { batch.forEach { put(it.toJsonObject()) } }
                 // Note what's being sent first: if the answer is lost, the next pass can still tell
                 // whether it landed.
