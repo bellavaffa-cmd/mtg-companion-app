@@ -49,7 +49,7 @@ class DriveImporter(
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            if (syncState.current().lastSyncedAt > 0) _usedDrive.value = true
+            if (syncState.usedDrive()) _usedDrive.value = true
         }
     }
 

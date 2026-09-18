@@ -246,3 +246,73 @@ internal class SyncCore(
         )
     }
 }
+
+/** One kept edit: this device's copy (null if deleted here) and the version it was based on. */
+internal data class RescueItem(val json: String? = null, val base: String? = null)
+
+/**
+ * Edits that hadn't reached the server when a session ended on its own (the server refused the
+ * sign-in), kept so signing back in to the same account can put them back. Keys are "deck:<id>" /
+ * "collection:<id>".
+ */
+internal data class Rescue(val userId: String = "", val savedAt: Long = 0L, val items: Map<String, RescueItem> = emptyMap())
+
+/**
+ * Whether [state] is bookkeeping for a library [accountUserId] doesn't own — another account's, or a
+ * removal that didn't finish. Such a library is removed, never synced or merged in. A library never
+ * synced (no bookkeeping) is the device's own.
+ */
+internal fun belongsElsewhere(state: CloudSyncState, accountUserId: String?): Boolean =
+    state.userId != null && state.userId != accountUserId
+
+/** The edits in [local] that [state] shows as not yet on the server, or null if there are none. */
+internal fun SyncCore.captureRescue(state: CloudSyncState, local: Map<String, String>, userId: String, now: Long): Rescue? {
+    if (state.userId != userId) return null
+    val pending = notePending(state, local, now).pending
+    if (pending.isEmpty()) return null
+    return Rescue(userId, now, pending.keys.associateWith { RescueItem(local[it], state.items[it]?.base) })
+}
+
+/**
+ * [decks] (the account's, just pulled after signing back in) with [rescue]'s deck edits merged back
+ * in, each against the version it was made from, so changes made on other devices meanwhile are
+ * kept. A deletion made here only goes through if the deck hasn't changed elsewhere since.
+ */
+internal fun rescueDecks(decks: List<Deck>, rescue: Rescue, adapter: JsonAdapter<Deck>): List<Deck> =
+    rescueItems(decks, rescue, "deck", adapter, { it.id }, { mine ->
+        mine.copy(cards = emptyList(), considering = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList())
+    }) { b, m, t -> ItemMerge.mergeDecks(b, m, t, minePreferred = true) }
+
+/** The same, for binders. */
+internal fun rescueCollections(collections: List<Collection>, rescue: Rescue, adapter: JsonAdapter<Collection>): List<Collection> =
+    rescueItems(collections, rescue, "collection", adapter, { it.id }, { mine -> mine.copy(entries = emptyList()) }) { b, m, t ->
+        ItemMerge.mergeCollections(b, m, t, minePreferred = true)
+    }
+
+private fun <T : Any> rescueItems(
+    list: List<T>,
+    rescue: Rescue,
+    kind: String,
+    adapter: JsonAdapter<T>,
+    idOf: (T) -> String,
+    emptyBase: (T) -> T,
+    merge: (base: T, mine: T, theirs: T) -> T
+): List<T> {
+    var out = list
+    rescue.items.forEach { (key, kept) ->
+        val (itemKind, id) = key.split(":", limit = 2)
+        if (itemKind != kind) return@forEach
+        val current = out.firstOrNull { idOf(it) == id }
+        if (kept.json == null) {
+            if (current != null && (kept.base == null || adapter.toJson(current) == kept.base)) out = out.filter { idOf(it) != id }
+            return@forEach
+        }
+        val mine = runCatching { adapter.fromJson(kept.json) }.getOrNull() ?: return@forEach
+        out = if (current == null) out + mine else {
+            val base = kept.base?.let { runCatching { adapter.fromJson(it) }.getOrNull() } ?: emptyBase(mine)
+            val merged = merge(base, mine, current)
+            out.map { if (idOf(it) == id) merged else it }
+        }
+    }
+    return out
+}

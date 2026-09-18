@@ -142,6 +142,9 @@ class SupabaseSync(
     private val mutex = Mutex()
     private val stateKey = stringPreferencesKey("state_json")
     private val stateAdapter: JsonAdapter<CloudSyncState> = localMoshi.adapter(CloudSyncState::class.java)
+    /** Edits kept through an automatic sign-out ([Rescue]); outlives the bookkeeping beside it. */
+    private val rescueKey = stringPreferencesKey("rescue_json")
+    private val rescueAdapter: JsonAdapter<Rescue> = localMoshi.adapter(Rescue::class.java)
     private val deckAdapter: JsonAdapter<Deck> = localMoshi.adapter(Deck::class.java)
     private val collectionAdapter: JsonAdapter<Collection> = localMoshi.adapter(Collection::class.java)
     private val core = SyncCore(deckAdapter, collectionAdapter)
@@ -165,6 +168,8 @@ class SupabaseSync(
         private const val RESUME_SYNC_GAP_MS = 5_000L
         /** Stands in for an account while the library is being removed (see [removeLocalLibrary]). */
         private const val REMOVING = "(removing)"
+        /** Kept edits older than this are dropped rather than put back. */
+        private const val RESCUE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L
     }
 
     private val _status = MutableStateFlow(CloudSyncStatus())
@@ -178,8 +183,8 @@ class SupabaseSync(
                 // that's no longer the one signed in: that library isn't this account's — finish
                 // removing it before anything syncs.
                 val stored = loadState()
-                if (stored.userId != null && stored.userId != auth.account.value?.userId) {
-                    mutex.withLock { removeLocalLibrary() }
+                if (belongsElsewhere(stored, auth.account.value?.userId)) {
+                    mutex.withLock { removeLocalLibrary(keepUnsynced = true) }
                 }
                 _status.value = _status.value.copy(lastSyncedAt = loadState().lastSyncedAt)
                 if (auth.account.value != null) runSync()
@@ -199,7 +204,7 @@ class SupabaseSync(
             // Also on a switch straight to another account, in case the signed-out moment was missed.
             if (signedIn != null && account?.userId != signedIn) {
                 realtime.stop()
-                mutex.withLock { removeLocalLibrary() }
+                mutex.withLock { removeLocalLibrary(keepUnsynced = true) }
             }
             signedIn = account?.userId
             // Signed in while the app is open: start listening for other devices' saves.
@@ -212,14 +217,40 @@ class SupabaseSync(
      * was running finishes first — and whatever it saved is removed with the rest, rather than left to
      * make the next sign-in read the empty library as deletions.
      */
-    private suspend fun removeLocalLibrary() {
+    private suspend fun removeLocalLibrary(keepUnsynced: Boolean) {
+        // The session ended on its own: edits that hadn't synced yet are kept, out of sight, and put
+        // back if the same account signs in again (restoreRescue). Signing out on purpose, after the
+        // warning, keeps nothing.
+        val state = loadState()
+        val owner = state.userId
+        val rescue = if (keepUnsynced && owner != null && owner != REMOVING) {
+            core.captureRescue(state, core.localJson(deckRepository.decksFlow.first(), collectionRepository.collectionsFlow.first()), owner, System.currentTimeMillis())
+        } else null
+        context.supabaseSyncStore.edit { prefs ->
+            if (rescue != null) prefs[rescueKey] = rescueAdapter.toJson(rescue)
+            else if (!keepUnsynced) prefs.remove(rescueKey)
+        }
         // Marked first. If the app is killed partway, the next start finishes the job — and with the
         // bookkeeping already gone, a half-emptied library can't be read as deletions to push.
         saveState(CloudSyncState(userId = REMOVING))
         deckRepository.applySync { emptyList() }
         collectionRepository.applySync { emptyList() }
-        context.supabaseSyncStore.edit { it.clear() }
+        context.supabaseSyncStore.edit { it.remove(stateKey) }
         _status.value = CloudSyncStatus()
+    }
+
+    /**
+     * Signed back in after the session ended on its own: puts back the edits that hadn't synced,
+     * merged with the account's library as the pass just pulled it (the change sends them). Edits kept
+     * for another account, or for over a week, are dropped.
+     */
+    private suspend fun restoreRescue(userId: String) {
+        val raw = context.supabaseSyncStore.data.first()[rescueKey] ?: return
+        context.supabaseSyncStore.edit { it.remove(rescueKey) }
+        val rescue = runCatching { rescueAdapter.fromJson(raw) }.getOrNull() ?: return
+        if (rescue.userId != userId || System.currentTimeMillis() - rescue.savedAt > RESCUE_MAX_AGE_MS) return
+        deckRepository.applySync { current -> rescueDecks(current, rescue, deckAdapter) }
+        collectionRepository.applySync { current -> rescueCollections(current, rescue, collectionAdapter) }
     }
 
     fun syncNow() {
@@ -308,7 +339,7 @@ class SupabaseSync(
         }
         mutex.withLock {
             auth.signOut()
-            removeLocalLibrary()
+            removeLocalLibrary(keepUnsynced = false)
         }
         return 0
     }
@@ -368,7 +399,7 @@ class SupabaseSync(
             // Bookkeeping from another account (an email link signed straight into a different one,
             // say) or an unfinished removal: that library isn't this account's. It goes, rather than
             // being merged into this account.
-            if (state.userId != null && state.userId != account.userId) removeLocalLibrary()
+            if (belongsElsewhere(state, account.userId)) removeLocalLibrary(keepUnsynced = false)
             // Never synced on this device: start from a clean slate (what's here gets merged in).
             if (state.userId != account.userId) state = CloudSyncState(userId = account.userId)
 
@@ -484,6 +515,7 @@ class SupabaseSync(
             }
             state = state.copy(lastSyncedAt = System.currentTimeMillis())
             saveState(state)
+            restoreRescue(account.userId)
             _status.value = CloudSyncStatus(
                 syncing = false, lastSyncedAt = state.lastSyncedAt, message = "Synced", pulled = pulled.pulled, pushed = pushedCount
             )

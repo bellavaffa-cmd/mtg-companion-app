@@ -360,4 +360,76 @@ class SyncCoreTest(private val cas: Boolean) {
         assertEquals("o1", show("A", "odd"))
         assertEquals(emptyList<String>(), dev("A").state.refetch)
     }
+
+    // ---- Signing out and back in ----
+
+    private val deckAdapter = localMoshi.adapter(Deck::class.java)
+
+    /** A session ending on its own: kept edits captured, then the library and its bookkeeping removed. */
+    private fun sessionEnds(name: String): Rescue? {
+        val d = dev(name)
+        val rescue = core.captureRescue(d.state, core.localJson(d.decks, emptyList()), "u", now(name))
+        d.decks = emptyList()
+        d.state = CloudSyncState(userId = "u")
+        return rescue
+    }
+
+    /** Signing back in: the first pass pulls the account's library, then the kept edits go back in. */
+    private fun signBackIn(name: String, rescue: Rescue?) {
+        pass(name)
+        if (rescue != null) dev(name).decks = rescueDecks(dev(name).decks, rescue, deckAdapter)
+        pass(name)
+    }
+
+    @Test
+    fun `an edit that hadn't synced when the session ended is put back on signing in`() {
+        setDeck("A", "d1", "x" to 1); settle("A", "B")
+        setDeck("A", "d1", "x" to 2) // not synced yet...
+        val rescue = sessionEnds("A") // ...when the server ends the session
+        assertEquals(setOf("deck:d1"), rescue?.items?.keys)
+        setDeck("B", "d1", "x" to 1, "y" to 1); pass("B") // meanwhile, on another device
+        signBackIn("A", rescue)
+        settle("A", "B")
+        assertEquals("x2,y1", show("A"))
+        assertEquals("x2,y1", show("B"))
+        assertEquals("x2,y1", server())
+    }
+
+    @Test
+    fun `a deletion kept through a sign-out goes through, unless the deck changed elsewhere meanwhile`() {
+        setDeck("A", "d1", "x" to 1); setDeck("A", "d2", "q" to 1); settle("A", "B")
+        dev("A").decks = emptyList()
+        val rescue = sessionEnds("A")
+        setDeck("B", "d2", "q" to 1, "r" to 1); pass("B") // d2 edited elsewhere; d1 untouched
+        signBackIn("A", rescue)
+        settle("A", "B")
+        assertEquals("(none)", show("A", "d1"))
+        assertEquals("(deleted)", server("d1"))
+        assertEquals("q1,r1", show("A", "d2"))
+    }
+
+    @Test
+    fun `a removal cut short pushes no deletions on signing in again`() {
+        setDeck("A", "d1", "x" to 1); setDeck("A", "d2", "q" to 1); settle("A")
+        // SupabaseSync marks the removal before emptying the library; the app is killed halfway.
+        dev("A").state = CloudSyncState(userId = "(removing)")
+        dev("A").decks = dev("A").decks.filter { it.id != "d1" }
+        // Next start: the marker isn't this account's bookkeeping, so the removal is finished first.
+        assertEquals(true, belongsElsewhere(dev("A").state, "u"))
+        dev("A").decks = emptyList()
+        dev("A").state = CloudSyncState(userId = "u")
+        settle("A")
+        assertEquals("x1", server("d1"))
+        assertEquals("q1", server("d2"))
+        assertEquals("x1", show("A", "d1"))
+    }
+
+    @Test
+    fun `whose library is it`() {
+        assertEquals(false, belongsElsewhere(CloudSyncState(userId = null), "u")) // never synced: the device's own
+        assertEquals(false, belongsElsewhere(CloudSyncState(userId = "u"), "u"))
+        assertEquals(true, belongsElsewhere(CloudSyncState(userId = "v"), "u"))
+        assertEquals(true, belongsElsewhere(CloudSyncState(userId = "v"), null)) // signed out, yet an account's library
+        assertEquals(true, belongsElsewhere(CloudSyncState(userId = "(removing)"), "u"))
+    }
 }

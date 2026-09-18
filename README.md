@@ -39,8 +39,29 @@ Misses just keep scanning silently; a status line surfaces the last result.
   (pick an existing deck or create a new one on the spot), and star any commander-eligible card in
   a deck to set it as that deck's commander.
 
-Both are stored locally on-device as JSON via DataStore (`CollectionRepository`, `DeckRepository`) -
-no account, no sync, no server.
+Both are stored on the device as JSON via DataStore (`CollectionRepository`, `DeckRepository`), so
+everything works offline and without an account.
+
+## Account and sync
+
+Signing in (Settings → Account & sync; email + password, Supabase Auth) keeps decks and binders in
+sync with other phones and the web app (`MtgCompanionWeb`). Each deck and binder is its own row in
+`public.library_items` (`supabase/migrations/`); when two devices change the same deck, the edits
+are merged card by card rather than one replacing the other.
+
+- **When:** a second after an edit, when the app opens or goes to the background, from the sync
+  button or pull to sync, and — while the app is open — within a second of another device saving,
+  through Supabase Realtime live updates (`SupabaseRealtime`). A check every 15 seconds (every 60
+  while live updates are connected) is the backup.
+- **How:** every decision is in `SyncCore` (pure, no I/O); `SupabaseSync` does the storage and
+  network around it. Pushes are compare-and-swap (`push_library_items_v2`): a device only overwrites
+  the version it merged from. `SyncCoreTest` runs the sync scenarios against both push functions —
+  the web app's `npm test` runs the same ones.
+- **Signing out** — or being signed out, when the server ends the session — removes the account's
+  decks and binders from the phone; they come back on signing in. Sign out syncs first and warns
+  about anything that couldn't be sent. If the server ends a session with edits not yet synced,
+  those few items are kept out of sight and merged back in when the same account signs in again
+  (another account, or 7 days, and they're dropped).
 
 ## Build
 
