@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.ui.collection
 
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Inbox
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
@@ -44,6 +46,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -108,6 +111,7 @@ fun CollectionsScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
     val importProgress by viewModel.importProgress.collectAsState()
+    val unsorted by viewModel.unsorted.collectAsState()
     // Page 0 = All Cards (left), page 1 = Binders (right). Swipe or tap the tabs to switch.
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
@@ -119,10 +123,10 @@ fun CollectionsScreen(
                 title = { Text("Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 actions = {
                     SyncIconButton()
+                    IconButton(onClick = { viewModel.resetImport(); showImport = true }) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Import cards from another app", tint = TextPrimary)
+                    }
                     if (pagerState.currentPage == 1) {
-                        IconButton(onClick = { viewModel.resetImport(); showImport = true }) {
-                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Import a binder from another app", tint = TextPrimary)
-                        }
                         IconButton(onClick = { showCreateDialog = true }) {
                             Icon(Icons.Filled.Add, contentDescription = "New binder", tint = Gold)
                         }
@@ -134,11 +138,13 @@ fun CollectionsScreen(
     ) { padding ->
         if (showImport) {
             ImportCardsDialog(
-                title = "Import a binder",
+                title = "Import cards",
                 askName = true,
                 progress = importProgress,
                 onImport = viewModel::importBinder,
-                onDismiss = { showImport = false; viewModel.resetImport() }
+                onDismiss = { showImport = false; viewModel.resetImport() },
+                // From All cards, the whole collection comes in unsorted; from Binders, as a binder.
+                startInNewBinder = pagerState.currentPage == 1
             )
         }
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
@@ -152,6 +158,9 @@ fun CollectionsScreen(
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 if (page == 0) {
                     AllCardsTab(
+                        unsorted = unsorted,
+                        onOpenUnsorted = { onCollectionClick(it) },
+                        onImport = { viewModel.resetImport(); showImport = true },
                         allCards = allCards,
                         dashboard = dashboard,
                         prices = prices,
@@ -162,7 +171,7 @@ fun CollectionsScreen(
                     )
                 } else {
                     CollectionsTab(
-                        collections = collections,
+                        collections = collections.filterNot { it.isUnsorted },
                         onCollectionClick = onCollectionClick,
                         onDelete = { viewModel.deleteCollection(it) }
                     )
@@ -226,6 +235,9 @@ private fun CollectionsTab(
 
 @Composable
 private fun AllCardsTab(
+    unsorted: Collection?,
+    onOpenUnsorted: (String) -> Unit,
+    onImport: () -> Unit,
     allCards: List<AllCardEntry>,
     dashboard: CollectionDashboard?,
     prices: Map<String, Double>,
@@ -248,11 +260,15 @@ private fun AllCardsTab(
     val listCols = adaptiveListColumns()
 
     if (allCards.isEmpty()) {
-        Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
                 "No cards owned yet. Cards you add to any binder or deck appear here.",
                 style = MaterialTheme.typography.bodySmall
             )
+            OutlinedButton(onClick = onImport) {
+                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
+                Text("  Import your collection", color = TextPrimary)
+            }
         }
     } else {
         LazyColumn(
@@ -260,6 +276,9 @@ private fun AllCardsTab(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (unsorted != null && unsorted.entries.isNotEmpty()) {
+                item { UnsortedRow(unsorted) { onOpenUnsorted(unsorted.id) } }
+            }
             item { DashboardPanel(dashboard) }
             item {
                 OutlinedTextField(
@@ -491,6 +510,34 @@ private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete:
             onDismiss = { menuExpanded = false },
             actions = listOf(CardMenuAction("Delete binder", Icons.Filled.Delete, destructive = true) { onDelete() })
         )
+    }
+}
+
+/** The Unsorted pile on All cards: cards owned but not in a binder yet, opened to sort them. */
+@Composable
+private fun UnsortedRow(unsorted: Collection, onClick: () -> Unit) {
+    val total = unsorted.entries.sumOf { it.quantity + it.foilQuantity }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Surface)
+            .border(BorderStroke(1.dp, GoldDim), RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp)
+    ) {
+        Icon(Icons.Filled.Inbox, contentDescription = null, tint = Gold, modifier = Modifier.size(32.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Unsorted", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            Text(
+                "$total card${if (total == 1) "" else "s"} not in a binder yet — tap to sort them",
+                style = MaterialTheme.typography.labelMedium,
+                color = TextMuted
+            )
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextDim)
     }
 }
 

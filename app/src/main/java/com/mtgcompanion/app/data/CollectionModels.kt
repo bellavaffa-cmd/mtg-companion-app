@@ -21,6 +21,13 @@ enum class CollectionType {
     }
 }
 
+/**
+ * The one pile of owned cards that aren't in a binder yet — a whole collection imported before it's
+ * sorted. The same id on every device, so piles made on two devices merge into one when they sync.
+ */
+const val UNSORTED_COLLECTION_ID = "unsorted"
+const val UNSORTED_COLLECTION_NAME = "Unsorted"
+
 data class Collection(
     val id: String,
     val name: String,
@@ -29,6 +36,8 @@ data class Collection(
     val type: String = CollectionType.DEFAULT.name
 ) {
     val kind: CollectionType get() = CollectionType.fromName(type)
+    /** The pile of cards not in a binder yet (see [UNSORTED_COLLECTION_ID]) — not a binder itself. */
+    val isUnsorted: Boolean get() = id == UNSORTED_COLLECTION_ID
 }
 
 data class CollectionStore(

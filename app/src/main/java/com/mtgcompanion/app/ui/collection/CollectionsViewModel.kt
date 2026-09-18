@@ -22,6 +22,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -127,19 +128,31 @@ class CollectionsViewModel(
     /** Where importing a binder from another app is up to. */
     val importProgress: StateFlow<ImportProgress> = _importProgress.asStateFlow()
 
-    /** Makes a binder named [name] holding a pasted or loaded card list (text or CSV). */
-    fun importBinder(name: String, text: String) {
+    /** The pile of cards not in a binder yet, if there is one. */
+    val unsorted: StateFlow<Collection?> = repository.collectionsFlow.map { all -> all.firstOrNull { it.isUnsorted } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * Imports a pasted or loaded card list (text or CSV): into a new binder named [name], or with no
+     * name into the Unsorted pile, to be sorted into binders later.
+     */
+    fun importBinder(name: String?, text: String) {
         val lines = parseCardList(text).lines
         if (lines.isEmpty()) return
         viewModelScope.launch {
             _importProgress.value = ImportProgress.Working(0, lines.size)
             _importProgress.value = try {
                 val result = CardListImporter(cardRepository).resolve(lines) { done, total -> _importProgress.value = ImportProgress.Working(done, total) }
+                val binderName = name?.ifBlank { "Imported" }
                 if (result.cards.isNotEmpty()) {
-                    val binder = repository.createCollection(name.ifBlank { "Imported" }, CollectionType.OWNED)
-                    repository.addEntries(binder.id, result.cards.map { it.toEntry() })
+                    if (binderName == null) {
+                        repository.addUnsorted(result.cards.map { it.toEntry() })
+                    } else {
+                        val binder = repository.createCollection(binderName, CollectionType.OWNED)
+                        repository.addEntries(binder.id, result.cards.map { it.toEntry() })
+                    }
                 }
-                ImportProgress.Done(result, name.ifBlank { "Imported" })
+                ImportProgress.Done(result, binderName ?: "your collection (Unsorted)")
             } catch (e: java.io.IOException) {
                 ImportProgress.Failed("You're offline — try again when you're connected.")
             } catch (e: Exception) {

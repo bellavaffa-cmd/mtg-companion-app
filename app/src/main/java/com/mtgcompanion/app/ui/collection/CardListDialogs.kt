@@ -71,9 +71,12 @@ fun ImportCardsDialog(
     title: String,
     askName: Boolean,
     progress: ImportProgress,
-    onImport: (name: String, text: String) -> Unit,
-    onDismiss: () -> Unit
+    onImport: (name: String?, text: String) -> Unit,
+    onDismiss: () -> Unit,
+    startInNewBinder: Boolean = true
 ) {
+    // With [askName], cards go to a new binder or — "No binder" — the Unsorted pile.
+    var newBinder by remember { mutableStateOf(startInNewBinder) }
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -105,7 +108,7 @@ fun ImportCardsDialog(
             if (read == null) fileError = "That file couldn't be read (5 MB at most)."
             else {
                 text = read
-                if (askName && name.isBlank()) {
+                if (askName && newBinder && name.isBlank()) {
                     name = uri.lastPathSegment.orEmpty().substringAfterLast('/').substringAfterLast(':').substringBeforeLast('.')
                 }
             }
@@ -149,6 +152,19 @@ fun ImportCardsDialog(
                     color = colors.textMuted
                 )
                 if (askName) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PillChip("No binder", !newBinder, { newBinder = false })
+                        PillChip("New binder", newBinder, { newBinder = true })
+                    }
+                    if (!newBinder) {
+                        Text(
+                            "Cards go into Unsorted, under All cards. Move them into binders whenever you like.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textDim
+                        )
+                    }
+                }
+                if (askName && newBinder) {
                     OutlinedTextField(value = name, onValueChange = { name = it.take(60) }, label = { Text("Binder name") }, singleLine = true, enabled = !working, modifier = Modifier.fillMaxWidth())
                 }
                 OutlinedTextField(
@@ -191,8 +207,8 @@ fun ImportCardsDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = !working && parsed.lines.isNotEmpty() && (!askName || name.isNotBlank()),
-                onClick = { onImport(name.trim(), text) }
+                enabled = !working && parsed.lines.isNotEmpty() && (!askName || !newBinder || name.isNotBlank()),
+                onClick = { onImport(if (askName && !newBinder) null else name.trim(), text) }
             ) { Text(if (parsed.cardCount > 0) "Import ${parsed.cardCount} ${if (parsed.cardCount == 1) "card" else "cards"}" else "Import", color = colors.accent) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !working) { Text("Cancel", color = colors.textMuted) } }

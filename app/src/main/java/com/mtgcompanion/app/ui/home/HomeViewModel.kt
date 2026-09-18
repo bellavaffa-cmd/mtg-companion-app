@@ -68,7 +68,7 @@ class HomeViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val binderCount: StateFlow<Int> = collectionRepository.collectionsFlow
-        .map { it.size }
+        .map { all -> all.count { !it.isUnsorted } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     /** Total value of OWNED binders only (wishlist binders don't count toward this). */

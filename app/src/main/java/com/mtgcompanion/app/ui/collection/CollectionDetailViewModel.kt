@@ -16,6 +16,7 @@ import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.common.CardSource
+import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.ui.common.buildCardSources
@@ -138,6 +139,23 @@ class CollectionDetailViewModel(
         viewModelScope.launch {
             addCopyTo(entry, target)
             repository.removeEntry(collectionId, entry.scryfallId)
+        }
+    }
+
+    /** Makes a binder named [name] and moves the card into it — or with [keepHere], copies it. */
+    fun moveToNewBinder(entry: CollectionEntry, name: String, keepHere: Boolean) {
+        viewModelScope.launch {
+            val binder = repository.createCollection(name.trim().ifBlank { "New binder" }, CollectionType.OWNED)
+            addCopyTo(entry, MoveTarget(SourceKind.BINDER, binder.id, binder.name))
+            if (!keepHere) repository.removeEntry(collectionId, entry.scryfallId)
+        }
+    }
+
+    /** Removes every card but keeps the binder (the Unsorted pile is emptied, not deleted). */
+    fun clearAll(onDone: () -> Unit) {
+        viewModelScope.launch {
+            repository.clearEntries(collectionId)
+            onDone()
         }
     }
 

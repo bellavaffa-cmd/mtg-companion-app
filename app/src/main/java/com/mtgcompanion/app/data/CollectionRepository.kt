@@ -97,6 +97,20 @@ class CollectionRepository(private val context: Context) {
         }
     }
 
+    /** Adds cards to the Unsorted pile (owned, not in a binder yet), making the pile if there isn't one. */
+    suspend fun addUnsorted(added: List<CollectionEntry>) {
+        update { collections ->
+            if (collections.any { it.isUnsorted }) collections
+            else collections + Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME, type = CollectionType.OWNED.name)
+        }
+        addEntries(UNSORTED_COLLECTION_ID, added)
+    }
+
+    /** Empties a binder but keeps it — for the Unsorted pile, which is emptied rather than deleted. */
+    suspend fun clearEntries(collectionId: String) {
+        updateEntries(collectionId) { emptyList() }
+    }
+
     suspend fun addEntry(collectionId: String, entry: CollectionEntry) {
         updateEntries(collectionId) { entries ->
             val existing = entries.find { it.scryfallId == entry.scryfallId }

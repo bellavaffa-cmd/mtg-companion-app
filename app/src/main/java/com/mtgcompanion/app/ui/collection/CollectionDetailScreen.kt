@@ -144,7 +144,10 @@ fun CollectionDetailScreen(
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.background(Surface2)) {
                             DropdownMenuItem(text = { Text("Import cards", color = TextPrimary) }, onClick = { menuOpen = false; viewModel.resetImport(); listDialog = "import" })
                             DropdownMenuItem(text = { Text("Export as text", color = TextPrimary) }, onClick = { menuOpen = false; listDialog = "export" })
-                            DropdownMenuItem(text = { Text("Delete binder", color = LocalAppColors.current.error) }, onClick = { menuOpen = false; confirmDeleteBinder = true })
+                            DropdownMenuItem(
+                                text = { Text(if (collection?.isUnsorted == true) "Remove all cards" else "Delete binder", color = LocalAppColors.current.error) },
+                                onClick = { menuOpen = false; confirmDeleteBinder = true }
+                            )
                         }
                     }
                 },
@@ -171,7 +174,7 @@ fun CollectionDetailScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::onQueryChange,
-                label = { Text("Search this binder", color = TextMuted) },
+                label = { Text(if (collection?.isUnsorted == true) "Search unsorted cards" else "Search this binder", color = TextMuted) },
                 singleLine = true,
                 shape = RoundedCornerShape(8.dp),
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Gold) },
@@ -188,9 +191,17 @@ fun CollectionDetailScreen(
             )
 
             val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
+            if (collection?.isUnsorted == true && collection?.entries?.isNotEmpty() == true) {
+                Text(
+                    "Cards you own that aren't in a binder yet. Long-press a card and choose Move to put it in a binder — or a new one.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
+                )
+            }
             when {
                 collection?.entries.isNullOrEmpty() -> Text(
-                    "No cards yet. Add cards from a card's detail page or the scanner.",
+                    if (collection?.isUnsorted == true) "All sorted — every card is in a binder." else "No cards yet. Add cards from a card's detail page or the scanner.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
@@ -270,7 +281,8 @@ fun CollectionDetailScreen(
             cardName = entry.name,
             targets = moveTargets,
             onPick = { target -> viewModel.moveEntry(entry, target); moveTarget = null },
-            onDismiss = { moveTarget = null }
+            onDismiss = { moveTarget = null },
+            onNewBinder = { name -> viewModel.moveToNewBinder(entry, name, keepHere = false); moveTarget = null }
         )
     }
 
@@ -285,7 +297,16 @@ fun CollectionDetailScreen(
         )
     }
 
-    if (confirmDeleteBinder) {
+    if (confirmDeleteBinder && collection?.isUnsorted == true) {
+        val total = collection?.entries.orEmpty().sumOf { it.quantity + it.foilQuantity }
+        ConfirmDeleteDialog(
+            title = "Remove all unsorted cards?",
+            message = "All $total unsorted card${if (total == 1) "" else "s"} will be removed from your collection, here and on your other devices. Cards in binders stay.",
+            confirmLabel = "Remove all",
+            onConfirm = { confirmDeleteBinder = false; viewModel.clearAll(onBack) },
+            onDismiss = { confirmDeleteBinder = false }
+        )
+    } else if (confirmDeleteBinder) {
         val name = collection?.name ?: "this binder"
         val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
         ConfirmDeleteDialog(
@@ -301,7 +322,8 @@ fun CollectionDetailScreen(
             cardName = entry.name,
             targets = moveTargets,
             onPick = { target -> viewModel.copyEntry(entry, target); copyTarget = null },
-            onDismiss = { copyTarget = null }
+            onDismiss = { copyTarget = null },
+            onNewBinder = { name -> viewModel.moveToNewBinder(entry, name, keepHere = true); copyTarget = null }
         )
     }
 }
