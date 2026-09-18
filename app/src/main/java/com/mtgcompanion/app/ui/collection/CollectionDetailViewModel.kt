@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.CardListImporter
+import com.mtgcompanion.app.data.buildCardListText
+import com.mtgcompanion.app.data.parseCardList
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -81,6 +84,40 @@ class CollectionDetailViewModel(
 
     fun onQueryChange(newQuery: String) {
         _query.value = newQuery
+    }
+
+    private val _importProgress = MutableStateFlow<ImportProgress>(ImportProgress.Idle)
+    /** Where an import from another app is up to. */
+    val importProgress: StateFlow<ImportProgress> = _importProgress.asStateFlow()
+
+    /** Adds a pasted or loaded card list (text or CSV) to this binder. */
+    fun importCards(text: String) {
+        val lines = parseCardList(text).lines
+        if (lines.isEmpty()) return
+        viewModelScope.launch {
+            _importProgress.value = ImportProgress.Working(0, lines.size)
+            _importProgress.value = try {
+                val result = CardListImporter(cardRepository).resolve(lines) { done, total -> _importProgress.value = ImportProgress.Working(done, total) }
+                repository.addEntries(collectionId, result.cards.map { it.toEntry() })
+                ImportProgress.Done(result, collection.value?.name ?: "this binder")
+            } catch (e: java.io.IOException) {
+                ImportProgress.Failed("You're offline — try again when you're connected.")
+            } catch (e: Exception) {
+                ImportProgress.Failed(e.message ?: "Something went wrong.")
+            }
+        }
+    }
+
+    fun resetImport() { _importProgress.value = ImportProgress.Idle }
+
+    /** This binder as text for other apps; [exact] names each card's printing ("(CMR) 472"). */
+    suspend fun exportText(exact: Boolean): String {
+        val entries = collection.value?.entries.orEmpty()
+        if (!exact) return buildCardListText(entries)
+        val printings = cardRepository.getCardsByIds(entries.map { it.scryfallId })
+            .mapNotNull { c -> if (c.set != null && c.collectorNumber != null) c.id to (c.set to c.collectorNumber) else null }
+            .toMap()
+        return buildCardListText(entries, printings)
     }
 
     fun setQuantity(entry: CollectionEntry, quantity: Int, foilQuantity: Int) {

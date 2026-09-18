@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.collection
 
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import com.mtgcompanion.app.ui.theme.Surface2
+import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
@@ -107,6 +112,9 @@ fun CollectionDetailScreen(
     // The card pending a remove-confirmation, if any.
     var removeTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     var confirmDeleteBinder by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var listDialog by remember { mutableStateOf<String?>(null) } // "import" or "export"
+    val importProgress by viewModel.importProgress.collectAsState()
     // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this binder).
     var copyTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     // Name of the card whose "find similar" overlay is open, if any.
@@ -129,14 +137,31 @@ fun CollectionDetailScreen(
                             Icon(Icons.Filled.GroupAdd, contentDescription = "Share with friends", tint = TextPrimary)
                         }
                     }
-                    IconButton(onClick = { confirmDeleteBinder = true }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete binder", tint = TextDim)
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Binder actions", tint = TextPrimary)
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.background(Surface2)) {
+                            DropdownMenuItem(text = { Text("Import cards", color = TextPrimary) }, onClick = { menuOpen = false; viewModel.resetImport(); listDialog = "import" })
+                            DropdownMenuItem(text = { Text("Export as text", color = TextPrimary) }, onClick = { menuOpen = false; listDialog = "export" })
+                            DropdownMenuItem(text = { Text("Delete binder", color = LocalAppColors.current.error) }, onClick = { menuOpen = false; confirmDeleteBinder = true })
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )
         }
     ) { padding ->
+        when (listDialog) {
+            "import" -> ImportCardsDialog(
+                title = "Import into ${collection?.name ?: "binder"}",
+                askName = false,
+                progress = importProgress,
+                onImport = { _, text -> viewModel.importCards(text) },
+                onDismiss = { listDialog = null; viewModel.resetImport() }
+            )
+            "export" -> ExportCollectionDialog(collection?.name ?: "binder", viewModel::exportText) { listDialog = null }
+        }
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             if (collection?.entries?.isNotEmpty() == true) {
                 Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)) {

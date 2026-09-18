@@ -84,6 +84,19 @@ class CollectionRepository(private val context: Context) {
     }
 
     /** Add a card entry (with its quantities) to a binder, merging into an existing copy. For moves. */
+    /** Adds a whole imported list to a binder in one change, copies of cards already there added on. */
+    suspend fun addEntries(collectionId: String, added: List<CollectionEntry>) {
+        updateEntries(collectionId) { entries ->
+            added.fold(entries) { list, entry ->
+                if (list.any { it.scryfallId == entry.scryfallId }) {
+                    list.map { if (it.scryfallId != entry.scryfallId) it else it.copy(quantity = it.quantity + entry.quantity, foilQuantity = it.foilQuantity + entry.foilQuantity) }
+                } else {
+                    list + entry
+                }
+            }
+        }
+    }
+
     suspend fun addEntry(collectionId: String, entry: CollectionEntry) {
         updateEntries(collectionId) { entries ->
             val existing = entries.find { it.scryfallId == entry.scryfallId }

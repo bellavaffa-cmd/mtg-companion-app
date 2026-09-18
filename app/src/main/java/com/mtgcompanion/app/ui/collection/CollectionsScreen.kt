@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
@@ -105,6 +106,8 @@ fun CollectionsScreen(
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showImport by remember { mutableStateOf(false) }
+    val importProgress by viewModel.importProgress.collectAsState()
     // Page 0 = All Cards (left), page 1 = Binders (right). Swipe or tap the tabs to switch.
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
@@ -117,6 +120,9 @@ fun CollectionsScreen(
                 actions = {
                     SyncIconButton()
                     if (pagerState.currentPage == 1) {
+                        IconButton(onClick = { viewModel.resetImport(); showImport = true }) {
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Import a binder from another app", tint = TextPrimary)
+                        }
                         IconButton(onClick = { showCreateDialog = true }) {
                             Icon(Icons.Filled.Add, contentDescription = "New binder", tint = Gold)
                         }
@@ -126,6 +132,15 @@ fun CollectionsScreen(
             )
         }
     ) { padding ->
+        if (showImport) {
+            ImportCardsDialog(
+                title = "Import a binder",
+                askName = true,
+                progress = importProgress,
+                onImport = viewModel::importBinder,
+                onDismiss = { showImport = false; viewModel.resetImport() }
+            )
+        }
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             SegmentedTabs(
                 labels = listOf("All cards", "Binders"),

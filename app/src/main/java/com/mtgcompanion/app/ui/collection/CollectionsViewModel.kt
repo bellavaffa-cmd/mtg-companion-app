@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.collection
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import com.mtgcompanion.app.data.CardListImporter
+import com.mtgcompanion.app.data.parseCardList
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -118,6 +122,33 @@ class CollectionsViewModel(
             }
         }
     }
+
+    private val _importProgress = MutableStateFlow<ImportProgress>(ImportProgress.Idle)
+    /** Where importing a binder from another app is up to. */
+    val importProgress: StateFlow<ImportProgress> = _importProgress.asStateFlow()
+
+    /** Makes a binder named [name] holding a pasted or loaded card list (text or CSV). */
+    fun importBinder(name: String, text: String) {
+        val lines = parseCardList(text).lines
+        if (lines.isEmpty()) return
+        viewModelScope.launch {
+            _importProgress.value = ImportProgress.Working(0, lines.size)
+            _importProgress.value = try {
+                val result = CardListImporter(cardRepository).resolve(lines) { done, total -> _importProgress.value = ImportProgress.Working(done, total) }
+                if (result.cards.isNotEmpty()) {
+                    val binder = repository.createCollection(name.ifBlank { "Imported" }, CollectionType.OWNED)
+                    repository.addEntries(binder.id, result.cards.map { it.toEntry() })
+                }
+                ImportProgress.Done(result, name.ifBlank { "Imported" })
+            } catch (e: java.io.IOException) {
+                ImportProgress.Failed("You're offline — try again when you're connected.")
+            } catch (e: Exception) {
+                ImportProgress.Failed(e.message ?: "Something went wrong.")
+            }
+        }
+    }
+
+    fun resetImport() { _importProgress.value = ImportProgress.Idle }
 
     fun createCollection(name: String, type: CollectionType = CollectionType.DEFAULT, onCreated: (Collection) -> Unit) {
         viewModelScope.launch { onCreated(repository.createCollection(name, type)) }
