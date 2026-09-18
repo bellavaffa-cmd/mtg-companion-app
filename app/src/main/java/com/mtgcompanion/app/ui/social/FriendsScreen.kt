@@ -49,6 +49,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.mtgcompanion.app.ui.common.SegmentedTabs
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -120,8 +123,8 @@ private fun FriendsContent(
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val me = overview.me!!
-    var editing by remember { mutableStateOf(false) }
-    var showQr by remember { mutableStateOf(false) }
+    // 0: friends, 1: the user's own profile.
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     var podDialog by remember { mutableStateOf<Pod?>(null) }
     var newPod by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -138,22 +141,23 @@ private fun FriendsContent(
         }
     }
 
+    val waiting = incoming.size + inbox
+    val tabs: @Composable () -> Unit = {
+        SegmentedTabs(
+            labels = listOf("Friends", "Profile"),
+            selected = tab,
+            onSelect = { tab = it },
+            counts = if (waiting > 0) mapOf(0 to waiting) else emptyMap(),
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
+    }
+    if (tab == 1) {
+        ProfileTab(social, me, tabs)
+        return
+    }
+
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(colors.surface).padding(16.dp)
-            ) {
-                Avatar(me, 64.dp)
-                Column(Modifier.weight(1f)) {
-                    Text(me.displayName, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(me.handle, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-                }
-                IconButton(onClick = { showQr = true }) { Icon(Icons.Filled.QrCode2, contentDescription = "Show my QR code", tint = colors.textPrimary) }
-                IconButton(onClick = { editing = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit profile", tint = colors.textPrimary) }
-            }
-        }
+        item { tabs() }
         item { AddFriend(social) }
         item {
             Row(
@@ -229,8 +233,6 @@ private fun FriendsContent(
             }
         }
 
-        item { Spacer(Modifier.height(4.dp)); NotificationsSection(social) }
-
         item { SectionHeader(if (overview.sharedWithMe.isEmpty()) "Shared with you" else "Shared with you · ${overview.sharedWithMe.size}") }
         if (overview.sharedWithMe.isEmpty()) {
             item { Notice("Decks and binders friends share with you show up here.") }
@@ -241,33 +243,47 @@ private fun FriendsContent(
         item { Spacer(Modifier.height(24.dp)) }
     }
 
-    if (editing) {
-        AlertDialog(
-            onDismissRequest = { editing = false },
-            containerColor = colors.surface,
-            title = { Text("Edit profile") },
-            text = { Column(Modifier.verticalScroll(rememberScrollState())) { ProfileEditor(social) { editing = false } } },
-            confirmButton = {}
-        )
-    }
-    if (showQr) {
-        AlertDialog(
-            onDismissRequest = { showQr = false },
-            containerColor = colors.surface,
-            title = { Text("Add me as a friend") },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    QrCode(SocialApi.friendLink(me.username), 240.dp, "QR code to add ${me.handle}")
-                    Text(me.displayName, style = MaterialTheme.typography.titleMedium)
-                    Text(me.handle, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-                    Text("Scan it with this app's Scan QR code, or any phone camera.", style = MaterialTheme.typography.bodySmall, color = colors.textDim, textAlign = TextAlign.Center)
-                }
-            },
-            confirmButton = { TextButton(onClick = { showQr = false }) { Text("Done", color = colors.accent) } }
-        )
-    }
     if (newPod || podDialog != null) {
         PodDialog(social, overview, podDialog) { newPod = false; podDialog = null }
+    }
+}
+
+/** The user's own profile: how others see them, their QR code, editing it, and notifications. */
+@Composable
+private fun ProfileTab(social: SocialRepository, me: Profile, tabs: @Composable () -> Unit) {
+    val colors = LocalAppColors.current
+    var editing by rememberSaveable { mutableStateOf(false) }
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        tabs()
+        val card = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(colors.surface)
+        if (editing) {
+            Column(card.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Edit profile", style = MaterialTheme.typography.titleSmall)
+                ProfileEditor(social) { editing = false }
+            }
+        } else {
+            Column(card.padding(vertical = 24.dp, horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Avatar(me, 112.dp)
+                Text(me.displayName, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 8.dp))
+                Text(me.handle, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
+                LineButton("Edit profile", { editing = true }, modifier = Modifier.padding(top = 8.dp), icon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) })
+            }
+        }
+        Column(card.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Add me as a friend", style = MaterialTheme.typography.titleSmall)
+            QrCode(SocialApi.friendLink(me.username), 220.dp, "QR code to add ${me.handle}")
+            Text(
+                "Friends scan this with the app's scanner or their phone's camera — or add ${me.handle}.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textMuted,
+                textAlign = TextAlign.Center
+            )
+        }
+        NotificationsSection(social)
+        Spacer(Modifier.height(16.dp))
     }
 }
 
