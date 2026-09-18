@@ -17,6 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.GifBox
+import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.input.KeyboardType
+import android.content.Intent
+import com.mtgcompanion.app.data.social.Giphy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -72,6 +78,9 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
     var username by remember { mutableStateOf(me?.username ?: suggestUsername(social.email)) }
     var name by remember { mutableStateOf(me?.displayName ?: "") }
     var picture by remember { mutableStateOf<Uri?>(null) }
+    // A GIF fetched from Giphy, ready to upload as it is.
+    var giphyGif by remember { mutableStateOf<ByteArray?>(null) }
+    var giphyOpen by remember { mutableStateOf(false) }
     var removePicture by remember { mutableStateOf(false) }
     var available by remember { mutableStateOf<Boolean?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -85,7 +94,7 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
         available = runCatching { social.api.usernameAvailable(clean) }.getOrNull()
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) { picture = uri; removePicture = false; error = null }
+        if (uri != null) { picture = uri; giphyGif = null; removePicture = false; error = null }
     }
 
     val problem = when {
@@ -96,8 +105,8 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (picture != null) {
-                AsyncImage(model = picture, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(88.dp).clip(CircleShape))
+            if (picture != null || giphyGif != null) {
+                AsyncImage(model = giphyGif ?: picture, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(88.dp).clip(CircleShape))
             } else {
                 Avatar(
                     profile = Profile("", clean, name.ifBlank { clean.ifBlank { "?" } }, if (removePicture) null else me?.avatarPath),
@@ -106,12 +115,13 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 LineButton(
-                    if (me?.avatarPath != null || picture != null) "Change picture" else "Add a picture",
+                    if (me?.avatarPath != null || picture != null || giphyGif != null) "Change picture" else "Add a picture",
                     { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     icon = { Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
-                if (picture != null || (me?.avatarPath != null && !removePicture)) {
-                    TextButton(onClick = { picture = null; removePicture = true }) { Text("Remove picture", color = colors.textMuted) }
+                LineButton("GIF from Giphy", { giphyOpen = true }, icon = { Icon(Icons.Filled.GifBox, contentDescription = null, modifier = Modifier.size(18.dp)) })
+                if (picture != null || giphyGif != null || (me?.avatarPath != null && !removePicture)) {
+                    TextButton(onClick = { picture = null; giphyGif = null; removePicture = true }) { Text("Remove picture", color = colors.textMuted) }
                 }
                 Text("A photo, or a GIF (up to 2 MB) — it plays on the life counter too.", style = MaterialTheme.typography.bodySmall, color = colors.textDim)
             }
@@ -138,6 +148,13 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
             modifier = Modifier.fillMaxWidth()
         )
         error?.let { Notice(it, warn = true) }
+        if (giphyOpen) {
+            GiphyDialog(
+                social = social,
+                onPicked = { gif -> giphyGif = gif; picture = null; removePicture = false; error = null; giphyOpen = false },
+                onDismiss = { giphyOpen = false }
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), modifier = Modifier.fillMaxWidth()) {
             if (onDone != null && me != null) LineButton("Cancel", onDone, enabled = !busy)
             GoldButton(
@@ -149,6 +166,7 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
                         try {
                             val old = me?.avatarPath
                             val path: String? = when {
+                                giphyGif != null -> social.api.uploadAvatar(social.userId ?: throw SocialException("not_signed_in", "Sign in first."), giphyGif!!, "image/gif")
                                 picture != null -> {
                                     val (bytes, type) = avatarBytes(context, picture!!)
                                     social.api.uploadAvatar(social.userId ?: throw SocialException("not_signed_in", "Sign in first."), bytes, type)
@@ -171,6 +189,65 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
             )
         }
     }
+}
+
+/** Paste a Giphy link; the GIF is fetched (in a size that fits) for the profile picture. */
+@Composable
+private fun GiphyDialog(social: SocialRepository, onPicked: (ByteArray) -> Unit, onDismiss: () -> Unit) {
+    val colors = LocalAppColors.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    var link by remember { mutableStateOf(clipboard.getText()?.text?.takeIf { Giphy.id(it) != null }.orEmpty()) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.surface,
+        title = { Text("GIF from Giphy") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Find a GIF on Giphy, tap Share → Copy link, then paste it here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted
+                )
+                OutlinedTextField(
+                    value = link,
+                    onValueChange = { link = it; error = null },
+                    placeholder = { Text("https://giphy.com/gifs/…") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                    colors = socialFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextButton(onClick = {
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Giphy.SITE))) }
+                }) { Text("Open Giphy", color = colors.accent) }
+                error?.let { Notice(it, warn = true) }
+                Text("Powered by GIPHY", style = MaterialTheme.typography.labelSmall, color = colors.textDim)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && link.isNotBlank(),
+                onClick = {
+                    busy = true
+                    error = null
+                    scope.launch {
+                        try {
+                            onPicked(social.api.giphyGif(link))
+                        } catch (e: Exception) {
+                            error = e.message ?: "Something went wrong."
+                        } finally {
+                            busy = false
+                        }
+                    }
+                }
+            ) { Text(if (busy) "Getting it…" else "Use", color = colors.accent) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = colors.textMuted) } }
+    )
 }
 
 /**

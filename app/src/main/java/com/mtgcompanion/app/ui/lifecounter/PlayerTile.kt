@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.data.social.Giphy
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -819,7 +820,7 @@ private fun AppearanceCard(player: PlayerLife, profiles: List<PlayerProfile>, ac
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) { CardTextField(value = url, placeholder = "Or paste an image / GIF URL") { url = it } }
             OptionTile("Use", if (url.isBlank()) TableColors.SurfaceRaised else TableColors.Yellow, if (url.isBlank()) TableColors.TextMuted else Color.Black,
-                onClick = { if (url.isNotBlank()) actions.setBackgroundImage(url.trim()) })
+                onClick = { if (url.isNotBlank()) actions.setBackgroundImage(Giphy.directUrl(url)) })
         }
 
         CardSection("My victory message")

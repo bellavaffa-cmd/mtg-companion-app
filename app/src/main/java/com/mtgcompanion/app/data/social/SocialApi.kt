@@ -82,6 +82,31 @@ class SocialApi(private val auth: SupabaseAuth) {
         path
     }
 
+    /**
+     * The best version of the Giphy GIF at [link] that fits the 2 MB picture limit, to upload as the
+     * profile picture. Each version's size is asked first, so a huge original isn't downloaded for nothing.
+     */
+    suspend fun giphyGif(link: String): ByteArray = withContext(Dispatchers.IO) {
+        val id = Giphy.id(link)
+            ?: throw SocialException("not_giphy", "That isn't a Giphy link. Open the GIF on giphy.com and copy its link (Share → Copy link).")
+        for (url in Giphy.renditions(id)) {
+            val size = try {
+                auth.http.newCall(Request.Builder().url(url).head().build()).execute().use { if (it.isSuccessful) it.header("Content-Length")?.toLongOrNull() ?: 0L else -1L }
+            } catch (e: IOException) {
+                throw SocialException("offline", "Couldn't reach Giphy — check your connection and try again.")
+            }
+            if (size in Giphy.NOT_AVAILABLE_SIZES) break
+            if (size < 0 || size > MAX_AVATAR_BYTES) continue
+            val bytes = try {
+                auth.http.newCall(Request.Builder().url(url).get().build()).execute().use { if (it.isSuccessful) it.body?.bytes() else null }
+            } catch (e: IOException) {
+                throw SocialException("offline", "Couldn't reach Giphy — check your connection and try again.")
+            } ?: continue
+            if (bytes.size <= MAX_AVATAR_BYTES && bytes.size >= 6 && String(bytes, 0, 3, Charsets.US_ASCII) == "GIF") return@withContext bytes
+        }
+        throw SocialException("giphy_missing", "Giphy doesn't have that GIF (or it's no longer there).")
+    }
+
     /** Deletes an old picture; failing just leaves an unused file behind. */
     suspend fun deleteAvatar(path: String) = withContext(Dispatchers.IO) {
         val token = runCatching { auth.accessToken() }.getOrNull() ?: return@withContext
@@ -185,6 +210,9 @@ class SocialApi(private val auth: SupabaseAuth) {
         /** Where a profile picture is served from (public, but only people who can see the profile learn its name). */
         fun avatarUrl(path: String?): String? =
             path?.let { BuildConfig.SUPABASE_URL + "/storage/v1/object/public/avatars/" + it.split('/').joinToString("/") { part -> URLEncoder.encode(part, "UTF-8") } }
+
+        /** Profile pictures are at most this big. */
+        const val MAX_AVATAR_BYTES = 2 * 1024 * 1024
 
         /** Links for QR codes and sharing always point at the live web app, which the Android app also understands. */
         const val PUBLIC_APP_URL = "https://bellavaffa-cmd.github.io/mtg-companion-web/"
