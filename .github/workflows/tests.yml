@@ -1,0 +1,29 @@
+name: Tests
+
+# Unit tests on every push and pull request: sync (SyncCoreTest runs the sync scenarios against
+# both push functions), merging, and the rest of app/src/test. No secrets needed — without
+# supabase.properties and keystore.properties the debug build still compiles.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew testDebugUnitTest
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: app/build/reports/tests/testDebugUnitTest
