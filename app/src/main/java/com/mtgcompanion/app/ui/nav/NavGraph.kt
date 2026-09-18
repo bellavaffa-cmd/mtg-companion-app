@@ -238,7 +238,7 @@ fun MtgNavGraph(
                     NavDestination.COLLECTION -> navController.navigateToTab(Routes.COLLECTION)
                     NavDestination.LIFE_COUNTER -> navController.navigate(Routes.LIFE_COUNTER)
                     NavDestination.RULES -> navController.navigateToTab(Routes.RULES)
-                    NavDestination.SETTINGS -> navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
+                    NavDestination.SETTINGS -> navController.navigateToTab(Routes.SETTINGS)
                 }
             }
             if (layoutSize == LayoutSize.DESKTOP) {
@@ -269,7 +269,7 @@ fun MtgNavGraph(
             syncing = syncState.syncing,
             failed = syncState.failed,
             onSync = { syncRequests.tryEmit(Unit) },
-            onSignIn = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } }
+            onSignIn = { navController.navigateToTab(Routes.SETTINGS) }
         )
         CompositionLocalProvider(LocalSyncControl provides syncControl) {
         // Pull down at the top of a library screen to sync decks and binders with the account.
@@ -310,7 +310,7 @@ fun MtgNavGraph(
                     onOpenScan = { navController.navigateToTab(Routes.SCAN) },
                     onOpenRules = { navController.navigateToTab(Routes.RULES) },
                     onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) },
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onOpenSettings = { navController.navigateToTab(Routes.SETTINGS) },
                     onOpenDeck = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
                     onViewCard = { name -> navController.navigate(Routes.detail(name)) }
                 )
@@ -682,7 +682,20 @@ private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean
     }
 }
 
+/**
+ * The top-level screens: each keeps its own history, restored when you come back to it. Settings is
+ * one too — opened on top of another tab instead, it became part of that tab's history, and tapping
+ * that tab brought Settings back rather than the tab (only restarting the app got out of it).
+ */
+private val tabRoutes = setOf(
+    Routes.HOME, Routes.SEARCH, Routes.SCAN, Routes.DECKS, Routes.COLLECTION, Routes.RULES, Routes.SETTINGS
+)
+
 private fun NavHostController.navigateToTab(route: String) {
+    // The tab you're already in goes back to its first screen (a deck's page -> the deck list),
+    // rather than restoring where it was.
+    val currentTab = currentBackStack.value.lastOrNull { it.destination.route in tabRoutes }?.destination?.route
+    if (route == currentTab && popBackStack(route, inclusive = false)) return
     navigate(route) {
         popUpTo(graph.startDestinationId) { saveState = true }
         launchSingleTop = true
