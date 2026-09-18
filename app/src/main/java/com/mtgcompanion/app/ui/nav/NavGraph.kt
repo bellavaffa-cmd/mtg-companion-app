@@ -482,8 +482,10 @@ fun MtgNavGraph(
                 )
                 ScanScreen(
                     viewModel = viewModel,
+                    social = socialRepository,
                     onBack = { navController.popBackStack() },
-                    onCardClick = { name -> navController.navigate(Routes.detail(name)) }
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) }
                 )
             }
 

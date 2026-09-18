@@ -100,6 +100,12 @@ import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import com.mtgcompanion.app.data.social.AppLink
+import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.ui.social.AppLinkPanel
+import com.mtgcompanion.app.ui.social.qrScanner
+import com.mtgcompanion.app.ui.social.rememberAppLinkHandler
 
 /** The framing guide's brief "got it" flash color on a successful scan. */
 private val SuccessGreen = Color(0xFF4CAF50)
@@ -107,8 +113,10 @@ private val SuccessGreen = Color(0xFF4CAF50)
 @Composable
 fun ScanScreen(
     viewModel: ScanViewModel,
+    social: SocialRepository,
     onBack: () -> Unit,
-    onCardClick: (String) -> Unit = {}
+    onCardClick: (String) -> Unit = {},
+    onOpenSharedLink: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -154,7 +162,13 @@ fun ScanScreen(
     }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    DisposableEffect(Unit) { onDispose { cameraExecutor.shutdown() } }
+    // The app's own QR codes (a friend, a life counter seat, a share link) work here too, so there's
+    // no need to find the QR scanner. Every third frame is enough to catch one.
+    val links = rememberAppLinkHandler(social, onOpenSharedLink)
+    val overview by social.overview.collectAsState()
+    val qrReader = remember { qrScanner() }
+    val frameCount = remember { AtomicInteger() }
+    DisposableEffect(Unit) { onDispose { cameraExecutor.shutdown(); qrReader.close() } }
 
     Box(modifier = Modifier.fillMaxSize().background(Bg)) {
         if (!hasCameraPermission) {
@@ -208,7 +222,24 @@ fun ScanScreen(
                                     return@setAnalyzer
                                 }
                                 val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                                viewModel.onFrame(inputImage, onProcessed = { imageProxy.close() })
+                                // While a code's panel is up, cards wait.
+                                val readCard = {
+                                    if (links.showing) imageProxy.close()
+                                    else viewModel.onFrame(inputImage, onProcessed = { imageProxy.close() })
+                                }
+                                if (frameCount.incrementAndGet() % 3 == 0) {
+                                    qrReader.process(inputImage).addOnCompleteListener { task ->
+                                        val text = if (task.isSuccessful) task.result.firstNotNullOfOrNull { it.rawValue } else null
+                                        if (text != null && AppLink.parse(text) != null) {
+                                            ContextCompat.getMainExecutor(ctx).execute { links.handle(text, ignoreOthers = true) }
+                                            imageProxy.close()
+                                        } else {
+                                            readCard()
+                                        }
+                                    }
+                                } else {
+                                    readCard()
+                                }
                             }
                         }
                     val capture = ImageCapture.Builder()
@@ -354,6 +385,11 @@ fun ScanScreen(
                 style = MaterialTheme.typography.labelLarge,
                 color = Bg
             )
+        }
+
+        // A friend's code, a life counter seat or a share link the camera just read.
+        if (links.showing) {
+            AppLinkPanel(links, overview?.me, onDone = links::dismiss, modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp))
         }
 
         // Slide-up list panel.
