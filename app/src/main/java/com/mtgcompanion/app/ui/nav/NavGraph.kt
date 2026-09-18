@@ -123,6 +123,7 @@ import com.mtgcompanion.app.ui.lifecounter.LifeCounterScreen
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterSettingsRepository
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterViewModel
 import com.mtgcompanion.app.ui.rules.RulesScreen
+import com.mtgcompanion.app.ui.rules.RulingsRequest
 import com.mtgcompanion.app.ui.rules.RulesViewModel
 import com.mtgcompanion.app.ui.scan.ScanScreen
 import com.mtgcompanion.app.ui.scan.ScanViewModel
@@ -197,7 +198,10 @@ fun MtgNavGraph(
     LaunchedEffect(Unit) { updateManager.checkForUpdate() }
 
     // Enlarged cards draw above everything here, bars included, so they can grow out of their thumbnails.
-    CardZoomHost {
+    CardZoomHost(onOpenRulings = { name ->
+        RulingsRequest.card.value = name
+        navController.navigateToTab(Routes.RULES)
+    }) {
     Scaffold(
         containerColor = Bg,
         // The system bars are hidden app-wide (MainActivity), so these are normally zero — but a

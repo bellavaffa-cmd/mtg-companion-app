@@ -23,6 +23,11 @@ import kotlinx.coroutines.launch
 
 enum class RulesMode { KEYWORDS, RULINGS }
 
+/** A card whose rulings another screen asked to show (the card zoom's Rulings button). */
+object RulingsRequest {
+    val card = MutableStateFlow<String?>(null)
+}
+
 sealed interface RulingsState {
     data object Idle : RulingsState
     data object Loading : RulingsState
@@ -55,6 +60,15 @@ class RulesViewModel(private val repository: CardRepository = CardRepository()) 
     val rulings: StateFlow<RulingsState> = _rulings.asStateFlow()
 
     init {
+        // A card sent from elsewhere: switch to its rulings.
+        viewModelScope.launch {
+            RulingsRequest.card.collect { name ->
+                if (name == null) return@collect
+                RulingsRequest.card.value = null
+                _mode.value = RulesMode.RULINGS
+                rulingsQuery.value = name
+            }
+        }
         // Fetch rulings as the user types a card name (only while on the Rulings tab).
         viewModelScope.launch {
             combine(rulingsQuery, _mode) { q, m -> q.trim() to m }

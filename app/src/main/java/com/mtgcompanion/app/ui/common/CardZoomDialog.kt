@@ -73,6 +73,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -378,10 +379,14 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                     }
                     // While a printing is previewed, show its own price instead of the original's.
                     val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd
-                    if (effectivePrice != null || card.quantity != null ||
+                    // Closes the zoom and opens this card's rulings on the Rules screen.
+                    val openRulings = host.openRulings?.let { open ->
+                        card.cardName?.let { name -> { entry.onDismiss(); open(name) } }
+                    }
+                    if (effectivePrice != null || card.quantity != null || openRulings != null ||
                         card.onAdd != null || card.onViewDetails != null || card.onFindSimilar != null
                     ) {
-                        CardInfoBar(card, effectivePrice)
+                        CardInfoBar(card, effectivePrice, openRulings)
                     }
                     if (card.sources.isNotEmpty()) {
                         SourcesSection(card.sources)
@@ -435,7 +440,7 @@ private fun Rect.fitCard(): Rect {
 }
 
 @Composable
-private fun CardInfoBar(card: ZoomCard, priceUsd: Double?) {
+private fun CardInfoBar(card: ZoomCard, priceUsd: Double?, onRulings: (() -> Unit)?) {
     val haptic = LocalHapticFeedback.current
     Row(
         modifier = Modifier
@@ -468,6 +473,11 @@ private fun CardInfoBar(card: ZoomCard, priceUsd: Double?) {
             card.onMove?.let { move ->
                 IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); move() }) {
                     Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move card", tint = Gold)
+                }
+            }
+            onRulings?.let { rulings ->
+                IconButton(onClick = rulings) {
+                    Icon(Icons.Filled.Gavel, contentDescription = "Rulings", tint = Gold)
                 }
             }
             card.onFindSimilar?.let { findSimilar ->

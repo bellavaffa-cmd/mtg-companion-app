@@ -30,12 +30,14 @@ import androidx.compose.ui.unit.toSize
  * Where enlarged cards are drawn: above everything inside [content], in the same composition as the
  * screens, so a card can grow out of its thumbnail and shrink back into it (a separate dialog
  * window can't animate from something drawn in the app's own window). Put one at the root of the
- * app; [CardZoomDialog] finds it through [LocalCardZoomHost].
+ * app; [CardZoomDialog] finds it through [LocalCardZoomHost]. [onOpenRulings], when given, adds a
+ * Rulings button to every enlarged card that has a name.
  */
 @Composable
-fun CardZoomHost(content: @Composable () -> Unit) {
+fun CardZoomHost(onOpenRulings: ((cardName: String) -> Unit)? = null, content: @Composable () -> Unit) {
     val view = LocalView.current
     val host = remember(view) { CardZoomHostState(view) }
+    host.openRulings = onOpenRulings
     CompositionLocalProvider(LocalCardZoomHost provides host) {
         Box(
             Modifier
@@ -61,6 +63,9 @@ val LocalCardZoomHost = staticCompositionLocalOf<CardZoomHostState?> { null }
 @Stable
 class CardZoomHostState internal constructor(internal val view: View) {
     internal val entries = mutableStateListOf<ZoomEntry>()
+
+    /** Opens the Rules screen's rulings for a card; null where that isn't available. */
+    internal var openRulings: ((String) -> Unit)? = null
 
     /** The thumbnail currently standing in for a flying card, so it isn't drawn twice. */
     private val hiddenKeys = mutableStateMapOf<String, Int>()
