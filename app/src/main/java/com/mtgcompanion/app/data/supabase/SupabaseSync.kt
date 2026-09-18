@@ -149,7 +149,9 @@ class SupabaseSync(
 
     companion object {
         /** How often the app checks for other devices' edits while it's in the front. */
-        const val POLL_INTERVAL_MS = 20_000L
+        const val POLL_INTERVAL_MS = 15_000L
+        /** How soon after an edit it's sent: soon, so little is ever unsynced if the session ends. */
+        private const val EDIT_SYNC_DELAY_MS = 1_000L
         /** Returning to the app checks at once, unless a check ran moments ago. */
         private const val RESUME_SYNC_GAP_MS = 5_000L
     }
@@ -165,7 +167,33 @@ class SupabaseSync(
                 if (auth.account.value != null) runSync()
                 observeLocalChanges()
             }
+            scope.launch { removeLibraryOnSignOut() }
         }
+    }
+
+    /**
+     * However an account goes — Sign out, or a session the server ended — its decks and binders leave
+     * this phone. They're in the account, and come back on signing in again.
+     */
+    private suspend fun removeLibraryOnSignOut() {
+        var signedIn: String? = null
+        auth.account.collect { account ->
+            // Also on a switch straight to another account, in case the signed-out moment was missed.
+            if (signedIn != null && account?.userId != signedIn) mutex.withLock { removeLocalLibrary() }
+            signedIn = account?.userId
+        }
+    }
+
+    /**
+     * Removes the library and this device's sync bookkeeping. Called holding [mutex], so a pass that
+     * was running finishes first — and whatever it saved is removed with the rest, rather than left to
+     * make the next sign-in read the empty library as deletions.
+     */
+    private suspend fun removeLocalLibrary() {
+        deckRepository.applySync { emptyList() }
+        collectionRepository.applySync { emptyList() }
+        context.supabaseSyncStore.edit { it.clear() }
+        _status.value = CloudSyncStatus()
     }
 
     fun syncNow() {
@@ -203,10 +231,11 @@ class SupabaseSync(
         }
     }
 
-    /** The app left the foreground: stop checking in the background. */
+    /** The app left the foreground: send anything not yet synced, then stop checking. */
     fun onAppPaused() {
         pollJob?.cancel()
         pollJob = null
+        if (auth.account.value != null) scope.launch { runSync(quiet = true) }
     }
 
     suspend fun signIn(email: String, password: String) {
@@ -232,13 +261,38 @@ class SupabaseSync(
         return account
     }
 
-    /** Signs out and forgets this device's sync bookkeeping. Local decks and binders stay on the device. */
-    suspend fun signOut() {
+    /**
+     * Syncs, then signs out and removes the account's decks and binders from this phone (they stay in
+     * the account). If some changes couldn't be synced first, nothing happens and this returns how
+     * many — pass [force] to sign out anyway. Returns 0 once signed out.
+     */
+    suspend fun signOut(force: Boolean = false): Int {
+        if (!force && auth.account.value != null) {
+            runSync()
+            // A second pass picks up anything the first had to merge with another device's edit.
+            if (unsyncedCount() > 0) runSync()
+            val unsynced = unsyncedCount()
+            if (unsynced > 0) return unsynced
+        }
         mutex.withLock {
             auth.signOut()
-            context.supabaseSyncStore.edit { it.clear() }
-            _status.value = CloudSyncStatus()
+            removeLocalLibrary()
         }
+        return 0
+    }
+
+    /** Local changes not on the server yet, found the way a sync pass finds them. */
+    private suspend fun unsyncedCount(): Int {
+        val state = loadState()
+        val local = HashMap<String, String>()
+        deckRepository.decksFlow.first().forEach { local["deck:${it.id}"] = deckAdapter.toJson(it) }
+        collectionRepository.collectionsFlow.first().forEach { local["collection:${it.id}"] = collectionAdapter.toJson(it) }
+        val changed = local.count { (key, json) ->
+            val meta = state.items[key]
+            meta == null || meta.deleted || meta.hash != json.hashCode()
+        }
+        val removed = state.items.count { (key, meta) -> !meta.deleted && key !in local }
+        return changed + removed
     }
 
     /** Whether this device last saw [key] ("deck:<id>" / "collection:<id>") deleted on the server. */
@@ -248,7 +302,7 @@ class SupabaseSync(
         combine(deckRepository.decksFlow, collectionRepository.collectionsFlow) { d, c -> d to c }
             .collectLatest {
                 if (auth.account.value == null) return@collectLatest
-                delay(2_000) // debounce: collectLatest restarts this if another edit lands first
+                delay(EDIT_SYNC_DELAY_MS) // debounce: collectLatest restarts this if another edit lands first
                 // Run the pass outside collectLatest: its own library write emits here, and a pass
                 // cancelled halfway through could leave pulled changes recorded but not written.
                 scope.launch { runSync() }

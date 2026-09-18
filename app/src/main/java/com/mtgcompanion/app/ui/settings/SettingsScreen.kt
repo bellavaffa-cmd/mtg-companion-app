@@ -601,8 +601,8 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
 }
 
 /**
- * Sign in with email + password to sync decks and binders through Supabase. Signing out keeps
- * everything on this device; it only stops syncing.
+ * Sign in with email + password to sync decks and binders through Supabase. Signing out removes
+ * them from this device (they stay in the account).
  */
 @Composable
 private fun AccountSyncSection(sync: SupabaseSync) {
@@ -618,6 +618,9 @@ private fun AccountSyncSection(sync: SupabaseSync) {
     // Set after creating an account, or when sign-in says the email isn't confirmed yet.
     var awaitingConfirmation by rememberSaveable { mutableStateOf(false) }
     var changingPassword by remember { mutableStateOf(false) }
+    var signingOut by remember { mutableStateOf(false) }
+    // Changes that couldn't be synced before signing out, which signing out would lose.
+    var unsyncedWarning by remember { mutableStateOf<Int?>(null) }
 
     if (!sync.auth.configured) {
         Text("Cloud sync isn't set up in this build.", style = MaterialTheme.typography.bodySmall)
@@ -640,7 +643,8 @@ private fun AccountSyncSection(sync: SupabaseSync) {
                 Text(notice.reason, style = MaterialTheme.typography.bodySmall)
                 Text(
                     "On " + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
-                        .format(java.util.Date(notice.atMillis)) + ". Your decks and binders are still on this device.",
+                        .format(java.util.Date(notice.atMillis)) + ". Your decks and binders were removed from this phone; " +
+                            "sign in to get them back from your account.",
                     style = MaterialTheme.typography.labelMedium
                 )
                 TextButton(onClick = { sync.auth.dismissSignedOutNotice() }, modifier = Modifier.align(Alignment.End)) {
@@ -779,9 +783,41 @@ private fun AccountSyncSection(sync: SupabaseSync) {
             TextButton(onClick = { changingPassword = true }) {
                 Text("Change password", style = MaterialTheme.typography.labelLarge, color = Gold)
             }
-            TextButton(onClick = { scope.launch { sync.signOut() } }) {
-                Text("Sign out", style = MaterialTheme.typography.labelLarge, color = TextMuted)
+            TextButton(
+                onClick = {
+                    signingOut = true
+                    scope.launch {
+                        val unsynced = sync.signOut()
+                        signingOut = false
+                        if (unsynced > 0) unsyncedWarning = unsynced
+                    }
+                },
+                enabled = !signingOut
+            ) {
+                Text(if (signingOut) "Syncing first…" else "Sign out", style = MaterialTheme.typography.labelLarge, color = TextMuted)
             }
+        }
+        unsyncedWarning?.let { count ->
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { unsyncedWarning = null },
+                title = { Text(if (count == 1) "1 change hasn't synced" else "$count changes haven't synced", color = GoldLight) },
+                text = {
+                    Text(
+                        "Signing out removes your decks and binders from this phone, so " +
+                            (if (count == 1) "it" else "they") + " would be lost. Check your connection and sync again, or sign out anyway.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        unsyncedWarning = null
+                        scope.launch { sync.signOut(force = true) }
+                    }) { Text("Sign out anyway", color = app.warning) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { unsyncedWarning = null }) { Text("Cancel", color = Gold) }
+                }
+            )
         }
         if (changingPassword) {
             val context = androidx.compose.ui.platform.LocalContext.current
@@ -797,7 +833,7 @@ private fun AccountSyncSection(sync: SupabaseSync) {
             )
         }
         Text(
-            "Signing out keeps your decks and binders on this phone; it only stops syncing.",
+            "Signing out removes your decks and binders from this phone — they stay in your account and come back when you sign in.",
             style = MaterialTheme.typography.labelMedium,
             color = TextDim
         )
