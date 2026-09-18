@@ -147,12 +147,20 @@ class SupabaseSync(
     private val core = SyncCore(deckAdapter, collectionAdapter)
     private var lastResumeSync = 0L
     private var pollJob: Job? = null
+    private val realtime = SupabaseRealtime(auth, scope)
+    private var liveChangeJob: Job? = null
+    /** The app is on screen: live updates run only then. */
+    @Volatile private var inForeground = false
 
     companion object {
         /** How often the app checks for other devices' edits while it's in the front. */
         const val POLL_INTERVAL_MS = 15_000L
         /** How soon after an edit it's sent: soon, so little is ever unsynced if the session ends. */
         private const val EDIT_SYNC_DELAY_MS = 1_000L
+        /** While live updates are coming in ([SupabaseRealtime]), a check this often is enough as a backup. */
+        private const val LIVE_POLL_INTERVAL_MS = 60_000L
+        /** Several saves in quick succession (a whole push from another device) make one sync. */
+        private const val LIVE_CHANGE_DELAY_MS = 400L
         /** Returning to the app checks at once, unless a check ran moments ago. */
         private const val RESUME_SYNC_GAP_MS = 5_000L
     }
@@ -180,8 +188,13 @@ class SupabaseSync(
         var signedIn: String? = null
         auth.account.collect { account ->
             // Also on a switch straight to another account, in case the signed-out moment was missed.
-            if (signedIn != null && account?.userId != signedIn) mutex.withLock { removeLocalLibrary() }
+            if (signedIn != null && account?.userId != signedIn) {
+                realtime.stop()
+                mutex.withLock { removeLocalLibrary() }
+            }
             signedIn = account?.userId
+            // Signed in while the app is open: start listening for other devices' saves.
+            if (account != null && inForeground) startLiveUpdates()
         }
     }
 
@@ -215,6 +228,8 @@ class SupabaseSync(
      * a check ran moments ago) and then every [POLL_INTERVAL_MS] until [onAppPaused].
      */
     fun onAppResumed() {
+        inForeground = true
+        startLiveUpdates()
         val now = System.currentTimeMillis()
         if (now - lastResumeSync >= RESUME_SYNC_GAP_MS) {
             lastResumeSync = now
@@ -224,6 +239,8 @@ class SupabaseSync(
         pollJob = scope.launch {
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
+                // While live updates are coming in, a check a minute is enough as a backup.
+                if (realtime.live && System.currentTimeMillis() - lastResumeSync < LIVE_POLL_INTERVAL_MS) continue
                 if (auth.account.value != null) {
                     lastResumeSync = System.currentTimeMillis()
                     runSync(quiet = true)
@@ -234,6 +251,8 @@ class SupabaseSync(
 
     /** The app left the foreground: send anything not yet synced, then stop checking. */
     fun onAppPaused() {
+        inForeground = false
+        realtime.stop()
         pollJob?.cancel()
         pollJob = null
         if (auth.account.value != null) scope.launch { runSync(quiet = true) }
@@ -286,6 +305,19 @@ class SupabaseSync(
     private suspend fun unsyncedCount(): Int {
         val local = core.localJson(deckRepository.decksFlow.first(), collectionRepository.collectionsFlow.first())
         return core.notePending(loadState(), local, System.currentTimeMillis()).pending.size
+    }
+
+    /** Listens for other devices' saves while the app is open: one arrives here within a moment. */
+    private fun startLiveUpdates() {
+        val account = auth.account.value ?: return
+        realtime.start(account.userId) {
+            liveChangeJob?.cancel()
+            liveChangeJob = scope.launch {
+                delay(LIVE_CHANGE_DELAY_MS)
+                lastResumeSync = System.currentTimeMillis()
+                runSync(quiet = true)
+            }
+        }
     }
 
     /** Whether this device last saw [key] ("deck:<id>" / "collection:<id>") deleted on the server. */
