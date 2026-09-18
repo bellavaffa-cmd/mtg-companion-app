@@ -111,9 +111,12 @@ class CollectionDetailViewModel(
 
     fun resetImport() { _importProgress.value = ImportProgress.Idle }
 
-    /** This binder as text for other apps; [exact] names each card's printing ("(CMR) 472"). */
-    suspend fun exportText(exact: Boolean): String {
-        val entries = collection.value?.entries.orEmpty()
+    /**
+     * This binder — or just the cards [ids] — as text for other apps; [exact] names each card's
+     * printing ("(CMR) 472").
+     */
+    suspend fun exportText(exact: Boolean, ids: Set<String>? = null): String {
+        val entries = collection.value?.entries.orEmpty().filter { ids == null || it.scryfallId in ids }
         if (!exact) return buildCardListText(entries)
         val printings = cardRepository.getCardsByIds(entries.map { it.scryfallId })
             .mapNotNull { c -> if (c.set != null && c.collectorNumber != null) c.id to (c.set to c.collectorNumber) else null }
@@ -142,6 +145,32 @@ class CollectionDetailViewModel(
         }
     }
 
+    /** Moves the picked cards [ids] into [target] deck or binder — or with [keepHere], copies them. */
+    fun moveEntries(ids: Set<String>, target: MoveTarget, keepHere: Boolean) {
+        viewModelScope.launch {
+            when (target.kind) {
+                SourceKind.BINDER -> repository.transferEntries(collectionId, ids, target.id, keepHere)
+                SourceKind.DECK -> {
+                    collection.value?.entries.orEmpty().filter { it.scryfallId in ids }.forEach { addCopyTo(it, target) }
+                    if (!keepHere) repository.removeEntries(collectionId, ids)
+                }
+            }
+        }
+    }
+
+    /** Makes a binder named [name] and moves the picked cards [ids] into it — or with [keepHere], copies them. */
+    fun moveEntriesToNewBinder(ids: Set<String>, name: String, keepHere: Boolean) {
+        viewModelScope.launch {
+            val binder = repository.createCollection(name.trim().ifBlank { "New binder" }, CollectionType.OWNED)
+            repository.transferEntries(collectionId, ids, binder.id, keepHere)
+        }
+    }
+
+    /** Removes the picked cards [ids] from this binder. */
+    fun removeEntries(ids: Set<String>) {
+        viewModelScope.launch { repository.removeEntries(collectionId, ids) }
+    }
+
     /** Makes a binder named [name] and moves the card into it — or with [keepHere], copies it. */
     fun moveToNewBinder(entry: CollectionEntry, name: String, keepHere: Boolean) {
         viewModelScope.launch {
@@ -157,11 +186,6 @@ class CollectionDetailViewModel(
             repository.clearEntries(collectionId)
             onDone()
         }
-    }
-
-    /** Add a copy of this card into [target], leaving it in this binder too (unlike [moveEntry]). */
-    fun copyEntry(entry: CollectionEntry, target: MoveTarget) {
-        viewModelScope.launch { addCopyTo(entry, target) }
     }
 
     private suspend fun addCopyTo(entry: CollectionEntry, target: MoveTarget) {

@@ -4,6 +4,12 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.activity.compose.BackHandler
+import com.mtgcompanion.app.ui.common.MoveTargetDialog
+import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
@@ -117,11 +123,44 @@ fun CollectionsScreen(
     // Page 0 = All Cards (left), page 1 = Binders (right). Swipe or tap the tabs to switch.
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
+    val binderTargets by viewModel.binderTargets.collectAsState()
+    val deckTargets by viewModel.deckTargets.collectAsState()
+    // All cards' search: it filters the list, and Select all takes what it shows.
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(allCards, query) {
+        if (query.isBlank()) allCards else allCards.filter { it.name.contains(query.trim(), ignoreCase = true) }
+    }
+    // Cards picked on All cards by pressing and holding (scryfall ids), and the action open for
+    // them: "binder", "deck", "export" or "remove". Cards no longer owned drop from the pick.
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var bulk by remember { mutableStateOf<String?>(null) }
+    val picked = allCards.filter { it.scryfallId in selected }
+    val pickedIds = picked.map { it.scryfallId }.toSet()
+    val selecting = pickedIds.isNotEmpty()
+    fun toggle(id: String) {
+        selected = if (id in pickedIds) pickedIds - id else pickedIds + id
+    }
+    BackHandler(enabled = selecting) { selected = emptySet() }
 
     Scaffold(
         containerColor = Bg,
+        bottomBar = {
+            if (selecting) SelectionActionBar(
+                listOf(
+                    SelectionAction("To binder", Icons.AutoMirrored.Filled.DriveFileMove) { bulk = "binder" },
+                    SelectionAction("To deck", Icons.Filled.Style) { bulk = "deck" },
+                    SelectionAction("Export", Icons.Filled.IosShare) { bulk = "export" },
+                    SelectionAction("Remove", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
+                )
+            )
+        },
         topBar = {
-            TopAppBar(
+            if (selecting) SelectionTopBar(
+                count = pickedIds.size,
+                total = allCards.size,
+                onSelectAll = { selected = pickedIds + filtered.map { it.scryfallId } },
+                onClear = { selected = emptySet() }
+            ) else TopAppBar(
                 title = { Text("Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 actions = {
                     SyncIconButton()
@@ -162,13 +201,20 @@ fun CollectionsScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
 
-            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            // While cards are picked, a swipe mustn't carry the pick off to Binders.
+            HorizontalPager(state = pagerState, userScrollEnabled = !selecting, modifier = Modifier.fillMaxSize()) { page ->
                 if (page == 0) {
                     AllCardsTab(
                         unsorted = unsorted,
                         onOpenUnsorted = { onCollectionClick(it) },
                         onImport = { viewModel.resetImport(); showImport = true },
                         allCards = allCards,
+                        query = query,
+                        onQueryChange = { query = it },
+                        filtered = filtered,
+                        selecting = selecting,
+                        pickedIds = pickedIds,
+                        onToggle = ::toggle,
                         dashboard = dashboard,
                         prices = prices,
                         viewMode = viewMode,
@@ -185,6 +231,37 @@ fun CollectionsScreen(
                 }
             }
         }
+    }
+
+    val pickedLabel = if (picked.size == 1) picked.first().name else "${picked.size} cards"
+    val done = { bulk = null; selected = emptySet() }
+    when (bulk) {
+        "binder" -> MoveTargetDialog(
+            cardName = pickedLabel,
+            targets = binderTargets,
+            onPick = { target -> viewModel.gatherIntoBinder(pickedIds, target.id); done() },
+            onDismiss = { bulk = null },
+            onNewBinder = { name -> viewModel.gatherIntoNewBinder(pickedIds, name); done() },
+            title = "Move $pickedLabel into"
+        )
+        "deck" -> MoveTargetDialog(
+            cardName = pickedLabel,
+            targets = deckTargets,
+            onPick = { target -> viewModel.addToDeck(pickedIds, target.id); done() },
+            onDismiss = { bulk = null },
+            title = "Add $pickedLabel to"
+        )
+        "remove" -> {
+            val copies = viewModel.copiesInBinders(pickedIds)
+            ConfirmDeleteDialog(
+                title = if (picked.size == 1) "Remove from collection?" else "Remove ${picked.size} cards from collection?",
+                message = "Removes $pickedLabel ($copies cop${if (copies == 1) "y" else "ies"}) from all your binders. Copies in decks and wishlists stay.",
+                confirmLabel = "Remove",
+                onConfirm = { viewModel.removeFromCollection(pickedIds); done() },
+                onDismiss = { bulk = null }
+            )
+        }
+        "export" -> ExportCollectionDialog(pickedLabel, { exact -> viewModel.exportText(pickedIds, exact) }, title = "Export $pickedLabel") { bulk = null }
     }
 
     if (showCreateDialog) {
@@ -246,6 +323,13 @@ private fun AllCardsTab(
     onOpenUnsorted: (String) -> Unit,
     onImport: () -> Unit,
     allCards: List<AllCardEntry>,
+    // Search filters the visible card list only; the dashboard still reflects the whole collection.
+    query: String,
+    onQueryChange: (String) -> Unit,
+    filtered: List<AllCardEntry>,
+    selecting: Boolean,
+    pickedIds: Set<String>,
+    onToggle: (String) -> Unit,
     dashboard: CollectionDashboard?,
     prices: Map<String, Double>,
     viewMode: CardViewMode,
@@ -253,12 +337,6 @@ private fun AllCardsTab(
     onViewDetails: (String) -> Unit,
     viewModel: CollectionsViewModel
 ) {
-    // Search filters the visible card list only; the dashboard still reflects the whole collection.
-    var query by remember { mutableStateOf("") }
-    val filtered = remember(allCards, query) {
-        if (query.isBlank()) allCards
-        else allCards.filter { it.name.contains(query.trim(), ignoreCase = true) }
-    }
     // Tapping a card enlarges it (swipeable through the filtered list) with value/total.
     var zoomId by remember { mutableStateOf<String?>(null) }
     // Name of the card whose "find similar" overlay is open, if any.
@@ -290,7 +368,7 @@ private fun AllCardsTab(
             item {
                 OutlinedTextField(
                     value = query,
-                    onValueChange = { query = it },
+                    onValueChange = onQueryChange,
                     label = { Text("Search all cards", color = TextMuted) },
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp),
@@ -322,11 +400,23 @@ private fun AllCardsTab(
             } else {
                 if (viewMode == CardViewMode.GRID) {
                     cardGrid(filtered, columns = gridCols, key = { it.scryfallId }) { card ->
-                        AllCardTile(card = card, onClick = { zoomId = card.scryfallId }, onViewDetails = { onViewDetails(card.name) })
+                        AllCardTile(
+                            card = card,
+                            selecting = selecting,
+                            selected = card.scryfallId in pickedIds,
+                            onClick = { if (selecting) onToggle(card.scryfallId) else zoomId = card.scryfallId },
+                            onLongClick = { onToggle(card.scryfallId) }
+                        )
                     }
                 } else {
                     cardGrid(filtered, columns = listCols, key = { it.scryfallId }) { card ->
-                        AllCardRow(card = card, onClick = { zoomId = card.scryfallId }, onViewDetails = { onViewDetails(card.name) })
+                        AllCardRow(
+                            card = card,
+                            selecting = selecting,
+                            selected = card.scryfallId in pickedIds,
+                            onClick = { if (selecting) onToggle(card.scryfallId) else zoomId = card.scryfallId },
+                            onLongClick = { onToggle(card.scryfallId) }
+                        )
                     }
                 }
             }
@@ -367,8 +457,7 @@ private fun AllCardsTab(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit, onViewDetails: () -> Unit) {
-    var menuExpanded by remember { mutableStateOf(false) }
+private fun AllCardRow(card: AllCardEntry, selecting: Boolean, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     Box {
@@ -380,12 +469,12 @@ private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit, onViewDetails: (
                 .pressScale(interactionSource)
                 .clip(RoundedCornerShape(10.dp))
                 .background(Surface)
-                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
+                .border(BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Gold else BorderColor), RoundedCornerShape(10.dp))
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
-                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() }
                 )
                 .padding(12.dp)
         ) {
@@ -406,19 +495,14 @@ private fun AllCardRow(card: AllCardEntry, onClick: () -> Unit, onViewDetails: (
                     color = TextMuted
                 )
             }
+            if (selecting) SelectionMark(selected)
         }
-        CardActionMenu(
-            expanded = menuExpanded,
-            onDismiss = { menuExpanded = false },
-            actions = listOf(CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails() })
-        )
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit, onViewDetails: () -> Unit) {
-    var menuExpanded by remember { mutableStateOf(false) }
+private fun AllCardTile(card: AllCardEntry, selecting: Boolean, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     Box {
@@ -428,7 +512,7 @@ private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit, onViewDetails: 
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
-                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() }
                 )
         ) {
             Box {
@@ -437,7 +521,9 @@ private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit, onViewDetails: 
                     contentDescription = card.name,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.zoomSource(card.imageUrl).fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
+                        .let { if (selected) it.border(BorderStroke(3.dp, Gold), RoundedCornerShape(14.dp)) else it }
                 )
+                if (selecting) SelectionMark(selected, Modifier.align(Alignment.TopStart).padding(6.dp))
                 Text(
                     "×${card.total}",
                     style = MaterialTheme.typography.labelMedium,
@@ -460,11 +546,6 @@ private fun AllCardTile(card: AllCardEntry, onClick: () -> Unit, onViewDetails: 
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
-        CardActionMenu(
-            expanded = menuExpanded,
-            onDismiss = { menuExpanded = false },
-            actions = listOf(CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails() })
-        )
     }
 }
 

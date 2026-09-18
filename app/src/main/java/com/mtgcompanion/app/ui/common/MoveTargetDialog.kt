@@ -46,14 +46,15 @@ fun MoveTargetDialog(
     targets: List<MoveTarget>,
     onPick: (MoveTarget) -> Unit,
     onDismiss: () -> Unit,
-    onNewBinder: ((String) -> Unit)? = null
+    onNewBinder: ((String) -> Unit)? = null,
+    title: String? = null
 ) {
     var naming by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface,
-        title = { Text("Move $cardName", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
+        title = { Text(title ?: "Move $cardName", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
         text = {
             if (naming && onNewBinder != null) {
                 OutlinedTextField(
@@ -110,7 +111,7 @@ fun MoveTargetDialog(
         },
         confirmButton = {
             if (naming && onNewBinder != null) {
-                TextButton(onClick = { onNewBinder(newName.trim()) }, enabled = newName.isNotBlank()) { Text("Create & move", color = if (newName.isNotBlank()) Gold else TextMuted) }
+                TextButton(onClick = { onNewBinder(newName.trim()) }, enabled = newName.isNotBlank()) { Text(if (title != null) "Create" else "Create & move", color = if (newName.isNotBlank()) Gold else TextMuted) }
             }
         },
         dismissButton = { TextButton(onClick = { if (naming) naming = false else onDismiss() }) { Text(if (naming) "Back" else "Cancel", color = TextMuted) } }

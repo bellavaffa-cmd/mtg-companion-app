@@ -220,7 +220,7 @@ fun ImportCardsDialog(
  * printing" adds "(CMR) 472" so the same art comes back. Copy it, share it, or save a .txt file.
  */
 @Composable
-fun ExportCollectionDialog(binderName: String, buildText: suspend (exact: Boolean) -> String, onDismiss: () -> Unit) {
+fun ExportCollectionDialog(binderName: String, buildText: suspend (exact: Boolean) -> String, title: String = "Export binder", onDismiss: () -> Unit) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -247,7 +247,7 @@ fun ExportCollectionDialog(binderName: String, buildText: suspend (exact: Boolea
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = colors.surface,
-        title = { Text("Export binder") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Paste it into Moxfield, Archidekt, ManaBox, TCGplayer — or this app on another device.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)

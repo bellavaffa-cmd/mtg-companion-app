@@ -36,7 +36,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GroupAdd
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,8 +67,7 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
-import com.mtgcompanion.app.ui.common.CardActionMenu
-import com.mtgcompanion.app.ui.common.CardMenuAction
+import androidx.activity.compose.BackHandler
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
@@ -115,15 +115,40 @@ fun CollectionDetailScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var listDialog by remember { mutableStateOf<String?>(null) } // "import" or "export"
     val importProgress by viewModel.importProgress.collectAsState()
-    // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this binder).
-    var copyTarget by remember { mutableStateOf<CollectionEntry?>(null) }
+    // Cards picked by pressing and holding (scryfall ids), and the action open for them:
+    // "move", "copy", "remove" or "export".
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var bulk by remember { mutableStateOf<String?>(null) }
+    // Cards removed or moved out drop from the pick.
+    val picked = collection?.entries.orEmpty().filter { it.scryfallId in selected }
+    val pickedIds = picked.map { it.scryfallId }.toSet()
+    val selecting = pickedIds.isNotEmpty()
+    fun toggle(entry: CollectionEntry) {
+        selected = if (entry.scryfallId in pickedIds) pickedIds - entry.scryfallId else pickedIds + entry.scryfallId
+    }
+    BackHandler(enabled = selecting) { selected = emptySet() }
     // Name of the card whose "find similar" overlay is open, if any.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         containerColor = Bg,
+        bottomBar = {
+            if (selecting) SelectionActionBar(
+                listOf(
+                    SelectionAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { bulk = "move" },
+                    SelectionAction("Copy to", Icons.Filled.ContentCopy) { bulk = "copy" },
+                    SelectionAction("Export", Icons.Filled.IosShare) { bulk = "export" },
+                    SelectionAction("Remove", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
+                )
+            )
+        },
         topBar = {
-            TopAppBar(
+            if (selecting) SelectionTopBar(
+                count = pickedIds.size,
+                total = entries.size,
+                onSelectAll = { selected = pickedIds + entries.map { it.scryfallId } },
+                onClear = { selected = emptySet() }
+            ) else TopAppBar(
                 title = { Text(collection?.name ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -226,16 +251,20 @@ fun CollectionDetailScreen(
                         cardGrid(entries, columns = gridCols, key = { it.scryfallId }) { entry ->
                             CollectionCardTile(
                                 entry = entry,
-                                onClick = { zoomId = entry.scryfallId },
-                                actions = collectionCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeTarget = it })
+                                selecting = selecting,
+                                selected = entry.scryfallId in pickedIds,
+                                onClick = { if (selecting) toggle(entry) else zoomId = entry.scryfallId },
+                                onLongClick = { toggle(entry) }
                             )
                         }
                     } else {
                         cardGrid(entries, columns = listCols, key = { it.scryfallId }) { entry ->
                             CollectionCardRow(
                                 entry = entry,
-                                onClick = { zoomId = entry.scryfallId },
-                                actions = collectionCardActions(entry, onViewDetails, { copyTarget = it }, { moveTarget = it }, { removeTarget = it }),
+                                selecting = selecting,
+                                selected = entry.scryfallId in pickedIds,
+                                onClick = { if (selecting) toggle(entry) else zoomId = entry.scryfallId },
+                                onLongClick = { toggle(entry) },
                                 onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
                                 onRemove = { removeTarget = entry }
                             )
@@ -317,14 +346,31 @@ fun CollectionDetailScreen(
         )
     }
 
-    copyTarget?.let { entry ->
-        MoveTargetDialog(
-            cardName = entry.name,
-            targets = moveTargets,
-            onPick = { target -> viewModel.copyEntry(entry, target); copyTarget = null },
-            onDismiss = { copyTarget = null },
-            onNewBinder = { name -> viewModel.moveToNewBinder(entry, name, keepHere = true); copyTarget = null }
-        )
+    val pickedLabel = if (picked.size == 1) picked.first().name else "${picked.size} cards"
+    val done = { bulk = null; selected = emptySet() }
+    when (bulk) {
+        "move", "copy" -> {
+            val keep = bulk == "copy"
+            MoveTargetDialog(
+                cardName = pickedLabel,
+                targets = moveTargets,
+                onPick = { target -> viewModel.moveEntries(pickedIds, target, keepHere = keep); done() },
+                onDismiss = { bulk = null },
+                onNewBinder = { name -> viewModel.moveEntriesToNewBinder(pickedIds, name, keepHere = keep); done() },
+                title = if (keep) "Copy $pickedLabel to" else null
+            )
+        }
+        "remove" -> {
+            val copies = picked.sumOf { it.quantity + it.foilQuantity }
+            ConfirmDeleteDialog(
+                title = if (picked.size == 1) "Remove card?" else "Remove ${picked.size} cards?",
+                message = "Remove $pickedLabel ($copies cop${if (copies == 1) "y" else "ies"}) from this binder?",
+                confirmLabel = "Remove",
+                onConfirm = { viewModel.removeEntries(pickedIds); done() },
+                onDismiss = { bulk = null }
+            )
+        }
+        "export" -> ExportCollectionDialog(pickedLabel, { exact -> viewModel.exportText(exact, pickedIds) }, title = "Export $pickedLabel") { bulk = null }
     }
 }
 
@@ -332,12 +378,13 @@ fun CollectionDetailScreen(
 @Composable
 private fun CollectionCardRow(
     entry: CollectionEntry,
+    selecting: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
-    actions: List<CardMenuAction>,
+    onLongClick: () -> Unit,
     onQuantityChange: (Int, Int) -> Unit,
     onRemove: () -> Unit
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     Box {
@@ -349,12 +396,12 @@ private fun CollectionCardRow(
                 .pressScale(interactionSource)
                 .clip(RoundedCornerShape(10.dp))
                 .background(Surface)
-                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
+                .border(BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Gold else BorderColor), RoundedCornerShape(10.dp))
                 .combinedClickable(
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
-                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() }
                 )
                 .padding(12.dp)
         ) {
@@ -375,7 +422,7 @@ private fun CollectionCardRow(
                     color = TextMuted
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (selecting) SelectionMark(selected, Modifier.padding(end = 8.dp)) else Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { onQuantityChange((entry.quantity - 1).coerceAtLeast(0), entry.foilQuantity) }) {
                     Icon(Icons.Filled.Remove, contentDescription = "Decrease quantity", tint = Gold)
                 }
@@ -388,15 +435,13 @@ private fun CollectionCardRow(
                 }
             }
         }
-        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = actions)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, actions: List<CardMenuAction>) {
+private fun CollectionCardTile(entry: CollectionEntry, selecting: Boolean, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     val totalQty = entry.quantity + entry.foilQuantity
-    var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     Box {
@@ -405,7 +450,7 @@ private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, acti
                 interactionSource = interactionSource,
                 indication = androidx.compose.foundation.LocalIndication.current,
                 onClick = onClick,
-                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() }
             )
         ) {
             Box {
@@ -414,7 +459,9 @@ private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, acti
                     contentDescription = entry.name,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.zoomSource(entry.imageUrl).fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
+                        .let { if (selected) it.border(BorderStroke(3.dp, Gold), RoundedCornerShape(14.dp)) else it }
                 )
+                if (selecting) SelectionMark(selected, Modifier.align(Alignment.TopStart).padding(6.dp))
                 Text(
                     "×$totalQty",
                     style = MaterialTheme.typography.labelMedium,
@@ -437,19 +484,5 @@ private fun CollectionCardTile(entry: CollectionEntry, onClick: () -> Unit, acti
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
-        CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = actions)
     }
 }
-
-private fun collectionCardActions(
-    entry: CollectionEntry,
-    onViewDetails: (String) -> Unit,
-    onCopy: (CollectionEntry) -> Unit,
-    onMove: (CollectionEntry) -> Unit,
-    onRemove: (CollectionEntry) -> Unit
-) = listOf(
-    CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { onCopy(entry) },
-    CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { onMove(entry) },
-    CardMenuAction("Remove from binder", Icons.Filled.Close, destructive = true) { onRemove(entry) },
-    CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
-)

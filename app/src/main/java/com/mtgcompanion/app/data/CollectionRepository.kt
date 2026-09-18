@@ -83,19 +83,67 @@ class CollectionRepository(private val context: Context) {
         updateEntries(collectionId) { entries -> entries.filterNot { it.scryfallId == scryfallId } }
     }
 
-    /** Add a card entry (with its quantities) to a binder, merging into an existing copy. For moves. */
     /** Adds a whole imported list to a binder in one change, copies of cards already there added on. */
     suspend fun addEntries(collectionId: String, added: List<CollectionEntry>) {
-        updateEntries(collectionId) { entries ->
-            added.fold(entries) { list, entry ->
-                if (list.any { it.scryfallId == entry.scryfallId }) {
-                    list.map { if (it.scryfallId != entry.scryfallId) it else it.copy(quantity = it.quantity + entry.quantity, foilQuantity = it.foilQuantity + entry.foilQuantity) }
-                } else {
-                    list + entry
+        updateEntries(collectionId) { entries -> entries.mergeIn(added) }
+    }
+
+    /**
+     * Moves the cards [ids] from one binder into another in one change — or with [keep], copies
+     * them, leaving them where they were too.
+     */
+    suspend fun transferEntries(fromId: String, ids: Set<String>, toId: String, keep: Boolean) {
+        update { collections ->
+            val moving = collections.firstOrNull { it.id == fromId }?.entries.orEmpty().filter { it.scryfallId in ids }
+            collections.map { c ->
+                when {
+                    c.id == toId -> c.copy(entries = c.entries.mergeIn(moving))
+                    c.id == fromId && !keep -> c.copy(entries = c.entries.filterNot { it.scryfallId in ids })
+                    else -> c
                 }
             }
         }
     }
+
+    /**
+     * Gathers every copy of the cards [ids] from the user's other binders (the Unsorted pile too;
+     * wishlists keep theirs) into the binder [toId], in one change.
+     */
+    suspend fun gatherInto(toId: String, ids: Set<String>) {
+        update { collections ->
+            val sources = collections.filter { it.id != toId && it.kind == CollectionType.OWNED }
+            val moving = sources.flatMap { c -> c.entries.filter { it.scryfallId in ids } }
+            collections.map { c ->
+                when {
+                    c.id == toId -> c.copy(entries = c.entries.mergeIn(moving))
+                    c in sources -> c.copy(entries = c.entries.filterNot { it.scryfallId in ids })
+                    else -> c
+                }
+            }
+        }
+    }
+
+    /** Removes the cards [ids] from one binder, in one change. */
+    suspend fun removeEntries(collectionId: String, ids: Set<String>) {
+        updateEntries(collectionId) { entries -> entries.filterNot { it.scryfallId in ids } }
+    }
+
+    /** Removes the cards [ids] from every binder (the Unsorted pile too); wishlists keep theirs. */
+    suspend fun removeEverywhere(ids: Set<String>) {
+        update { collections ->
+            collections.map { c -> if (c.kind == CollectionType.OWNED) c.copy(entries = c.entries.filterNot { it.scryfallId in ids }) else c }
+        }
+    }
+
+    /** These entries with [added] merged in: copies of a card already here are added on. */
+    private fun List<CollectionEntry>.mergeIn(added: List<CollectionEntry>): List<CollectionEntry> =
+        added.fold(this) { list, entry ->
+            if (list.any { it.scryfallId == entry.scryfallId }) {
+                list.map { if (it.scryfallId != entry.scryfallId) it else it.copy(quantity = it.quantity + entry.quantity, foilQuantity = it.foilQuantity + entry.foilQuantity) }
+            } else {
+                list + entry
+            }
+        }
 
     /** Adds cards to the Unsorted pile (owned, not in a binder yet), making the pile if there isn't one. */
     suspend fun addUnsorted(added: List<CollectionEntry>) {
@@ -111,6 +159,7 @@ class CollectionRepository(private val context: Context) {
         updateEntries(collectionId) { emptyList() }
     }
 
+    /** Add a card entry (with its quantities) to a binder, merging into an existing copy. For moves. */
     suspend fun addEntry(collectionId: String, entry: CollectionEntry) {
         updateEntries(collectionId) { entries ->
             val existing = entries.find { it.scryfallId == entry.scryfallId }
