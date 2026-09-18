@@ -144,6 +144,7 @@ class SupabaseSync(
     private val stateAdapter: JsonAdapter<CloudSyncState> = localMoshi.adapter(CloudSyncState::class.java)
     private val deckAdapter: JsonAdapter<Deck> = localMoshi.adapter(Deck::class.java)
     private val collectionAdapter: JsonAdapter<Collection> = localMoshi.adapter(Collection::class.java)
+    private val core = SyncCore(deckAdapter, collectionAdapter)
     private var lastResumeSync = 0L
     private var pollJob: Job? = null
 
@@ -283,16 +284,8 @@ class SupabaseSync(
 
     /** Local changes not on the server yet, found the way a sync pass finds them. */
     private suspend fun unsyncedCount(): Int {
-        val state = loadState()
-        val local = HashMap<String, String>()
-        deckRepository.decksFlow.first().forEach { local["deck:${it.id}"] = deckAdapter.toJson(it) }
-        collectionRepository.collectionsFlow.first().forEach { local["collection:${it.id}"] = collectionAdapter.toJson(it) }
-        val changed = local.count { (key, json) ->
-            val meta = state.items[key]
-            meta == null || meta.deleted || meta.hash != json.hashCode()
-        }
-        val removed = state.items.count { (key, meta) -> !meta.deleted && key !in local }
-        return changed + removed
+        val local = core.localJson(deckRepository.decksFlow.first(), collectionRepository.collectionsFlow.first())
+        return core.notePending(loadState(), local, System.currentTimeMillis()).pending.size
     }
 
     /** Whether this device last saw [key] ("deck:<id>" / "collection:<id>") deleted on the server. */
@@ -333,35 +326,19 @@ class SupabaseSync(
 
             val decks = deckRepository.decksFlow.first()
             val collections = collectionRepository.collectionsFlow.first()
-            // key -> JSON. A merge below replaces an entry here, so the merged version is what gets pushed.
-            val local = LinkedHashMap<String, String>()
-            decks.forEach { local["deck:${it.id}"] = deckAdapter.toJson(it) }
-            collections.forEach { local["collection:${it.id}"] = collectionAdapter.toJson(it) }
+            val local = core.localJson(decks, collections)
 
-            // 1. Note what changed locally since the last agreement with the server.
+            // 1. Note what changed locally since the last agreement with the server. Kept before going
+            //    near the network: otherwise an edit made offline is stamped with the time the device
+            //    next reaches the server, and could overwrite a newer edit made elsewhere meanwhile.
             val now = System.currentTimeMillis()
-            val pending = state.pending.toMutableMap()
-            local.forEach { (key, json) ->
-                val meta = state.items[key]
-                if (meta == null || meta.deleted || meta.hash != json.hashCode()) {
-                    pending.putIfAbsent(key, if (meta == null && state.cursor == null) 0L else now)
-                } else {
-                    pending.remove(key)
-                }
-            }
-            state.items.forEach { (key, meta) ->
-                if (!meta.deleted && key !in local) pending.putIfAbsent(key, now)
-            }
-            // Keep when each change was first noticed before going near the network. Otherwise an edit
-            // made offline is stamped with the time the device next reaches the server, and could
-            // overwrite a newer edit of the same deck made on another device in the meantime.
-            if (pending != state.pending) {
-                state = state.copy(pending = pending)
+            val noted = core.notePending(state, local, now)
+            if (noted !== state) {
+                state = noted
                 saveState(state)
             }
 
-            // 2. Pull everything newer than the cursor, applying remote changes that aren't older
-            //    than a pending local edit of the same item.
+            // 2. Pull everything newer than the cursor, plus rows to read back by key, and take them in.
             var token = auth.accessToken() ?: throw SupabaseAuthException("Signed out — sign in again to sync.")
             // A 401 means this access token was refused (a clock that's off, say): refresh once and retry.
             suspend fun freshToken(): String {
@@ -374,238 +351,84 @@ class SupabaseSync(
                 token = freshToken()
                 orWithoutCas { pull(token, state.cursor) }
             }
-            // Rows a skipped push left behind, and those of a push whose answer never came — unless
-            // the cursor pull already brought them.
-            val inPull = rows.mapTo(HashSet()) { it.key }
-            val refetch = (state.refetch + state.sent.keys).distinct()
+            val refetch = core.refetchKeys(state)
             val again = if (refetch.isEmpty()) emptyList() else try {
                 orWithoutCas { fetchRows(token, refetch) }
             } catch (e: UnauthorizedException) {
                 token = freshToken()
                 orWithoutCas { fetchRows(token, refetch) }
-            }.filter { it.key !in inPull }
-
-            val items = state.items.toMutableMap()
-            // Remote changes to write locally: id -> the new version, or null to delete it.
-            val deckChanges = LinkedHashMap<String, Deck?>()
-            val collectionChanges = LinkedHashMap<String, Collection?>()
-            var cursor = state.cursor
-            var pulledCount = 0
-            var pushedCount = 0
-
-            /** Takes in one row; false if this device can't read it, so it's left for a later pass. */
-            fun <T : Any> takeRow(
-                row: RemoteRow,
-                adapter: JsonAdapter<T>,
-                changes: MutableMap<String, T?>,
-                emptyBase: (T) -> T,
-                merge: (base: T, mine: T, theirs: T, minePreferred: Boolean) -> T
-            ): Boolean {
-                val key = row.key
-                val localEdit = pending[key]
-                val mineJson = local[key]
-                if (row.deleted) {
-                    // Deleted elsewhere: it goes, unless this device edited it more recently.
-                    if (localEdit != null && localEdit > row.editedMs) return true
-                    if (mineJson != null) { changes[row.id] = null; pulledCount++ }
-                    items[key] = ItemMeta(0, row.editedMs, deleted = true, baseMs = row.editedMs)
-                    pending.remove(key)
-                    return true
-                }
-                val theirs = row.data?.let { runCatching { adapter.fromJson(it) }.getOrNull() } ?: return false
-                val theirJson = adapter.toJson(theirs)
-                val meta = state.items[key]
-                val sent = state.sent[key]
-                // A push whose answer was lost did land: the row still carries its stamp and content.
-                val sentLanded = sent != null && sent.ms == row.editedMs && sent.json?.hashCode() == theirJson.hashCode()
-                // This device's own write coming back (or a row it already agreed on): stamped with the
-                // edit time it last pushed, and holding what it pushed. That's now the agreed version.
-                // The content check matters: another device merging from the same row can land on the
-                // very same stamp.
-                if (sentLanded || meta != null && !meta.deleted && meta.editedMs == row.editedMs &&
-                    (meta.hash == theirJson.hashCode() || meta.base == theirJson)
-                ) {
-                    val ownHash = if (sentLanded) sent!!.json!!.hashCode() else meta!!.hash
-                    items[key] = ItemMeta(ownHash, row.editedMs, base = theirJson, baseMs = row.editedMs)
-                    if (mineJson != null && mineJson.hashCode() != ownHash) {
-                        // Edited again since: that edit is simply pushed — nothing from elsewhere to merge.
-                        pending[key] = maxOf(pending[key] ?: now, row.editedMs + 1)
-                    } else if (mineJson != null) {
-                        pending.remove(key)
-                    }
-                    return true
-                }
-                // Another device merged from a push of ours whose answer was lost: it landed, and it's
-                // the version to merge against — merging from the older one would count our change twice.
-                val builtOnOurs = sent != null && row.baseEditedMs != null && row.baseEditedMs == sent.ms
-                val baseJson = if (builtOnOurs) sent!!.json else meta?.base
-                val base = baseJson?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
-                // This device has diverged if its copy differs from the version both sides last
-                // agreed on — which stays true even when a push was skipped as stale server-side.
-                val diverged = mineJson != null && base != null && mineJson != baseJson
-                // This device has the item but has never agreed a version of it with the server — its
-                // first sync, say, with the same deck already in the cloud (both from the old Drive
-                // sync). With nothing to compare against, keep every card from both rather than letting
-                // the cloud copy replace this one. Not tied to a pending edit: a first push the server
-                // skipped leaves none.
-                val firstMeeting = mineJson != null && meta == null && !builtOnOurs
-                // Both devices changed it since they last agreed: keep both sets of edits.
-                if ((diverged || firstMeeting) && mineJson != theirJson) {
-                    val mine = adapter.fromJson(mineJson!!) ?: return false
-                    // First meeting: an empty base makes every card an addition from both sides, and
-                    // the cloud's name and settings win.
-                    val merged = merge(base ?: emptyBase(mine), mine, theirs, (localEdit ?: 0L) > row.editedMs)
-                    val mergedJson = adapter.toJson(merged)
-                    if (mergedJson != mineJson) { changes[row.id] = merged; pulledCount++ }
-                    // Push the merged version, stamped past their edit so the server can't reject it
-                    // as stale, and keep their version as the new base.
-                    local[key] = mergedJson
-                    pending[key] = maxOf(now, row.editedMs + 1)
-                    items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson, baseMs = row.editedMs)
-                    return true
-                }
-                if (localEdit != null && localEdit > row.editedMs) return true // ours is newer; pushed below
-                if (mineJson != theirJson) { changes[row.id] = theirs; pulledCount++ }
-                items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson, baseMs = row.editedMs)
-                pending.remove(key)
-                return true
             }
-
-            // Once a row can't be read, the cursor stays behind it — later rows are read again next
-            // time, which changes nothing — so an update that can read it still gets to see it.
-            var stuck = false
-            (again + rows).forEach { row ->
-                val taken = if (row.kind == "deck") {
-                    takeRow(row, deckAdapter, deckChanges, { mine ->
-                        mine.copy(cards = emptyList(), considering = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList())
-                    }) { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) }
-                } else {
-                    takeRow(row, collectionAdapter, collectionChanges, { mine -> mine.copy(entries = emptyList()) }) { b, m, t, p ->
-                        ItemMerge.mergeCollections(b, m, t, minePreferred = p)
-                    }
-                }
-                if (!taken) stuck = true
-                // A re-fetched row, or one re-read from the overlap, never moves the cursor backwards.
-                if (taken && !stuck && row.key in inPull && (cursor == null || row.serverUpdatedAt > cursor!!)) {
-                    cursor = row.serverUpdatedAt
-                }
-            }
+            val pulled = core.pull(state, local, rows, again, now)
             // Write what was pulled into the library first, then record it as agreed. The other way
             // round, a pass stopped in between (the app killed, say) leaves it marked agreed but never
             // written — and the next pass pushes the old copies back over it. This way round, the
             // worst case is pushing what was just pulled, which changes nothing.
             // Written as changes to the library as it is now, not as it was when this pass started: an
             // item edited meanwhile gets the remote version merged in, and nothing else is touched.
-            if (deckChanges.isNotEmpty()) {
+            if (pulled.deckChanges.isNotEmpty()) {
                 val before = decks.associateBy { it.id }
                 deckRepository.applySync { current ->
-                    applyRemoteChanges(current, before, deckChanges, { it.id }) { b, m, t -> ItemMerge.mergeDecks(b, m, t, minePreferred = true) }
+                    applyRemoteChanges(current, before, pulled.deckChanges, { it.id }) { b, m, t -> ItemMerge.mergeDecks(b, m, t, minePreferred = true) }
                 }
             }
-            if (collectionChanges.isNotEmpty()) {
+            if (pulled.collectionChanges.isNotEmpty()) {
                 val before = collections.associateBy { it.id }
                 collectionRepository.applySync { current ->
-                    applyRemoteChanges(current, before, collectionChanges, { it.id }) { b, m, t -> ItemMerge.mergeCollections(b, m, t, minePreferred = true) }
+                    applyRemoteChanges(current, before, pulled.collectionChanges, { it.id }) { b, m, t -> ItemMerge.mergeCollections(b, m, t, minePreferred = true) }
                 }
             }
-            // Every unanswered push has now been read back (a row it never reached leaves its edit pending).
-            state = state.copy(items = items, pending = pending, cursor = cursor, refetch = emptyList(), sent = emptyMap())
+            state = pulled.state
             saveState(state)
 
             // 3. Push what's still pending. The server only overwrites the version each item was merged
             //    from (or, before the compare-and-swap migration, anything older than the push).
-            if (pending.isNotEmpty()) {
-                val batch = JSONArray()
-                val sent = LinkedHashMap<String, Pair<Long, String?>>()
-                pending.forEach { (key, editedAt) ->
-                    val (kind, id) = key.split(":", limit = 2)
-                    val editedMs = if (editedAt == 0L) now else editedAt
-                    // A merged item was written into `local` above.
-                    val json = local[key]
-                    // The version this was merged from; the server only lets the push overwrite that one.
-                    val base = state.items[key]?.let { it.baseMs ?: it.editedMs }
-                    val item = JSONObject().put("kind", kind).put("id", id).put("edited_ms", editedMs)
-                        .put("base_edited_ms", base ?: JSONObject.NULL)
-                    if (json == null) item.put("deleted", true)
-                    else item.put("deleted", false).put("data", JSONObject(json))
-                    sent[key] = editedMs to json
-                    batch.put(item)
-                }
+            var pushedCount = 0
+            val batch = core.pushBatch(state, pulled.local, now)
+            if (batch.isNotEmpty()) {
+                val body = JSONArray().apply { batch.forEach { put(it.toJsonObject()) } }
                 // Note what's being sent first: if the answer is lost, the next pass can still tell
                 // whether it landed.
-                saveState(state.copy(sent = sent.mapValues { (_, v) -> SentItem(v.first, v.second) }))
+                saveState(core.withSent(state, batch))
                 val wrote: Set<String>? = if (casServer == false) null else try {
                     try {
-                        pushV2(token, batch)
+                        pushV2(token, body)
                     } catch (e: UnauthorizedException) {
                         token = freshToken()
-                        pushV2(token, batch)
+                        pushV2(token, body)
                     }.also { casServer = true }
                 } catch (e: CasUnavailableException) {
                     casServer = false // no migration yet: push the old way
                     null
                 }
-                if (wrote != null) {
+                state = if (wrote != null) {
                     pushedCount = wrote.size
-                    val landedItems = LinkedHashMap<String, ItemMeta>()
-                    sent.forEach { (key, sentItem) ->
-                        if (key !in wrote) return@forEach
-                        val (editedMs, json) = sentItem
-                        landedItems[key] = if (json == null) ItemMeta(0, editedMs, deleted = true, baseMs = editedMs)
-                        else ItemMeta(json.hashCode(), editedMs, base = json, baseMs = editedMs)
-                    }
-                    // Skipped: the row moved on from the version this was merged from. Keep the edit and
-                    // its time; the next pass reads the row back and merges.
-                    val skipped = pending.filterKeys { it !in wrote }
-                    state = state.copy(
-                        items = state.items + landedItems,
-                        pending = skipped,
-                        refetch = skipped.keys.toList(),
-                        sent = emptyMap()
-                    )
+                    core.afterPushV2(state, batch, wrote)
                 } else {
                     val written = try {
-                        push(token, batch)
+                        push(token, body)
                     } catch (e: UnauthorizedException) {
                         token = freshToken()
-                        push(token, batch)
+                        push(token, body)
                     }
                     pushedCount = written
-                    // Which items landed. Usually all of them; if the server skipped some (it held a newer
-                    // edit), read the rows straight back — each one still carrying our stamp is ours. Left to
-                    // the next pass, another device could build on one of our writes first, and our change
-                    // would count twice.
-                    var landed: Set<String> = if (written == batch.length()) sent.keys else emptySet()
-                    if (landed.size < sent.size) {
+                    // Which items landed. Usually all of them; if the server skipped some (it held a
+                    // newer edit), read the rows straight back — each one still carrying our stamp is
+                    // ours. Left to the next pass, another device could build on one of our writes
+                    // first, and our change would count twice.
+                    var landed: Set<String> = if (written == batch.size) batch.mapTo(HashSet()) { it.key } else emptySet()
+                    if (landed.size < batch.size) {
+                        val stamps = batch.associate { it.key to it.editedMs }
                         landed = runCatching {
-                            fetchRows(token, sent.keys.toList())
-                                .filter { row -> sent[row.key]?.first == row.editedMs }
-                                .mapTo(HashSet()) { it.key }
+                            fetchRows(token, batch.map { it.key }).filter { stamps[it.key] == it.editedMs }.mapTo(HashSet()) { it.key }
                         }.getOrDefault(emptySet()) // couldn't check: all read back next pass
                     }
-                    val pushed = LinkedHashMap<String, ItemMeta>()
-                    sent.forEach { (key, sentItem) ->
-                        val (editedMs, json) = sentItem
-                        // A first push the server skipped (another device already put this item in the
-                        // cloud): still never agreed, so the next pass merges both copies as a first meeting.
-                        if (key !in landed && key !in state.items) return@forEach
-                        pushed[key] = if (json == null) ItemMeta(0, editedMs, deleted = true)
-                        // Written: the pushed version is now what both sides agree on. Skipped: the old base
-                        // stays, and the next pass reads the newer row back and merges.
-                        else ItemMeta(json.hashCode(), editedMs, base = if (key in landed) json else state.items[key]?.base)
-                    }
-                    state = state.copy(
-                        items = state.items + pushed,
-                        pending = emptyMap(),
-                        refetch = sent.keys.filter { it !in landed },
-                        sent = emptyMap()
-                    )
+                    core.afterPushV1(state, batch, landed)
                 }
             }
             state = state.copy(lastSyncedAt = System.currentTimeMillis())
             saveState(state)
             _status.value = CloudSyncStatus(
-                syncing = false, lastSyncedAt = state.lastSyncedAt, message = "Synced", pulled = pulledCount, pushed = pushedCount
+                syncing = false, lastSyncedAt = state.lastSyncedAt, message = "Synced", pulled = pulled.pulled, pushed = pushedCount
             )
         } catch (e: SupabaseAuthException) {
             _status.value = _status.value.copy(syncing = false, message = e.message, failed = true)
@@ -620,17 +443,10 @@ class SupabaseSync(
         return _status.value
     }
 
-    private data class RemoteRow(
-        val kind: String,
-        val id: String,
-        val data: String?,
-        val editedMs: Long,
-        val deleted: Boolean,
-        val serverUpdatedAt: String,
-        /** The version the writer merged from (servers with push_library_items_v2 only). */
-        val baseEditedMs: Long? = null
-    ) {
-        val key get() = "$kind:$id"
+    private fun PushItem.toJsonObject(): JSONObject {
+        val item = JSONObject().put("kind", kind).put("id", id).put("edited_ms", editedMs)
+            .put("base_edited_ms", base ?: JSONObject.NULL)
+        return if (json == null) item.put("deleted", true) else item.put("deleted", false).put("data", JSONObject(json))
     }
 
     /**
