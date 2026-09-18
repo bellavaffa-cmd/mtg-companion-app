@@ -91,6 +91,9 @@ class SocialRepository(private val auth: SupabaseAuth) {
     /** The trade the composer is working on, if any (the binder screen starts one with its picks). */
     var draft: TradeDraft? = null
 
+    /** Set to open Collection on its Shared page (from Friends); the Collection screen takes it. */
+    var openSharedTab: Boolean = false
+
     /** Ends a life counter table after its screen has gone (so no coroutine of its own is left). */
     fun endMatchInBackground(matchId: String) { scope.launch { runCatching { api.endMatch(matchId) } } }
 

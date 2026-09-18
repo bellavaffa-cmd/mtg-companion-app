@@ -64,6 +64,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -108,7 +109,11 @@ fun CollectionsScreen(
     viewModel: CollectionsViewModel,
     onCollectionClick: (String) -> Unit,
     onViewDetails: (String) -> Unit,
-    onShareCollection: (() -> Unit)? = null
+    onShareCollection: (() -> Unit)? = null,
+    // The Shared page (what friends share), when accounts are set up; [openShared] asks to show it.
+    sharedPage: (@Composable () -> Unit)? = null,
+    openShared: Boolean = false,
+    onSharedOpened: () -> Unit = {}
 ) {
     val collections by viewModel.collections.collectAsState()
     val allCards by viewModel.allCards.collectAsState()
@@ -120,9 +125,16 @@ fun CollectionsScreen(
     var showImport by remember { mutableStateOf(false) }
     val importProgress by viewModel.importProgress.collectAsState()
     val unsorted by viewModel.unsorted.collectAsState()
-    // Page 0 = All Cards (left), page 1 = Binders (right). Swipe or tap the tabs to switch.
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    // Page 0 = All Cards, 1 = Binders, 2 = Shared (with accounts). Swipe or tap the tabs to switch.
+    val pageCount = if (sharedPage != null) 3 else 2
+    val pagerState = rememberPagerState(pageCount = { pageCount })
     val scope = rememberCoroutineScope()
+    LaunchedEffect(openShared) {
+        if (openShared && sharedPage != null) {
+            pagerState.scrollToPage(2)
+            onSharedOpened()
+        }
+    }
     val binderTargets by viewModel.binderTargets.collectAsState()
     val deckTargets by viewModel.deckTargets.collectAsState()
     // All cards' search: it filters the list, and Select all takes what it shows.
@@ -195,7 +207,7 @@ fun CollectionsScreen(
         }
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             SegmentedTabs(
-                labels = listOf("All cards", "Binders"),
+                labels = if (sharedPage != null) listOf("All cards", "Binders", "Shared") else listOf("All cards", "Binders"),
                 selected = pagerState.currentPage,
                 onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -222,6 +234,8 @@ fun CollectionsScreen(
                         onViewDetails = onViewDetails,
                         viewModel = viewModel
                     )
+                } else if (page == 2 && sharedPage != null) {
+                    sharedPage()
                 } else {
                     CollectionsTab(
                         collections = collections.filterNot { it.isUnsorted },

@@ -116,6 +116,8 @@ import com.mtgcompanion.app.ui.social.QrScanScreen
 import com.mtgcompanion.app.ui.social.ShareCollectionDialog
 import com.mtgcompanion.app.ui.social.ShareDialog
 import com.mtgcompanion.app.ui.social.SharedCollectionScreen
+import com.mtgcompanion.app.ui.social.SharedFriendsPage
+import com.mtgcompanion.app.ui.social.FriendSharedScreen
 import com.mtgcompanion.app.ui.social.SharedItemScreen
 import com.mtgcompanion.app.ui.social.SharedSource
 import com.mtgcompanion.app.ui.social.TradeComposerScreen
@@ -181,6 +183,8 @@ private object Routes {
     const val SHARED = "shared/{owner}/{kind}/{itemId}"
     const val SHARED_LINK = "shared_link/{token}"
     const val SHARED_COLLECTION = "shared_collection/{owner}"
+    const val FRIEND_SHARED = "friend_shared/{owner}"
+    fun friendShared(owner: String) = "friend_shared/$owner"
     fun sharedCollection(owner: String) = "shared_collection/$owner"
     const val QR_SCAN = "qr_scan"
     fun friend(userId: String) = "friend/$userId"
@@ -262,7 +266,7 @@ fun MtgNavGraph(
                 Routes.HOME -> NavDestination.HOME
                 Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS -> NavDestination.DECKS
-                Routes.COLLECTION, Routes.COLLECTION_DETAIL -> NavDestination.COLLECTION
+                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.SETTINGS -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
@@ -390,11 +394,24 @@ fun MtgNavGraph(
                     factory = CollectionsViewModel.Factory(collectionRepository, deckRepository, settingsRepository)
                 )
                 var sharingAll by remember { mutableStateOf(false) }
+                // Friends' "See what friends share" asks for the Shared page.
+                var openShared by remember { mutableStateOf(socialRepository.openSharedTab) }
                 CollectionsScreen(
                     viewModel = viewModel,
                     onCollectionClick = { id -> navController.navigate(Routes.collectionDetail(id)) },
                     onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
-                    onShareCollection = if (supabaseSync.auth.configured) ({ sharingAll = true }) else null
+                    onShareCollection = if (supabaseSync.auth.configured) ({ sharingAll = true }) else null,
+                    sharedPage = if (!supabaseSync.auth.configured) null else ({
+                        SharedFriendsPage(
+                            social = socialRepository,
+                            onSignIn = { navController.navigateToTab(Routes.SETTINGS) },
+                            onOpenFriend = { owner -> navController.navigate(Routes.friendShared(owner)) },
+                            onOpenItem = { owner, kind, id -> navController.navigate(Routes.shared(owner, kind.wire, id)) },
+                            onAddFriend = { navController.navigateToTab(Routes.FRIENDS) }
+                        )
+                    }),
+                    openShared = openShared,
+                    onSharedOpened = { openShared = false; socialRepository.openSharedTab = false }
                 )
                 if (sharingAll) {
                     ShareCollectionDialog(
@@ -556,7 +573,8 @@ fun MtgNavGraph(
                     onOpenFriend = { id -> navController.navigate(Routes.friend(id)) },
                     onOpenShared = openShared,
                     onOpenSharedCollection = { owner -> navController.navigate(Routes.sharedCollection(owner)) },
-                    onOpenTrades = { navController.navigate(Routes.TRADES) }
+                    onOpenTrades = { navController.navigate(Routes.TRADES) },
+                    onOpenSharedTab = { socialRepository.openSharedTab = true; navController.navigateToTab(Routes.COLLECTION) }
                 )
             }
 
@@ -571,6 +589,19 @@ fun MtgNavGraph(
                     onSignIn = signIn,
                     onOpenShared = openShared,
                     onOpenSharedCollection = { owner -> navController.navigate(Routes.sharedCollection(owner)) },
+                    onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) }
+                )
+            }
+
+            destination(Routes.FRIEND_SHARED, arguments = listOf(navArgument("owner") { type = NavType.StringType })) { entry ->
+                val owner = entry.arguments?.getString("owner").orEmpty()
+                FriendSharedScreen(
+                    social = socialRepository,
+                    owner = owner,
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onOpenCollection = { navController.navigate(Routes.sharedCollection(it)) },
+                    onOpenItem = { o, kind, id -> navController.navigate(Routes.shared(o, kind.wire, id)) },
                     onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) }
                 )
             }

@@ -92,7 +92,8 @@ fun FriendsScreen(
     onOpenFriend: (String) -> Unit,
     onOpenShared: (SharedSummary) -> Unit,
     onOpenTrades: () -> Unit,
-    onOpenSharedCollection: (String) -> Unit = {}
+    onOpenSharedCollection: (String) -> Unit = {},
+    onOpenSharedTab: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     Scaffold(
@@ -109,7 +110,7 @@ fun FriendsScreen(
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.readableWidth(680.dp)) {
                 SocialGate(social, onSignIn) { overview ->
-                    FriendsContent(social, overview, onOpenFriend, onOpenShared, onOpenTrades, onOpenSharedCollection)
+                    FriendsContent(social, overview, onOpenFriend, onOpenShared, onOpenTrades, onOpenSharedCollection, onOpenSharedTab)
                 }
             }
         }
@@ -123,7 +124,8 @@ private fun FriendsContent(
     onOpenFriend: (String) -> Unit,
     onOpenShared: (SharedSummary) -> Unit,
     onOpenTrades: () -> Unit,
-    onOpenSharedCollection: (String) -> Unit
+    onOpenSharedCollection: (String) -> Unit,
+    onOpenSharedTab: () -> Unit
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
@@ -238,23 +240,29 @@ private fun FriendsContent(
             }
         }
 
-        // A friend's whole collection is one row here (it opens all of it); its binders are on their page.
-        val wholeOwners = overview.sharedAllWithMe.filter { it.kind == ShareKind.COLLECTION }.map { it.owner }.distinct()
-        val sharedRows = overview.sharedWithMe.filterNot { it.kind == ShareKind.COLLECTION && it.whole && it.owner in wholeOwners }
-        val sharedCount = wholeOwners.size + sharedRows.size
-        item { SectionHeader(if (sharedCount == 0) "Shared with you" else "Shared with you · $sharedCount") }
-        if (sharedCount == 0) {
-            item { Notice("Decks and binders friends share with you show up here.") }
-        }
-        wholeOwners.forEach { owner ->
-            item(key = "whole-$owner") {
-                WholeCollectionRow(overview.person(owner)?.displayName ?: "A friend", overview.sharedWithMe.filter { it.owner == owner && it.kind == ShareKind.COLLECTION }, whole = true) {
-                    onOpenSharedCollection(owner)
+        // What friends share lives on Collection's Shared page; this is the way there.
+        val sharers = overview.sharedWithMe.map { it.owner }.distinct()
+        item { SectionHeader("Shared with you") }
+        item(key = "shared-link") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).clickable(onClick = onOpenSharedTab).padding(horizontal = 12.dp, vertical = 12.dp)
+            ) {
+                Box(Modifier.size(width = 62.dp, height = 34.dp)) {
+                    sharers.take(3).forEachIndexed { i, m -> Avatar(overview.person(m), 32.dp, Modifier.offset(x = (i * 15).dp)) }
+                    if (sharers.isEmpty()) Icon(Icons.Filled.Collections, contentDescription = null, tint = colors.accent, modifier = Modifier.align(Alignment.Center))
                 }
+                Column(Modifier.weight(1f)) {
+                    Text("See what friends share", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (sharers.isEmpty()) "Nothing shared with you yet" else "${sharers.size} ${if (sharers.size == 1) "friend shares" else "friends share"} with you — in Collection",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textMuted
+                    )
+                }
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
             }
-        }
-        sharedRows.forEach { s ->
-            item(key = "sh-${s.owner}-${s.kind}-${s.itemId}") { SharedRow(s, overview.person(s.owner)) { onOpenShared(s) } }
         }
         item { Spacer(Modifier.height(24.dp)) }
     }

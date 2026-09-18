@@ -39,7 +39,26 @@ data class SharedSummary(
     val cover: String?,
     val cards: Int,
     /** Shared as part of the owner's whole collection / all their decks. */
-    val whole: Boolean = false
+    val whole: Boolean = false,
+    /** A binder's type (OWNED or WISHLIST); null for decks. */
+    val type: String? = null,
+    /** When the owner last changed it, for "updated since you looked". */
+    val editedMs: Long = 0
+) {
+    val isWishlist: Boolean get() = type == "WISHLIST"
+}
+
+/** One card a friend has, found by "who has a card?" or as a wishlist match. */
+data class SharedCardHit(
+    val owner: String,
+    val kind: ShareKind,
+    val itemId: String,
+    val itemName: String,
+    val scryfallId: String,
+    val name: String,
+    val imageUrl: String?,
+    val quantity: Int,
+    val foilQuantity: Int
 )
 
 data class Share(
@@ -194,7 +213,10 @@ internal fun parseOverview(o: JSONObject): Overview {
             Pod(it.getString("id"), it.getString("name"), it.getString("owner"), it.optJSONArray("members").strings())
         },
         sharedWithMe = o.optJSONArray("shared_with_me").mapObjects {
-            SharedSummary(it.getString("owner"), ShareKind.of(it.getString("kind")), it.getString("item_id"), it.str("name"), it.str("cover"), it.optInt("cards"), it.optBoolean("whole"))
+            SharedSummary(
+                it.getString("owner"), ShareKind.of(it.getString("kind")), it.getString("item_id"), it.str("name"), it.str("cover"),
+                it.optInt("cards"), it.optBoolean("whole"), it.str("type"), it.optLong("edited_ms")
+            )
         },
         myShares = o.optJSONArray("my_shares").mapObjects(::parseShare),
         trades = o.optJSONArray("trades").mapObjects(::parseTrade),
@@ -204,6 +226,20 @@ internal fun parseOverview(o: JSONObject): Overview {
         myShareAll = o.optJSONArray("my_share_all").mapObjects {
             ShareAll(o.optJSONObject("me")?.optString("user_id").orEmpty(), ShareKind.of(it.getString("kind")), it.str("viewer"))
         }
+    )
+}
+
+internal fun parseCardHits(a: JSONArray?): List<SharedCardHit> = a.mapObjects {
+    SharedCardHit(
+        owner = it.getString("owner"),
+        kind = ShareKind.of(it.optString("kind", "collection")),
+        itemId = it.getString("item_id"),
+        itemName = it.str("item_name") ?: "",
+        scryfallId = it.str("scryfall_id") ?: "",
+        name = it.str("name") ?: "",
+        imageUrl = it.str("image_url"),
+        quantity = it.optInt("quantity"),
+        foilQuantity = it.optInt("foil_quantity")
     )
 }
 

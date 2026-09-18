@@ -199,6 +199,13 @@ class SocialApi(private val auth: SupabaseAuth) {
             )
         }
 
+    /** "Who has a card?": copies of cards named like [query] in friends' shared binders and decks. */
+    suspend fun searchSharedCards(query: String): List<SharedCardHit> =
+        parseCardHits(JSONArray(call("search_shared_cards", JSONObject().put("p_query", query))))
+
+    /** Cards in friends' shared binders that are on one of the user's wishlists. */
+    suspend fun wishlistMatches(): List<SharedCardHit> = parseCardHits(JSONArray(call("wishlist_matches")))
+
     suspend fun sharedItem(owner: String, kind: ShareKind, itemId: String): SharedItem? =
         obj(call("get_shared_item", JSONObject().put("p_owner", owner).put("p_kind", kind.wire).put("p_item_id", itemId)))?.let(::parseSharedItem)
 
