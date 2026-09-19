@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.ui.common.zoomSource
 import androidx.compose.foundation.layout.BoxWithConstraints
 import com.mtgcompanion.app.ui.common.gridColumnsFor
@@ -187,6 +188,7 @@ fun DeckDetailScreen(
     val tabs = if (layout == LayoutSize.DESKTOP) DECK_TABS.filter { it != "Stats" } else DECK_TABS
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val missing by viewModel.missing.collectAsState()
+    val cardTags by viewModel.cardTags.collectAsState()
     val wishlists by viewModel.wishlists.collectAsState()
     // Swap flows: a cut candidate choosing its replacement, or a considered card choosing what it replaces.
     var swapOut by remember { mutableStateOf<DeckCardEntry?>(null) }
@@ -202,6 +204,13 @@ fun DeckDetailScreen(
     // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
     // Holds (source, key): source "card" -> deck card by scryfallId, "sugg" -> suggestion by id/name.
     var zoom by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // A tag tapped in a card's zoom or in Stats: the Cards tab, searched for it.
+    val searchTag: (String) -> Unit = { label ->
+        zoom = null
+        viewModel.setCardQuery(label)
+        val cardsPage = tabs.indexOf("Cards")
+        if (cardsPage >= 0) scope.launch { pagerState.animateScrollToPage(cardsPage) }
+    }
     // The card whose move-destination picker is open.
     var moveTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     val moveTargets by viewModel.moveTargets.collectAsState()
@@ -338,7 +347,7 @@ fun DeckDetailScreen(
                         onSwapIn = { swapIn = it },
                         onRemove = { viewModel.removeFromConsidering(it.scryfallId) }
                     )
-                    "Stats" -> StatsTab(analysis, currentDeck, viewModel)
+                    "Stats" -> StatsTab(analysis, currentDeck, viewModel, onTag = searchTag)
                     "Suggestions" -> AnalysisTab(
                         analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel,
                         onConsiderName = { name -> viewModel.considerByName(name, toast) },
@@ -353,7 +362,7 @@ fun DeckDetailScreen(
         if (layout == LayoutSize.DESKTOP) {
             // Stats beside the cards, the way the web app's deck page shows them.
             Box(Modifier.width(360.dp).fillMaxHeight()) {
-                StatsTab(analysis, currentDeck, viewModel)
+                StatsTab(analysis, currentDeck, viewModel, onTag = searchTag)
             }
         }
         }
@@ -379,8 +388,9 @@ fun DeckDetailScreen(
                         onViewDetails = { zoom = null; onViewDetails(entry.name) },
                         sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != currentDeck.id },
                         backImageUrl = entry.backImageUrl,
-                        tags = entry.tags,
-                        onFindSimilar = { zoom = null; similarSearchFor = entry.name }
+                        tags = cardTags[entry.name].orEmpty().map(RoleTags::label),
+                        onFindSimilar = { zoom = null; similarSearchFor = entry.name },
+                        onTagClick = searchTag
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
@@ -394,8 +404,9 @@ fun DeckDetailScreen(
                         onViewDetails = { zoom = null; onViewDetails(entry.name) },
                         sources = cardSources[entry.scryfallId].orEmpty(),
                         backImageUrl = entry.backImageUrl,
-                        tags = entry.tags,
-                        onFindSimilar = { zoom = null; similarSearchFor = entry.name }
+                        tags = cardTags[entry.name].orEmpty().map(RoleTags::label),
+                        onFindSimilar = { zoom = null; similarSearchFor = entry.name },
+                        onTagClick = searchTag
                     )
                 }
                 CardZoomDialog(zoomCards, considering.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
@@ -1040,8 +1051,11 @@ private fun CardsTab(
     cardActions: (DeckCardEntry) -> List<CardMenuAction>,
     viewModel: DeckDetailViewModel
 ) {
-    var query by remember { mutableStateOf("") }
+    val query by viewModel.cardQuery.collectAsState()
     val trimmed = query.trim()
+    val cardTags by viewModel.cardTags.collectAsState()
+    val tagging by viewModel.tagging.collectAsState()
+    fun tagsOf(card: DeckCardEntry) = cardTags[card.name].orEmpty()
     var filter by remember { mutableStateOf(CardFilter.ALL) }
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
@@ -1070,7 +1084,7 @@ private fun CardsTab(
         .map { group -> group.copy(cards = group.cards.mapNotNull { liveById[it.scryfallId] }) }
         .mapNotNull { group ->
             val cards = group.cards.filter { card ->
-                (trimmed.isBlank() || card.name.contains(trimmed, ignoreCase = true)) &&
+                RoleTags.matches(card.name, tagsOf(card), trimmed) &&
                     when (filter) {
                         CardFilter.ALL -> true
                         CardFilter.CUT -> card.replaceable
@@ -1106,13 +1120,13 @@ private fun CardsTab(
         if (deck.cards.isNotEmpty() || deck.commander != null) {
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Search this deck", color = TextDim) },
+                onValueChange = viewModel::setCardQuery,
+                placeholder = { Text("Name or tag, e.g. ramp", color = TextDim) },
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) {
+                        IconButton(onClick = { viewModel.setCardQuery("") }) {
                             Icon(Icons.Filled.Close, contentDescription = "Clear search", tint = TextMuted)
                         }
                     }
@@ -1131,6 +1145,22 @@ private fun CardsTab(
                     .fillMaxWidth()
                     .padding(start = 20.dp, end = 20.dp, top = 16.dp)
             )
+            // A search that found cards by their tag says which, since tags only show in the zoom.
+            if (trimmed.isNotEmpty()) {
+                val shownCount = groups.sumOf { it.cards.size }
+                val tagHits = groups.flatMap { g -> g.cards.filterNot { it.name.contains(trimmed, ignoreCase = true) } }
+                    .flatMap { RoleTags.matched(tagsOf(it), trimmed) }.distinct()
+                Text(
+                    buildString {
+                        append("$shownCount ${if (shownCount == 1) "card" else "cards"}")
+                        if (tagHits.isNotEmpty()) append(" · tag: " + tagHits.take(2).joinToString(", ") { RoleTags.label(it) } + if (tagHits.size > 2) "…" else "")
+                        if (tagging != null) append(" · finding tags…")
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted,
+                    modifier = Modifier.padding(start = 22.dp, end = 20.dp, top = 6.dp)
+                )
+            }
             if (cutCount > 0 || comboCount > 0 || filter != CardFilter.ALL) {
                 CardFilterChips(
                     selected = filter,
@@ -1217,7 +1247,7 @@ private fun CardsTab(
 }
 
 @Composable
-private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailViewModel) {
+private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailViewModel, onTag: (String) -> Unit) {
     if (analysis.loading) {
         LoadingBox()
         return
@@ -1337,7 +1367,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                 )
             }
         }
-        item { RolesPanel(roles) }
+        item { RolesPanel(roles, onTag) }
         item {
             Panel {
                 SectionLabel("Colors")

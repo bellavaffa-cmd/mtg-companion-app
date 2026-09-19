@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.RoleTags
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.GroupAdd
@@ -113,8 +114,13 @@ fun CollectionsScreen(
     // The Shared page (what friends share), when accounts are set up; [openShared] asks to show it.
     sharedPage: (@Composable () -> Unit)? = null,
     openShared: Boolean = false,
-    onSharedOpened: () -> Unit = {}
+    onSharedOpened: () -> Unit = {},
+    /** Opens a tag's automatic binder. */
+    onOpenTag: (String) -> Unit = {}
 ) {
+    val tagBinders by viewModel.tagBinders.collectAsState()
+    val tagging by viewModel.tagging.collectAsState()
+    val tagVersion by RoleTags.version.collectAsState()
     val collections by viewModel.collections.collectAsState()
     val allCards by viewModel.allCards.collectAsState()
     val dashboard by viewModel.dashboard.collectAsState()
@@ -139,8 +145,9 @@ fun CollectionsScreen(
     val deckTargets by viewModel.deckTargets.collectAsState()
     // All cards' search: it filters the list, and Select all takes what it shows.
     var query by remember { mutableStateOf("") }
-    val filtered = remember(allCards, query) {
-        if (query.isBlank()) allCards else allCards.filter { it.name.contains(query.trim(), ignoreCase = true) }
+    // A card's name or one of its tags.
+    val filtered = remember(allCards, query, tagVersion) {
+        if (query.isBlank()) allCards else allCards.filter { RoleTags.matches(it.name, RoleTags.tagsOf(it.name).orEmpty(), query) }
     }
     // Cards picked on All cards by pressing and holding (scryfall ids), and the action open for
     // them: "binder", "deck", "export" or "remove". Cards no longer owned drop from the pick.
@@ -240,7 +247,10 @@ fun CollectionsScreen(
                     CollectionsTab(
                         collections = collections.filterNot { it.isUnsorted },
                         onCollectionClick = onCollectionClick,
-                        onDelete = { viewModel.deleteCollection(it) }
+                        onDelete = { viewModel.deleteCollection(it) },
+                        tagBinders = tagBinders,
+                        tagging = tagging,
+                        onOpenTag = onOpenTag
                     )
                 }
             }
@@ -293,7 +303,10 @@ fun CollectionsScreen(
 private fun CollectionsTab(
     collections: List<Collection>,
     onCollectionClick: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    tagBinders: List<TagBinder>,
+    tagging: Pair<Int, Int>?,
+    onOpenTag: (String) -> Unit
 ) {
     // Binder pending a delete-confirmation, if any.
     var confirmDelete by remember { mutableStateOf<Collection?>(null) }
@@ -315,6 +328,9 @@ private fun CollectionsTab(
                     onClick = { onCollectionClick(collection.id) },
                     onDelete = { confirmDelete = collection }
                 )
+            }
+            if (tagBinders.isNotEmpty() || tagging != null) {
+                item(key = "tag-binders") { TagBindersSection(tagBinders, tagging, onOpenTag) }
             }
         }
     }
@@ -383,7 +399,7 @@ private fun AllCardsTab(
                 OutlinedTextField(
                     value = query,
                     onValueChange = onQueryChange,
-                    label = { Text("Search all cards", color = TextMuted) },
+                    label = { Text("Name or tag, e.g. ramp", color = TextMuted) },
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp),
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Gold) },

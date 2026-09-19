@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.nav
 
+import com.mtgcompanion.app.ui.collection.TagBinderScreen
+import com.mtgcompanion.app.ui.collection.TagBinderViewModel
 import com.mtgcompanion.app.ui.common.SyncPullResult
 import com.mtgcompanion.app.ui.common.PullToSyncBox
 import com.mtgcompanion.app.ui.common.CardZoomHost
@@ -200,6 +202,9 @@ private object Routes {
     const val DETAIL = "detail/{cardName}"
     const val DECK_DETAIL = "deck/{deckId}"
     const val COLLECTION_DETAIL = "collection/{collectionId}"
+    /** A tag's automatic binder: every owned card with that tag. */
+    const val TAG_BINDER = "tag_binder/{tagId}"
+    fun tagBinder(tagId: String) = "tag_binder/$tagId"
     fun detail(cardName: String) = "detail/" + URLEncoder.encode(cardName, StandardCharsets.UTF_8.name())
     fun deckDetail(deckId: String) = "deck/$deckId"
     fun collectionDetail(collectionId: String) = "collection/$collectionId"
@@ -278,7 +283,7 @@ fun MtgNavGraph(
                 Routes.HOME -> NavDestination.HOME
                 Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS -> NavDestination.DECKS
-                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED -> NavDestination.COLLECTION
+                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.SETTINGS -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
@@ -401,6 +406,17 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(Routes.TAG_BINDER, arguments = listOf(navArgument("tagId") { type = NavType.StringType })) { entry ->
+                val tagId = entry.arguments?.getString("tagId").orEmpty()
+                val viewModel: TagBinderViewModel = viewModel(key = "tag-$tagId", factory = TagBinderViewModel.Factory(tagId, collectionRepository, deckRepository))
+                TagBinderScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onOpenTag = { id -> navController.navigate(Routes.tagBinder(id)) },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) }
+                )
+            }
+
             destination(Routes.COLLECTION) {
                 val viewModel: CollectionsViewModel = viewModel(
                     factory = CollectionsViewModel.Factory(collectionRepository, deckRepository, settingsRepository)
@@ -423,7 +439,8 @@ fun MtgNavGraph(
                         )
                     }),
                     openShared = openShared,
-                    onSharedOpened = { openShared = false; socialRepository.openSharedTab = false }
+                    onSharedOpened = { openShared = false; socialRepository.openSharedTab = false },
+                    onOpenTag = { id -> navController.navigate(Routes.tagBinder(id)) }
                 )
                 if (sharingAll) {
                     ShareCollectionDialog(

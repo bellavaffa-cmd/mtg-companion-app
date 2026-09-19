@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.RoleTags
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -116,6 +117,8 @@ fun CollectionDetailScreen(
     val query by viewModel.query.collectAsState()
     val dashboard by viewModel.dashboard.collectAsState()
     val prices by viewModel.prices.collectAsState()
+    val cardTags by viewModel.cardTags.collectAsState()
+    val tagging by viewModel.tagging.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val gridCols = adaptiveGridColumns(gridColumns)
@@ -218,10 +221,17 @@ fun CollectionDetailScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::onQueryChange,
-                label = { Text(if (collection?.isUnsorted == true) "Search unsorted cards" else "Search this binder", color = TextMuted) },
+                label = { Text("Name or tag, e.g. ramp", color = TextMuted) },
                 singleLine = true,
                 shape = RoundedCornerShape(8.dp),
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Gold) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onQueryChange("") }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear search", tint = TextMuted)
+                        }
+                    }
+                },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Gold,
                     unfocusedBorderColor = BorderColor,
@@ -233,6 +243,21 @@ fun CollectionDetailScreen(
                 ),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)
             )
+            // A search that found cards by their tag says which, since tags only show in the zoom.
+            if (query.isNotBlank()) {
+                val tagHits = entries.filterNot { it.name.contains(query.trim(), ignoreCase = true) }
+                    .flatMap { RoleTags.matched(cardTags[it.name].orEmpty(), query) }.distinct()
+                Text(
+                    buildString {
+                        append("${entries.size} ${if (entries.size == 1) "card" else "cards"}")
+                        if (tagHits.isNotEmpty()) append(" · tag: " + tagHits.take(2).joinToString(", ") { RoleTags.label(it) } + if (tagHits.size > 2) "…" else "")
+                        if (tagging != null) append(" · finding tags…")
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted,
+                    modifier = Modifier.padding(start = 22.dp, end = 20.dp, bottom = 6.dp)
+                )
+            }
 
             val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
             if (collection?.isUnsorted == true && collection?.entries?.isNotEmpty() == true) {
@@ -311,7 +336,8 @@ fun CollectionDetailScreen(
                 onViewDetails = { zoomId = null; onViewDetails(entry.name) },
                 sources = cardSources[entry.scryfallId].orEmpty().filter { it.id != collection?.id },
                 backImageUrl = entry.backImageUrl,
-                tags = entry.tags,
+                tags = cardTags[entry.name].orEmpty().map(RoleTags::label),
+                onTagClick = { label -> zoomId = null; viewModel.onQueryChange(label) },
                 onFindSimilar = { zoomId = null; similarSearchFor = entry.name }
             )
         }

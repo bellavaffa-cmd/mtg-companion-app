@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.common
 
+import androidx.compose.foundation.clickable
+import com.mtgcompanion.app.ui.theme.Gold
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -75,18 +77,19 @@ fun BoxScope.FlipBadge() {
  * empty list, so callers can render it unconditionally.
  */
 @Composable
-fun CardTagsRow(tags: List<String>, modifier: Modifier = Modifier) {
+fun CardTagsRow(tags: List<String>, modifier: Modifier = Modifier, onClick: ((String) -> Unit)? = null) {
     if (tags.isEmpty()) return
     LazyRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items(tags) { tag ->
             Text(
                 tag,
                 style = MaterialTheme.typography.labelMedium,
-                color = TextPrimary,
+                color = if (onClick != null) Gold else TextPrimary,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(Surface3)
                     .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(50))
+                    .then(if (onClick != null) Modifier.clickable { onClick(tag) } else Modifier)
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             )
         }

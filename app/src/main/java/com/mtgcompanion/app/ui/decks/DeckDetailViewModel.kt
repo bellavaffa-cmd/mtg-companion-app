@@ -8,6 +8,7 @@ import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.DeckRole
+import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.data.MissingCard
 import com.mtgcompanion.app.data.NearMissCombo
 import com.mtgcompanion.app.data.RoleCount
@@ -52,7 +53,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -102,7 +105,8 @@ data class DeckAnalysis(
 )
 
 /** What each card does for the deck. [fromTagger] is false when counts came from the offline heuristic. */
-data class RoleReport(val counts: List<RoleCount>, val fromTagger: Boolean)
+/** [tags]: every tag in the deck (RoleTags id) and how many cards have it, most first. */
+data class RoleReport(val counts: List<RoleCount>, val fromTagger: Boolean, val tags: List<Pair<String, Int>> = emptyList())
 
 /** A pricey card and cheaper cards that do the same job in the same colors. */
 data class BudgetSwap(val entry: DeckCardEntry, val priceUsd: Double, val role: DeckRole?, val alternatives: List<ScryfallCard>)
@@ -185,16 +189,40 @@ class DeckDetailViewModel(
      */
     val roles: StateFlow<RoleReport?> = deck.mapLatest { d ->
         if (d == null || d.cards.isEmpty()) return@mapLatest null
-        val nonLand = d.cards.filterNot { it.typeLine?.contains("Land", ignoreCase = true) == true }.map { it.name }
-        val tagged = resolveRoles(nonLand)
+        val tagged = resolveRoles(d.cards.map { it.name })
+        val tagCounts = mutableMapOf<String, Int>()
+        d.cards.forEach { entry -> RoleTags.tagsOf(entry.name).orEmpty().forEach { tagCounts[it] = (tagCounts[it] ?: 0) + entry.quantity } }
         RoleReport(
             counts = countRoles(d.cards, d.mode) { entry ->
                 if (tagged) roleCache[entry.name].orEmpty()
                 else DeckRole.TAGGED.filter { role -> role.heuristicTag in entry.tags }.toSet()
             },
-            fromTagger = tagged
+            fromTagger = tagged,
+            tags = tagCounts.toList().sortedByDescending { it.second }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Card name -> what it does (RoleTags ids), for the deck's cards and its considering list. */
+    val cardTags: StateFlow<Map<String, List<String>>> = combine(deck, RoleTags.version) { d, _ ->
+        (d?.cards.orEmpty() + d?.considering.orEmpty()).associate { it.name to RoleTags.tagsOf(it.name).orEmpty() }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** Tags still being looked up, (done, total). */
+    val tagging: StateFlow<Pair<Int, Int>?> = RoleTags.progress
+
+    private val _cardQuery = MutableStateFlow("")
+    /** The Cards tab's search: a card's name or one of its tags. Tapping a tag elsewhere sets it. */
+    val cardQuery: StateFlow<String> = _cardQuery.asStateFlow()
+    fun setCardQuery(query: String) { _cardQuery.value = query }
+
+    init {
+        // The considering list's cards get their tags too (the deck's own come with [roles]).
+        viewModelScope.launch {
+            deck.map { d -> d?.considering.orEmpty().map { it.name } }.distinctUntilChanged().collectLatest { names ->
+                if (names.isNotEmpty()) RoleTags.ensure(names, cardRepository)
+            }
+        }
+    }
 
     /** Newest first, with what changed and the record played on each. */
     val versionHistory: StateFlow<List<VersionSummary>> = deck.map { d -> d?.let { versionSummaries(it) }.orEmpty() }
@@ -217,28 +245,15 @@ class DeckDetailViewModel(
     private val roleCache = mutableMapOf<String, Set<DeckRole>>()
 
     /**
-     * Fills [roleCache] for [names] from Scryfall oracle tags: for each role, one search per chunk of
-     * names (`otag:ramp (!"Sol Ring" or !"…")`), so a query returns only the deck cards that play
-     * that role. False if Scryfall couldn't be reached — callers fall back to heuristic tags.
+     * Fills [roleCache] for [names] from their tags ([RoleTags], which looks each card up once and
+     * remembers it). False if Scryfall couldn't be reached — callers fall back to heuristic tags.
      */
     private suspend fun resolveRoles(names: List<String>): Boolean {
-        // Exact-name search can't express a name that itself contains a double quote.
-        val unknown = names.filter { it !in roleCache && '"' !in it }.distinct()
-        if (unknown.isEmpty()) return true
-        return try {
-            val found = mutableMapOf<String, MutableSet<DeckRole>>()
-            for (role in DeckRole.TAGGED) {
-                for (chunk in unknown.chunked(ROLE_QUERY_CHUNK)) {
-                    val query = "otag:${role.otag} (" + chunk.joinToString(" or ") { "!\"$it\"" } + ")"
-                    cardRepository.search(query).cards.forEach { card -> found.getOrPut(card.name) { mutableSetOf() } += role }
-                    delay(SCRYFALL_SPACING_MILLIS)
-                }
-            }
-            unknown.forEach { roleCache[it] = found[it].orEmpty() }
-            true
-        } catch (e: Exception) {
-            false
+        val ok = RoleTags.ensure(names, cardRepository)
+        names.forEach { name ->
+            RoleTags.tagsOf(name)?.let { ids -> roleCache[name] = DeckRole.TAGGED.filter { it.otag in ids }.toSet() }
         }
+        return ok || names.all { it in roleCache }
     }
 
     /**
@@ -720,7 +735,6 @@ class DeckDetailViewModel(
     }
 }
 
-private const val ROLE_QUERY_CHUNK = 30
 /** Scryfall asks for 50–100ms between requests. */
 private const val SCRYFALL_SPACING_MILLIS = 90L
 private const val MAX_BUDGET_SWAPS = 8

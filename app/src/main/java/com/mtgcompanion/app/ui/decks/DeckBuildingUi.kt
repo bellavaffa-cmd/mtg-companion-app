@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.RoleTags
+import com.mtgcompanion.app.data.DeckRole
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -314,7 +316,7 @@ internal fun ComboPieceWarningDialog(cardName: String, combos: List<Variant>, on
 // ---- Stats tab: roles, mana advice, versions ----
 
 @Composable
-internal fun RolesPanel(report: RoleReport?) {
+internal fun RolesPanel(report: RoleReport?, onTag: ((String) -> Unit)? = null) {
     Panel {
         SectionLabel("Deck roles")
         if (report == null) {
@@ -365,6 +367,27 @@ internal fun RolesPanel(report: RoleReport?) {
                     }
                     if (expanded) {
                         Text(count.cards.joinToString(", "), style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+            }
+        }
+        // Every other job the deck's cards do, from their tags; tap one to see those cards.
+        val core = DeckRole.TAGGED.mapNotNull { it.otag }.toSet()
+        val more = report.tags.filter { (id, _) -> id !in core }
+        if (more.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            SectionLabel("What the cards do")
+            val most = more.maxOf { it.second }.coerceAtLeast(1)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                more.forEach { (id, n) ->
+                    Column(Modifier.fillMaxWidth().clickable(enabled = onTag != null) { onTag?.invoke(RoleTags.label(id)) }) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text(RoleTags.label(id), style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                            Text("$n", style = NumberStyle(18), color = Gold)
+                        }
+                        Box(Modifier.fillMaxWidth().padding(top = 5.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Surface3)) {
+                            Box(Modifier.fillMaxHeight().fillMaxWidth(n.toFloat() / most).clip(RoundedCornerShape(3.dp)).background(Gold.copy(alpha = 0.8f)))
+                        }
                     }
                 }
             }

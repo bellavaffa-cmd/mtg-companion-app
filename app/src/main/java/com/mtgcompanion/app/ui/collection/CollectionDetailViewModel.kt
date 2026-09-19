@@ -25,8 +25,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import com.mtgcompanion.app.data.RoleTags
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -77,11 +81,27 @@ class CollectionDetailViewModel(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    /** The collection's cards, filtered by the search query (case-insensitive name match). */
-    val entries: StateFlow<List<CollectionEntry>> = combine(collection, _query) { coll, q ->
+    /** The collection's cards, filtered by the search: a card's name or one of its tags. */
+    val entries: StateFlow<List<CollectionEntry>> = combine(collection, _query, RoleTags.version) { coll, q, _ ->
         val all = coll?.entries.orEmpty()
-        if (q.isBlank()) all else all.filter { it.name.contains(q.trim(), ignoreCase = true) }
+        if (q.isBlank()) all else all.filter { RoleTags.matches(it.name, RoleTags.tagsOf(it.name).orEmpty(), q) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Card name -> what it does (RoleTags ids), for the zoom and the search. */
+    val cardTags: StateFlow<Map<String, List<String>>> = combine(collection, RoleTags.version) { c, _ ->
+        c?.entries.orEmpty().associate { it.name to RoleTags.tagsOf(it.name).orEmpty() }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** Tags still being looked up, (done, total). */
+    val tagging: StateFlow<Pair<Int, Int>?> = RoleTags.progress
+
+    init {
+        viewModelScope.launch {
+            collection.map { c -> c?.entries.orEmpty().map { it.name } }.distinctUntilChanged().collectLatest { names ->
+                if (names.isNotEmpty()) RoleTags.ensure(names, cardRepository)
+            }
+        }
+    }
 
     fun onQueryChange(newQuery: String) {
         _query.value = newQuery

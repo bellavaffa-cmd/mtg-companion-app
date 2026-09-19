@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.RoleTags
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.mtgcompanion.app.data.CardListImporter
@@ -49,6 +50,11 @@ class CollectionsViewModel(
     private val settingsRepository: SettingsRepository,
     private val cardRepository: CardRepository = CardRepository()
 ) : ViewModel() {
+
+    /** "By tag · automatic": a binder per tag of the cards the user owns (their tags looked up as needed). */
+    val tagBinders: StateFlow<List<TagBinder>> = tagBindersFlow(repository, viewModelScope, cardRepository)
+    /** Tags still being looked up, (done, total). */
+    val tagging: StateFlow<Pair<Int, Int>?> = RoleTags.progress
 
     /** List or grid for the All Cards tab, and the shared grid column count, from Settings > Card Display. */
     val viewMode: StateFlow<CardViewMode> = settingsRepository.allCardsViewMode

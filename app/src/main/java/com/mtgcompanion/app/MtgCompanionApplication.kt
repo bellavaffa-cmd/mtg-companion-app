@@ -4,6 +4,7 @@ import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
 import com.mtgcompanion.app.data.social.PushNotifications
 import com.mtgcompanion.app.data.PriceAlerts
+import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.data.social.SocialRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -67,6 +68,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         PushNotifications.init(this)
         // Wishlist price alerts, checked a few times a day.
         PriceAlerts.schedule(this)
+        // What each card does (mana ramp, removal…), remembered from earlier lookups.
+        RoleTags.init(this)
         appScope.launch {
             var wasSignedIn = false
             supabaseSync.auth.account.map { it?.userId }.distinctUntilChanged().collect { userId ->

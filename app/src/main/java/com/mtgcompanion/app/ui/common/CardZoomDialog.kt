@@ -167,7 +167,9 @@ data class ZoomCard(
     val sources: List<CardSource> = emptyList(),
     val backImageUrl: String? = null,
     val tags: List<String> = emptyList(),
-    val onFindSimilar: (() -> Unit)? = null
+    val onFindSimilar: (() -> Unit)? = null,
+    /** Tapping one of [tags] (a search for it, say). Null for plain chips. */
+    val onTagClick: ((String) -> Unit)? = null
 )
 
 /**
@@ -375,7 +377,7 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                     }
                     // Previewing an alternate printing doesn't change tags — same card, different art.
                     if (card.tags.isNotEmpty()) {
-                        CardTagsRow(card.tags, modifier = Modifier.background(Surface).padding(horizontal = 24.dp, vertical = 8.dp))
+                        CardTagsRow(card.tags, modifier = Modifier.background(Surface).padding(horizontal = 24.dp, vertical = 8.dp), onClick = card.onTagClick)
                     }
                     // While a printing is previewed, show its own price instead of the original's.
                     val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd
