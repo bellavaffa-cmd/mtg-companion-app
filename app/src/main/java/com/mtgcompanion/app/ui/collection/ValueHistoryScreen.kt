@@ -44,6 +44,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.Money
+import com.mtgcompanion.app.data.Mover
+import com.mtgcompanion.app.data.MoverRange
+import com.mtgcompanion.app.data.PriceMovers
+import com.mtgcompanion.app.data.moversOf
+import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import coil.compose.AsyncImage
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import com.mtgcompanion.app.data.Prices
 import com.mtgcompanion.app.data.ValueHistory
 import com.mtgcompanion.app.data.ValuePoint
@@ -143,6 +153,7 @@ fun ValueHistoryScreen(onBack: () -> Unit) {
                     Figure("High", money.format(high.usd), day(high.date), Modifier.weight(1f))
                 }
             }
+            MoversSection(money)
             Text(
                 "The value of your binders (not wishlists) at TCGplayer's market prices" +
                     (if (money.isUsd) "" else ", in ${money.currency.code} at today's exchange rate") +
@@ -151,6 +162,70 @@ fun ValueHistoryScreen(onBack: () -> Unit) {
                 color = colors.textDim,
                 modifier = Modifier.padding(top = 20.dp, bottom = 24.dp)
             )
+        }
+    }
+}
+
+/** Which cards moved the value most, up and down, over the last day, week or month. */
+@Composable
+private fun MoversSection(money: Money) {
+    val colors = LocalAppColors.current
+    val store by PriceMovers.store.collectAsState()
+    var range by remember { mutableStateOf(MoverRange.WEEK) }
+    val movers = remember(store, range) { moversOf(store, range) }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 28.dp)) {
+        Text("Movers", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            MoverRange.entries.forEach { r -> FilterPill(r.label, range == r) { range = r } }
+        }
+    }
+    if (movers == null) {
+        Text(
+            "Each card's price is noted once a day, with the value. Come back tomorrow to see which moved.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textMuted,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+        return
+    }
+    Text("Since ${day(movers.since)}", style = MaterialTheme.typography.labelMedium, color = colors.textDim, modifier = Modifier.padding(top = 4.dp))
+    if (movers.up.isEmpty() && movers.down.isEmpty()) {
+        Text("None of your cards changed price.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(top = 8.dp))
+        return
+    }
+    if (movers.up.isNotEmpty()) MoverList("Up", movers.up, money, colors.accent)
+    if (movers.down.isNotEmpty()) MoverList("Down", movers.down, money, Color(0xFFD3402F))
+}
+
+@Composable
+private fun MoverList(title: String, movers: List<Mover>, money: Money, tint: Color) {
+    val colors = LocalAppColors.current
+    Text(title, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        movers.forEach { m ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().background(colors.surface, androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).padding(8.dp)
+            ) {
+                AsyncImage(
+                    model = m.card.imageUrl.toArtCropUrl(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = 52.dp, height = 38.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).background(colors.surface3)
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(m.card.name, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${money.format(m.from)} → ${money.format(m.to)} (${if (m.percent >= 0) "+" else "−"}${String.format(Locale.US, "%.0f", abs(m.percent))}%)" +
+                            if (m.card.copies > 1) " · ×${m.card.copies}" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textMuted,
+                        maxLines = 1
+                    )
+                }
+                Text((if (m.change >= 0) "+" else "−") + money.format(abs(m.change)), style = NumberStyle(17), color = tint)
+            }
         }
     }
 }

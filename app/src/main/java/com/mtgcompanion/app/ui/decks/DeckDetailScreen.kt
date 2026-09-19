@@ -1390,7 +1390,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                 Panel {
                     SectionLabel("Mana base")
                     Text(
-                        "${analysis.landCount} lands · ${analysis.deckSize} cards in library",
+                        "${analysis.landCount} lands · ${analysis.librarySize} cards in library",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted,
                         modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
@@ -1404,8 +1404,8 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             analysis.colorSourceCounts.forEach { (color, sources) ->
-                                val openingHand = probabilityAtLeastOne(analysis.deckSize, sources, 7)
-                                val byTurn3 = probabilityAtLeastOne(analysis.deckSize, sources, 10)
+                                val openingHand = probabilityAtLeastOne(analysis.librarySize, sources, 7)
+                                val byTurn3 = probabilityAtLeastOne(analysis.librarySize, sources, 10)
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     ManaSymbol(color, size = 16.dp)
                                     Text(

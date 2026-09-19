@@ -90,6 +90,8 @@ data class DeckAnalysis(
     val typeCounts: List<Pair<String, Int>> = emptyList(),
     val totalUsd: Double = 0.0,
     val deckSize: Int = 0,
+    /** What's shuffled into the library: the deck less one copy of each commander, which starts in the command zone. */
+    val librarySize: Int = 0,
     val landCount: Int = 0,
     /** The deck's lands, by scryfallId — for the opening-hand odds. */
     val landIds: Set<String> = emptySet(),
@@ -506,6 +508,8 @@ class DeckDetailViewModel(
             typeCounts = typeTotals.entries.sortedByDescending { it.value }.map { it.key to it.value },
             totalUsd = totalUsd,
             deckSize = nonLandCount + landCount,
+            librarySize = (nonLandCount + landCount - listOfNotNull(d.commander, d.partnerCommander)
+                .count { c -> d.cards.any { it.scryfallId == c.scryfallId && it.quantity > 0 } }).coerceAtLeast(0),
             landCount = landCount,
             landIds = d.cards.filter { isLandType(byId[it.scryfallId]?.typeLine ?: it.typeLine) }.map { it.scryfallId }.toSet(),
             colorSourceCounts = sourceList,

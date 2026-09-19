@@ -1,5 +1,6 @@
 package com.mtgcompanion.app
 
+import com.mtgcompanion.app.data.PriceMovers
 import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
 import com.mtgcompanion.app.data.social.PushNotifications
@@ -75,6 +76,7 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         // Prices in the chosen currency, at the day's exchange rate; and the collection's value over time.
         Prices.init(this, settingsRepository, appScope)
         ValueHistory.init(this)
+        PriceMovers.init(this)
         appScope.launch {
             var wasSignedIn = false
             supabaseSync.auth.account.map { it?.userId }.distinctUntilChanged().collect { userId ->

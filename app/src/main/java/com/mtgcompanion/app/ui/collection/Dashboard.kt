@@ -13,7 +13,9 @@ data class CollectionDashboard(
     /** Whether Scryfall sent (nearly) every card — so [totalUsd] isn't short for a dropped request. */
     val complete: Boolean = true,
     /** Copies counted. */
-    val cards: Int = 0
+    val cards: Int = 0,
+    /** Each card's price (US dollars, non-foil), by scryfallId — for the price movers. */
+    val prices: Map<String, Double> = emptyMap()
 )
 
 /**
@@ -56,6 +58,7 @@ suspend fun computeDashboard(
         totalUsd = totalUsd,
         pricedCount = pricedCount,
         complete = cardsById.size >= quantities.size * 0.98,
+        prices = cardsById.mapNotNull { (id, card) -> card.prices?.usd?.toDoubleOrNull()?.let { id to it } }.toMap(),
         cards = quantities.sumOf { it.second },
         colorCounts = colorTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
         typeCounts = typeTotals.entries.sortedByDescending { it.value }.map { it.key to it.value }

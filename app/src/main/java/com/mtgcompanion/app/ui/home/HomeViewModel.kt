@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.home
 
+import com.mtgcompanion.app.data.PricedCard
+import com.mtgcompanion.app.data.PriceMovers
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -81,7 +83,15 @@ class HomeViewModel(
         val dashboard = computeDashboard(cardRepository, quantities)
         // Today's point in the value history — only when Scryfall sent every card, so a dropped
         // request doesn't read as a crash in value.
-        if (dashboard != null && dashboard.complete) ValueHistory.record(dashboard.totalUsd, dashboard.cards)
+        if (dashboard != null && dashboard.complete) {
+            ValueHistory.record(dashboard.totalUsd, dashboard.cards)
+            // And each card's price, for which of them moved.
+            val entries = collections.filter { it.kind == CollectionType.OWNED }.flatMap { it.entries }.groupBy { it.scryfallId }
+            PriceMovers.record(
+                entries.map { (id, e) -> PricedCard(id, e.first().name, e.first().imageUrl, e.sumOf { it.quantity + it.foilQuantity }) },
+                dashboard.prices
+            )
+        }
         dashboard?.totalUsd
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
