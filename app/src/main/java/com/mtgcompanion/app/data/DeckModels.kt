@@ -89,8 +89,14 @@ fun partnersWith(a: DeckCardEntry, b: DeckCardEntry): Boolean {
 data class GameResult(
     val id: String,
     val result: String,
+    /** Who they played, as names joined by ", ". */
     val opponent: String? = null,
-    val playedAt: Long = System.currentTimeMillis()
+    val playedAt: Long = System.currentTimeMillis(),
+    /** How long the game ran, when a life counter table kept track. */
+    val turns: Int? = null,
+    val minutes: Int? = null,
+    /** The commanders the opponents played (a partner pair as "A & B"). */
+    val commanders: List<String> = emptyList()
 )
 
 /**

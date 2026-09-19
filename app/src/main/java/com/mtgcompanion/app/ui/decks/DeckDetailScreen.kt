@@ -10,6 +10,9 @@ import com.mtgcompanion.app.ui.common.LocalLayoutSize
 import com.mtgcompanion.app.ui.common.LayoutSize
 import com.mtgcompanion.app.ui.theme.Surface3
 import com.mtgcompanion.app.ui.theme.Surface2
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import com.mtgcompanion.app.ui.theme.NumberStyle
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.common.sharedArt
@@ -1265,66 +1268,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item {
-            Panel {
-                val wins = deck.gameResults.count { it.result == "WIN" }
-                val losses = deck.gameResults.count { it.result == "LOSS" }
-                val draws = deck.gameResults.count { it.result == "DRAW" }
-                val total = deck.gameResults.size
-                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    SectionLabel("Match record")
-                    TextButton(onClick = { showLogResult = true }) { Text("Log result", color = Gold, style = MaterialTheme.typography.labelMedium) }
-                }
-                if (total == 0) {
-                    Text(
-                        "No games logged yet.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextMuted,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                } else {
-                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("$wins–$losses" + if (draws > 0) "–$draws" else "", style = NumberStyle(40), color = TextPrimary)
-                        Text(
-                            "${(wins * 100 / total)}% win rate over $total game${if (total == 1) "" else "s"}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = GoldLight,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                    }
-                    Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        deck.gameResults.sortedByDescending { it.playedAt }.take(5).forEach { game ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    game.result,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = when (game.result) {
-                                        "WIN" -> Gold
-                                        "LOSS" -> Color(0xFFD3402F)
-                                        else -> TextMuted
-                                    }
-                                )
-                                Text(
-                                    game.opponent ?: "—",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = TextMuted,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { viewModel.removeGameResult(game.id) }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Filled.Close, contentDescription = "Remove this result", tint = TextDim, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        item { MatchRecordPanel(deck.gameResults, onLog = { showLogResult = true }, onRemove = { viewModel.removeGameResult(it) }) }
         item { VersionHistoryPanel(versionHistory, onOpen = { openVersion = it }) }
         item {
             Panel {
@@ -1506,7 +1450,8 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
 
     if (showLogResult) {
         LogGameResultDialog(
-            onConfirm = { result, opponent -> viewModel.logGameResult(result, opponent); showLogResult = false },
+            suggest = { viewModel.suggestNames(it) },
+            onConfirm = { result, opponent, commanders -> viewModel.logGameResult(result, opponent, commanders); showLogResult = false },
             onDismiss = { showLogResult = false }
         )
     }
@@ -1523,9 +1468,35 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
 }
 
 @Composable
-private fun LogGameResultDialog(onConfirm: (String, String?) -> Unit, onDismiss: () -> Unit) {
+private fun LogGameResultDialog(suggest: suspend (String) -> List<String>, onConfirm: (String, String?, List<String>) -> Unit, onDismiss: () -> Unit) {
     var result by remember { mutableStateOf("WIN") }
     var opponent by remember { mutableStateOf("") }
+    // Commander names have commas in them ("Krenko, Mob Boss"), so they're picked one at a time.
+    var commanders by remember { mutableStateOf<List<String>>(emptyList()) }
+    var query by remember { mutableStateOf("") }
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(query) {
+        val q = query.trim()
+        if (q.length < 2) { suggestions = emptyList(); return@LaunchedEffect }
+        kotlinx.coroutines.delay(250)
+        suggestions = suggest(q).take(5)
+    }
+    fun withCommander(list: List<String>, name: String): List<String> {
+        val n = name.trim()
+        return if (n.isEmpty() || list.any { it.equals(n, ignoreCase = true) }) list else list + n
+    }
+    fun add(name: String) {
+        commanders = withCommander(commanders, name)
+        query = ""
+        suggestions = emptyList()
+    }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Gold,
+        unfocusedBorderColor = BorderColor,
+        focusedTextColor = TextPrimary,
+        unfocusedTextColor = TextPrimary,
+        cursorColor = Gold
+    )
     AlertDialog(
         containerColor = Surface,
         onDismissRequest = onDismiss,
@@ -1552,21 +1523,51 @@ private fun LogGameResultDialog(onConfirm: (String, String?) -> Unit, onDismiss:
                 OutlinedTextField(
                     value = opponent,
                     onValueChange = { opponent = it },
-                    label = { Text("Opponent (optional)", color = TextMuted) },
+                    label = { Text("Opponents (optional)", color = TextMuted) },
+                    placeholder = { Text("e.g. Bob, Carol", color = TextDim) },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Gold,
-                        unfocusedBorderColor = BorderColor,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = Gold
-                    )
+                    colors = fieldColors
                 )
+                Spacer(Modifier.height(8.dp))
+                commanders.forEach { c ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 4.dp).clip(RoundedCornerShape(50)).background(Surface2).padding(start = 12.dp)
+                    ) {
+                        Text(c, style = MaterialTheme.typography.labelMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        IconButton(onClick = { commanders = commanders - c }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Filled.Close, contentDescription = "Remove $c", tint = TextDim, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text(if (commanders.isEmpty()) "Their commanders (optional)" else "Add another commander", color = TextMuted) },
+                    placeholder = { Text("e.g. Atraxa", color = TextDim) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (query.isNotBlank()) add(suggestions.firstOrNull() ?: query) }),
+                    colors = fieldColors
+                )
+                if (suggestions.isNotEmpty()) {
+                    Column(Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(Surface2)) {
+                        suggestions.forEach { name ->
+                            Text(
+                                name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextPrimary,
+                                modifier = Modifier.fillMaxWidth().clickable { add(name) }.padding(horizontal = 12.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(result, opponent.trim()) },
+                // Whatever's still typed in counts too.
+                onClick = { onConfirm(result, opponent.trim(), withCommander(commanders, query)) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
             ) { Text("Log", color = Bg) }
         },

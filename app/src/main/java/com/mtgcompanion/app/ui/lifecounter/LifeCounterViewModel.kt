@@ -76,7 +76,9 @@ data class PlayerLife(
     /** The account sitting here, when someone joined the seat by QR code: its name and picture show on the tile. */
     val linked: LinkedPlayer? = null,
     /** The deck the player said they're playing, from their remote. */
-    val deck: String? = null
+    val deck: String? = null,
+    /** That deck's commander, from their remote. */
+    val commander: String? = null
 ) {
     fun counter(kind: PlayerCounter): Int = counters[kind] ?: 0
 
@@ -322,7 +324,8 @@ class LifeCounterViewModel(
                 linked = linked,
                 name = linked.displayName,
                 backgroundImageUri = old?.backgroundImageUri ?: SocialApi.avatarUrl(linked.avatarPath),
-                deck = old?.deck
+                deck = old?.deck,
+                commander = old?.commander
             )
         }
         _gameNumber.value += 1
@@ -762,7 +765,8 @@ class LifeCounterViewModel(
             linked = linked,
             name = linked?.displayName ?: if (p.linked != null) null else p.name,
             backgroundImageUri = SocialApi.avatarUrl(linked?.avatarPath) ?: ownBackground,
-            deck = if (linked?.userId == p.linked?.userId) p.deck else null
+            deck = if (linked?.userId == p.linked?.userId) p.deck else null,
+            commander = if (linked?.userId == p.linked?.userId) p.commander else null
         )
     }
 
@@ -903,6 +907,7 @@ class LifeCounterViewModel(
                     // A photo picked on this phone (content://) means nothing anywhere else.
                     background = p.backgroundImageUri?.takeIf { it.startsWith("https://") },
                     deck = p.deck,
+                    commander = p.commander,
                     userId = p.linked?.userId,
                     avatarPath = p.linked?.avatarPath,
                     canUndo = canUndoFor(p.id),
@@ -976,7 +981,10 @@ class LifeCounterViewModel(
                     val url = if (action.isNull("url")) null else action.optString("url")
                     if (url == null || allowedRemoteImage(url)) {
                         val deck = if (action.has("deck")) (if (action.isNull("deck")) null else action.optString("deck").take(80)) else player.deck
-                        updatePlayer(seat) { it.copy(backgroundImageUri = url, deck = deck) }
+                        // An older remote sends no commander: a new deck clears the old one's.
+                        val commander = if (action.has("commander")) (if (action.isNull("commander")) null else action.optString("commander").take(150))
+                        else if (deck == player.deck) player.commander else null
+                        updatePlayer(seat) { it.copy(backgroundImageUri = url, deck = deck, commander = commander) }
                     }
                 }
                 "showCard" -> {

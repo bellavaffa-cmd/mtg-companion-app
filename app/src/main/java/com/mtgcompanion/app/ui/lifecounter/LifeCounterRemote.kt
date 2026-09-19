@@ -35,6 +35,8 @@ data class RemoteSeat(
     val commanderDamage: List<RemoteDamage>,
     val background: String?,
     val deck: String?,
+    /** The commander of that deck ("A & B" for partners), for the other players' game records. */
+    val commander: String?,
     val userId: String?,
     val avatarPath: String?,
     /** Whether this seat has a change of its own it could undo. */
@@ -73,6 +75,7 @@ data class RemoteState(
                 .put("counters", JSONObject(p.counters as Map<*, *>))
                 .put("commanderDamage", JSONArray(p.commanderDamage.map { JSONObject().put("from", it.from).put("slot", it.slot).put("amount", it.amount) }))
                 .put("background", p.background ?: JSONObject.NULL).put("deck", p.deck ?: JSONObject.NULL)
+                .put("commander", p.commander ?: JSONObject.NULL)
                 .put("userId", p.userId ?: JSONObject.NULL).put("avatarPath", p.avatarPath ?: JSONObject.NULL)
                 .put("canUndo", p.canUndo).put("partner", p.partner)
         }))
@@ -94,7 +97,7 @@ data class RemoteState(
                     RemoteSeat(
                         seat = p.getInt("seat"), name = p.optString("name"), color = p.optString("color", "#888888"), ink = p.optString("ink", "#000"),
                         life = p.getInt("life"), out = p.str("out"), poison = p.optInt("poison"), counters = counters, commanderDamage = damage,
-                        background = p.str("background"), deck = p.str("deck"), userId = p.str("userId"), avatarPath = p.str("avatarPath"),
+                        background = p.str("background"), deck = p.str("deck"), commander = p.str("commander"), userId = p.str("userId"), avatarPath = p.str("avatarPath"),
                         canUndo = p.optBoolean("canUndo"), partner = p.optBoolean("partner")
                     )
                 }
@@ -122,7 +125,8 @@ object RemoteActions {
     fun dealtDamage(to: Int, slot: Int, delta: Int) = JSONObject().put("type", "dealtDamage").put("to", to).put("slot", slot).put("delta", delta)
     fun endTurn() = JSONObject().put("type", "endTurn")
     fun undo() = JSONObject().put("type", "undo")
-    fun background(url: String?, deck: String?) = JSONObject().put("type", "background").put("url", url ?: JSONObject.NULL).put("deck", deck ?: JSONObject.NULL)
+    fun background(url: String?, deck: String?, commander: String?) = JSONObject().put("type", "background").put("url", url ?: JSONObject.NULL)
+        .put("deck", deck ?: JSONObject.NULL).put("commander", commander ?: JSONObject.NULL)
     fun showCard(name: String, imageUrl: String) = JSONObject().put("type", "showCard").put("name", name).put("imageUrl", imageUrl)
     fun hideCard() = JSONObject().put("type", "hideCard")
 }

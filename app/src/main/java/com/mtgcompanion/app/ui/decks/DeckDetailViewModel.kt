@@ -612,11 +612,17 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.setTags(deckId, tags) }
     }
 
-    fun logGameResult(result: String, opponent: String?) {
+    fun logGameResult(result: String, opponent: String?, commanders: List<String> = emptyList()) {
         viewModelScope.launch {
-            repository.addGameResult(deckId, GameResult(id = UUID.randomUUID().toString(), result = result, opponent = opponent?.takeIf { it.isNotBlank() }))
+            repository.addGameResult(
+                deckId,
+                GameResult(id = UUID.randomUUID().toString(), result = result, opponent = opponent?.takeIf { it.isNotBlank() }, commanders = commanders)
+            )
         }
     }
+
+    /** Card names starting with [query], for picking an opponent's commander. */
+    suspend fun suggestNames(query: String): List<String> = cardRepository.autocomplete(query)
 
     fun removeGameResult(resultId: String) {
         viewModelScope.launch { repository.removeGameResult(deckId, resultId) }

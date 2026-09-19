@@ -90,6 +90,10 @@ import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.Surface2
 import com.mtgcompanion.app.ui.collection.OwnedCard
+import com.mtgcompanion.app.data.GameResult
+import com.mtgcompanion.app.data.Matchup
+import com.mtgcompanion.app.data.gameStats
+import com.mtgcompanion.app.data.record
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
@@ -316,6 +320,122 @@ internal fun ComboPieceWarningDialog(cardName: String, combos: List<Variant>, on
 }
 
 // ---- Stats tab: roles, mana advice, versions ----
+
+private val LossColor = Color(0xFFD3402F)
+
+private fun resultColor(result: String, win: Color, other: Color): Color = when (result) {
+    "WIN" -> win
+    "LOSS" -> LossColor
+    else -> other
+}
+
+/**
+ * The deck's games: its record and recent form, how long its games run, and how it does against
+ * each commander and each person it has faced — then the latest games, each removable.
+ */
+@Composable
+internal fun MatchRecordPanel(results: List<GameResult>, onLog: () -> Unit, onRemove: (String) -> Unit) {
+    val stats = remember(results) { gameStats(results) }
+    var showAll by remember { mutableStateOf(false) }
+    Panel {
+        Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            SectionLabel("Match record")
+            TextButton(onClick = onLog) { Text("Log result", color = Gold, style = MaterialTheme.typography.labelMedium) }
+        }
+        if (stats.games == 0) {
+            Text(
+                "No games logged yet. Games you play with your phone as a remote at a life counter table are saved here by themselves.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            return@Panel
+        }
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${stats.wins}–${stats.losses}" + if (stats.draws > 0) "–${stats.draws}" else "", style = NumberStyle(40), color = TextPrimary)
+            Text(
+                "${stats.winRate}% win rate over ${stats.games} game${if (stats.games == 1) "" else "s"}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GoldLight,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+        }
+        // Recent form, newest on the left.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 8.dp)) {
+            stats.recent.forEach { r ->
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(22.dp).clip(RoundedCornerShape(6.dp)).background(resultColor(r, Gold, Surface3))
+                ) {
+                    Text(r.take(1), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (r == "DRAW") TextMuted else Bg)
+                }
+            }
+            stats.streak?.let { (result, n) ->
+                val word = when (result) { "WIN" -> "wins"; "LOSS" -> "losses"; else -> "draws" }
+                Text("$n $word in a row", style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = Modifier.padding(start = 6.dp))
+            }
+        }
+        val length = listOfNotNull(stats.averageMinutes?.let { "$it min" }, stats.averageTurns?.let { "$it turns" })
+        if (length.isNotEmpty()) {
+            Text("A game takes about ${length.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall, color = TextMuted, modifier = Modifier.padding(top = 8.dp))
+        }
+        if (stats.commanders.isNotEmpty()) MatchupList("Commanders faced", stats.commanders)
+        if (stats.opponents.isNotEmpty()) MatchupList("Against", stats.opponents)
+
+        Text("Latest games", style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = Modifier.padding(top = 14.dp))
+        val newest = results.sortedByDescending { it.playedAt }
+        Column(modifier = Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            (if (showAll) newest else newest.take(5)).forEach { game ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text(game.result, style = MaterialTheme.typography.labelMedium, color = resultColor(game.result, Gold, TextMuted), modifier = Modifier.width(40.dp))
+                    Text(
+                        listOfNotNull(
+                            game.opponent?.let { "vs $it" },
+                            game.commanders.takeIf { it.isNotEmpty() }?.joinToString(", "),
+                            game.turns?.let { "$it turns" }
+                        ).joinToString(" · ").ifEmpty { "—" },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { onRemove(game.id) }, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Filled.Close, contentDescription = "Remove this result", tint = TextDim, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+        if (newest.size > 5) {
+            TextButton(onClick = { showAll = !showAll }) {
+                Text(if (showAll) "Show fewer" else "Show all ${newest.size}", color = Gold, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+/** One matchup a line: the name, how many games, and the record. */
+@Composable
+private fun MatchupList(title: String, rows: List<Matchup>) {
+    Text(title, style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = Modifier.padding(top = 14.dp))
+    Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        rows.forEach { m ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(m.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text("${m.games} ${if (m.games == 1) "game" else "games"}", style = MaterialTheme.typography.labelMedium, color = TextDim, modifier = Modifier.padding(end = 12.dp))
+                Text(
+                    m.record(),
+                    style = NumberStyle(17),
+                    color = when {
+                        m.wins > m.losses -> Gold
+                        m.wins < m.losses -> LossColor
+                        else -> TextMuted
+                    }
+                )
+            }
+        }
+    }
+}
 
 /**
  * The cards the user owns that do [label]'s job and aren't in the deck: each can go into the deck,

@@ -101,6 +101,10 @@ class RemoteViewModel(
 
     private fun commanderArt(deck: Deck?): String? = deck?.commander?.imageUrl.toArtCropUrl()
 
+    /** The deck's commander, "A & B" with a partner — what the other players' records will say they faced. */
+    private fun commanderOf(deck: Deck?): String? =
+        listOfNotNull(deck?.commander?.name, deck?.partnerCommander?.name).joinToString(" & ").ifEmpty { null }
+
     private fun urlFor(kind: TileBackground, deck: Deck?, custom: String?): String? = when (kind) {
         TileBackground.COMMANDER -> commanderArt(deck)
         TileBackground.PROFILE -> avatarUrl
@@ -130,7 +134,7 @@ class RemoteViewModel(
             if (mine.background == null && mine.deck == null && prefs.contains(KEY_BACKGROUND)) {
                 val deck = deck()
                 val url = urlFor(_background.value, deck, _customUrl.value)
-                if (url != null || deck != null) send(RemoteActions.background(url, deck?.name))
+                if (url != null || deck != null) send(RemoteActions.background(url, deck?.name, commanderOf(deck)))
             }
         }
         s.over?.let { logResult(s, it) }
@@ -142,7 +146,7 @@ class RemoteViewModel(
         _deckId.value = deckId
         prefs.edit().putString(KEY_BACKGROUND, kind.name).putString(KEY_CUSTOM, custom).putString(KEY_DECK, deckId).apply()
         val deck = decks.value.firstOrNull { it.id == deckId }
-        send(RemoteActions.background(urlFor(kind, deck, custom), deck?.name))
+        send(RemoteActions.background(urlFor(kind, deck, custom), deck?.name, commanderOf(deck)))
     }
 
     fun chooseDeck(deck: Deck?) {
@@ -212,8 +216,16 @@ class RemoteViewModel(
         val done = prefs.getStringSet(KEY_LOGGED, emptySet()).orEmpty()
         if (key !in done) {
             prefs.edit().putStringSet(KEY_LOGGED, (done + key).toList().takeLast(100).toSet()).apply()
-            val opponents = s.players.filter { it.seat != seat }.joinToString(", ") { it.name }.ifBlank { null }
-            val result = GameResult(UUID.randomUUID().toString(), if (over.winner == seat) "WIN" else "LOSS", opponents)
+            val others = s.players.filter { it.seat != seat }
+            val opponents = others.joinToString(", ") { it.name }.ifBlank { null }
+            val result = GameResult(
+                UUID.randomUUID().toString(),
+                if (over.winner == seat) "WIN" else "LOSS",
+                opponents,
+                turns = over.turns.takeIf { it > 0 },
+                minutes = over.minutes.takeIf { it > 0 },
+                commanders = others.mapNotNull { it.commander }
+            )
             viewModelScope.launch {
                 deckRepository.addGameResult(deck.id, result)
                 delay(300) // the saved deck comes back through decksFlow
