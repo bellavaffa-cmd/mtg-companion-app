@@ -139,7 +139,13 @@ class PlayerTileActions(
     /** Frees the seat from the profile sitting there. */
     val unlinkSeat: () -> Unit = {},
     /** Opens the Giphy search for this tile's background; null when it isn't available (signed out). */
-    val searchGiphy: (() -> Unit)? = null
+    val searchGiphy: (() -> Unit)? = null,
+    /** Picks the commander played at this seat (for a player without a phone of their own). */
+    val pickCommander: () -> Unit = {},
+    /** Marks this seat as the table owner's and picks their deck; null when there's nowhere to save games. */
+    val pickMe: (() -> Unit)? = null,
+    /** When this seat is the table owner's: the deck their games here are saved to ("" before one's picked). */
+    val meDeck: String? = null
 )
 
 /**
@@ -886,11 +892,37 @@ private fun OptionsCard(player: PlayerLife, autoKill: Boolean, actions: PlayerTi
                 Text("${linked.displayName} · @${linked.username}", style = tableText(18.sp, Color.White), maxLines = 1, modifier = Modifier.weight(1f))
                 OptionTile("Free seat", TableColors.SurfaceRaised, Color.White, onClick = actions.unlinkSeat)
             }
+            player.commander?.let {
+                TableLabel("Commander: $it", 16.sp, color = TableColors.TextMuted, maxLines = 1)
+            }
         } else {
             CardSection("Name")
             CardTextField(value = name, placeholder = "Player ${player.id}") { name = it; actions.setName(it) }
             actions.linkSeat?.let { link ->
                 OptionTile("Join with a profile (QR code)", TableColors.Yellow, Color.Black, onClick = link, modifier = Modifier.fillMaxWidth())
+            }
+            // For a player without a phone: what they're playing, for everyone's game records.
+            CardSection("Commander")
+            OptionTile(
+                player.commander ?: "Set commander",
+                TableColors.SurfaceRaised,
+                if (player.commander != null) Color.White else TableColors.TextMuted,
+                onClick = actions.pickCommander,
+                modifier = Modifier.fillMaxWidth()
+            )
+            actions.pickMe?.let { pickMe ->
+                val me = actions.meDeck
+                OptionTile(
+                    when {
+                        me == null -> "This is me"
+                        me.isEmpty() -> "Me · pick a deck"
+                        else -> "Me · saving to $me"
+                    },
+                    if (me != null) TableColors.Yellow else TableColors.SurfaceRaised,
+                    if (me != null) Color.Black else Color.White,
+                    onClick = pickMe,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 

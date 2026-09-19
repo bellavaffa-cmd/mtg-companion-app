@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.social.Match
 import com.mtgcompanion.app.data.social.SocialApi
 import com.mtgcompanion.app.data.social.SocialRepository
@@ -77,8 +79,10 @@ data class PlayerLife(
     val linked: LinkedPlayer? = null,
     /** The deck the player said they're playing, from their remote. */
     val deck: String? = null,
-    /** That deck's commander, from their remote. */
-    val commander: String? = null
+    /** That deck's commander, from their remote — or set at the table ([LifeCounterViewModel.setSeatCommander]). */
+    val commander: String? = null,
+    /** The art of a commander set at the table, while it's the tile's background. */
+    val commanderArt: String? = null
 ) {
     fun counter(kind: PlayerCounter): Int = counters[kind] ?: 0
 
@@ -172,7 +176,9 @@ class LifeCounterViewModel(
     private val cardRepository: CardRepository = CardRepository(),
     private val profileRepository: PlayerProfileRepository,
     private val settingsRepository: LifeCounterSettingsRepository,
-    private val social: SocialRepository? = null
+    private val social: SocialRepository? = null,
+    /** Where the table owner's own games are saved (see [LifeCounterSettings.meSeat]). */
+    private val deckRepository: DeckRepository? = null
 ) : ViewModel() {
     private val _settings = MutableStateFlow(LifeCounterSettings())
     val settings: StateFlow<LifeCounterSettings> = _settings.asStateFlow()
@@ -258,6 +264,17 @@ class LifeCounterViewModel(
     val profiles: StateFlow<List<PlayerProfile>> = profileRepository.profilesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** The user's decks, for choosing the one their own games at this table are saved to. */
+    val decks: StateFlow<List<Deck>> = (deckRepository?.decksFlow ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** The games played at this table, newest first. */
+    val tableGames: StateFlow<List<TableGame>> = settingsRepository.tableGamesFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** The last finished game noted, so taps after the end don't note it again. */
+    private var lastRecorded: String? = null
+
     /**
      * Settings writes still in flight. While any are pending, stored values arriving from disk are
      * older than what's already in memory, and applying them would briefly flip a just-tapped
@@ -275,7 +292,78 @@ class LifeCounterViewModel(
                 }
             }
         }
+        // A game that's over goes into the table's games (and, for the owner's seat, onto their deck).
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(_players, _settings) { players, settings -> players to settings }.collect { (players, settings) ->
+                val alive = players.filterNot { it.isDefeated(settings.autoKill) }
+                if (_ready.value && players.size >= 2 && alive.size <= 1) recordGame(players, settings, alive.singleOrNull()?.id)
+            }
+        }
     }
+
+    /**
+     * Notes a finished game — once, or again if an undo changed how it ended (it replaces itself,
+     * on the table and on the deck). The owner's seat is saved to their deck only while no phone has
+     * joined it: a phone that joins saves the result itself.
+     */
+    private fun recordGame(players: List<PlayerLife>, settings: LifeCounterSettings, winnerSeat: Int?) {
+        val outcome = gameId + ":" + winnerSeat + ":" + players.joinToString(",") { "${it.id}=${it.lossReason(settings.autoKill)}" }
+        if (outcome == lastRecorded) return
+        lastRecorded = outcome
+        val lastAt = _history.value.lastOrNull()?.atMillis ?: System.currentTimeMillis()
+        val game = TableGame(
+            id = gameId,
+            endedAt = System.currentTimeMillis(),
+            turns = _turnNumber.value,
+            minutes = ((lastAt - startedAt) / 60_000).toInt().coerceAtLeast(1),
+            winnerSeat = winnerSeat,
+            players = players.map { p ->
+                TableGamePlayer(p.id, p.displayName, p.commander, p.lossReason(settings.autoKill)?.name, me = p.id == settings.meSeat && p.linked == null)
+            }
+        )
+        viewModelScope.launch {
+            settingsRepository.updateTableGames { withTableGame(it, game) }
+            val deckId = settings.meDeckId ?: return@launch
+            val deckRepository = deckRepository ?: return@launch
+            val seatLinked = players.firstOrNull { it.id == settings.meSeat }?.linked != null
+            val result = meResultOf(game, settings.meSeat, seatLinked) ?: return@launch
+            if (decks.value.none { it.id == deckId }) return@launch
+            deckRepository.removeGameResult(deckId, result.id)
+            deckRepository.addGameResult(deckId, result)
+        }
+    }
+
+    // ---- The table owner's seat, seats' commanders, and the table's games ----
+
+    /** Marks [seat] as the table owner's (null: none), their games saved to [deckId]. */
+    fun setMe(seat: Int?, deckId: String?) = updateSettings { it.copy(meSeat = seat, meDeckId = deckId) }
+
+    /**
+     * What [seat] is playing, set at the table for a player without a phone of their own: their
+     * commander (for everyone's game records), and its art behind a tile that has no picture yet.
+     */
+    fun setSeatCommander(seat: Int, card: ScryfallCard?) = updatePlayer(seat) { p ->
+        if (p.linked != null) return@updatePlayer p
+        val art = card?.imageUris?.artCrop ?: card?.cardFaces?.firstOrNull()?.imageUris?.artCrop
+        val oldArt = p.commanderArt
+        p.copy(
+            commander = card?.name,
+            commanderArt = art,
+            // The commander's art goes behind a bare tile, and follows the commander while it's there.
+            backgroundImageUri = when {
+                p.backgroundImageUri == null || p.backgroundImageUri == oldArt -> art
+                else -> p.backgroundImageUri
+            }
+        )
+    }
+
+    /** Commanders whose names start with [query], for picking one at the table. */
+    suspend fun searchCommanders(query: String): List<ScryfallCard> =
+        if (query.isBlank()) emptyList() else runCatching { cardRepository.search("is:commander name:\"${query.replace("\"", "")}\"").cards }.getOrDefault(emptyList())
+
+    fun deleteTableGame(id: String) = viewModelScope.launch { settingsRepository.updateTableGames { games -> games.filterNot { it.id == id } } }
+
+    fun clearTableGames() = viewModelScope.launch { settingsRepository.updateTableGames { emptyList() } }
 
     // ---- Settings & new games ----
 
@@ -1045,10 +1133,11 @@ class LifeCounterViewModel(
     class Factory(
         private val profileRepository: PlayerProfileRepository,
         private val settingsRepository: LifeCounterSettingsRepository,
-        private val social: SocialRepository
+        private val social: SocialRepository,
+        private val deckRepository: DeckRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            LifeCounterViewModel(profileRepository = profileRepository, settingsRepository = settingsRepository, social = social) as T
+            LifeCounterViewModel(profileRepository = profileRepository, settingsRepository = settingsRepository, social = social, deckRepository = deckRepository) as T
     }
 }

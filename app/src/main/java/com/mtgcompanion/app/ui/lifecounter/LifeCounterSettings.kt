@@ -60,7 +60,11 @@ data class LifeCounterSettings(
 
     val tipsSeen: Boolean = false,
     /** Players who joined a seat by QR code can change their own seat from their phone. */
-    val remotesEnabled: Boolean = true
+    val remotesEnabled: Boolean = true,
+    /** The table owner's own seat, when they play without a phone of their own — see [meResultOf]. */
+    val meSeat: Int? = null,
+    /** The deck their games there are saved to. */
+    val meDeckId: String? = null
 ) {
     fun startingLifeFor(playerCount: Int): Int = if (playerCount == 2) twoPlayerStartingLife else multiplayerStartingLife
 
@@ -90,6 +94,22 @@ class LifeCounterSettingsRepository(private val context: Context) {
 
     val settingsFlow: Flow<LifeCounterSettings> = context.lifeCounterSettingsDataStore.data.map { prefs ->
         prefs[key]?.let { json -> runCatching { adapter.fromJson(json) }.getOrNull() } ?: LifeCounterSettings()
+    }
+
+    private val gamesKey = stringPreferencesKey("table_games_json")
+    private val gamesAdapter = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+        .adapter<List<TableGame>>(com.squareup.moshi.Types.newParameterizedType(List::class.java, TableGame::class.java))
+
+    /** The games played at this table, newest first. */
+    val tableGamesFlow: Flow<List<TableGame>> = context.lifeCounterSettingsDataStore.data.map { prefs ->
+        prefs[gamesKey]?.let { json -> runCatching { gamesAdapter.fromJson(json) }.getOrNull() }.orEmpty()
+    }
+
+    suspend fun updateTableGames(transform: (List<TableGame>) -> List<TableGame>) {
+        context.lifeCounterSettingsDataStore.edit { prefs ->
+            val current = prefs[gamesKey]?.let { runCatching { gamesAdapter.fromJson(it) }.getOrNull() }.orEmpty()
+            prefs[gamesKey] = gamesAdapter.toJson(transform(current))
+        }
     }
 
     suspend fun update(transform: (LifeCounterSettings) -> LifeCounterSettings) {

@@ -592,7 +592,7 @@ fun MtgNavGraph(
             }
 
             destination(Routes.LIFE_COUNTER) {
-                val viewModel: LifeCounterViewModel = viewModel(factory = LifeCounterViewModel.Factory(playerProfileRepository, lifeCounterSettingsRepository, socialRepository))
+                val viewModel: LifeCounterViewModel = viewModel(factory = LifeCounterViewModel.Factory(playerProfileRepository, lifeCounterSettingsRepository, socialRepository, deckRepository))
                 LifeCounterScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
 

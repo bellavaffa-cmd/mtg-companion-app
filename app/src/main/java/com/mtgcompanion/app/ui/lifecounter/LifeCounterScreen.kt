@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -145,6 +146,11 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
     // The high roll in progress: every tile shows its roll until the centre button closes it.
     var highRoll by remember { mutableStateOf<HighRollResult?>(null) }
     var showHistory by remember { mutableStateOf(false) }
+    var showTableGames by remember { mutableStateOf(false) }
+    var commanderFor by remember { mutableStateOf<Int?>(null) }
+    var meFor by remember { mutableStateOf<Int?>(null) }
+    val decks by viewModel.decks.collectAsState()
+    val tableGames by viewModel.tableGames.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     var showSeating by remember { mutableStateOf(false) }
     var showCardSearch by remember { mutableStateOf(false) }
@@ -237,7 +243,14 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                                 defeatMessage = reason?.let { defeatMessageFor(player, it, settings, gameNumber, messageTick) },
                                 victoryMessage = if (player.id == winnerId) victoryMessageFor(player, settings, gameNumber, messageTick) else null,
                                 profiles = profiles,
-                                actions = viewModel.actionsFor(player.id, openKeypad = { keypadPlayerId = player.id }, searchGiphy = { giphyPlayerId = player.id }),
+                                actions = viewModel.actionsFor(
+                                    player.id,
+                                    openKeypad = { keypadPlayerId = player.id },
+                                    searchGiphy = { giphyPlayerId = player.id },
+                                    pickCommander = { commanderFor = player.id },
+                                    pickMe = if (decks.isNotEmpty()) ({ meFor = player.id }) else null,
+                                    meDeck = if (settings.meSeat == player.id) decks.firstOrNull { it.id == settings.meDeckId }?.name ?: "" else null
+                                ),
                                 onTokenTap = { kind ->
                                     tokenStart = seatBounds[player.id]?.center
                                     floatingToken = kind
@@ -297,6 +310,7 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                             ToolItem("Undo", Icons.AutoMirrored.Filled.Undo, enabled = canUndo) { viewModel.undo() },
                             ToolItem("Dice", Icons.Filled.Casino) { showDice = true },
                             ToolItem("History", Icons.Filled.History) { showHistory = true },
+                            ToolItem("Games", Icons.Filled.EmojiEvents) { showTableGames = true },
                             ToolItem("Card search", Icons.Filled.Search) { showCardSearch = true },
                             ToolItem("Monarch", Icons.Filled.WorkspacePremium) {
                                 tokenStart = monarchPlayerId?.let { seatBounds[it]?.center }
@@ -397,6 +411,30 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
         }
         if (showHistory) {
             GameHistoryOverlay(entries = history, players = players, onDismiss = { showHistory = false })
+        }
+        if (showTableGames) {
+            TableGamesOverlay(tableGames, onDelete = { viewModel.deleteTableGame(it) }, onClear = { viewModel.clearTableGames() }, onDismiss = { showTableGames = false })
+        }
+        commanderFor?.let { seat ->
+            val player = players.firstOrNull { it.id == seat }
+            CommanderPickOverlay(
+                playerName = player?.displayName ?: "Player $seat",
+                current = player?.commander,
+                onSearch = viewModel::searchCommanders,
+                onPick = { card -> viewModel.setSeatCommander(seat, card); commanderFor = null },
+                onDismiss = { commanderFor = null }
+            )
+        }
+        meFor?.let { seat ->
+            MeSeatOverlay(
+                seat = seat,
+                decks = decks,
+                currentDeckId = settings.meDeckId,
+                isMe = settings.meSeat == seat,
+                onPick = { deckId -> viewModel.setMe(seat, deckId); meFor = null },
+                onNotMe = { viewModel.setMe(null, null); meFor = null },
+                onDismiss = { meFor = null }
+            )
         }
         shownCard?.let { card ->
             ShownCardOverlay(card, byName = players.firstOrNull { it.id == card.seat }?.displayName, onDismiss = viewModel::hideShownCard)
@@ -593,7 +631,14 @@ private fun menuOffset(anchor: Offset?, table: Rect): IntOffset {
     return IntOffset((anchor.x - table.center.x).roundToInt(), (anchor.y - table.center.y).roundToInt())
 }
 
-private fun LifeCounterViewModel.actionsFor(id: Int, openKeypad: () -> Unit, searchGiphy: () -> Unit) = PlayerTileActions(
+private fun LifeCounterViewModel.actionsFor(
+    id: Int,
+    openKeypad: () -> Unit,
+    searchGiphy: () -> Unit,
+    pickCommander: () -> Unit,
+    pickMe: (() -> Unit)?,
+    meDeck: String?
+) = PlayerTileActions(
     adjustLife = { adjust(id, it) },
     openKeypad = openKeypad,
     adjustCommanderDamage = { source, delta -> adjustCommanderDamage(id, source, delta) },
@@ -612,7 +657,10 @@ private fun LifeCounterViewModel.actionsFor(id: Int, openKeypad: () -> Unit, sea
     loadProfile = { loadProfile(id, it) },
     linkSeat = if (canLinkSeats) ({ showSeatCode(id) }) else null,
     unlinkSeat = { unlinkSeat(id) },
-    searchGiphy = if (socialRepository != null) searchGiphy else null
+    searchGiphy = if (socialRepository != null) searchGiphy else null,
+    pickCommander = pickCommander,
+    pickMe = pickMe,
+    meDeck = meDeck
 )
 
 // ---- Defeat & victory messages ----
