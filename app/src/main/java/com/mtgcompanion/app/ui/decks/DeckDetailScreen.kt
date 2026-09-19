@@ -172,7 +172,9 @@ fun DeckDetailScreen(
     viewModel: DeckDetailViewModel,
     onBack: () -> Unit,
     onViewDetails: (String) -> Unit,
-    onShare: (() -> Unit)? = null
+    onShare: (() -> Unit)? = null,
+    /** "Who has it?" for the cards the user doesn't own (signed in only). */
+    onWhoHasIt: ((names: List<String>) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val deck by viewModel.deck.collectAsState()
@@ -559,7 +561,8 @@ fun DeckDetailScreen(
                     }
                     showMissing = false
                 },
-                onDismiss = { showMissing = false }
+                onDismiss = { showMissing = false },
+                onWhoHasIt = onWhoHasIt?.let { open -> { showMissing = false; open(missing.map { it.entry.name }) } }
             )
         }
     }

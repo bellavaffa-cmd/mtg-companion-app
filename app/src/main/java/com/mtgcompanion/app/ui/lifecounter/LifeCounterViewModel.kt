@@ -10,13 +10,18 @@ import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.PlayerProfile
 import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.util.UUID
 import kotlin.random.Random
 
 /** Per-player counters beyond life. [resetsEachTurn] ones are cleared when the turn passes. */
@@ -25,7 +30,9 @@ enum class PlayerCounter(val label: String, val resetsEachTurn: Boolean = false)
     EXPERIENCE("Experience"),
     ENERGY("Energy"),
     CHARGE("Charge"),
-    STORM("Storm", resetsEachTurn = true)
+    STORM("Storm", resetsEachTurn = true),
+    TOKENS("Tokens"),
+    LOYALTY("Loyalty")
 }
 
 /** Mana pool colors, in canonical WUBRG order with colorless last — keys match Scryfall symbol codes. */
@@ -67,7 +74,9 @@ data class PlayerLife(
     val victoryMessage: String? = null,
     val defeatMessage: String? = null,
     /** The account sitting here, when someone joined the seat by QR code: its name and picture show on the tile. */
-    val linked: LinkedPlayer? = null
+    val linked: LinkedPlayer? = null,
+    /** The deck the player said they're playing, from their remote. */
+    val deck: String? = null
 ) {
     fun counter(kind: PlayerCounter): Int = counters[kind] ?: 0
 
@@ -84,6 +93,9 @@ data class PlayerLife(
     }
 
     fun isDefeated(autoKill: Boolean): Boolean = lossReason(autoKill) != null
+
+    /** Close to losing: 8+ poison, or 18+ damage from one commander. */
+    val inDanger: Boolean get() = counter(PlayerCounter.POISON) >= 8 || commanderDamage.values.any { it >= 18 }
 }
 
 /**
@@ -201,6 +213,46 @@ class LifeCounterViewModel(
     private val _gameMode = MutableStateFlow(GameModeState())
     val gameMode: StateFlow<GameModeState> = _gameMode.asStateFlow()
 
+    // ---- Undo (see undoable) ----
+
+    /**
+     * One change that can be undone: the players it touched as they were before, the turn if it
+     * passed, and the log as it was. [by] is the seat whose remote made it, or null for the table
+     * itself. Quick taps on the same thing fold into one entry, so one undo takes back the burst.
+     */
+    private data class UndoEntry(
+        val by: Int?,
+        val key: String,
+        val at: Long,
+        val before: List<PlayerLife>,
+        val turn: Pair<Int, Int>?,
+        val history: List<HistoryEntry>
+    )
+
+    /** Newest first. */
+    private val undoStack = ArrayDeque<UndoEntry>()
+    /** Bumped whenever [undoStack] changes, so the remotes hear about it. */
+    private val _undoVersion = MutableStateFlow(0)
+    private val _canUndo = MutableStateFlow(false)
+    /** Whether the table has anything to undo (changes from anywhere). */
+    val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
+
+    /** The seat whose remote is being obeyed right now, so its changes are marked as its own. */
+    private var actingSeat: Int? = null
+
+    // ---- The game as players' remotes see it (see remoteState) ----
+
+    private var gameId = UUID.randomUUID().toString()
+    private var startedAt = System.currentTimeMillis()
+
+    private val _shownCard = MutableStateFlow<RemoteShownCard?>(null)
+    /** A card a player is showing the table from their remote, until someone taps it away. */
+    val shownCard: StateFlow<RemoteShownCard?> = _shownCard.asStateFlow()
+
+    private val _match = MutableStateFlow<Match?>(null)
+    /** The table players join by QR code, once the host has shown one. */
+    val match: StateFlow<Match?> = _match.asStateFlow()
+
     val profiles: StateFlow<List<PlayerProfile>> = profileRepository.profilesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -265,7 +317,13 @@ class LifeCounterViewModel(
         _players.value = (1..count).map { id ->
             val fresh = PlayerLife(id = id, life = life, colorIndex = colors[(id - 1) % colors.size])
             val linked = if (sameTable) before.firstOrNull { it.id == id }?.linked else null
-            if (linked == null) fresh else fresh.copy(linked = linked, name = linked.displayName, backgroundImageUri = SocialApi.avatarUrl(linked.avatarPath))
+            val old = before.firstOrNull { it.id == id }
+            if (linked == null) fresh else fresh.copy(
+                linked = linked,
+                name = linked.displayName,
+                backgroundImageUri = old?.backgroundImageUri ?: SocialApi.avatarUrl(linked.avatarPath),
+                deck = old?.deck
+            )
         }
         _gameNumber.value += 1
         _currentTurnPlayerId.value = 1
@@ -275,6 +333,11 @@ class LifeCounterViewModel(
         _dayNight.value = null
         _history.value = emptyList()
         _highRollRequested.value = settings.highRollAtStart && count > 1
+        undoStack.clear()
+        bumpUndo()
+        _shownCard.value = null
+        gameId = UUID.randomUUID().toString()
+        startedAt = System.currentTimeMillis()
     }
 
     fun consumeHighRollRequest() {
@@ -290,15 +353,15 @@ class LifeCounterViewModel(
 
     // ---- Life & player details ----
 
-    fun adjust(playerId: Int, delta: Int) {
-        val player = player(playerId) ?: return
+    fun adjust(playerId: Int, delta: Int) = undoable("life:$playerId") {
+        val player = player(playerId) ?: return@undoable
         updatePlayer(playerId) { it.copy(life = it.life + delta) }
         log(HistoryEvent.Life, playerId, player.life, player.life + delta)
     }
 
     /** Set a player's life to an exact value, e.g. from the numeric keypad. */
-    fun setLife(playerId: Int, value: Int) {
-        val player = player(playerId) ?: return
+    fun setLife(playerId: Int, value: Int) = undoable("life:$playerId") {
+        val player = player(playerId) ?: return@undoable
         updatePlayer(playerId) { it.copy(life = value) }
         log(HistoryEvent.Life, playerId, player.life, value)
     }
@@ -322,12 +385,12 @@ class LifeCounterViewModel(
      * setting turns the life half off for tables that track them separately. [delta] is clamped so
      * the counter can't go below 0; the life adjustment only reflects the amount actually applied.
      */
-    fun adjustCommanderDamage(playerId: Int, source: CommanderSource, delta: Int) {
-        val player = player(playerId) ?: return
+    fun adjustCommanderDamage(playerId: Int, source: CommanderSource, delta: Int) = undoable("cmd:$playerId:${source.opponentId}:${source.slot}") {
+        val player = player(playerId) ?: return@undoable
         val current = player.commanderDamage[source] ?: 0
         val updated = (current + delta).coerceAtLeast(0)
         val applied = updated - current
-        if (applied == 0) return
+        if (applied == 0) return@undoable
         val lifeLoss = if (_settings.value.commanderDamageCostsLife) applied else 0
         updatePlayer(playerId) {
             it.copy(life = it.life - lifeLoss, commanderDamage = it.commanderDamage + (source to updated))
@@ -335,30 +398,30 @@ class LifeCounterViewModel(
         log(HistoryEvent.CommanderDamage(source), playerId, current, updated)
     }
 
-    fun adjustCounter(playerId: Int, kind: PlayerCounter, delta: Int) {
-        val player = player(playerId) ?: return
+    fun adjustCounter(playerId: Int, kind: PlayerCounter, delta: Int) = undoable("counter:$playerId:$kind") {
+        val player = player(playerId) ?: return@undoable
         val current = player.counter(kind)
         val updated = (current + delta).coerceAtLeast(0)
-        if (updated == current) return
+        if (updated == current) return@undoable
         updatePlayer(playerId) { it.copy(counters = it.counters + (kind to updated)) }
         log(HistoryEvent.Counter(kind), playerId, current, updated)
     }
 
-    fun adjustMana(playerId: Int, color: String, delta: Int) {
-        val player = player(playerId) ?: return
+    fun adjustMana(playerId: Int, color: String, delta: Int) = undoable("mana:$playerId:$color") {
+        val player = player(playerId) ?: return@undoable
         val current = player.manaPool[color] ?: 0
         val updated = (current + delta).coerceAtLeast(0)
-        if (updated == current) return
+        if (updated == current) return@undoable
         updatePlayer(playerId) { it.copy(manaPool = it.manaPool + (color to updated)) }
         log(HistoryEvent.Mana(color), playerId, current, updated)
     }
 
     /** Commander tax rises in increments of 2 (colorless mana) each time that commander is recast. */
-    fun adjustCommanderTax(playerId: Int, slot: Int, delta: Int) {
-        val player = player(playerId) ?: return
+    fun adjustCommanderTax(playerId: Int, slot: Int, delta: Int) = undoable("tax:$playerId:$slot") {
+        val player = player(playerId) ?: return@undoable
         val current = player.commanderTax.getOrElse(slot) { 0 }
         val updated = (current + delta).coerceAtLeast(0)
-        if (updated == current) return
+        if (updated == current) return@undoable
         updatePlayer(playerId) {
             it.copy(commanderTax = it.commanderTax.toMutableList().also { tax -> tax[slot] = updated })
         }
@@ -385,8 +448,8 @@ class LifeCounterViewModel(
     }
 
     /** Takes a player out regardless of their totals — concessions, alternate win conditions, etc. */
-    fun kill(playerId: Int) {
-        if (player(playerId)?.killed != false) return
+    fun kill(playerId: Int) = undoable("out:$playerId") {
+        if (player(playerId)?.killed != false) return@undoable
         updatePlayer(playerId) { it.copy(killed = true) }
         log(HistoryEvent.Killed, playerId, null, null)
     }
@@ -397,8 +460,8 @@ class LifeCounterViewModel(
      * color, commander tax and their other counters are kept, since those describe the player
      * rather than their defeat.
      */
-    fun revive(playerId: Int) {
-        val player = player(playerId) ?: return
+    fun revive(playerId: Int) = undoable("out:$playerId") {
+        val player = player(playerId) ?: return@undoable
         val life = _settings.value.startingLifeFor(_players.value.size)
         updatePlayer(playerId) {
             it.copy(
@@ -446,9 +509,9 @@ class LifeCounterViewModel(
     // ---- Turn tracker ----
 
     /** Passing the turn also empties every mana pool and resets storm counts, which don't carry over. */
-    fun nextTurn() {
+    fun nextTurn() = undoable("turn") {
         val ids = _players.value.map { it.id }
-        if (ids.isEmpty()) return
+        if (ids.isEmpty()) return@undoable
         val idx = ids.indexOf(_currentTurnPlayerId.value)
         _currentTurnPlayerId.value = if (idx == -1 || idx == ids.lastIndex) ids.first() else ids[idx + 1]
         _turnNumber.value += 1
@@ -632,10 +695,6 @@ class LifeCounterViewModel(
 
     // ---- Players joining with their profiles (QR code per seat) ----
 
-    private val _match = MutableStateFlow<Match?>(null)
-    /** The table players join by QR code, once the host has shown one. */
-    val match: StateFlow<Match?> = _match.asStateFlow()
-
     private val _seatCode = MutableStateFlow<Int?>(null)
     /** The seat whose QR code is showing. */
     val seatCode: StateFlow<Int?> = _seatCode.asStateFlow()
@@ -702,7 +761,8 @@ class LifeCounterViewModel(
         p.copy(
             linked = linked,
             name = linked?.displayName ?: if (p.linked != null) null else p.name,
-            backgroundImageUri = SocialApi.avatarUrl(linked?.avatarPath) ?: ownBackground
+            backgroundImageUri = SocialApi.avatarUrl(linked?.avatarPath) ?: ownBackground,
+            deck = if (linked?.userId == p.linked?.userId) p.deck else null
         )
     }
 
@@ -711,10 +771,230 @@ class LifeCounterViewModel(
         val m = _match.value ?: return
         _match.value = null
         _seatCode.value = null
+        _shownCard.value = null
         social?.endMatchInBackground(m.id)
     }
 
+    // ---- Undo ----
+
+
+    private inline fun undoable(key: String, change: () -> Unit) {
+        val playersBefore = _players.value
+        val turnBefore = _currentTurnPlayerId.value to _turnNumber.value
+        val historyBefore = _history.value
+        change()
+        val after = _players.value
+        val changed = playersBefore.filter { b -> after.firstOrNull { it.id == b.id }?.let { !samePlay(b, it) } == true }
+        val turnMoved = (_currentTurnPlayerId.value to _turnNumber.value) != turnBefore
+        if (changed.isEmpty() && !turnMoved) return
+        val now = System.currentTimeMillis()
+        val by = actingSeat
+        val top = undoStack.firstOrNull()
+        if (top != null && top.key == key && top.by == by && now - top.at < UNDO_MERGE_MS && !turnMoved) {
+            undoStack[0] = top.copy(at = now, before = top.before + changed.filter { c -> top.before.none { it.id == c.id } })
+        } else {
+            undoStack.addFirst(UndoEntry(by, key, now, changed, if (turnMoved) turnBefore else null, historyBefore))
+            while (undoStack.size > UNDO_LIMIT) undoStack.removeLast()
+        }
+        bumpUndo()
+    }
+
+    private fun samePlay(a: PlayerLife, b: PlayerLife) =
+        a.life == b.life && a.killed == b.killed && a.commanderDamage == b.commanderDamage &&
+            a.counters == b.counters && a.manaPool == b.manaPool && a.commanderTax == b.commanderTax
+
+    /**
+     * Takes back the newest change — the newest one made from seat [by]'s remote when [by] is set.
+     * The players it touched get their life, damage and counters back; who they are and how their
+     * tile looks stay as they are now. Undoing the very newest change puts the log back too.
+     */
+    fun undo(by: Int? = null) {
+        val index = if (by == null) 0 else undoStack.indexOfFirst { it.by == by }
+        val entry = undoStack.getOrNull(index) ?: return
+        undoStack.removeAt(index)
+        _players.value = _players.value.map { p ->
+            val was = entry.before.firstOrNull { it.id == p.id } ?: return@map p
+            p.copy(life = was.life, killed = was.killed, commanderDamage = was.commanderDamage, counters = was.counters, manaPool = was.manaPool, commanderTax = was.commanderTax)
+        }
+        entry.turn?.let { (seat, number) -> _currentTurnPlayerId.value = seat; _turnNumber.value = number }
+        if (index == 0) _history.value = entry.history
+        bumpUndo()
+    }
+
+    private fun canUndoFor(seat: Int) = undoStack.any { it.by == seat }
+
+    private fun bumpUndo() {
+        _undoVersion.value += 1
+        _canUndo.value = undoStack.isNotEmpty()
+    }
+
+    // ---- Players' phones as remotes (LifeCounterRemote.kt) ----
+
+    fun hideShownCard() { _shownCard.value = null }
+
+    private var hostJob: Job? = null
+    private var publishJob: Job? = null
+    private var lastSent: String? = null
+
+    init {
+        // While players can join (a match is open), keep its channel open.
+        viewModelScope.launch {
+            _match.collect { m ->
+                hostJob?.cancel()
+                hostJob = null
+                lastSent = null
+                val social = social ?: return@collect
+                if (m == null || social.userId == null) return@collect
+                hostJob = launch {
+                    val channel = social.matchChannel.watch(
+                        this, m.id,
+                        onEvent = { event, payload -> if (event == "action") viewModelScope.launch { onRemoteAction(payload) } },
+                        onJoined = { viewModelScope.launch { publish(force = true) } },
+                        onLive = {}
+                    )
+                    // Sent again now and then even when nothing changes, so remotes can tell the table is still there.
+                    while (isActive) {
+                        delay(REMOTE_HEARTBEAT_MS)
+                        publish(force = true)
+                    }
+                    channel.cancel()
+                }
+            }
+        }
+        // Any change to the game goes out to the remotes (a burst of taps, once).
+        viewModelScope.launch {
+            merge(_players, _currentTurnPlayerId, _turnNumber, _settings, _shownCard, _undoVersion, _history).collect {
+                if (_match.value == null) return@collect
+                publishJob?.cancel()
+                publishJob = launch {
+                    delay(PUBLISH_DEBOUNCE_MS)
+                    publish(force = false)
+                }
+            }
+        }
+    }
+
+    /** The game as the remotes see it. */
+    fun remoteState(): RemoteState {
+        val settings = _settings.value
+        val players = _players.value
+        val alive = players.filterNot { it.isDefeated(settings.autoKill) }
+        val over = players.size >= 2 && alive.size <= 1
+        val lastAt = _history.value.lastOrNull()?.atMillis ?: startedAt
+        return RemoteState(
+            v = REMOTE_VERSION,
+            gameId = gameId,
+            remotes = settings.remotesEnabled,
+            turn = if (settings.turnTrackerEnabled && players.size > 1) RemoteTurn(_currentTurnPlayerId.value, _turnNumber.value) else null,
+            startedAt = startedAt,
+            longPress = settings.longPressAmount,
+            players = players.map { p ->
+                val (hex, ink) = seatHex(p.colorIndex)
+                RemoteSeat(
+                    seat = p.id,
+                    name = p.displayName,
+                    color = hex,
+                    ink = ink,
+                    life = p.life,
+                    out = p.lossReason(settings.autoKill)?.name,
+                    poison = p.counter(PlayerCounter.POISON),
+                    counters = p.counters.filterKeys { it != PlayerCounter.POISON }.mapKeys { it.key.wire() },
+                    commanderDamage = p.commanderDamage.filterValues { it > 0 }.map { (src, amount) -> RemoteDamage(src.opponentId, src.slot, amount) },
+                    // A photo picked on this phone (content://) means nothing anywhere else.
+                    background = p.backgroundImageUri?.takeIf { it.startsWith("https://") },
+                    deck = p.deck,
+                    userId = p.linked?.userId,
+                    avatarPath = p.linked?.avatarPath,
+                    canUndo = canUndoFor(p.id),
+                    partner = p.hasPartner
+                )
+            },
+            shownCard = _shownCard.value,
+            over = if (over) RemoteOver(alive.singleOrNull()?.id, _turnNumber.value, ((lastAt - startedAt) / 60_000).toInt().coerceAtLeast(1)) else null
+        )
+    }
+
+    private suspend fun publish(force: Boolean) {
+        val social = social ?: return
+        val m = _match.value ?: return
+        val state = remoteState().toJson()
+        val text = state.toString()
+        if (!force && text == lastSent) return
+        lastSent = text
+        try {
+            social.api.publishMatchState(m.id, state)
+        } catch (e: Exception) {
+            lastSent = null // try again with the next change
+        }
+    }
+
+    /**
+     * A request from a seated player's remote. The table trusts nothing it's sent beyond the seat the
+     * server stamped on it — and only from the account the table has sitting there.
+     */
+    private suspend fun onRemoteAction(payload: JSONObject) {
+        val seat = payload.optInt("seat", -1)
+        val userId = payload.optString("user_id")
+        val action = payload.optJSONObject("action") ?: return
+        val player = player(seat) ?: return
+        if (player.linked?.userId != userId) return
+        val type = action.optString("type")
+        if (type == "hello" || !_settings.value.remotesEnabled) {
+            publish(force = true)
+            return
+        }
+        fun delta(limit: Int): Int? = action.optInt("delta", 0).takeIf { it != 0 && kotlin.math.abs(it) <= limit }
+        fun seated(key: String): Int? = action.optInt(key, -1).takeIf { id -> id != seat && _players.value.any { it.id == id } }
+        val before = remoteState().toJson().toString()
+        actingSeat = seat
+        try {
+            when (type) {
+                "life" -> delta(1000)?.let { adjust(seat, it) }
+                "counter" -> delta(100)?.let { d ->
+                    val name = action.optString("counter")
+                    (if (name == "poison") PlayerCounter.POISON else counterOfWire(name))?.let { adjustCounter(seat, it, d) }
+                }
+                "commanderDamage" -> {
+                    val d = delta(100)
+                    val from = seated("from")
+                    val slot = action.optInt("slot", 0)
+                    if (d != null && from != null && (slot == 0 || (slot == 1 && player(from)?.hasPartner == true))) {
+                        adjustCommanderDamage(seat, CommanderSource(from, slot), d)
+                    }
+                }
+                "dealtDamage" -> {
+                    val d = delta(100)
+                    val to = seated("to")
+                    val slot = action.optInt("slot", 0)
+                    if (d != null && to != null && (slot == 0 || (slot == 1 && player.hasPartner))) {
+                        adjustCommanderDamage(to, CommanderSource(seat, slot), d)
+                    }
+                }
+                "endTurn" -> if (_settings.value.turnTrackerEnabled && _currentTurnPlayerId.value == seat) nextTurn()
+                "undo" -> undo(by = seat)
+                "background" -> {
+                    val url = if (action.isNull("url")) null else action.optString("url")
+                    if (url == null || allowedRemoteImage(url)) {
+                        val deck = if (action.has("deck")) (if (action.isNull("deck")) null else action.optString("deck").take(80)) else player.deck
+                        updatePlayer(seat) { it.copy(backgroundImageUri = url, deck = deck) }
+                    }
+                }
+                "showCard" -> {
+                    val url = action.optString("imageUrl")
+                    val name = action.optString("name").take(150)
+                    if (name.isNotEmpty() && allowedRemoteImage(url, scryfallOnly = true)) _shownCard.value = RemoteShownCard(name, url, seat)
+                }
+                "hideCard" -> if (_shownCard.value?.seat == seat) _shownCard.value = null
+            }
+        } finally {
+            actingSeat = null
+        }
+        // Nothing changed (not theirs to do, say): let the remote see the game as it is.
+        if (remoteState().toJson().toString() == before) publish(force = true)
+    }
+
     override fun onCleared() {
+        hostJob?.cancel()
         endMatch()
         super.onCleared()
     }
@@ -730,6 +1010,12 @@ class LifeCounterViewModel(
         const val PLAYER_COLOR_COUNT = 10
         private const val MERGE_WINDOW_MILLIS = 4_000L
         private const val MAX_HISTORY = 500
+        private const val UNDO_LIMIT = 60
+        /** Changes to the same thing within this long of each other undo together. */
+        private const val UNDO_MERGE_MS = 2_000L
+        /** How long the game settles before it's sent to the remotes again. */
+        private const val PUBLISH_DEBOUNCE_MS = 120L
+        private const val REMOTE_HEARTBEAT_MS = 25_000L
 
         private fun defaultPlayers(count: Int, life: Int) =
             (1..count).map { PlayerLife(id = it, life = life, colorIndex = (it - 1) % PLAYER_COLOR_COUNT) }

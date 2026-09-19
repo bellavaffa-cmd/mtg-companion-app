@@ -59,6 +59,11 @@ class CollectionRepository(private val context: Context) {
         }
     }
 
+    /** A wishlist card's price alert (USD); null turns it off. */
+    suspend fun setPriceAlert(collectionId: String, scryfallId: String, usd: Double?) {
+        updateEntries(collectionId) { entries -> entries.map { if (it.scryfallId == scryfallId) it.copy(priceAlert = usd) else it } }
+    }
+
     suspend fun setQuantity(collectionId: String, scryfallId: String, quantity: Int, foilQuantity: Int) {
         updateEntries(collectionId) { entries ->
             entries.mapNotNull {

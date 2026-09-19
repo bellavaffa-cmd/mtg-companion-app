@@ -139,6 +139,9 @@ import com.mtgcompanion.app.ui.detail.CardDetailViewModel
 import com.mtgcompanion.app.ui.home.HomeScreen
 import com.mtgcompanion.app.ui.home.HomeViewModel
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterScreen
+import com.mtgcompanion.app.ui.lifecounter.RemoteScreen
+import com.mtgcompanion.app.ui.social.WhoHasItDialog
+import com.mtgcompanion.app.ui.lifecounter.RemoteViewModel
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterSettingsRepository
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterViewModel
 import com.mtgcompanion.app.ui.rules.RulesScreen
@@ -187,6 +190,9 @@ private object Routes {
     fun friendShared(owner: String) = "friend_shared/$owner"
     fun sharedCollection(owner: String) = "shared_collection/$owner"
     const val QR_SCAN = "qr_scan"
+    /** A player's phone as the remote for their seat at a life counter table. */
+    const val REMOTE = "remote/{matchId}/{seat}"
+    fun remote(matchId: String, seat: Int) = "remote/$matchId/$seat"
     fun friend(userId: String) = "friend/$userId"
     fun tradeNew(userId: String) = "trade_new/$userId"
     fun shared(owner: String, kind: String, itemId: String) = "shared/$owner/$kind/" + URLEncoder.encode(itemId, StandardCharsets.UTF_8.name())
@@ -227,13 +233,19 @@ fun MtgNavGraph(
     // Phone, tablet or desktop-width layout, following the window as it rotates or resizes.
     val layoutSize = currentLayoutSize()
     // Scan's camera and the life counter's table run edge to edge, without the rail or sidebar.
-    val showWideNav = layoutSize.isWide && currentRoute != Routes.SCAN && currentRoute != Routes.LIFE_COUNTER
+    val showWideNav = layoutSize.isWide && currentRoute != Routes.SCAN && currentRoute != Routes.LIFE_COUNTER && currentRoute != Routes.REMOTE
 
     // A tapped notification: open Friends, or Trades on top of it.
     val openRequest by pendingOpen.collectAsState()
     LaunchedEffect(openRequest) {
         val open = openRequest ?: return@LaunchedEffect
         pendingOpen.value = null
+        // A price alert: the wishlist it's on.
+        if (open.startsWith("binder:")) {
+            navController.navigateToTab(Routes.COLLECTION)
+            navController.navigate(Routes.collectionDetail(open.removePrefix("binder:"))) { launchSingleTop = true }
+            return@LaunchedEffect
+        }
         navController.navigateToTab(Routes.FRIENDS)
         if (open == "trades") navController.navigate(Routes.TRADES) { launchSingleTop = true }
     }
@@ -252,7 +264,7 @@ fun MtgNavGraph(
         // The system bars are hidden app-wide (MainActivity), so these are normally zero — but a
         // camera cutout still needs clearing on regular screens. The life counter's tiles are meant
         // to run edge to edge, so it gets none.
-        contentWindowInsets = if (currentRoute == Routes.LIFE_COUNTER) WindowInsets(0) else WindowInsets.systemBars.union(WindowInsets.displayCutout),
+        contentWindowInsets = if (currentRoute == Routes.LIFE_COUNTER || currentRoute == Routes.REMOTE) WindowInsets(0) else WindowInsets.systemBars.union(WindowInsets.displayCutout),
         bottomBar = {
             if (layoutSize == LayoutSize.PHONE && currentRoute in bottomNavRoutes) {
                 MtgBottomBar(currentRoute = currentRoute, navController = navController)
@@ -487,13 +499,23 @@ fun MtgNavGraph(
                 // Remembered for Home's "continue where you left off" tile.
                 LaunchedEffect(deckId) { settingsRepository.setLastOpenedDeckId(deckId) }
                 var sharing by remember { mutableStateOf(false) }
+                var whoHas by remember { mutableStateOf<List<String>?>(null) }
                 val sharedDeck by viewModel.deck.collectAsState()
                 DeckDetailScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
                     onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
-                    onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null
+                    onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null,
+                    onWhoHasIt = if (supabaseSync.auth.configured) ({ names -> whoHas = names }) else null
                 )
+                whoHas?.let { names ->
+                    WhoHasItDialog(
+                        social = socialRepository,
+                        names = names,
+                        onAsk = { owner -> whoHas = null; navController.navigate(Routes.tradeNew(owner)) },
+                        onDismiss = { whoHas = null }
+                    )
+                }
                 if (sharing) {
                     ShareDialog(
                         social = socialRepository,
@@ -516,7 +538,8 @@ fun MtgNavGraph(
                     social = socialRepository,
                     onBack = { navController.popBackStack() },
                     onCardClick = { name -> navController.navigate(Routes.detail(name)) },
-                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) }
+                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) }
                 )
             }
 
@@ -679,8 +702,23 @@ fun MtgNavGraph(
                     social = socialRepository,
                     onBack = { navController.popBackStack() },
                     onSignIn = signIn,
-                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) { popUpTo(Routes.QR_SCAN) { inclusive = true } } }
+                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) { popUpTo(Routes.QR_SCAN) { inclusive = true } } },
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) { popUpTo(Routes.QR_SCAN) { inclusive = true } } }
                 )
+            }
+
+            destination(
+                Routes.REMOTE,
+                arguments = listOf(
+                    navArgument("matchId") { type = NavType.StringType },
+                    navArgument("seat") { type = NavType.IntType }
+                )
+            ) { entry ->
+                val context = LocalContext.current
+                val matchId = entry.arguments?.getString("matchId").orEmpty()
+                val seat = entry.arguments?.getInt("seat") ?: 0
+                val viewModel: RemoteViewModel = viewModel(factory = RemoteViewModel.Factory(socialRepository, deckRepository, context, matchId, seat))
+                RemoteScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
         }
         }

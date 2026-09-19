@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.data.social
 
+import com.mtgcompanion.app.data.supabase.MatchChannel
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,8 @@ import kotlinx.coroutines.launch
  */
 class SocialRepository(private val auth: SupabaseAuth) {
     val api = SocialApi(auth)
+    /** Life counter tables and their players' remotes talk over this. */
+    val matchChannel = MatchChannel(auth)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _overview = MutableStateFlow<Overview?>(null)
@@ -96,6 +99,9 @@ class SocialRepository(private val auth: SupabaseAuth) {
 
     /** Ends a life counter table after its screen has gone (so no coroutine of its own is left). */
     fun endMatchInBackground(matchId: String) { scope.launch { runCatching { api.endMatch(matchId) } } }
+
+    /** Gets up from a life counter seat, after the remote screen has gone. */
+    fun leaveSeatInBackground(matchId: String, seat: Int) { scope.launch { runCatching { api.clearMatchSeat(matchId, seat) } } }
 
     /** The badge checks in whenever the app comes back to the front (MainActivity.onResume). */
     fun refreshInboxInBackground() { scope.launch { refreshInbox() } }

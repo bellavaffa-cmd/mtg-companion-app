@@ -58,7 +58,9 @@ data class LifeCounterSettings(
     val poisonDefeatMessages: List<String> = DEFAULT_POISON_DEFEAT_MESSAGES,
     val victoryMessages: List<String> = DEFAULT_VICTORY_MESSAGES,
 
-    val tipsSeen: Boolean = false
+    val tipsSeen: Boolean = false,
+    /** Players who joined a seat by QR code can change their own seat from their phone. */
+    val remotesEnabled: Boolean = true
 ) {
     fun startingLifeFor(playerCount: Int): Int = if (playerCount == 2) twoPlayerStartingLife else multiplayerStartingLife
 

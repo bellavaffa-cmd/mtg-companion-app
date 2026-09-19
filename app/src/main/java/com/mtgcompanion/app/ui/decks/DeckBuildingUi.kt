@@ -620,7 +620,9 @@ internal fun MissingCardsDialog(
     wishlists: List<Collection>,
     onAddToWishlist: (wishlistId: String?, newName: String?) -> Unit,
     onBuy: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Friends who own them (signed in only). */
+    onWhoHasIt: (() -> Unit)? = null
 ) {
     var pickingWishlist by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
@@ -681,6 +683,7 @@ internal fun MissingCardsDialog(
                     }
                 } else {
                     Row {
+                        onWhoHasIt?.let { TextButton(onClick = it) { Text("Who has it?", color = Gold) } }
                         TextButton(onClick = onBuy) { Text("Buy", color = Gold) }
                         Button(onClick = { pickingWishlist = true }, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) {
                             Text("Add to wishlist", color = Bg)

@@ -9,7 +9,9 @@ data class CollectionEntry(
     // Cached from ScryfallCard.backImageUrl — see DeckCardEntry.backImageUrl for why.
     val backImageUrl: String? = null,
     // Cached from ScryfallCard.tags — see DeckCardEntry.tags for why.
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    /** Wishlists: tell the user when this card's price (USD, non-foil) is at or under this (see PriceAlerts). */
+    val priceAlert: Double? = null
 )
 
 /** OWNED binders are the physical collection; WISHLIST binders track cards not owned yet. */

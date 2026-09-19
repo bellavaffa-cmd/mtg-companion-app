@@ -338,7 +338,8 @@ fun PlayerTile(
             }
 
             val alive = defeatMessage == null
-            CriticalLifeGlow(visible = settings.lowLifeWarning && alive && player.life in 1..9)
+            // Low life, 8+ poison or 18+ damage from one commander: close to losing.
+            CriticalLifeGlow(visible = alive && ((settings.lowLifeWarning && player.life in 1..9) || player.inDanger))
 
             LifeFace(
                 player = player,

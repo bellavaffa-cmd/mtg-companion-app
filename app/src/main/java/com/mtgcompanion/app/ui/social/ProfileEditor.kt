@@ -201,7 +201,7 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
  * The picture to upload: a GIF as it is (so it still moves, and only if under 2 MB), anything else
  * cropped square from the middle, shrunk and saved as a JPEG.
  */
-private suspend fun avatarBytes(context: Context, uri: Uri): Pair<ByteArray, String> = withContext(Dispatchers.IO) {
+internal suspend fun avatarBytes(context: Context, uri: Uri): Pair<ByteArray, String> = withContext(Dispatchers.IO) {
     val resolver = context.contentResolver
     val type = resolver.getType(uri).orEmpty()
     if (type == "image/gif") {

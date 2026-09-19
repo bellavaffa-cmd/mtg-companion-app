@@ -66,6 +66,7 @@ internal fun LifeCounterSettingsOverlay(
                     Check("High roll at game start", null, settings.highRollAtStart) { v -> onUpdate { it.copy(highRollAtStart = v) } }
                     Check("Auto-kill", "Kill players from life, poison or commander damage", settings.autoKill) { v -> onUpdate { it.copy(autoKill = v) } }
                     Check("Commander damage", "Commander damage causes players to lose life", settings.commanderDamageCostsLife) { v -> onUpdate { it.copy(commanderDamageCostsLife = v) } }
+                    Check("Phones as remotes", "Players who joined a seat by QR code can change their own life and counters from their phone", settings.remotesEnabled) { v -> onUpdate { it.copy(remotesEnabled = v) } }
 
                     Group("Counters on player card")
                     Check("Regular counters", "Poison, tax, energy and more", settings.countersOnTile) { v -> onUpdate { it.copy(countersOnTile = v) } }

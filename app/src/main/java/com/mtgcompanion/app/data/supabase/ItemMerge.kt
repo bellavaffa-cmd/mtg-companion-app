@@ -164,7 +164,8 @@ object ItemMerge {
                     name = pick(b.name, m.name, t.name, minePreferred),
                     imageUrl = pick(b.imageUrl, m.imageUrl, t.imageUrl, minePreferred),
                     backImageUrl = pick(b.backImageUrl, m.backImageUrl, t.backImageUrl, minePreferred),
-                    tags = pick(b.tags, m.tags, t.tags, minePreferred)
+                    tags = pick(b.tags, m.tags, t.tags, minePreferred),
+                    priceAlert = pick(b.priceAlert, m.priceAlert, t.priceAlert, minePreferred)
                 )
             }
         )

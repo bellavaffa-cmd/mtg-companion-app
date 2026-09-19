@@ -87,6 +87,11 @@ class CollectionDetailViewModel(
         _query.value = newQuery
     }
 
+    /** A wishlist card's price alert (USD); null turns it off. */
+    fun setPriceAlert(entry: CollectionEntry, usd: Double?) {
+        viewModelScope.launch { repository.setPriceAlert(collectionId, entry.scryfallId, usd) }
+    }
+
     private val _importProgress = MutableStateFlow<ImportProgress>(ImportProgress.Idle)
     /** Where an import from another app is up to. */
     val importProgress: StateFlow<ImportProgress> = _importProgress.asStateFlow()

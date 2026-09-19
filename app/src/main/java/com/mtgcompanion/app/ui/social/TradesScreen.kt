@@ -198,6 +198,7 @@ private fun TradeCardView(social: SocialRepository, collectionRepository: Collec
         }
         TradeSideList("You give", sides.give)
         TradeSideList("You get", sides.get)
+        if (trade.status == TradeStatus.OPEN) TradeValue(get = sides.get, give = sides.give)
         trade.message?.let { TradeMessage(if (trade.fromUser == me) "You" else theirName, it) }
         trade.reply?.let { TradeMessage(if (trade.toUser == me) "You" else theirName, it) }
         error?.let { Notice(it, warn = true) }
@@ -441,6 +442,7 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
         item { TradeCardList(draft.want, "Nothing yet — pick from ${friend.displayName}'s shared binders.") { c -> update(draft.copy(want = draft.want.filterNot { it.key == c.key })) } }
         item { SectionHeader(if (draft.give.isEmpty()) "You offer" else "You offer · ${draft.give.cardTotal()}", action = "Pick cards", onAction = { picking = false }) }
         item { TradeCardList(draft.give, "Nothing — or pick cards from your binders to offer.") { c -> update(draft.copy(give = draft.give.filterNot { it.key == c.key })) } }
+        item { TradeValue(get = draft.want, give = draft.give) }
         item {
             OutlinedTextField(
                 value = draft.message,

@@ -85,6 +85,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import coil.compose.AsyncImage
 import com.google.mlkit.vision.common.InputImage
 import com.mtgcompanion.app.BuildConfig
@@ -116,7 +117,8 @@ fun ScanScreen(
     social: SocialRepository,
     onBack: () -> Unit,
     onCardClick: (String) -> Unit = {},
-    onOpenSharedLink: (String) -> Unit = {}
+    onOpenSharedLink: (String) -> Unit = {},
+    onOpenRemote: ((matchId: String, seat: Int) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -164,7 +166,7 @@ fun ScanScreen(
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     // The app's own QR codes (a friend, a life counter seat, a share link) work here too, so there's
     // no need to find the QR scanner. Every third frame is enough to catch one.
-    val links = rememberAppLinkHandler(social, onOpenSharedLink)
+    val links = rememberAppLinkHandler(social, onOpenSharedLink, onOpenRemote)
     val overview by social.overview.collectAsState()
     val qrReader = remember { qrScanner() }
     val frameCount = remember { AtomicInteger() }
@@ -245,6 +247,9 @@ fun ScanScreen(
                     val capture = ImageCapture.Builder()
                         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                         .build()
+                    // The screen may already be gone by the time the camera is ready: binding to a
+                    // finished screen crashes.
+                    if (lifecycleOwner.lifecycle.currentState == Lifecycle.State.DESTROYED) return@addListener
                     cameraProvider.unbindAll()
                     camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,

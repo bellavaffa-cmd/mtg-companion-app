@@ -10,6 +10,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -35,12 +36,6 @@ internal class SupabaseRealtime(private val auth: SupabaseAuth, private val scop
     private companion object {
         /** Phoenix drops a connection it hasn't heard from in a while. */
         const val HEARTBEAT_MS = 25_000L
-        /**
-         * How often the sign-in is checked. accessToken() renews it in its last minute, and a renewed
-         * one is handed to Realtime right away — otherwise Realtime ends the subscription when the old
-         * one expires.
-         */
-        const val TOKEN_CHECK_MS = 30_000L
         /** Waits before reconnecting after a drop, growing with each failed attempt. */
         val RETRY_MS = longArrayOf(2_000, 5_000, 15_000, 30_000)
     }
@@ -109,78 +104,163 @@ internal class SupabaseRealtime(private val auth: SupabaseAuth, private val scop
     }
 
     /** One connection: join, then keep it alive (and its sign-in fresh) until it drops or is refused. */
-    private suspend fun connection(userId: String, token: String, onChange: () -> Unit, onJoined: () -> Unit): Outcome = coroutineScope {
-        val topic = "realtime:library-$userId"
-        val ref = AtomicInteger(0)
-        val closed = AtomicBoolean(false)
-        val done = CompletableDeferred<Outcome>()
-        val listener = object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                val join = ref.incrementAndGet().toString()
-                val changes = JSONObject().put("event", "*").put("schema", "public").put("table", "library_items")
-                    .put("filter", "user_id=eq.$userId")
-                val config = JSONObject()
-                    .put("broadcast", JSONObject().put("ack", false).put("self", false))
-                    .put("presence", JSONObject().put("key", ""))
-                    .put("private", false)
-                    .put("postgres_changes", JSONArray().put(changes))
-                webSocket.send(
-                    JSONObject().put("topic", topic).put("event", "phx_join").put("ref", join).put("join_ref", join)
-                        .put("payload", JSONObject().put("config", config).put("access_token", token)).toString()
-                )
-            }
+    private suspend fun connection(userId: String, token: String, onChange: () -> Unit, onJoined: () -> Unit): Outcome {
+        val changes = JSONObject().put("event", "*").put("schema", "public").put("table", "library_items")
+            .put("filter", "user_id=eq.$userId")
+        val config = JSONObject()
+            .put("broadcast", JSONObject().put("ack", false).put("self", false))
+            .put("presence", JSONObject().put("key", ""))
+            .put("private", false)
+            .put("postgres_changes", JSONArray().put(changes))
+        val result = realtimeConnection(auth, client, "library-$userId", config, token,
+            onJoined = { live = true; onJoined() },
+            onMessage = { event, _ -> if (event == "postgres_changes") onChange() })
+        return if (result == ChannelEnd.UNAVAILABLE) Outcome.UNAVAILABLE else Outcome.DROPPED
+    }
+}
 
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                if (closed.get()) return // a late message from a connection being shut down
-                val message = runCatching { JSONObject(text) }.getOrNull() ?: return
-                if (message.optString("topic") != topic) return
-                val payload = message.optJSONObject("payload")
-                val status = payload?.optString("status")
-                when (message.optString("event")) {
-                    "phx_reply" -> when {
-                        status == "ok" && !live -> { live = true; onJoined() }
-                        status == "error" -> done.complete(Outcome.DROPPED) // refused: retry with a fresh sign-in
-                    }
-                    "postgres_changes" -> onChange()
-                    "system" -> if (status == "error") {
-                        done.complete(if (payload.optString("extension") == "postgres_changes") Outcome.UNAVAILABLE else Outcome.DROPPED)
-                    }
-                    "phx_error", "phx_close" -> done.complete(Outcome.DROPPED)
+internal enum class ChannelEnd { DROPPED, UNAVAILABLE }
+
+/**
+ * One Realtime connection to channel [topic] (without the "realtime:" prefix): joins with [config],
+ * answers heartbeats, hands Realtime a renewed sign-in, and returns when it drops or is refused.
+ * [onMessage] gets every other message for the channel: its event and payload.
+ */
+internal suspend fun realtimeConnection(
+    auth: SupabaseAuth,
+    client: OkHttpClient,
+    topic: String,
+    config: JSONObject,
+    token: String,
+    onJoined: () -> Unit,
+    onMessage: (event: String, payload: JSONObject?) -> Unit
+): ChannelEnd = coroutineScope {
+    val fullTopic = "realtime:$topic"
+    val ref = AtomicInteger(0)
+    val closed = AtomicBoolean(false)
+    val joined = AtomicBoolean(false)
+    val done = CompletableDeferred<ChannelEnd>()
+    val listener = object : WebSocketListener() {
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            val join = ref.incrementAndGet().toString()
+            webSocket.send(
+                JSONObject().put("topic", fullTopic).put("event", "phx_join").put("ref", join).put("join_ref", join)
+                    .put("payload", JSONObject().put("config", config).put("access_token", token)).toString()
+            )
+        }
+
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            if (closed.get()) return // a late message from a connection being shut down
+            val message = runCatching { JSONObject(text) }.getOrNull() ?: return
+            if (message.optString("topic") != fullTopic) return
+            val payload = message.optJSONObject("payload")
+            val status = payload?.optString("status")
+            when (val event = message.optString("event")) {
+                "phx_reply" -> when {
+                    status == "ok" && joined.compareAndSet(false, true) -> onJoined()
+                    status == "error" -> done.complete(ChannelEnd.DROPPED) // refused: retry with a fresh sign-in
                 }
+                "system" -> if (status == "error") {
+                    done.complete(if (payload.optString("extension") == "postgres_changes") ChannelEnd.UNAVAILABLE else ChannelEnd.DROPPED)
+                }
+                "phx_error", "phx_close" -> done.complete(ChannelEnd.DROPPED)
+                else -> onMessage(event, payload)
             }
+        }
 
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { done.complete(Outcome.DROPPED) }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { done.complete(Outcome.DROPPED) }
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { done.complete(ChannelEnd.DROPPED) }
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { done.complete(ChannelEnd.DROPPED) }
+    }
+    val url = BuildConfig.SUPABASE_URL.trimEnd('/').replaceFirst("http", "ws") +
+        "/realtime/v1/websocket?apikey=" + Uri.encode(BuildConfig.SUPABASE_ANON_KEY) + "&vsn=1.0.0"
+    val socket = client.newWebSocket(Request.Builder().url(url).build(), listener)
+    val heartbeat = launch {
+        while (isActive) {
+            delay(REALTIME_HEARTBEAT_MS)
+            socket.send(JSONObject().put("topic", "phoenix").put("event", "heartbeat").put("payload", JSONObject()).put("ref", ref.incrementAndGet().toString()).toString())
         }
-        val url = BuildConfig.SUPABASE_URL.trimEnd('/').replaceFirst("http", "ws") +
-            "/realtime/v1/websocket?apikey=" + Uri.encode(BuildConfig.SUPABASE_ANON_KEY) + "&vsn=1.0.0"
-        val socket = client.newWebSocket(Request.Builder().url(url).build(), listener)
-        val heartbeat = launch {
-            while (isActive) {
-                delay(HEARTBEAT_MS)
-                socket.send(JSONObject().put("topic", "phoenix").put("event", "heartbeat").put("payload", JSONObject()).put("ref", ref.incrementAndGet().toString()).toString())
-            }
+    }
+    val renewal = launch {
+        var sent = token
+        while (isActive) {
+            delay(REALTIME_TOKEN_CHECK_MS)
+            val fresh = runCatching { auth.accessToken() }.getOrNull() ?: continue
+            if (fresh == sent) continue
+            sent = fresh
+            socket.send(
+                JSONObject().put("topic", fullTopic).put("event", "access_token").put("ref", ref.incrementAndGet().toString())
+                    .put("payload", JSONObject().put("access_token", fresh)).toString()
+            )
         }
-        val renewal = launch {
-            var sent = token
-            while (isActive) {
-                delay(TOKEN_CHECK_MS)
-                val fresh = runCatching { auth.accessToken() }.getOrNull() ?: continue
-                if (fresh == sent) continue
-                sent = fresh
-                socket.send(
-                    JSONObject().put("topic", topic).put("event", "access_token").put("ref", ref.incrementAndGet().toString())
-                        .put("payload", JSONObject().put("access_token", fresh)).toString()
-                )
-            }
-        }
+    }
+    try {
+        done.await()
+    } finally {
+        closed.set(true)
+        heartbeat.cancel()
+        renewal.cancel()
+        socket.cancel()
+    }
+}
+
+private const val REALTIME_HEARTBEAT_MS = 25_000L
+private const val REALTIME_TOKEN_CHECK_MS = 30_000L
+private val REALTIME_RETRY_MS = longArrayOf(2_000, 5_000, 15_000, 30_000)
+
+/**
+ * A life counter match's private channel ("match:<id>"): the table publishes the game ("state") and
+ * seated players' remotes send requests ("action"). Only the table and its seated players may listen
+ * (supabase/migrations/20260922000000_match_remote.sql); nobody broadcasts directly — the
+ * publish_match_state / send_match_action functions do. The web app's twin is watchMatch in
+ * src/sync/realtime.ts.
+ */
+class MatchChannel(private val auth: SupabaseAuth) {
+    private val client = auth.http.newBuilder()
+        .readTimeout(0, TimeUnit.SECONDS)
+        .pingInterval(REALTIME_HEARTBEAT_MS, TimeUnit.MILLISECONDS)
+        .build()
+
+    /**
+     * Listens on [matchId]'s channel until the returned job (or [scope]) is cancelled, reconnecting
+     * after drops. [onJoined] runs on each (re)join, so the caller can send or ask for the current
+     * game; [onLive] says whether it's connected. Callbacks come on OkHttp's thread.
+     */
+    fun watch(
+        scope: CoroutineScope,
+        matchId: String,
+        onEvent: (event: String, payload: JSONObject) -> Unit,
+        onJoined: () -> Unit,
+        onLive: (Boolean) -> Unit
+    ): Job = scope.launch {
+        var attempt = 0
+        val config = JSONObject()
+            .put("broadcast", JSONObject().put("ack", false).put("self", false))
+            .put("presence", JSONObject().put("key", ""))
+            .put("private", true)
         try {
-            done.await()
+            while (isActive) {
+                val token = try {
+                    auth.accessToken() ?: return@launch // signed out
+                } catch (e: Exception) {
+                    null
+                }
+                if (token != null) {
+                    realtimeConnection(auth, client, "match:$matchId", config, token,
+                        onJoined = { attempt = 0; onLive(true); onJoined() },
+                        onMessage = { event, payload ->
+                            if (event == "broadcast" && payload != null) {
+                                val name = payload.optString("event")
+                                val body = payload.optJSONObject("payload")
+                                if (name.isNotEmpty() && body != null) onEvent(name, body)
+                            }
+                        })
+                }
+                onLive(false)
+                delay(REALTIME_RETRY_MS[minOf(attempt, REALTIME_RETRY_MS.size - 1)])
+                attempt++
+            }
         } finally {
-            closed.set(true)
-            heartbeat.cancel()
-            renewal.cancel()
-            socket.cancel()
+            onLive(false)
         }
     }
 }

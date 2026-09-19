@@ -1,5 +1,22 @@
 package com.mtgcompanion.app.ui.collection
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.outlined.NotificationAdd
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalContext
+import com.mtgcompanion.app.data.PriceAlerts
+import com.mtgcompanion.app.data.CollectionType
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -111,6 +128,8 @@ fun CollectionDetailScreen(
     var zoomId by remember { mutableStateOf<String?>(null) }
     // The card pending a remove-confirmation, if any.
     var removeTarget by remember { mutableStateOf<CollectionEntry?>(null) }
+    var alertTarget by remember { mutableStateOf<CollectionEntry?>(null) }
+    val isWishlist = collection?.kind == CollectionType.WISHLIST
     var confirmDeleteBinder by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var listDialog by remember { mutableStateOf<String?>(null) } // "import" or "export"
@@ -266,7 +285,10 @@ fun CollectionDetailScreen(
                                 onClick = { if (selecting) toggle(entry) else zoomId = entry.scryfallId },
                                 onLongClick = { toggle(entry) },
                                 onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
-                                onRemove = { removeTarget = entry }
+                                onRemove = { removeTarget = entry },
+                                // A wishlist shows each card's price now, and can watch for it to drop.
+                                price = if (isWishlist) prices[entry.scryfallId] else null,
+                                onPriceAlert = if (isWishlist) ({ alertTarget = entry }) else null
                             )
                         }
                     }
@@ -312,6 +334,15 @@ fun CollectionDetailScreen(
             onPick = { target -> viewModel.moveEntry(entry, target); moveTarget = null },
             onDismiss = { moveTarget = null },
             onNewBinder = { name -> viewModel.moveToNewBinder(entry, name, keepHere = false); moveTarget = null }
+        )
+    }
+
+    alertTarget?.let { entry ->
+        PriceAlertDialog(
+            entry = entry,
+            price = prices[entry.scryfallId],
+            onSave = { usd -> viewModel.setPriceAlert(entry, usd); alertTarget = null },
+            onDismiss = { alertTarget = null }
         )
     }
 
@@ -383,7 +414,11 @@ private fun CollectionCardRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onQuantityChange: (Int, Int) -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    /** Wishlists: today's price (null: none, or not a wishlist). */
+    price: Double? = null,
+    /** Wishlists: opens this card's price alert. */
+    onPriceAlert: (() -> Unit)? = null
 ) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -421,6 +456,31 @@ private fun CollectionCardRow(
                     style = MaterialTheme.typography.labelMedium,
                     color = TextMuted
                 )
+                // Wishlists: today's price and the alert, which a tap sets.
+                onPriceAlert?.let { open ->
+                    val alert = entry.priceAlert
+                    val hit = price != null && alert != null && price <= alert
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = open).padding(vertical = 2.dp)
+                    ) {
+                        Icon(
+                            if (alert != null) Icons.Filled.NotificationsActive else Icons.Outlined.NotificationAdd,
+                            contentDescription = if (alert != null) "Price alert at ${PriceAlerts.formatUsd(alert)}" else "Set a price alert",
+                            tint = if (alert != null) Gold else TextDim,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            listOfNotNull(price?.let { PriceAlerts.formatUsd(it) }, alert?.let { "≤ " + PriceAlerts.formatUsd(it).removeSuffix(".00") }).joinToString(" · ").ifEmpty { "Set alert" },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (hit) Gold else TextMuted,
+                            fontWeight = if (hit) FontWeight.SemiBold else null,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
             if (selecting) SelectionMark(selected, Modifier.padding(end = 8.dp)) else Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { onQuantityChange((entry.quantity - 1).coerceAtLeast(0), entry.foilQuantity) }) {
@@ -485,4 +545,51 @@ private fun CollectionCardTile(entry: CollectionEntry, selecting: Boolean, selec
             )
         }
     }
+}
+
+/** Sets (or turns off) the price a wishlist card should drop to before the user is told. */
+@Composable
+private fun PriceAlertDialog(entry: CollectionEntry, price: Double?, onSave: (Double?) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var text by remember {
+        mutableStateOf(entry.priceAlert?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: price?.let { String.format(java.util.Locale.US, "%.2f", kotlin.math.floor(it * 90) / 100) }.orEmpty())
+    }
+    // Notifications need the user's OK (Android 13+); asked the first time an alert is set.
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val value = text.toDoubleOrNull()?.takeIf { it > 0 }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface2,
+        title = { Text("Price alert · ${entry.name}", color = TextPrimary) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    (price?.let { "It's ${PriceAlerts.formatUsd(it)} now. " } ?: "") + "Tell me when it's this much or less (USD, non-foil):",
+                    color = TextMuted
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { v -> text = v.filter { it.isDigit() || it == '.' } },
+                    singleLine = true,
+                    prefix = { Text("$", color = TextMuted) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text("Checked a few times a day; you'll get a notification.", style = MaterialTheme.typography.labelMedium, color = TextDim)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = value != null, onClick = {
+                if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                onSave(value?.let { kotlin.math.round(it * 100) / 100 })
+            }) { Text("Save", color = Gold) }
+        },
+        dismissButton = {
+            TextButton(onClick = { if (entry.priceAlert != null) onSave(null) else onDismiss() }) {
+                Text(if (entry.priceAlert != null) "Turn off" else "Cancel", color = TextMuted)
+            }
+        }
+    )
 }

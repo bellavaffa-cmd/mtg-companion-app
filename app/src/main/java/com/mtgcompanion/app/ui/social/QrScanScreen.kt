@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -61,7 +62,13 @@ import java.util.concurrent.Executors
  * codes too; this screen is for when that's all you want.
  */
 @Composable
-fun QrScanScreen(social: SocialRepository, onBack: () -> Unit, onSignIn: () -> Unit, onOpenSharedLink: (String) -> Unit) {
+fun QrScanScreen(
+    social: SocialRepository,
+    onBack: () -> Unit,
+    onSignIn: () -> Unit,
+    onOpenSharedLink: (String) -> Unit,
+    onOpenRemote: (matchId: String, seat: Int) -> Unit
+) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -70,7 +77,7 @@ fun QrScanScreen(social: SocialRepository, onBack: () -> Unit, onSignIn: () -> U
     LaunchedEffect(Unit) { if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA) }
     val account by social.accountFlow.collectAsState()
     val overview by social.overview.collectAsState()
-    val links = rememberAppLinkHandler(social, onOpenSharedLink)
+    val links = rememberAppLinkHandler(social, onOpenSharedLink, onOpenRemote)
 
     val executor = remember { Executors.newSingleThreadExecutor() }
     val scanner = remember { qrScanner() }
@@ -96,6 +103,9 @@ fun QrScanScreen(social: SocialRepository, onBack: () -> Unit, onSignIn: () -> U
                                 }
                                 .addOnCompleteListener { proxy.close() }
                         }
+                        // The screen may already be gone (backed out of, or a code acted on) by the time
+                        // the camera is ready: binding to a finished screen crashes.
+                        if (lifecycleOwner.lifecycle.currentState == Lifecycle.State.DESTROYED) return@addListener
                         provider.unbindAll()
                         provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
                     }, ContextCompat.getMainExecutor(ctx))

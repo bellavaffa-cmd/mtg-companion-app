@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -67,6 +68,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -122,6 +124,8 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
     val seatCode by viewModel.seatCode.collectAsState()
     val seatMatch by viewModel.match.collectAsState()
     val seatError by viewModel.seatError.collectAsState()
+    val canUndo by viewModel.canUndo.collectAsState()
+    val shownCard by viewModel.shownCard.collectAsState()
 
     // Once a table is open, keep up with who sits where: often while a seat's code is showing, now
     // and then otherwise, and never while the app isn't in front.
@@ -290,6 +294,7 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                 ) {
                     ToolBar(
                         items = listOf(
+                            ToolItem("Undo", Icons.AutoMirrored.Filled.Undo, enabled = canUndo) { viewModel.undo() },
                             ToolItem("Dice", Icons.Filled.Casino) { showDice = true },
                             ToolItem("History", Icons.Filled.History) { showHistory = true },
                             ToolItem("Card search", Icons.Filled.Search) { showCardSearch = true },
@@ -392,6 +397,9 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
         }
         if (showHistory) {
             GameHistoryOverlay(entries = history, players = players, onDismiss = { showHistory = false })
+        }
+        shownCard?.let { card ->
+            ShownCardOverlay(card, byName = players.firstOrNull { it.id == card.seat }?.displayName, onDismiss = viewModel::hideShownCard)
         }
         giphyPlayerId?.let { id ->
             viewModel.socialRepository?.let { social ->
@@ -727,7 +735,7 @@ private fun RadialMenu(items: List<RadialItem>, onPicked: () -> Unit, modifier: 
     }
 }
 
-private class ToolItem(val label: String, val icon: ImageVector, val onClick: () -> Unit)
+private class ToolItem(val label: String, val icon: ImageVector, val enabled: Boolean = true, val onClick: () -> Unit)
 
 /** CSS ease-out, which Lotus's chip entrance runs its keyframes on. */
 private val EaseOut = CubicBezierEasing(0f, 0f, 0.58f, 1f)
@@ -773,9 +781,10 @@ private fun ToolBar(items: List<ToolItem>, onPicked: () -> Unit) {
                         translationY = rise * size.height
                         rotationZ = rotation
                     }
+                    .alpha(if (item.enabled) 1f else 0.35f)
                     .clip(RoundedCornerShape(50))
                     .background(Color.Black)
-                    .clickable { onPicked(); item.onClick() }
+                    .clickable(enabled = item.enabled) { onPicked(); item.onClick() }
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Icon(item.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
@@ -1062,3 +1071,27 @@ private fun TipSample(demo: TipDemo) {
 }
 
 private const val EXIT_CONFIRM_MILLIS = 2_000L
+
+/** A card a player is showing everyone from their remote. Tap anywhere to put it away. */
+@Composable
+private fun ShownCardOverlay(card: RemoteShownCard, byName: String?, onDismiss: () -> Unit) {
+    BackHandler(onBack = onDismiss)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.86f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
+            .padding(24.dp)
+    ) {
+        if (byName != null) Text("$byName is showing", style = tableText(20.sp, TableColors.TextMuted))
+        AsyncImage(
+            model = card.imageUrl,
+            contentDescription = card.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.weight(1f, fill = false).clip(RoundedCornerShape(16.dp))
+        )
+        Text("Tap to close", style = tableText(18.sp, TableColors.TextMuted))
+    }
+}

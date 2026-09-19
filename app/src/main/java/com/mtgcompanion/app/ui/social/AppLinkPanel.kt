@@ -55,7 +55,8 @@ sealed interface LinkResult {
 class AppLinkHandler internal constructor(
     private val social: SocialRepository,
     private val scope: CoroutineScope,
-    private val openSharedLink: () -> ((String) -> Unit)
+    private val openSharedLink: () -> ((String) -> Unit),
+    private val openRemote: () -> ((matchId: String, seat: Int) -> Unit)?
 ) {
     var result by mutableStateOf<LinkResult>(LinkResult.None)
         private set
@@ -84,7 +85,14 @@ class AppLinkHandler internal constructor(
                 scope.launch {
                     result = try {
                         val (matchId, host) = social.api.joinMatch(link.code, link.seat)
-                        LinkResult.Joined(host, matchId, link.seat)
+                        // Sitting down turns this phone into the seat's remote.
+                        val remote = openRemote()
+                        if (remote != null) {
+                            remote(matchId, link.seat)
+                            LinkResult.None
+                        } else {
+                            LinkResult.Joined(host, matchId, link.seat)
+                        }
                     } catch (e: Exception) {
                         LinkResult.Failed(e.message ?: "Something went wrong.")
                     }
@@ -127,10 +135,15 @@ class AppLinkHandler internal constructor(
 }
 
 @Composable
-fun rememberAppLinkHandler(social: SocialRepository, onOpenSharedLink: (String) -> Unit): AppLinkHandler {
+fun rememberAppLinkHandler(
+    social: SocialRepository,
+    onOpenSharedLink: (String) -> Unit,
+    onOpenRemote: ((matchId: String, seat: Int) -> Unit)? = null
+): AppLinkHandler {
     val scope = rememberCoroutineScope()
     val open by rememberUpdatedState(onOpenSharedLink)
-    return remember(social) { AppLinkHandler(social, scope) { open } }
+    val remote by rememberUpdatedState(onOpenRemote)
+    return remember(social) { AppLinkHandler(social, scope, { open }, { remote }) }
 }
 
 /** The panel for what [handler] is doing; [onDone] closes the scanner after joining a seat. */

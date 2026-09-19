@@ -231,6 +231,20 @@ class SocialApi(private val auth: SupabaseAuth) {
 
     suspend fun endMatch(matchId: String) { call("end_match", JSONObject().put("p_match", matchId)) }
 
+    /** The table shares the game with its players' remotes (match:<id> "state"). */
+    suspend fun publishMatchState(matchId: String, state: JSONObject) {
+        call("publish_match_state", JSONObject().put("p_match", matchId).put("p_state", state))
+    }
+
+    /** A seated player's remote asks the table to change their seat (match:<id> "action"). */
+    suspend fun sendMatchAction(matchId: String, action: JSONObject) {
+        call("send_match_action", JSONObject().put("p_match", matchId).put("p_action", action))
+    }
+
+    /** Friends' shared binder copies of these exact card names (a deck's missing cards). */
+    suspend fun whoHasCards(names: List<String>): List<SharedCardHit> =
+        parseCardHits(JSONArray(call("who_has_cards", JSONObject().put("p_names", JSONArray(names)))))
+
     // ---- Notifications ----
 
     /** This device gets the signed-in account's notifications at [token] (its FCM registration token). */
@@ -303,7 +317,9 @@ class SocialApi(private val auth: SupabaseAuth) {
             "no_cards" to "Pick at least one card.",
             "message_too_long" to "Keep the message under 500 characters.",
             "too_many_trades" to "You have a lot of open trades — wait for some answers first.",
-            "trade_closed" to "This trade has already been answered."
+            "trade_closed" to "This trade has already been answered.",
+            "not_seated" to "You're no longer sitting at this table.",
+            "not_host" to "Only the table can do that."
         )
     }
 }
