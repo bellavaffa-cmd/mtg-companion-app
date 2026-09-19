@@ -128,6 +128,29 @@ fun ownedCards(collections: List<Collection>): List<OwnedCard> {
     return byName.values.sortedBy { it.name.lowercase() }
 }
 
+/**
+ * Cards the user owns that do [tagId]'s job and aren't in [deck] yet — for a deck short of ramp,
+ * say, the ramp already in their binders. With a commander, only cards in its colours (and none
+ * until the commander's colours are known).
+ */
+fun ownedForTag(
+    owned: List<OwnedCard>,
+    deck: Deck,
+    tagId: String,
+    tagsOf: (String) -> List<String>? = RoleTags::tagsOf,
+    identityOf: (String) -> String? = RoleTags::identityOf
+): List<OwnedCard> {
+    val commanders = listOfNotNull(deck.commander, deck.partnerCommander)
+    val colours: Set<Char>? = if (commanders.isEmpty()) null
+    else commanders.flatMap { identityOf(it.name)?.toList() ?: return emptyList() }.toSet()
+    val inDeck = (deck.cards + commanders).map { RoleTags.key(it.name) }.toSet()
+    return owned.filter { card ->
+        card.key !in inDeck &&
+            tagsOf(card.name)?.contains(tagId) == true &&
+            (colours == null || identityOf(card.name)?.all { it in colours } == true)
+    }
+}
+
 /** One tag's automatic binder: the tag and every owned card with it. */
 data class TagBinder(val tag: RoleTag, val cards: List<OwnedCard>)
 

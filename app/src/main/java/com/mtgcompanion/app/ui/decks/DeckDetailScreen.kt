@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
 import com.mtgcompanion.app.data.RoleTags
+import com.mtgcompanion.app.data.DeckRole
 import com.mtgcompanion.app.ui.common.zoomSource
 import androidx.compose.foundation.layout.BoxWithConstraints
 import com.mtgcompanion.app.ui.common.gridColumnsFor
@@ -1254,6 +1255,9 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
     }
     var showLogResult by remember { mutableStateOf(false) }
     val roles by viewModel.roles.collectAsState()
+    val ownedGaps by viewModel.ownedGaps.collectAsState()
+    var ownedFor by remember { mutableStateOf<DeckRole?>(null) }
+    val context = LocalContext.current
     val versionHistory by viewModel.versionHistory.collectAsState()
     var openVersion by remember { mutableStateOf<VersionSummary?>(null) }
     LazyColumn(
@@ -1367,7 +1371,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                 )
             }
         }
-        item { RolesPanel(roles, onTag) }
+        item { RolesPanel(roles, onTag, ownedGaps, onOwned = { ownedFor = it }) }
         item {
             Panel {
                 SectionLabel("Colors")
@@ -1507,6 +1511,15 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         )
     }
     openVersion?.let { VersionDetailDialog(it, onDismiss = { openVersion = null }) }
+    ownedFor?.let { role ->
+        OwnedForRoleDialog(
+            label = role.label,
+            cards = ownedGaps[role.otag].orEmpty(),
+            considering = deck.considering.map { RoleTags.key(it.name) }.toSet(),
+            onAdd = { card, considering -> viewModel.addOwned(card, considering) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } },
+            onDismiss = { ownedFor = null }
+        )
+    }
 }
 
 @Composable

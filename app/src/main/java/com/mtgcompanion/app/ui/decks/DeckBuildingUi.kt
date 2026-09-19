@@ -88,6 +88,8 @@ import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
+import com.mtgcompanion.app.ui.theme.Surface2
+import com.mtgcompanion.app.ui.collection.OwnedCard
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
@@ -315,8 +317,71 @@ internal fun ComboPieceWarningDialog(cardName: String, combos: List<Variant>, on
 
 // ---- Stats tab: roles, mana advice, versions ----
 
+/**
+ * The cards the user owns that do [label]'s job and aren't in the deck: each can go into the deck,
+ * or onto its Considering list ([considering]: the names already there).
+ */
 @Composable
-internal fun RolesPanel(report: RoleReport?, onTag: ((String) -> Unit)? = null) {
+internal fun OwnedForRoleDialog(
+    label: String,
+    cards: List<OwnedCard>,
+    considering: Set<String>,
+    onAdd: (OwnedCard, considering: Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = { Text("$label you own", color = GoldLight) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("In your binders, not in this deck yet.", style = MaterialTheme.typography.labelMedium, color = TextDim)
+                if (cards.isEmpty()) Text("All added.", color = TextMuted)
+                LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(cards, key = { it.key }) { card ->
+                        val consideringIt = card.key in considering
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Surface2).padding(start = 6.dp, top = 6.dp, end = 6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                AsyncImage(
+                                    model = card.imageUrl.toArtCropUrl(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(width = 52.dp, height = 38.dp).clip(RoundedCornerShape(8.dp)).background(Surface3)
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(card.name, color = TextPrimary, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        if (consideringIt) "On Considering" else card.where.joinToString(", ") { it.name },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            // The buttons get their own line, so a long name isn't cut short.
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                if (!consideringIt) {
+                                    TextButton(onClick = { onAdd(card, true) }) { Text("Consider", color = TextMuted, style = MaterialTheme.typography.labelMedium) }
+                                }
+                                TextButton(onClick = { onAdd(card, false) }) { Text("Add to deck", color = Gold, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = Gold) } }
+    )
+}
+
+@Composable
+internal fun RolesPanel(
+    report: RoleReport?,
+    onTag: ((String) -> Unit)? = null,
+    owned: Map<String, List<OwnedCard>> = emptyMap(),
+    onOwned: ((DeckRole) -> Unit)? = null
+) {
     Panel {
         SectionLabel("Deck roles")
         if (report == null) {
@@ -364,6 +429,17 @@ internal fun RolesPanel(report: RoleReport?, onTag: ((String) -> Unit)? = null) 
                         RoleStatus.SHORT -> Text("${count.min!! - count.count} short of the usual minimum", style = MaterialTheme.typography.labelMedium, color = ShortColor, modifier = Modifier.padding(top = 2.dp))
                         RoleStatus.OVER -> Text("Above the usual range", style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = Modifier.padding(top = 2.dp))
                         else -> Unit
+                    }
+                    // The cards already in the user's binders that would fill the gap.
+                    val have = owned[count.role.otag].orEmpty()
+                    if (have.isNotEmpty() && onOwned != null && count.status != RoleStatus.OVER) {
+                        Text(
+                            "You own ${have.size} more · add from your binders",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (count.status == RoleStatus.SHORT) Gold else GoldLight,
+                            modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(8.dp)).clickable { onOwned(count.role) }.padding(vertical = 2.dp)
+                        )
                     }
                     if (expanded) {
                         Text(count.cards.joinToString(", "), style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = Modifier.padding(top = 4.dp))

@@ -45,6 +45,9 @@ import com.mtgcompanion.app.ui.common.buildCardSources
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.ui.collection.fetchPrices
+import com.mtgcompanion.app.ui.collection.OwnedCard
+import com.mtgcompanion.app.ui.collection.ownedCards
+import com.mtgcompanion.app.ui.collection.ownedForTag
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.ScryfallCollectionResponse
 import com.mtgcompanion.app.network.scryfall.ScryfallIdentifier
@@ -56,7 +59,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -216,11 +222,52 @@ class DeckDetailViewModel(
     fun setCardQuery(query: String) { _cardQuery.value = query }
 
     init {
-        // Every card's tags as soon as the deck opens — the search and the zoom use them, not only Stats.
+        // Every card's tags as soon as the deck opens — the search and the zoom use them, not only
+        // Stats. The commanders' too: their colours decide which owned cards [ownedGaps] offers.
         viewModelScope.launch {
-            deck.map { d -> (d?.cards.orEmpty() + d?.considering.orEmpty()).map { it.name } }.distinctUntilChanged().collectLatest { names ->
+            deck.map { d -> (d?.cards.orEmpty() + d?.considering.orEmpty() + listOfNotNull(d?.commander, d?.partnerCommander)).map { it.name } }
+                .distinctUntilChanged().collectLatest { names ->
+                    if (names.isNotEmpty()) RoleTags.ensure(names, cardRepository)
+                }
+        }
+        // And the user's binders', for [ownedGaps].
+        viewModelScope.launch {
+            collectionRepository.collectionsFlow.map { cs -> ownedCards(cs).map { it.name } }.distinctUntilChanged().collectLatest { names ->
                 if (names.isNotEmpty()) RoleTags.ensure(names, cardRepository)
             }
+        }
+    }
+
+    /**
+     * For each core role (ramp, draw, removal, wipes): the cards the user owns that do it and
+     * aren't in the deck yet — in the commander's colours. Roles with none are left out.
+     */
+    val ownedGaps: StateFlow<Map<String, List<OwnedCard>>> =
+        combine(deck, collectionRepository.collectionsFlow, RoleTags.version) { d, collections, _ ->
+            if (d == null) emptyMap()
+            else {
+                val owned = ownedCards(collections)
+                DeckRole.TAGGED.mapNotNull { it.otag }.associateWith { ownedForTag(owned, d, it) }.filterValues { it.isNotEmpty() }
+            }
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** Adds one copy of an owned [card] to the deck, or its Considering list. [onDone] gets what happened. */
+    fun addOwned(card: OwnedCard, considering: Boolean, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            val message = try {
+                // A deck entry needs the full card (type, commander-ness…), which a binder entry doesn't keep.
+                val full = cardRepository.getCardsByIds(listOf(card.scryfallId)).firstOrNull()
+                if (full == null) "Couldn't find ${card.name} on Scryfall."
+                else {
+                    if (considering) repository.addToConsidering(deckId, full) else repository.addCardToDeck(deckId, full)
+                    "Added ${card.name} to " + if (considering) "Considering." else "the deck."
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "Couldn't reach Scryfall — try again when you're online."
+            }
+            onDone(message)
         }
     }
 

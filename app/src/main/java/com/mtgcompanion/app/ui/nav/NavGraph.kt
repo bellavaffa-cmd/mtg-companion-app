@@ -432,6 +432,7 @@ fun MtgNavGraph(
                     sharedPage = if (!supabaseSync.auth.configured) null else ({
                         SharedFriendsPage(
                             social = socialRepository,
+                            collectionRepository = collectionRepository,
                             onSignIn = { navController.navigateToTab(Routes.SETTINGS) },
                             onOpenFriend = { owner -> navController.navigate(Routes.friendShared(owner)) },
                             onOpenItem = { owner, kind, id -> navController.navigate(Routes.shared(owner, kind.wire, id)) },
@@ -637,6 +638,7 @@ fun MtgNavGraph(
                 val owner = entry.arguments?.getString("owner").orEmpty()
                 FriendSharedScreen(
                     social = socialRepository,
+                    collectionRepository = collectionRepository,
                     owner = owner,
                     onBack = { navController.popBackStack() },
                     onSignIn = signIn,

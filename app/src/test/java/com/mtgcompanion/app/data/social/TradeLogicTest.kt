@@ -2,6 +2,7 @@ package com.mtgcompanion.app.data.social
 
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionEntry
+import com.mtgcompanion.app.data.CollectionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -13,6 +14,36 @@ import org.junit.Test
  * has the same checks — see MtgCompanionWeb/tests/social/social.test.ts.
  */
 class TradeLogicTest {
+
+    @Test
+    fun aFriendsWishlistFindsTheUsersCardsOfferedFromTheirBestBinder() {
+        val mine = listOf(
+            Collection("m1", "Main", listOf(CollectionEntry("sol-f", "Sol Ring", null, quantity = 0, foilQuantity = 1), CollectionEntry("bolt", "Lightning Bolt", null, quantity = 1))),
+            Collection("m2", "Trades", listOf(CollectionEntry("sol", "Sol Ring", null, quantity = 2))),
+            // The user's own wishlist isn't something they have.
+            Collection("mw", "Wants", listOf(CollectionEntry("opal", "Mox Opal", null, quantity = 1)), type = CollectionType.WISHLIST.name)
+        )
+        val theirs = listOf(
+            Collection("t1", "Upgrades", listOf(CollectionEntry("x", "sol ring", null, quantity = 1), CollectionEntry("y", "Mox Opal", null, quantity = 1)), type = CollectionType.WISHLIST.name),
+            // Their binder isn't what they want.
+            Collection("t2", "Binder", listOf(CollectionEntry("bolt2", "Lightning Bolt", null, quantity = 4)))
+        )
+        val wanted = cardsTheyWant(mine, theirs)
+        assertEquals(listOf("Sol Ring"), wanted.map { it.name })
+        val sol = wanted.single()
+        assertEquals(3, sol.copies)
+        assertEquals("Upgrades", sol.wishlist)
+        // Offered from the binder with regular copies, not the foil.
+        assertEquals(TradeCard("sol", "Sol Ring", null, foil = false, quantity = 1, collectionId = "m2"), sol.card)
+        assertTrue(cardsTheyWant(mine, theirs.drop(1)).isEmpty())
+    }
+
+    @Test
+    fun wishlistHitsBecomeOneCopyOfEachCard() {
+        val hit = { item: String, q: Int, f: Int -> SharedCardHit("u", ShareKind.COLLECTION, item, "Binder", "id-$item", "Rhystic Study", null, q, f) }
+        val trade = hitsAsTrade(listOf(hit("b1", 0, 2), hit("b2", 3, 0)))
+        assertEquals(listOf(TradeCard("id-b1", "Rhystic Study", null, foil = true, quantity = 1, collectionId = "b1")), trade)
+    }
 
     private val a = "user-a"
     private val b = "user-b"

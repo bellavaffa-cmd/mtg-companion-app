@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.data
 
 import com.mtgcompanion.app.ui.collection.ownedCards
+import com.mtgcompanion.app.ui.collection.ownedForTag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -63,6 +64,35 @@ class RoleTagsTest {
         assertEquals(listOf("treasure"), RoleTags.tagsFor(null, "Whenever an opponent casts a spell, create a Treasure token.", emptyMap()))
         // Doubling Season makes no tokens of its own.
         assertEquals(emptyList<String>(), RoleTags.tagsFor(null, "If an effect would create one or more tokens under your control, it creates twice that many creature tokens instead.", emptyMap()))
+    }
+
+    @Test
+    fun aDeckShortOfRampIsOfferedTheOwnedRampInItsColours() {
+        val owned = ownedCards(
+            listOf(
+                Collection(
+                    "a", "My binder", listOf(
+                        CollectionEntry("sol", "Sol Ring", null, quantity = 1),
+                        CollectionEntry("cult", "Cultivate", null, quantity = 1),
+                        CollectionEntry("signet", "Rakdos Signet", null, quantity = 1),
+                        CollectionEntry("study", "Rhystic Study", null, quantity = 1)
+                    )
+                )
+            )
+        )
+        val tags = mapOf("sol ring" to listOf("ramp"), "cultivate" to listOf("ramp"), "rakdos signet" to listOf("ramp"), "rhystic study" to listOf("draw"))
+        val identity = mapOf("sol ring" to "", "cultivate" to "G", "rakdos signet" to "BR", "rhystic study" to "U", "omnath, locus of mana" to "G")
+        val tagsOf = { name: String -> tags[RoleTags.key(name)] }
+        val identityOf = { name: String -> identity[RoleTags.key(name)] }
+        val entry = { name: String -> DeckCardEntry(name, name, null) }
+
+        // Sol Ring is already in the deck; the Signet is off-colour for a green commander.
+        val green = Deck("d", "Omnath", commander = entry("Omnath, Locus of Mana"), cards = listOf(entry("Sol Ring")))
+        assertEquals(listOf("Cultivate"), ownedForTag(owned, green, "ramp", tagsOf, identityOf).map { it.name })
+        // No commander: any colour.
+        assertEquals(listOf("Cultivate", "Rakdos Signet"), ownedForTag(owned, green.copy(commander = null), "ramp", tagsOf, identityOf).map { it.name })
+        // The commander's colours not known yet: nothing, rather than off-colour cards.
+        assertEquals(emptyList<String>(), ownedForTag(owned, green.copy(commander = entry("Unknown")), "ramp", tagsOf, identityOf).map { it.name })
     }
 
     @Test

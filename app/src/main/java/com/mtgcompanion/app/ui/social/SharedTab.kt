@@ -63,7 +63,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
+import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.CollectionRepository
+import com.mtgcompanion.app.data.localMoshi
 import com.mtgcompanion.app.data.social.Overview
+import com.mtgcompanion.app.data.social.WantedCard
+import com.mtgcompanion.app.data.social.cardsTheyWant
+import com.mtgcompanion.app.data.social.hitsAsTrade
+import kotlinx.coroutines.flow.first
 import com.mtgcompanion.app.data.social.Profile
 import com.mtgcompanion.app.data.social.ShareKind
 import com.mtgcompanion.app.data.social.SharedCardHit
@@ -103,6 +110,14 @@ private fun friendShares(overview: Overview): List<FriendShares> =
 
 private fun plural(n: Int, one: String) = "$n ${if (n == 1) one else one + "s"}"
 
+/** The user's cards on [owner]'s shared wishlists — empty if they share none, or can't be reached. */
+private suspend fun loadTheyWant(social: SocialRepository, collectionRepository: CollectionRepository, owner: String): List<WantedCard> =
+    runCatching {
+        val shared = social.api.sharedCollection(owner) ?: return@runCatching emptyList()
+        val adapter = localMoshi.adapter(Collection::class.java)
+        cardsTheyWant(collectionRepository.collectionsFlow.first(), shared.binders.mapNotNull { runCatching { adapter.fromJson(it) }.getOrNull() })
+    }.getOrDefault(emptyList())
+
 
 /**
  * The Collection tab's Shared page: a tile per friend who shares anything with the user, a
@@ -112,6 +127,7 @@ private fun plural(n: Int, one: String) = "$n ${if (n == 1) one else one + "s"}"
 @Composable
 fun SharedFriendsPage(
     social: SocialRepository,
+    collectionRepository: CollectionRepository,
     onSignIn: () -> Unit,
     onOpenFriend: (owner: String) -> Unit,
     onOpenItem: (owner: String, kind: ShareKind, itemId: String) -> Unit,
@@ -126,8 +142,17 @@ fun SharedFriendsPage(
         var hits by remember { mutableStateOf<List<SharedCardHit>?>(null) }
         var searchError by remember { mutableStateOf<String?>(null) }
         var matches by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+        var theyWant by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
         LaunchedEffect(overview) {
             matches = runCatching { social.api.wishlistMatches() }.getOrNull().orEmpty().groupBy { it.owner }.mapValues { it.value.size }
+        }
+        // And the other way: how many of the user's cards are on each friend's shared wishlists.
+        LaunchedEffect(friends) {
+            val counts = mutableMapOf<String, Int>()
+            friends.filter { it.wishlists.isNotEmpty() }.forEach { f ->
+                counts[f.owner] = loadTheyWant(social, collectionRepository, f.owner).size
+                theyWant = counts.toMap()
+            }
         }
         LaunchedEffect(query) {
             hits = null
@@ -182,6 +207,7 @@ fun SharedFriendsPage(
                             f,
                             updated = f.latest > SharedSeen.lastSeen(context, f.owner),
                             wanted = matches[f.owner] ?: 0,
+                            theyWant = theyWant[f.owner] ?: 0,
                             onClick = { onOpenFriend(f.owner) }
                         )
                     }
@@ -265,7 +291,7 @@ private fun HitRow(hit: SharedCardHit, owner: Profile?, onClick: () -> Unit) {
 
 /** A friend, the way the Decks tab shows a deck: their picture full-size, what they share over it. */
 @Composable
-private fun FriendTile(f: FriendShares, updated: Boolean, wanted: Int, onClick: () -> Unit) {
+private fun FriendTile(f: FriendShares, updated: Boolean, wanted: Int, theyWant: Int, onClick: () -> Unit) {
     val colors = LocalAppColors.current
     val interaction = remember { MutableInteractionSource() }
     val avatar = SocialApi.avatarUrl(f.profile?.avatarPath)
@@ -321,6 +347,9 @@ private fun FriendTile(f: FriendShares, updated: Boolean, wanted: Int, onClick: 
             if (wanted > 0) {
                 Text("$wanted on your wishlist", style = MaterialTheme.typography.labelMedium, color = colors.accentLight, maxLines = 1)
             }
+            if (theyWant > 0) {
+                Text("Wants $theyWant of yours", style = MaterialTheme.typography.labelMedium, color = colors.accentLight, maxLines = 1)
+            }
             Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 6.dp)) {
                 Text("%,d".format(f.cards), style = NumberStyle(19), color = Color.White)
                 Text(if (f.cards == 1) " card" else " cards", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
@@ -357,6 +386,7 @@ fun FriendSharedScreen(
     social: SocialRepository,
     owner: String,
     onBack: () -> Unit,
+    collectionRepository: CollectionRepository,
     onSignIn: () -> Unit,
     onOpenCollection: (owner: String) -> Unit,
     onOpenItem: (owner: String, kind: ShareKind, itemId: String) -> Unit,
@@ -386,9 +416,11 @@ fun FriendSharedScreen(
                 }
                 LaunchedEffect(f.latest) { SharedSeen.markSeen(context, owner, f.latest) }
                 var wanted by remember { mutableStateOf<List<SharedCardHit>>(emptyList()) }
+                var theyWant by remember { mutableStateOf<List<WantedCard>>(emptyList()) }
                 LaunchedEffect(overview) {
                     wanted = runCatching { social.api.wishlistMatches() }.getOrNull().orEmpty().filter { it.owner == owner }
                 }
+                LaunchedEffect(overview) { theyWant = loadTheyWant(social, collectionRepository, owner) }
                 // Six columns: binders take two (three a row), decks three (two a row), the rest all six.
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(6),
@@ -406,13 +438,30 @@ fun FriendSharedScreen(
                             }
                         }
                     }
-                    if (f.binders.isNotEmpty()) item(span = { GridItemSpan(6) }, key = "trade") {
-                        GoldButton(
-                            "Propose a trade",
-                            { social.draft = SocialRepository.TradeDraft(to = owner); onProposeTrade(owner) },
-                            modifier = Modifier.fillMaxWidth(),
-                            icon = { Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                        )
+                    if (f.binders.isNotEmpty() || theyWant.isNotEmpty()) item(span = { GridItemSpan(6) }, key = "trade") {
+                        // With matches either way, the trade starts from them: their cards the user
+                        // wishes for, and the user's cards on their wishlists.
+                        val ask = hitsAsTrade(wanted)
+                        val offer = theyWant.map { it.card }
+                        val matched = ask.isNotEmpty() || offer.isNotEmpty()
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            GoldButton(
+                                if (matched) "Suggest a trade" else "Propose a trade",
+                                { social.draft = SocialRepository.TradeDraft(to = owner, want = ask, give = offer); onProposeTrade(owner) },
+                                modifier = Modifier.fillMaxWidth(),
+                                icon = { Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                            )
+                            if (matched) {
+                                Text(
+                                    "Starts with " + listOfNotNull(
+                                        if (ask.isNotEmpty()) "${plural(ask.size, "card")} of theirs on your wishlist" else null,
+                                        if (offer.isNotEmpty()) "${plural(offer.size, "card")} of yours on theirs" else null
+                                    ).joinToString(" and ") + ". Change anything before you send it.",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = colors.textDim
+                                )
+                            }
+                        }
                     }
                     if (wanted.isNotEmpty()) {
                         item(span = { GridItemSpan(6) }, key = "wanted-h") { SectionHeader("On your wishlist · ${wanted.size}") }
@@ -425,6 +474,17 @@ fun FriendSharedScreen(
                         }
                         if (wanted.size > 6) item(span = { GridItemSpan(6) }, key = "wanted-more") {
                             Text("…and ${wanted.size - 6} more in their binders.", style = MaterialTheme.typography.bodySmall, color = colors.textDim)
+                        }
+                    }
+                    if (theyWant.isNotEmpty()) {
+                        item(span = { GridItemSpan(6) }, key = "theywant-h") { SectionHeader("On their wishlist · ${theyWant.size}") }
+                        theyWant.take(6).forEach { card ->
+                            item(span = { GridItemSpan(6) }, key = "theywant-${card.name}") {
+                                ReadOnlyCardRow(card.name, card.imageUrl, card.copies, 0, detail = "You have ${card.copies} · wanted in ${card.wishlist}") {}
+                            }
+                        }
+                        if (theyWant.size > 6) item(span = { GridItemSpan(6) }, key = "theywant-more") {
+                            Text("…and ${theyWant.size - 6} more of yours.", style = MaterialTheme.typography.bodySmall, color = colors.textDim)
                         }
                     }
                     if (f.binders.isNotEmpty()) {

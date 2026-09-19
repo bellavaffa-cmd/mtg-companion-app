@@ -67,8 +67,8 @@ object RoleTags {
     fun label(id: String): String = byId[id]?.label ?: id
     fun byLabel(label: String): RoleTag? = TAGS.firstOrNull { it.label.equals(label, ignoreCase = true) }
 
-    /** Per-card tags, by name. */
-    private const val CARDS_VERSION = 3
+    /** Per-card tags (and colour identity), by name. */
+    private const val CARDS_VERSION = 4
     /** The tag → cards lists from Tagger's file. */
     private const val SETS_VERSION = 1
     /** Tags hardly change; a card is looked up again after this long. */
@@ -80,7 +80,8 @@ object RoleTags {
     /** Oracle ids are kept by their first 13 characters: unique enough, a third the size. */
     private const val ID_PREFIX = 13
 
-    private class Known(val tags: List<String>, val at: Long)
+    /** [identity]: the card's colour identity, e.g. "WU" ("" colourless); null when Scryfall didn't know the card. */
+    private class Known(val tags: List<String>, val at: Long, val identity: String? = null)
 
     private var dir: File? = null
     private val cards = HashMap<String, Known>()
@@ -112,7 +113,7 @@ object RoleTags {
                 for (name in c.keys()) {
                     val e = c.getJSONObject(name)
                     val t = e.getJSONArray("t")
-                    cards[name] = Known((0 until t.length()).map { t.getString(it) }, e.getLong("at"))
+                    cards[name] = Known((0 until t.length()).map { t.getString(it) }, e.getLong("at"), if (e.has("c")) e.getString("c") else null)
                 }
             }
         }
@@ -121,6 +122,9 @@ object RoleTags {
 
     /** A card's tag ids, if it has been looked up. */
     fun tagsOf(name: String): List<String>? = synchronized(cards) { cards[key(name)]?.tags }
+
+    /** A card's colour identity ("WU"; "" for colourless), if it has been looked up. */
+    fun identityOf(name: String): String? = synchronized(cards) { cards[key(name)]?.identity }
 
     /** Whether [query] finds a card by its name or one of its tags' labels. */
     fun matches(name: String, tagIds: List<String>, query: String): Boolean {
@@ -174,15 +178,15 @@ object RoleTags {
                     ok = false
                     break
                 }
-                val found = HashMap<String, List<String>>()
+                val found = HashMap<String, Pair<List<String>, String>>()
                 for (card in response.data) {
-                    val tags = tagsFor(card.oracleId, textOf(card))
+                    val known = tagsFor(card.oracleId, textOf(card)) to card.colorIdentity.orEmpty().joinToString("")
                     // A double-faced card answers to its full name; its front face's is enough too.
-                    found[key(card.name)] = tags
-                    found[key(card.name.substringBefore(" // "))] = tags
+                    found[key(card.name)] = known
+                    found[key(card.name.substringBefore(" // "))] = known
                 }
                 val at = System.currentTimeMillis()
-                synchronized(cards) { for ((k, _) in chunk) cards[k] = Known(found[k].orEmpty(), at) }
+                synchronized(cards) { for ((k, _) in chunk) cards[k] = Known(found[k]?.first.orEmpty(), at, found[k]?.second) }
                 saveCards()
                 _version.value += 1
                 _progress.value = ((index + 1) * CHUNK).coerceAtMost(originals.size) to originals.size
@@ -298,7 +302,11 @@ object RoleTags {
         val folder = dir ?: return@withContext
         val c = JSONObject()
         synchronized(cards) {
-            for ((name, known) in cards) c.put(name, JSONObject().put("t", JSONArray(known.tags)).put("at", known.at))
+            for ((name, known) in cards) {
+                val e = JSONObject().put("t", JSONArray(known.tags)).put("at", known.at)
+                if (known.identity != null) e.put("c", known.identity)
+                c.put(name, e)
+            }
         }
         runCatching { File(folder, "role_tags.json").writeText(JSONObject().put("v", CARDS_VERSION).put("cards", c).toString()) }
     }

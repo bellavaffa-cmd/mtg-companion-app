@@ -2,6 +2,7 @@ package com.mtgcompanion.app.data.social
 
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionEntry
+import com.mtgcompanion.app.data.CollectionType
 
 // What an accepted trade does to one side's binders: the cards they hand over come out of the
 // binders they were in, and the cards they get go into the binder they choose. Each side applies
@@ -95,3 +96,46 @@ fun List<TradeCard>.withQuantity(card: TradeCard, quantity: Int): List<TradeCard
     val next = card.copy(quantity = quantity)
     return if (i == -1) this + next else map { if (it.key == card.key) next else it }
 }
+
+/** A card of the user's that's on one of a friend's shared wishlists. [card]: one copy, ready to offer. */
+data class WantedCard(val name: String, val imageUrl: String?, val copies: Int, val wishlist: String, val card: TradeCard)
+
+/**
+ * The user's cards (in their own binders, not wishlists) that are on a friend's wishlists among
+ * [theirs] — one line each, offered from the binder with the most regular copies (or foil, if
+ * that's all there is).
+ */
+fun cardsTheyWant(mine: List<Collection>, theirs: List<Collection>): List<WantedCard> {
+    val wants = LinkedHashMap<String, String>() // card name -> the wishlist it's on
+    for (c in theirs) {
+        if (c.kind != CollectionType.WISHLIST) continue
+        for (e in c.entries) wants.putIfAbsent(e.name.trim().lowercase(), c.name)
+    }
+    if (wants.isEmpty()) return emptyList()
+    class Held(val collectionId: String, val entry: CollectionEntry)
+    val held = LinkedHashMap<String, MutableList<Held>>()
+    for (c in mine) {
+        if (c.kind == CollectionType.WISHLIST) continue
+        for (e in c.entries) {
+            val key = e.name.trim().lowercase()
+            if (key in wants && e.quantity + e.foilQuantity > 0) held.getOrPut(key) { mutableListOf() } += Held(c.id, e)
+        }
+    }
+    return held.map { (key, copies) ->
+        val best = copies.maxWith(compareBy<Held> { it.entry.quantity }.thenBy { it.entry.foilQuantity })
+        val e = best.entry
+        WantedCard(
+            name = e.name,
+            imageUrl = e.imageUrl,
+            copies = copies.sumOf { it.entry.quantity + it.entry.foilQuantity },
+            wishlist = wants.getValue(key),
+            card = TradeCard(e.scryfallId, e.name, e.imageUrl, foil = e.quantity <= 0, quantity = 1, collectionId = best.collectionId)
+        )
+    }.sortedBy { it.name.lowercase() }
+}
+
+/** A friend's cards on the user's wishlists (from wishlist_matches) as trade lines: one copy of each card. */
+fun hitsAsTrade(hits: List<SharedCardHit>): List<TradeCard> =
+    hits.filter { it.quantity + it.foilQuantity > 0 }
+        .distinctBy { it.name.trim().lowercase() }
+        .map { TradeCard(it.scryfallId, it.name, it.imageUrl, foil = it.quantity <= 0, quantity = 1, collectionId = it.itemId) }
