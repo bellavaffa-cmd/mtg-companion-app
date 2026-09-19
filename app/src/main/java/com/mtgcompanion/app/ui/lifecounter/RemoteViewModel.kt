@@ -66,7 +66,7 @@ class RemoteViewModel(
     val avatarUrl: String? get() = SocialApi.avatarUrl(social.overview.value?.me?.avatarPath)
     val socialRepository: SocialRepository get() = social
 
-    private val _background = MutableStateFlow(TileBackground.entries.firstOrNull { it.name == prefs.getString(KEY_BACKGROUND, null) } ?: TileBackground.COLOUR)
+    private val _background = MutableStateFlow(TileBackground.entries.firstOrNull { it.name == prefs.getString(KEY_BACKGROUND, null) } ?: TileBackground.PROFILE)
     val background: StateFlow<TileBackground> = _background.asStateFlow()
     private val _customUrl = MutableStateFlow(prefs.getString(KEY_CUSTOM, null))
     val customUrl: StateFlow<String?> = _customUrl.asStateFlow()
