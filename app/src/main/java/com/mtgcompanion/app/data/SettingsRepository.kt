@@ -55,6 +55,7 @@ class SettingsRepository(private val context: Context) {
     private val gridColumnsKey = intPreferencesKey("grid_columns")
     private val appBrightnessKey = stringPreferencesKey("app_brightness")
     private val accentThemeKey = stringPreferencesKey("accent_theme")
+    private val currencyKey = stringPreferencesKey("currency")
     private val lastOpenedDeckIdKey = stringPreferencesKey("last_opened_deck_id")
     private val cardOfDayDateKey = stringPreferencesKey("card_of_day_date")
     private val cardOfDayNameKey = stringPreferencesKey("card_of_day_name")
@@ -74,6 +75,9 @@ class SettingsRepository(private val context: Context) {
 
     val appBrightness: Flow<AppBrightness> = context.dataStore.data.map { AppBrightness.fromName(it[appBrightnessKey]) }
     val accentTheme: Flow<AccentTheme> = context.dataStore.data.map { AccentTheme.fromName(it[accentThemeKey]) }
+
+    /** The currency prices show in (an ISO code, e.g. "PHP"); prices themselves stay US dollars — see [Prices]. */
+    val currency: Flow<String> = context.dataStore.data.map { it[currencyKey] ?: "USD" }
 
     /** The deck a user most recently opened, for Home's "continue where you left off" tile. */
     val lastOpenedDeckId: Flow<String?> = context.dataStore.data.map { it[lastOpenedDeckIdKey] }
@@ -109,6 +113,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAppBrightness(brightness: AppBrightness) {
         context.dataStore.edit { it[appBrightnessKey] = brightness.name }
+    }
+
+    suspend fun setCurrency(code: String) {
+        context.dataStore.edit { it[currencyKey] = code }
     }
 
     suspend fun setAccentTheme(theme: AccentTheme) {

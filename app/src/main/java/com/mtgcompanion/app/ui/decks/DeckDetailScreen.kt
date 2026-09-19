@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.data.DeckRole
 import com.mtgcompanion.app.ui.common.zoomSource
@@ -1300,8 +1301,9 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
         }
         item {
             Panel {
-                SectionLabel("Total value (USD)")
-                CountUpText(analysis.totalUsd, NumberStyle(46), TextPrimary, format = { "$" + "%,.2f".format(it) }, modifier = Modifier.padding(top = 4.dp))
+                SectionLabel("Total value")
+                val money = rememberMoney()
+                CountUpText(analysis.totalUsd, NumberStyle(46), TextPrimary, format = { money.format(it) }, modifier = Modifier.padding(top = 4.dp))
             }
         }
         item {
@@ -2095,7 +2097,8 @@ private fun DeckHero(
                         Text(" cards", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(bottom = 3.dp))
                     }
                     if (!analysis.loading && analysis.totalUsd > 0) {
-                        CountUpText(analysis.totalUsd, NumberStyle(24), app.textPrimary, format = { "$" + "%,.2f".format(it) })
+                        val money = rememberMoney()
+                        CountUpText(analysis.totalUsd, NumberStyle(24), app.textPrimary, format = { money.format(it) })
                     }
                     if (!analysis.loading && analysis.bracket > 0) {
                         Text(

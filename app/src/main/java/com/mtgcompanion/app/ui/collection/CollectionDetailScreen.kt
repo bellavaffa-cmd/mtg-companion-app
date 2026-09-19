@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
 import android.Manifest
 import android.content.pm.PackageManager
@@ -486,6 +487,7 @@ private fun CollectionCardRow(
                 onPriceAlert?.let { open ->
                     val alert = entry.priceAlert
                     val hit = price != null && alert != null && price <= alert
+                    val money = rememberMoney()
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -493,12 +495,12 @@ private fun CollectionCardRow(
                     ) {
                         Icon(
                             if (alert != null) Icons.Filled.NotificationsActive else Icons.Outlined.NotificationAdd,
-                            contentDescription = if (alert != null) "Price alert at ${PriceAlerts.formatUsd(alert)}" else "Set a price alert",
+                            contentDescription = if (alert != null) "Price alert at ${money.format(alert)}" else "Set a price alert",
                             tint = if (alert != null) Gold else TextDim,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            listOfNotNull(price?.let { PriceAlerts.formatUsd(it) }, alert?.let { "≤ " + PriceAlerts.formatUsd(it).removeSuffix(".00") }).joinToString(" · ").ifEmpty { "Set alert" },
+                            listOfNotNull(price?.let { money.format(it) }, alert?.let { "≤ " + money.format(it).removeSuffix(".00") }).joinToString(" · ").ifEmpty { "Set alert" },
                             style = MaterialTheme.typography.labelMedium,
                             color = if (hit) Gold else TextMuted,
                             fontWeight = if (hit) FontWeight.SemiBold else null,
@@ -577,12 +579,18 @@ private fun CollectionCardTile(entry: CollectionEntry, selecting: Boolean, selec
 @Composable
 private fun PriceAlertDialog(entry: CollectionEntry, price: Double?, onSave: (Double?) -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
+    // Typed in the currency prices show in; kept in US dollars, like the prices it's checked against.
+    val money = rememberMoney()
+    val decimals = money.currency.decimals
     var text by remember {
-        mutableStateOf(entry.priceAlert?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: price?.let { String.format(java.util.Locale.US, "%.2f", kotlin.math.floor(it * 90) / 100) }.orEmpty())
+        mutableStateOf(
+            entry.priceAlert?.let { String.format(java.util.Locale.US, "%.${decimals}f", money.toLocal(it)) }
+                ?: price?.let { String.format(java.util.Locale.US, "%.${decimals}f", money.toLocal(it) * 0.9) }.orEmpty()
+        )
     }
     // Notifications need the user's OK (Android 13+); asked the first time an alert is set.
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    val value = text.toDoubleOrNull()?.takeIf { it > 0 }
+    val value = text.toDoubleOrNull()?.takeIf { it > 0 }?.let { money.toUsd(it) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface2,
@@ -590,14 +598,15 @@ private fun PriceAlertDialog(entry: CollectionEntry, price: Double?, onSave: (Do
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    (price?.let { "It's ${PriceAlerts.formatUsd(it)} now. " } ?: "") + "Tell me when it's this much or less (USD, non-foil):",
+                    (price?.let { "It's ${money.format(it)} now. " } ?: "") + "Tell me when it's this much or less (${money.currency.code}, non-foil):",
                     color = TextMuted
                 )
                 OutlinedTextField(
                     value = text,
                     onValueChange = { v -> text = v.filter { it.isDigit() || it == '.' } },
                     singleLine = true,
-                    prefix = { Text("$", color = TextMuted) },
+                    prefix = if (money.currency.after) null else ({ Text(money.currency.symbol, color = TextMuted) }),
+                    suffix = if (money.currency.after) ({ Text(money.currency.symbol, color = TextMuted) }) else null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -609,7 +618,7 @@ private fun PriceAlertDialog(entry: CollectionEntry, price: Double?, onSave: (Do
                 if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                     permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
-                onSave(value?.let { kotlin.math.round(it * 100) / 100 })
+                onSave(value?.let { kotlin.math.round(it * 10_000) / 10_000 })
             }) { Text("Save", color = Gold) }
         },
         dismissButton = {

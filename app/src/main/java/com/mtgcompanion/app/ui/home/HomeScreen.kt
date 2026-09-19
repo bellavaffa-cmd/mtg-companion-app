@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.home
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.LocalLayoutSize
 import com.mtgcompanion.app.ui.common.LayoutSize
@@ -91,6 +92,8 @@ fun HomeScreen(
     onOpenRules: () -> Unit,
     onOpenLifeCounter: () -> Unit,
     onOpenSettings: () -> Unit,
+    /** The collection's value over time. */
+    onOpenValue: () -> Unit,
     onOpenDeck: (String) -> Unit,
     onViewCard: (String) -> Unit,
     onOpenFriends: (() -> Unit)? = null,
@@ -134,11 +137,12 @@ fun HomeScreen(
         StatFigure(
             value = {
                 val v = collectionValue
-                if (v != null) CountUpText(v, NumberStyle(statSize), colors.textPrimary, format = { "$" + "%,.0f".format(it) })
+                val money = rememberMoney()
+                if (v != null) CountUpText(v, NumberStyle(statSize), colors.textPrimary, format = { money.format(it, whole = true) })
                 else Text("—", style = NumberStyle(statSize), color = colors.textDim)
             },
             label = "Collection value",
-            modifier = m.clickable(onClick = onOpenCollection)
+            modifier = m.clickable(onClick = onOpenValue)
         )
     }
     val statRecord: @Composable (Modifier) -> Unit = { m ->

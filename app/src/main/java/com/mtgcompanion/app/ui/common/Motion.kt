@@ -80,7 +80,7 @@ fun ShimmerPlaceholder(modifier: Modifier = Modifier, shape: androidx.compose.ui
     )
 }
 
-/** A dollar amount that eases toward [value] instead of snapping, e.g. "$142.50" rolling up/down. */
+/** A price (in US dollars) that eases toward [value] instead of snapping, shown in the chosen currency — e.g. "₱8,950.00" rolling up/down. */
 @Composable
 fun AnimatedUsdText(value: Double, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
     val animated by animateFloatAsState(
@@ -89,7 +89,7 @@ fun AnimatedUsdText(value: Double, style: TextStyle, color: Color, modifier: Mod
         label = "usdCounter"
     )
     androidx.compose.material3.Text(
-        "$" + "%,.2f".format(animated),
+        rememberMoney().format(animated.toDouble()),
         style = style,
         color = color,
         modifier = modifier

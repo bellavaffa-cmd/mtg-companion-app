@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -128,7 +129,6 @@ fun WhoHasItDialog(social: SocialRepository, names: List<String>, onAsk: (owner:
     )
 }
 
-private fun usd(v: Double) = String.format(Locale.US, "$%.2f", v)
 
 /**
  * Both sides' total value, and whether that's roughly even: within $2, or 10% of the bigger side.
@@ -172,7 +172,10 @@ fun TradeValue(get: List<TradeCard>, give: List<TradeCard>) {
         return
     }
     val diff = mine - theirs
+    // Within $2 (or a tenth) either way is fair — worked out in US dollars, shown in the chosen currency.
     val fair = kotlin.math.abs(diff) <= maxOf(2.0, 0.1 * maxOf(mine, theirs))
+    val money = rememberMoney()
+    val usd = { v: Double -> money.format(v) }
     Column(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(16.dp)).background(colors.surface2).padding(horizontal = 14.dp, vertical = 12.dp)

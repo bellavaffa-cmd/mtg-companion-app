@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.common
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import kotlinx.coroutines.launch
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import kotlinx.coroutines.withTimeoutOrNull
@@ -453,12 +454,13 @@ private fun CardInfoBar(card: ZoomCard, priceUsd: Double?, onRulings: (() -> Uni
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+            val money = rememberMoney()
             priceUsd?.let { price ->
-                InfoStat("Value", "$" + "%,.2f".format(price))
+                InfoStat("Value", money.format(price))
             }
             // A total is only meaningful once you own a copy — otherwise it's just "$0.00".
             if (priceUsd != null && card.quantity != null && card.quantity > 0) {
-                InfoStat("Total", "$" + "%,.2f".format(priceUsd * card.quantity))
+                InfoStat("Total", money.format(priceUsd * card.quantity))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {

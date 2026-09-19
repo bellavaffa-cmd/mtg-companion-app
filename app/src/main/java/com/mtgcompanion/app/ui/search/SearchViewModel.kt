@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.search
 
+import com.mtgcompanion.app.data.Prices
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -116,6 +117,12 @@ private fun quoteIfNeeded(value: String): String =
 private fun asNumber(value: String): String? =
     value.trim().takeIf { it.isNotBlank() && it.toDoubleOrNull() != null }
 
+/** A price typed in the chosen currency, as US dollars for a Scryfall search ("12.5"). */
+private fun asUsd(value: String): String? = asNumber(value)?.let {
+    val money = Prices.money.value
+    if (money.isUsd) it else String.format(java.util.Locale.US, "%.2f", money.toUsd(it.toDouble()))
+}
+
 /** Turn the free-text query and [filters] into a single Scryfall search query. */
 fun buildScryfallQuery(text: String, filters: SearchFilters): String {
     val parts = mutableListOf<String>()
@@ -137,8 +144,9 @@ fun buildScryfallQuery(text: String, filters: SearchFilters): String {
         parts += "(" + filters.rarities.joinToString(" or ") { "rarity:$it" } + ")"
     }
 
-    asNumber(filters.priceMin)?.let { parts += "usd>=$it" }
-    asNumber(filters.priceMax)?.let { parts += "usd<=$it" }
+    // Typed in the currency prices show in; Scryfall searches in US dollars.
+    asUsd(filters.priceMin)?.let { parts += "usd>=$it" }
+    asUsd(filters.priceMax)?.let { parts += "usd<=$it" }
     asNumber(filters.powerMin)?.let { parts += "pow>=$it" }
     asNumber(filters.powerMax)?.let { parts += "pow<=$it" }
     asNumber(filters.toughnessMin)?.let { parts += "tou>=$it" }

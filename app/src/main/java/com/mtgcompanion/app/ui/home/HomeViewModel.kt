@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.ValueHistory
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
@@ -77,7 +78,11 @@ class HomeViewModel(
             .flatMap { it.entries }
             .groupBy { it.scryfallId }
             .map { (id, entries) -> id to entries.sumOf { it.quantity + it.foilQuantity } }
-        computeDashboard(cardRepository, quantities)?.totalUsd
+        val dashboard = computeDashboard(cardRepository, quantities)
+        // Today's point in the value history — only when Scryfall sent every card, so a dropped
+        // request doesn't read as a crash in value.
+        if (dashboard != null && dashboard.complete) ValueHistory.record(dashboard.totalUsd, dashboard.cards)
+        dashboard?.totalUsd
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** The deck a user most recently opened, so Home can offer to jump straight back in. */

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.detail
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.zoomSource
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -836,9 +837,11 @@ private fun PricesSection(state: CardDetailUiState, onOpenTcgplayer: () -> Unit)
     GoldPanel {
         val prices = state.card?.prices
         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            prices?.usd?.toDoubleOrNull()?.let { PriceTile("USD", it, "$") }
-            prices?.usdFoil?.toDoubleOrNull()?.let { PriceTile("USD foil", it, "$") }
-            prices?.eur?.toDoubleOrNull()?.let { PriceTile("EUR", it, "€") }
+            // TCGplayer's prices in the chosen currency; Cardmarket's are euros already.
+            val money = rememberMoney()
+            prices?.usd?.toDoubleOrNull()?.let { PriceTile("TCGplayer", it) { v -> money.format(v) } }
+            prices?.usdFoil?.toDoubleOrNull()?.let { PriceTile("Foil", it) { v -> money.format(v) } }
+            prices?.eur?.toDoubleOrNull()?.let { PriceTile("Cardmarket", it) { v -> "€" + "%,.2f".format(v) } }
         }
         Button(
             onClick = onOpenTcgplayer,
@@ -854,10 +857,10 @@ private fun PricesSection(state: CardDetailUiState, onOpenTcgplayer: () -> Unit)
 }
 
 @Composable
-private fun PriceTile(label: String, value: Double, symbol: String) {
+private fun PriceTile(label: String, value: Double, format: (Double) -> String) {
     Column {
         Text(label, style = MaterialTheme.typography.labelMedium, color = TextMuted)
-        CountUpText(value, NumberStyle(34), TextPrimary, format = { symbol + "%,.2f".format(it) })
+        CountUpText(value, NumberStyle(34), TextPrimary, format = format)
     }
 }
 

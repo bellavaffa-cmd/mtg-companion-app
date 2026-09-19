@@ -52,7 +52,8 @@ object PriceAlerts {
         work.enqueueUniqueWork("${WORK}_now", ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<Worker>().setConstraints(network).build())
     }
 
-    fun formatUsd(v: Double): String = String.format(Locale.US, "$%.2f", v)
+    /** A US dollar price in the currency prices show in (Settings → Prices). */
+    fun formatUsd(v: Double): String = Prices.money.value.format(v)
 
     /** Cards now at or under their alert, not told about at this price yet; remembers them as told. */
     suspend fun check(context: Context, collections: List<Collection>, cardRepository: CardRepository = CardRepository()): List<Hit> {

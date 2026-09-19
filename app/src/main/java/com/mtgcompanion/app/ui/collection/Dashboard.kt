@@ -9,7 +9,11 @@ data class CollectionDashboard(
     // Ordered W, U, B, R, G, Colorless — copies contributing to each colour identity.
     val colorCounts: List<Pair<String, Int>>,
     // Card-type category -> total copies, sorted by count desc.
-    val typeCounts: List<Pair<String, Int>>
+    val typeCounts: List<Pair<String, Int>>,
+    /** Whether Scryfall sent (nearly) every card — so [totalUsd] isn't short for a dropped request. */
+    val complete: Boolean = true,
+    /** Copies counted. */
+    val cards: Int = 0
 )
 
 /**
@@ -51,6 +55,8 @@ suspend fun computeDashboard(
     return CollectionDashboard(
         totalUsd = totalUsd,
         pricedCount = pricedCount,
+        complete = cardsById.size >= quantities.size * 0.98,
+        cards = quantities.sumOf { it.second },
         colorCounts = colorTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
         typeCounts = typeTotals.entries.sortedByDescending { it.value }.map { it.key to it.value }
     )

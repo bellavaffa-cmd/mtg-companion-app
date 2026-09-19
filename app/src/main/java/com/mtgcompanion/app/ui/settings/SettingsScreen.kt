@@ -160,6 +160,10 @@ fun SettingsScreen(
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
+            SettingsCategory("Prices") { PricesSection(settingsRepository) }
+
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
+
             SettingsCategory("Offline Search") { OfflineSearchSection(offlineCardRepository) }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))

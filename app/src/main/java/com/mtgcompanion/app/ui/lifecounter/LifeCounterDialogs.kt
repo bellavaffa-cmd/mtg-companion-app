@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.social.SocialApi
 import com.mtgcompanion.app.ui.social.QrCode
 import androidx.compose.ui.semantics.selected
@@ -611,7 +612,7 @@ internal fun CardSearchOverlay(onSearch: suspend (String) -> List<ScryfallCard>,
                                 TableLabel(result.name, 24.sp, maxLines = 1)
                                 result.typeLine?.let { TableLabel(it, 16.sp, color = TableColors.TextMuted, maxLines = 1) }
                             }
-                            TableLabel(result.prices?.usd?.let { "$$it" } ?: "—", 24.sp, color = TableColors.Yellow)
+                            TableLabel(rememberMoney().format(result.prices?.usd) ?: "—", 24.sp, color = TableColors.Yellow)
                         }
                     }
                 }
@@ -625,8 +626,8 @@ internal fun CardSearchOverlay(onSearch: suspend (String) -> List<ScryfallCard>,
                     )
                     TableLabel(card.name, 36.sp, modifier = Modifier.padding(top = 12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                        TableLabel("Price ${card.prices?.usd?.let { "$$it" } ?: "—"}", 26.sp, color = TableColors.Yellow)
-                        card.prices?.usdFoil?.let { TableLabel("Foil $$it", 26.sp, color = TableColors.TextMuted) }
+                        TableLabel("Price ${rememberMoney().format(card.prices?.usd) ?: "—"}", 26.sp, color = TableColors.Yellow)
+                        rememberMoney().format(card.prices?.usdFoil)?.let { TableLabel("Foil $it", 26.sp, color = TableColors.TextMuted) }
                     }
                     SectionTitle("Legality")
                     SEARCH_FORMATS.forEach { format ->

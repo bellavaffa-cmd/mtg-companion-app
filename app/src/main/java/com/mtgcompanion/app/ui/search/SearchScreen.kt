@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.search
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import androidx.compose.foundation.layout.fillMaxHeight
 import com.mtgcompanion.app.ui.common.readableWidth
@@ -243,7 +244,7 @@ fun SearchScreen(
                 )
 
                 Column {
-                    FilterLabel("Price (USD)")
+                    FilterLabel("Price (${rememberMoney().currency.code})")
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
                         NumberField("Min", filters.priceMin, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(priceMin = it)) }
                         NumberField("Max", filters.priceMax, Modifier.weight(1f)) { viewModel.onFiltersChange(filters.copy(priceMax = it)) }

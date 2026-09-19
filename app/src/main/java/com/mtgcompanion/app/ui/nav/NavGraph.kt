@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.nav
 
 import com.mtgcompanion.app.ui.collection.TagBinderScreen
+import com.mtgcompanion.app.ui.collection.ValueHistoryScreen
 import com.mtgcompanion.app.ui.collection.TagBinderViewModel
 import com.mtgcompanion.app.ui.common.SyncPullResult
 import com.mtgcompanion.app.ui.common.PullToSyncBox
@@ -181,6 +182,7 @@ private object Routes {
     const val SCAN = "scan"
     const val RULES = "rules"
     const val LIFE_COUNTER = "life_counter"
+    const val VALUE_HISTORY = "value_history"
     const val FRIENDS = "friends"
     const val FRIEND = "friend/{userId}"
     const val TRADES = "trades"
@@ -280,7 +282,7 @@ fun MtgNavGraph(
         Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
         if (showWideNav) {
             val destination = when (currentRoute) {
-                Routes.HOME -> NavDestination.HOME
+                Routes.HOME, Routes.VALUE_HISTORY -> NavDestination.HOME
                 Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS -> NavDestination.DECKS
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER -> NavDestination.COLLECTION
@@ -372,11 +374,16 @@ fun MtgNavGraph(
                     onOpenRules = { navController.navigateToTab(Routes.RULES) },
                     onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) },
                     onOpenSettings = { navController.navigateToTab(Routes.SETTINGS) },
+                    onOpenValue = { navController.navigate(Routes.VALUE_HISTORY) },
                     onOpenDeck = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
                     onViewCard = { name -> navController.navigate(Routes.detail(name)) },
                     onOpenFriends = if (supabaseSync.auth.configured) ({ navController.navigateToTab(Routes.FRIENDS) }) else null,
                     friendsWaiting = socialRepository.inbox.collectAsState().value.total
                 )
+            }
+
+            destination(Routes.VALUE_HISTORY) {
+                ValueHistoryScreen(onBack = { navController.popBackStack() })
             }
 
             destination(Routes.SEARCH) {

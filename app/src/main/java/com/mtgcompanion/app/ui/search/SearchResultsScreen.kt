@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.search
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
 import com.mtgcompanion.app.ui.common.adaptiveGridColumns
@@ -317,8 +318,8 @@ private fun CardResultRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            card.prices?.usd?.let { usd ->
-                Text("$$usd", style = MaterialTheme.typography.bodyMedium, color = GoldLight)
+            rememberMoney().format(card.prices?.usd)?.let { price ->
+                Text(price, style = MaterialTheme.typography.bodyMedium, color = GoldLight)
             }
         }
         CardActionMenu(expanded = menuExpanded, onDismiss = { menuExpanded = false }, actions = resultCardActions(onAddToTarget, onViewDetails))

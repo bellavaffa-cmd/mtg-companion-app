@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.data.DeckRole
 import androidx.compose.runtime.LaunchedEffect
@@ -127,7 +128,7 @@ internal fun CardFilterChips(selected: CardFilter, cutCount: Int, comboCount: In
 }
 
 @Composable
-private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
         style = MaterialTheme.typography.labelMedium,
@@ -228,7 +229,7 @@ internal fun ConsideringTab(
                 Column(Modifier.weight(1f)) {
                     Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        prices[entry.scryfallId]?.let { Text("$%.2f".format(it), style = MaterialTheme.typography.labelMedium, color = TextMuted) }
+                        prices[entry.scryfallId]?.let { Text(rememberMoney().format(it), style = MaterialTheme.typography.labelMedium, color = TextMuted) }
                         if (completesCombo) Badge("Completes a combo", Icons.Filled.Bolt, fill = Gold)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -807,6 +808,7 @@ internal fun LazyListScope.nearMissSection(nearMisses: List<NearMissCombo>, avai
     }
 }
 
+/** In US dollars, like the prices they're held against; shown in the chosen currency. */
 private val BUDGET_THRESHOLDS = listOf(2.0, 5.0, 10.0, 20.0)
 
 internal fun LazyListScope.budgetSwapsSection(
@@ -828,7 +830,7 @@ internal fun LazyListScope.budgetSwapsSection(
             val selected = (state as? BudgetSwapState.Done)?.threshold
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BUDGET_THRESHOLDS.forEach { threshold ->
-                    FilterPill("$${threshold.toInt()}+", selected == threshold) { onFind(threshold) }
+                    FilterPill(rememberMoney().format(threshold, whole = true) + "+", selected == threshold) { onFind(threshold) }
                 }
             }
         }
@@ -844,7 +846,7 @@ internal fun LazyListScope.budgetSwapsSection(
         is BudgetSwapState.Failed -> item { Text(state.message, style = MaterialTheme.typography.bodySmall, color = TextMuted) }
         is BudgetSwapState.Done -> {
             if (state.swaps.isEmpty()) {
-                item { Text("No cards in this deck cost $${state.threshold.toInt()} or more.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
+                item { Text("No cards in this deck cost ${rememberMoney().format(state.threshold, whole = true)} or more.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
             }
             items(state.swaps, key = { "swap-" + it.entry.scryfallId }) { swap ->
                 Column(Modifier.fillMaxWidth().elevatedCard(shape = RoundedCornerShape(16.dp)).padding(12.dp)) {
@@ -852,7 +854,7 @@ internal fun LazyListScope.budgetSwapsSection(
                         Column(Modifier.weight(1f)) {
                             Text(swap.entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                "$%.2f".format(swap.priceUsd) + (swap.role?.let { " · ${it.label.lowercase()}" } ?: ""),
+                                rememberMoney().format(swap.priceUsd) + (swap.role?.let { " · ${it.label.lowercase()}" } ?: ""),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = TextMuted
                             )
@@ -875,7 +877,7 @@ internal fun LazyListScope.budgetSwapsSection(
                                         contentScale = ContentScale.Fit,
                                         modifier = Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(8.dp)).clickable { onViewDetails(alt.name) }
                                     )
-                                    Text(alt.prices?.usd?.let { "$$it" } ?: "—", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                                    Text(rememberMoney().format(alt.prices?.usd) ?: "—", style = MaterialTheme.typography.labelMedium, color = TextMuted)
                                     Text(
                                         "Consider",
                                         style = MaterialTheme.typography.labelMedium,
