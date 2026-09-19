@@ -55,22 +55,29 @@ import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
 /** One physical copy in the simulated library — [instanceId] distinguishes multiple copies of the same card. */
-private data class LibraryCard(val instanceId: String, val entry: DeckCardEntry)
+internal data class LibraryCard(val instanceId: String, val entry: DeckCardEntry)
 
-private fun shuffledLibrary(deck: Deck): List<LibraryCard> =
-    deck.cards.flatMap { entry -> (0 until entry.quantity).map { i -> LibraryCard("${entry.scryfallId}#$i", entry) } }
-        .shuffled()
+/**
+ * Every copy of the deck's cards, shuffled — less one copy of each commander, which starts in the
+ * command zone (a deck's commanders are in its card list too). The web app's goldfish.ts is the same.
+ */
+internal fun shuffledLibrary(deck: Deck, random: kotlin.random.Random = kotlin.random.Random.Default): List<LibraryCard> {
+    val commanders = listOfNotNull(deck.commander, deck.partnerCommander).groupingBy { it.scryfallId }.eachCount()
+    return deck.cards.flatMap { entry ->
+        (0 until entry.quantity - (commanders[entry.scryfallId] ?: 0)).map { i -> LibraryCard("${entry.scryfallId}#$i", entry) }
+    }.shuffled(random)
+}
 
 /**
  * Solo playtesting: shuffles this deck's cards (the commander stays in the command zone, same as a
- * real game, since it isn't part of [Deck.cards]), draws an opening hand, and lets you draw one card
+ * real game — see [shuffledLibrary]), draws an opening hand, and lets you draw one card
  * at a time to see how the deck's mana/curve plays out — no persistence, resets every time it's opened.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GoldfishDialog(deck: Deck, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        if (deck.cards.isEmpty()) {
+        if (shuffledLibrary(deck).isEmpty()) {
             Scaffold(containerColor = Bg, topBar = { GoldfishTopBar(0, onDismiss) }) { padding ->
                 Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding).padding(20.dp)) {
                     Text("Add cards to this deck before playtesting.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
