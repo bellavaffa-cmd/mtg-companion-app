@@ -179,13 +179,16 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
     val deck = remember(item.data) { runCatching { localMoshi.adapter(Deck::class.java).fromJson(item.data) }.getOrNull() }
     var copied by remember { mutableStateOf<String?>(null) }
     var zoom by remember { mutableStateOf<DeckCardEntry?>(null) }
+    var query by remember { mutableStateOf("") }
+    val tagging = rememberCardTags(remember(deck) { deck?.cards.orEmpty().map { it.name } })
     if (deck == null) {
         EmptyState(Icons.Filled.CloudOff, "This deck couldn't be read. Updating the app may help.")
         return
     }
-    val groups = deck.cards.sortedBy { it.name }.groupBy { primaryType(it.typeLine) }.toList()
+    val shown = deck.cards.byNameOrTag(query) { it.name }
+    val groups = shown.sortedBy { it.name }.groupBy { primaryType(it.typeLine) }.toList()
         .sortedBy { (type, _) -> TYPE_ORDER.indexOf(type).let { if (it == -1) 99 else it } }
-    val commanders = listOfNotNull(deck.commander, deck.partnerCommander)
+    val commanders = listOfNotNull(deck.commander, deck.partnerCommander).byNameOrTag(query) { it.name }
 
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
@@ -218,6 +221,7 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
                 }, icon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) })
             }
         }
+        if (deck.cards.size > 8) item { NameTagSearch(query, { query = it }, shown.map { it.name }, tagging) }
         if (commanders.isNotEmpty()) {
             item { SectionHeader(if (commanders.size > 1) "Commanders" else "Commander") }
             commanders.forEach { c -> item(key = "cmd-${c.scryfallId}") { ReadOnlyCardRow(c.name, c.imageUrl, c.quantity, 0) { zoom = c } } }
@@ -227,9 +231,13 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
             cards.forEach { c -> item(key = "c-${c.scryfallId}") { ReadOnlyCardRow(c.name, c.imageUrl, c.quantity, 0) { zoom = c } } }
         }
         if (deck.cards.isEmpty()) item { Notice("This deck has no cards yet.") }
+        else if (shown.isEmpty()) item { Notice("No cards match “$query”.") }
     }
     zoom?.let { c ->
-        CardZoomDialog(listOf(ZoomCard(imageUrl = c.imageUrl, cardName = c.name, quantity = c.quantity, backImageUrl = c.backImageUrl)), 0) { zoom = null }
+        CardZoomDialog(listOf(ZoomCard(
+            imageUrl = c.imageUrl, cardName = c.name, quantity = c.quantity, backImageUrl = c.backImageUrl,
+            tags = tagLabelsOf(c.name), onTagClick = { label -> zoom = null; query = label }
+        )), 0) { zoom = null }
     }
 }
 
@@ -262,6 +270,8 @@ private fun SharedBinder(social: SocialRepository, item: SharedItem, ownerId: St
     var trading by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf<List<TradeCard>>(emptyList()) }
     var zoom by remember { mutableStateOf<CollectionEntry?>(null) }
+    var query by remember { mutableStateOf("") }
+    val tagging = rememberCardTags(remember(collection) { collection?.entries.orEmpty().map { it.name } })
     LaunchedEffect(Unit) { if (social.overview.value == null) social.refresh() }
     if (collection == null) {
         EmptyState(Icons.Filled.CloudOff, "This binder couldn't be read. Updating the app may help.")
@@ -292,9 +302,12 @@ private fun SharedBinder(social: SocialRepository, item: SharedItem, ownerId: St
             if (trading) {
                 binderPicker(collection.id, entries, picked) { picked = it }
             } else {
-                entries.forEach { e ->
+                val shown = entries.byNameOrTag(query) { it.name }
+                if (entries.size > 8 || query.isNotEmpty()) item(key = "search") { NameTagSearch(query, { query = it }, shown.map { it.name }, tagging) }
+                shown.forEach { e ->
                     item(key = e.scryfallId) { ReadOnlyCardRow(e.name, e.imageUrl, e.quantity, e.foilQuantity) { zoom = e } }
                 }
+                if (entries.isNotEmpty() && shown.isEmpty()) item(key = "none") { Notice("No cards match “$query”.") }
             }
         }
         if (trading && picked.isNotEmpty() && ownerId != null) {
@@ -311,7 +324,10 @@ private fun SharedBinder(social: SocialRepository, item: SharedItem, ownerId: St
         }
     }
     zoom?.let { e ->
-        CardZoomDialog(listOf(ZoomCard(imageUrl = e.imageUrl, cardName = e.name, quantity = e.quantity + e.foilQuantity, backImageUrl = e.backImageUrl)), 0) { zoom = null }
+        CardZoomDialog(listOf(ZoomCard(
+            imageUrl = e.imageUrl, cardName = e.name, quantity = e.quantity + e.foilQuantity, backImageUrl = e.backImageUrl,
+            tags = tagLabelsOf(e.name), onTagClick = { label -> zoom = null; query = label }
+        )), 0) { zoom = null }
     }
 }
 

@@ -139,7 +139,8 @@ fun SharedCollectionScreen(
                             }
                             byCard.values.sortedBy { it.name.lowercase() }
                         }
-                        val shown = if (query.isBlank()) cards else cards.filter { it.name.contains(query.trim(), ignoreCase = true) }
+                        val tagging = rememberCardTags(remember(cards) { cards.map { it.name } })
+                        val shown = cards.byNameOrTag(query) { it.name }
                         val total = cards.sumOf { it.quantity + it.foilQuantity }
                         LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             item {
@@ -162,14 +163,7 @@ fun SharedCollectionScreen(
                                     icon = { Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp)) })
                             }
                             item {
-                                OutlinedTextField(
-                                    value = query,
-                                    onValueChange = { query = it },
-                                    label = { Text("Search ${cards.size} cards") },
-                                    singleLine = true,
-                                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = colors.accent) },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                NameTagSearch(query, { query = it }, shown.map { it.name }, tagging)
                             }
                             shown.take(LIST_LIMIT).forEach { c ->
                                 item(key = "c-${c.scryfallId}") {
@@ -205,6 +199,9 @@ fun SharedCollectionScreen(
         }
     }
     zoom?.let { c ->
-        CardZoomDialog(listOf(ZoomCard(imageUrl = c.imageUrl, cardName = c.name, quantity = c.quantity + c.foilQuantity, backImageUrl = c.backImageUrl)), 0) { zoom = null }
+        CardZoomDialog(listOf(ZoomCard(
+            imageUrl = c.imageUrl, cardName = c.name, quantity = c.quantity + c.foilQuantity, backImageUrl = c.backImageUrl,
+            tags = tagLabelsOf(c.name), onTagClick = { label -> zoom = null; query = label }
+        )), 0) { zoom = null }
     }
 }
