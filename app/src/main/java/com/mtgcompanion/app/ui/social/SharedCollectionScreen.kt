@@ -96,6 +96,8 @@ fun SharedCollectionScreen(
     var loaded by remember { mutableStateOf<LoadedCollection>(LoadedCollection.Loading) }
     var query by remember { mutableStateOf("") }
     var zoom by remember { mutableStateOf<OwnedCard?>(null) }
+    // The cards the enlarged one sits among, so a swipe moves to the next and previous of them.
+    var zoomList by remember { mutableStateOf<List<OwnedCard>>(emptyList()) }
     LaunchedEffect(owner, account?.userId) {
         loaded = LoadedCollection.Loading
         loaded = try {
@@ -167,7 +169,7 @@ fun SharedCollectionScreen(
                             }
                             shown.take(LIST_LIMIT).forEach { c ->
                                 item(key = "c-${c.scryfallId}") {
-                                    ReadOnlyCardRow(c.name, c.imageUrl, c.quantity + c.foilQuantity, c.foilQuantity, detail = c.binders.joinToString()) { zoom = c }
+                                    ReadOnlyCardRow(c.name, c.imageUrl, c.quantity + c.foilQuantity, c.foilQuantity, detail = c.binders.joinToString()) { zoomList = shown.take(LIST_LIMIT); zoom = c }
                                 }
                             }
                             if (shown.isEmpty()) item { Notice(if (query.isBlank()) "No cards yet." else "No cards match “$query”.") }
@@ -199,9 +201,15 @@ fun SharedCollectionScreen(
         }
     }
     zoom?.let { c ->
-        CardZoomDialog(listOf(ZoomCard(
-            imageUrl = c.imageUrl, cardName = c.name, quantity = c.quantity + c.foilQuantity, backImageUrl = c.backImageUrl,
-            tags = tagLabelsOf(c.name), onTagClick = { label -> zoom = null; query = label }
-        )), 0) { zoom = null }
+        val list = zoomList.ifEmpty { listOf(c) }
+        CardZoomDialog(
+            list.map { card ->
+                ZoomCard(
+                    imageUrl = card.imageUrl, cardName = card.name, quantity = card.quantity + card.foilQuantity, backImageUrl = card.backImageUrl,
+                    tags = tagLabelsOf(card.name), onTagClick = { label -> zoom = null; query = label }
+                )
+            },
+            list.indexOfFirst { it.scryfallId == c.scryfallId }.coerceAtLeast(0)
+        ) { zoom = null }
     }
 }

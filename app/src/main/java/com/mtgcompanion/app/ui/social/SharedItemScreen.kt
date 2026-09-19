@@ -234,10 +234,16 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
         else if (shown.isEmpty()) item { Notice("No cards match “$query”.") }
     }
     zoom?.let { c ->
-        CardZoomDialog(listOf(ZoomCard(
-            imageUrl = c.imageUrl, cardName = c.name, quantity = c.quantity, backImageUrl = c.backImageUrl,
-            tags = tagLabelsOf(c.name), onTagClick = { label -> zoom = null; query = label }
-        )), 0) { zoom = null }
+        val list = (commanders + groups.flatMap { it.second }).distinctBy { it.scryfallId }.ifEmpty { listOf(c) }
+        CardZoomDialog(
+            list.map { card ->
+                ZoomCard(
+                    imageUrl = card.imageUrl, cardName = card.name, quantity = card.quantity, backImageUrl = card.backImageUrl,
+                    tags = tagLabelsOf(card.name), onTagClick = { label -> zoom = null; query = label }
+                )
+            },
+            list.indexOfFirst { it.scryfallId == c.scryfallId }.coerceAtLeast(0)
+        ) { zoom = null }
     }
 }
 
@@ -270,6 +276,8 @@ private fun SharedBinder(social: SocialRepository, item: SharedItem, ownerId: St
     var trading by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf<List<TradeCard>>(emptyList()) }
     var zoom by remember { mutableStateOf<CollectionEntry?>(null) }
+    // The cards the enlarged one sits among, so a swipe moves to the next and previous of them.
+    var zoomList by remember { mutableStateOf<List<CollectionEntry>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     val tagging = rememberCardTags(remember(collection) { collection?.entries.orEmpty().map { it.name } })
     LaunchedEffect(Unit) { if (social.overview.value == null) social.refresh() }
@@ -305,7 +313,7 @@ private fun SharedBinder(social: SocialRepository, item: SharedItem, ownerId: St
                 val shown = entries.byNameOrTag(query) { it.name }
                 if (entries.size > 8 || query.isNotEmpty()) item(key = "search") { NameTagSearch(query, { query = it }, shown.map { it.name }, tagging) }
                 shown.forEach { e ->
-                    item(key = e.scryfallId) { ReadOnlyCardRow(e.name, e.imageUrl, e.quantity, e.foilQuantity) { zoom = e } }
+                    item(key = e.scryfallId) { ReadOnlyCardRow(e.name, e.imageUrl, e.quantity, e.foilQuantity) { zoomList = shown; zoom = e } }
                 }
                 if (entries.isNotEmpty() && shown.isEmpty()) item(key = "none") { Notice("No cards match “$query”.") }
             }
@@ -324,10 +332,16 @@ private fun SharedBinder(social: SocialRepository, item: SharedItem, ownerId: St
         }
     }
     zoom?.let { e ->
-        CardZoomDialog(listOf(ZoomCard(
-            imageUrl = e.imageUrl, cardName = e.name, quantity = e.quantity + e.foilQuantity, backImageUrl = e.backImageUrl,
-            tags = tagLabelsOf(e.name), onTagClick = { label -> zoom = null; query = label }
-        )), 0) { zoom = null }
+        val list = zoomList.ifEmpty { listOf(e) }
+        CardZoomDialog(
+            list.map { card ->
+                ZoomCard(
+                    imageUrl = card.imageUrl, cardName = card.name, quantity = card.quantity + card.foilQuantity, backImageUrl = card.backImageUrl,
+                    tags = tagLabelsOf(card.name), onTagClick = { label -> zoom = null; query = label }
+                )
+            },
+            list.indexOfFirst { it.scryfallId == e.scryfallId }.coerceAtLeast(0)
+        ) { zoom = null }
     }
 }
 
