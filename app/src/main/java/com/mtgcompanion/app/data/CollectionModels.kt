@@ -11,7 +11,9 @@ data class CollectionEntry(
     // Cached from ScryfallCard.tags — see DeckCardEntry.tags for why.
     val tags: List<String> = emptyList(),
     /** Wishlists: tell the user when this card's price (USD, non-foil) is at or under this (see PriceAlerts). */
-    val priceAlert: Double? = null
+    val priceAlert: Double? = null,
+    /** In the Wishlist by itself: a deck is considering it and the user doesn't own it (see [withWishlist]). */
+    val auto: Boolean = false
 )
 
 /** OWNED binders are the physical collection; WISHLIST binders track cards not owned yet. */

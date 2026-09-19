@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.WISHLIST_ID
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -306,10 +307,6 @@ class DeckDetailViewModel(
             if (d == null) emptyList() else missingCards(d, collections, decks)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val wishlists: StateFlow<List<Collection>> = collectionRepository.collectionsFlow
-        .map { all -> all.filter { it.kind == CollectionType.WISHLIST } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     private val _budgetSwaps = MutableStateFlow<BudgetSwapState>(BudgetSwapState.Idle)
     val budgetSwaps: StateFlow<BudgetSwapState> = _budgetSwaps.asStateFlow()
 
@@ -584,23 +581,23 @@ class DeckDetailViewModel(
 
     // ---- Missing cards ----
 
-    /** Adds every missing card (in the copies still needed) to [wishlistId], or to a new wishlist named [newName]. */
-    fun addMissingToWishlist(wishlistId: String?, newName: String?, onDone: (String) -> Unit) {
+    /** Adds every missing card (in the copies still needed) to the Wishlist. */
+    fun addMissingToWishlist(onDone: (String) -> Unit) {
         viewModelScope.launch {
             val cards = missing.value
             if (cards.isEmpty()) {
                 onDone("Nothing missing.")
                 return@launch
             }
-            val target = wishlistId
-                ?: collectionRepository.createCollection(newName?.takeIf { it.isNotBlank() } ?: "${deck.value?.name ?: "Deck"} wishlist", CollectionType.WISHLIST).id
+            collectionRepository.ensureWishlist()
+            val target = WISHLIST_ID
             cards.forEach { (entry, need) ->
                 collectionRepository.addEntry(
                     target,
                     CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = need, foilQuantity = 0, backImageUrl = entry.backImageUrl, tags = entry.tags)
                 )
             }
-            onDone("Added ${cards.size} card${if (cards.size == 1) "" else "s"} to the wishlist.")
+            onDone("Added ${cards.size} card${if (cards.size == 1) "" else "s"} to your Wishlist.")
         }
     }
 

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app
 
+import com.mtgcompanion.app.data.withWishlist
 import com.mtgcompanion.app.data.PriceMovers
 import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
@@ -77,6 +78,13 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         Prices.init(this, settingsRepository, appScope)
         ValueHistory.init(this)
         PriceMovers.init(this)
+        // The Wishlist: always there, holding what decks are considering that isn't owned.
+        appScope.launch {
+            kotlinx.coroutines.flow.combine(collectionRepository.collectionsFlow, deckRepository.decksFlow) { c, d -> c to d }
+                .collect { (collections, decks) ->
+                    if (withWishlist(collections, decks) !== collections) collectionRepository.maintainWishlist(decks)
+                }
+        }
         appScope.launch {
             var wasSignedIn = false
             supabaseSync.auth.account.map { it?.userId }.distinctUntilChanged().collect { userId ->

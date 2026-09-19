@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.decksConsidering
+import com.mtgcompanion.app.data.isWishlist
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
 import android.Manifest
@@ -135,6 +137,7 @@ fun CollectionDetailScreen(
     var alertTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     val isWishlist = collection?.kind == CollectionType.WISHLIST
     var confirmDeleteBinder by remember { mutableStateOf(false) }
+    val decks by viewModel.decks.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
     var listDialog by remember { mutableStateOf<String?>(null) } // "import" or "export"
     val importProgress by viewModel.importProgress.collectAsState()
@@ -192,7 +195,8 @@ fun CollectionDetailScreen(
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.background(Surface2)) {
                             DropdownMenuItem(text = { Text("Import cards", color = TextPrimary) }, onClick = { menuOpen = false; viewModel.resetImport(); listDialog = "import" })
                             DropdownMenuItem(text = { Text("Export as text", color = TextPrimary) }, onClick = { menuOpen = false; listDialog = "export" })
-                            DropdownMenuItem(
+                            // The Wishlist is always there.
+                            if (collection?.isWishlist != true) DropdownMenuItem(
                                 text = { Text(if (collection?.isUnsorted == true) "Remove all cards" else "Delete binder", color = LocalAppColors.current.error) },
                                 onClick = { menuOpen = false; confirmDeleteBinder = true }
                             )
@@ -261,6 +265,14 @@ fun CollectionDetailScreen(
             }
 
             val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
+            if (collection?.isWishlist == true) {
+                Text(
+                    "Cards you want. They don't count as owned. Cards your decks are considering that you don't own are added here by themselves, until you own them.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
+                )
+            }
             if (collection?.isUnsorted == true && collection?.entries?.isNotEmpty() == true) {
                 Text(
                     "Cards you own that aren't in a binder yet. Long-press a card and choose Move to put it in a binder — or a new one.",
@@ -314,7 +326,8 @@ fun CollectionDetailScreen(
                                 onRemove = { removeTarget = entry },
                                 // A wishlist shows each card's price now, and can watch for it to drop.
                                 price = if (isWishlist) prices[entry.scryfallId] else null,
-                                onPriceAlert = if (isWishlist) ({ alertTarget = entry }) else null
+                                onPriceAlert = if (isWishlist) ({ alertTarget = entry }) else null,
+                                considering = if (entry.auto) decksConsidering(decks, entry.name).joinToString(", ").ifEmpty { null } else null
                             )
                         }
                     }
@@ -445,7 +458,9 @@ private fun CollectionCardRow(
     /** Wishlists: today's price (null: none, or not a wishlist). */
     price: Double? = null,
     /** Wishlists: opens this card's price alert. */
-    onPriceAlert: (() -> Unit)? = null
+    onPriceAlert: (() -> Unit)? = null,
+    /** The Wishlist: the decks considering a card it has because of them. */
+    considering: String? = null
 ) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -483,6 +498,9 @@ private fun CollectionCardRow(
                     style = MaterialTheme.typography.labelMedium,
                     color = TextMuted
                 )
+                considering?.let {
+                    Text("Considering in $it", style = MaterialTheme.typography.labelMedium, color = GoldDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 // Wishlists: today's price and the alert, which a tap sets.
                 onPriceAlert?.let { open ->
                     val alert = entry.priceAlert

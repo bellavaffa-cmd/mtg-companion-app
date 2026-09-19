@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.CardListImporter
 import com.mtgcompanion.app.data.buildCardListText
 import com.mtgcompanion.app.data.parseCardList
@@ -57,6 +58,9 @@ class CollectionDetailViewModel(
             decks.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
                 collections.filter { it.id != collectionId }.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** The user's decks — for "Considering in …" on a card the Wishlist has because a deck is considering it. */
+    val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val collection: StateFlow<Collection?> = repository.collectionFlow(collectionId).stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), null

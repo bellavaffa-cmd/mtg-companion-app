@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.isWishlist
 import com.mtgcompanion.app.data.RoleTags
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -245,7 +246,8 @@ fun CollectionsScreen(
                     sharedPage()
                 } else {
                     CollectionsTab(
-                        collections = collections.filterNot { it.isUnsorted },
+                        // The Wishlist first; it's always there.
+                        collections = collections.filterNot { it.isUnsorted }.sortedByDescending { it.isWishlist },
                         onCollectionClick = onCollectionClick,
                         onDelete = { viewModel.deleteCollection(it) },
                         tagBinders = tagBinders,
@@ -326,7 +328,7 @@ private fun CollectionsTab(
                 CollectionRow(
                     collection = collection,
                     onClick = { onCollectionClick(collection.id) },
-                    onDelete = { confirmDelete = collection }
+                    onDelete = if (collection.isWishlist) null else ({ confirmDelete = collection })
                 )
             }
             if (tagBinders.isNotEmpty() || tagging != null) {
@@ -581,7 +583,7 @@ private fun AllCardTile(card: AllCardEntry, selecting: Boolean, selected: Boolea
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete: (() -> Unit)?) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -599,7 +601,7 @@ private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete:
                     interactionSource = interactionSource,
                     indication = androidx.compose.foundation.LocalIndication.current,
                     onClick = onClick,
-                    onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true }
+                    onLongClick = { if (onDelete != null) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuExpanded = true } }
                 )
                 .padding(12.dp)
         ) {
@@ -612,22 +614,26 @@ private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete:
             Column(modifier = Modifier.weight(1f)) {
                 Text(collection.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
                 val total = collection.entries.sumOf { it.quantity + it.foilQuantity }
-                val label = if (collection.kind == CollectionType.WISHLIST) "WISHLIST · " else ""
                 Text(
-                    "$label$total cards · ${collection.entries.size} unique",
+                    if (collection.isWishlist) "Cards you want · $total ${if (total == 1) "card" else "cards"} · not counted as owned"
+                    else "$total cards · ${collection.entries.size} unique",
                     style = MaterialTheme.typography.labelMedium,
                     color = TextMuted
                 )
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete binder", tint = TextDim)
+            if (onDelete != null) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Delete binder", tint = TextDim)
+                }
             }
         }
-        CardActionMenu(
-            expanded = menuExpanded,
-            onDismiss = { menuExpanded = false },
-            actions = listOf(CardMenuAction("Delete binder", Icons.Filled.Delete, destructive = true) { onDelete() })
-        )
+        if (onDelete != null) {
+            CardActionMenu(
+                expanded = menuExpanded,
+                onDismiss = { menuExpanded = false },
+                actions = listOf(CardMenuAction("Delete binder", Icons.Filled.Delete, destructive = true) { onDelete() })
+            )
+        }
     }
 }
 
@@ -662,7 +668,7 @@ private fun UnsortedRow(unsorted: Collection, onClick: () -> Unit) {
 @Composable
 private fun CreateCollectionDialog(onDismiss: () -> Unit, onConfirm: (String, CollectionType) -> Unit) {
     var name by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf(CollectionType.OWNED) }
+    val type = CollectionType.OWNED
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface,
@@ -682,29 +688,11 @@ private fun CreateCollectionDialog(onDismiss: () -> Unit, onConfirm: (String, Co
                         cursorColor = Gold
                     )
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(CollectionType.OWNED to "Owned", CollectionType.WISHLIST to "Wishlist").forEach { (option, label) ->
-                        val selected = type == option
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (selected) Bg else TextPrimary,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(if (selected) Gold else Bg)
-                                .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(50))
-                                .clickable { type = option }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                        )
-                    }
-                }
-                if (type == CollectionType.WISHLIST) {
-                    Text(
-                        "Wishlist binders track cards you want — they're excluded from your owned totals and All Cards.",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextMuted
-                    )
-                }
+                Text(
+                    "Cards you want go in your Wishlist.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted
+                )
             }
         },
         confirmButton = {

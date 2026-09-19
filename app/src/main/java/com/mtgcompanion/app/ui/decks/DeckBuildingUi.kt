@@ -900,22 +900,19 @@ internal fun LazyListScope.budgetSwapsSection(
 internal fun MissingCardsDialog(
     missing: List<MissingCard>,
     physicalDeck: Boolean,
-    wishlists: List<Collection>,
-    onAddToWishlist: (wishlistId: String?, newName: String?) -> Unit,
+    onAddToWishlist: () -> Unit,
     onBuy: () -> Unit,
     onDismiss: () -> Unit,
     /** Friends who own them (signed in only). */
     onWhoHasIt: (() -> Unit)? = null
 ) {
-    var pickingWishlist by remember { mutableStateOf(false) }
-    var newName by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface,
-        title = { Text(if (pickingWishlist) "Add to which wishlist?" else "Cards you don't own", color = GoldLight) },
+        title = { Text("Cards you don't own", color = GoldLight) },
         text = {
             Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
-                if (!pickingWishlist) {
+                run {
                     if (missing.isEmpty() && physicalDeck) {
                         // Every deck starts out Physical, which counts its own cards as owned — so
                         // "you own everything" would be true by definition, not a real check.
@@ -938,39 +935,16 @@ internal fun MissingCardsDialog(
                             Text("${card.need}  ${card.entry.name}", style = MaterialTheme.typography.bodySmall, color = TextPrimary, modifier = Modifier.padding(vertical = 2.dp))
                         }
                     }
-                } else {
-                    wishlists.forEach { wishlist ->
-                        Text(
-                            wishlist.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextPrimary,
-                            modifier = Modifier.fillMaxWidth().clickable { onAddToWishlist(wishlist.id, null) }.padding(vertical = 10.dp)
-                        )
-                    }
-                    if (wishlists.isNotEmpty()) Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        label = { Text("New wishlist name", color = TextMuted) },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Gold, unfocusedBorderColor = BorderColor, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = Gold)
-                    )
                 }
             }
         },
         confirmButton = {
             if (missing.isNotEmpty()) {
-                if (pickingWishlist) {
-                    Button(onClick = { onAddToWishlist(null, newName) }, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) {
-                        Text("Create & add", color = Bg)
-                    }
-                } else {
-                    Row {
-                        onWhoHasIt?.let { TextButton(onClick = it) { Text("Who has it?", color = Gold) } }
-                        TextButton(onClick = onBuy) { Text("Buy", color = Gold) }
-                        Button(onClick = { pickingWishlist = true }, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) {
-                            Text("Add to wishlist", color = Bg)
-                        }
+                Row {
+                    onWhoHasIt?.let { TextButton(onClick = it) { Text("Who has it?", color = Gold) } }
+                    TextButton(onClick = onBuy) { Text("Buy", color = Gold) }
+                    Button(onClick = onAddToWishlist, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) {
+                        Text("Add to Wishlist", color = Bg)
                     }
                 }
             }

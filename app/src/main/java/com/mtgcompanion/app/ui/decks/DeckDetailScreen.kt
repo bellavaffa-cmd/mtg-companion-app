@@ -194,7 +194,6 @@ fun DeckDetailScreen(
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val missing by viewModel.missing.collectAsState()
     val cardTags by viewModel.cardTags.collectAsState()
-    val wishlists by viewModel.wishlists.collectAsState()
     // Swap flows: a cut candidate choosing its replacement, or a considered card choosing what it replaces.
     var swapOut by remember { mutableStateOf<DeckCardEntry?>(null) }
     var swapIn by remember { mutableStateOf<DeckCardEntry?>(null) }
@@ -566,9 +565,8 @@ fun DeckDetailScreen(
             MissingCardsDialog(
                 missing = missing,
                 physicalDeck = deck?.ownershipType == DeckOwnership.PHYSICAL,
-                wishlists = wishlists,
-                onAddToWishlist = { wishlistId, newName ->
-                    viewModel.addMissingToWishlist(wishlistId, newName) { message -> toast(message) }
+                onAddToWishlist = {
+                    viewModel.addMissingToWishlist { message -> toast(message) }
                     showMissing = false
                 },
                 onBuy = {

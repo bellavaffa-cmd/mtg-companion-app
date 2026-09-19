@@ -33,8 +33,18 @@ class CollectionRepository(private val context: Context) {
         return collection
     }
 
+    /** Deletes a binder — never the Wishlist, which is always there. */
     suspend fun deleteCollection(collectionId: String) {
+        if (collectionId == WISHLIST_ID) return
         update { collections -> collections.filterNot { it.id == collectionId } }
+    }
+
+    /** Makes the Wishlist if it isn't there yet (it's kept up by [maintainWishlist] too). */
+    suspend fun ensureWishlist() {
+        update { collections ->
+            if (collections.any { it.isWishlist }) collections
+            else collections + Collection(WISHLIST_ID, WISHLIST_NAME, createdAt = 0, type = CollectionType.WISHLIST.name)
+        }
     }
 
     suspend fun addCard(collectionId: String, card: ScryfallCard, foil: Boolean = false) {
@@ -193,6 +203,18 @@ class CollectionRepository(private val context: Context) {
     }
 
     /** Overwrite all collections — used when restoring/pulling from Drive sync. */
+    /**
+     * Keeps the Wishlist as it should be for [decks] (see [withWishlist]) — written only when
+     * something changes.
+     */
+    suspend fun maintainWishlist(decks: List<Deck>) {
+        context.collectionDataStore.edit { prefs ->
+            val current = readCollections(prefs)
+            val next = withWishlist(current, decks)
+            if (next !== current) prefs[key] = adapter.toJson(CollectionStore(collections = next))
+        }
+    }
+
     /** Writes what a sync pulled, as a change to the binders as they are at that moment. */
     suspend fun applySync(transform: (List<Collection>) -> List<Collection>) {
         update(transform)
