@@ -39,6 +39,33 @@ class RoleTagsTest {
     }
 
     @Test
+    fun taggerFileGivesEachTagItsCardsAndEverythingUnderIt() {
+        // Tagger's "removal" has no cards of its own, only the tags under it.
+        val lines = listOf(
+            """{"id":"t1","slug":"removal","aliases":[],"child_ids":["t2"],"taggings":[]}""",
+            """{"id":"t2","slug":"creature-removal","child_ids":["t3"],"taggings":[{"oracle_id":"aaaaaaaa-1111-2222-3333-444444444444"}]}""",
+            """{"id":"t3","slug":"removal-exile","child_ids":[],"taggings":[{"oracle_id":"bbbbbbbb-1111-2222-3333-444444444444"}]}""",
+            """{"id":"t4","slug":"ramp","child_ids":[],"taggings":[{"oracle_id":"cccccccc-1111-2222-3333-444444444444"}]}""",
+            """{"id":"t5","slug":"sweeper","aliases":["mass removal"],"child_ids":[],"taggings":[{"oracle_id":"dddddddd-1111-2222-3333-444444444444"}]}""",
+            """{"id":"t6","slug":"unrelated","child_ids":[],"taggings":[{"oracle_id":"eeeeeeee-1111-2222-3333-444444444444"}]}"""
+        )
+        val sets = RoleTags.parseTagFile { block -> lines.forEach(block) }
+        assertEquals(setOf("aaaaaaaa-1111", "bbbbbbbb-1111"), sets["removal"])
+        assertEquals(setOf("cccccccc-1111"), sets["ramp"])
+        assertEquals(setOf("dddddddd-1111"), sets["board-wipe"])
+        assertEquals(listOf("removal"), RoleTags.tagsFor("bbbbbbbb-1111-2222-3333-444444444444", "Exile target creature.", sets))
+        assertEquals(emptyList<String>(), RoleTags.tagsFor("eeeeeeee-1111-2222-3333-444444444444", null, sets))
+    }
+
+    @Test
+    fun tokenAndTreasureTagsReadTheRulesText() {
+        assertEquals(listOf("tokens"), RoleTags.tagsFor(null, "Create two 1/1 white Soldier creature tokens.", emptyMap()))
+        assertEquals(listOf("treasure"), RoleTags.tagsFor(null, "Whenever an opponent casts a spell, create a Treasure token.", emptyMap()))
+        // Doubling Season makes no tokens of its own.
+        assertEquals(emptyList<String>(), RoleTags.tagsFor(null, "If an effect would create one or more tokens under your control, it creates twice that many creature tokens instead.", emptyMap()))
+    }
+
+    @Test
     fun ownedCardsGatherCopiesAcrossBindersButNotWishlists() {
         val sol = { qty: Int -> CollectionEntry("sol-1", "Sol Ring", null, quantity = qty) }
         val owned = ownedCards(

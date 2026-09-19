@@ -216,9 +216,9 @@ class DeckDetailViewModel(
     fun setCardQuery(query: String) { _cardQuery.value = query }
 
     init {
-        // The considering list's cards get their tags too (the deck's own come with [roles]).
+        // Every card's tags as soon as the deck opens — the search and the zoom use them, not only Stats.
         viewModelScope.launch {
-            deck.map { d -> d?.considering.orEmpty().map { it.name } }.distinctUntilChanged().collectLatest { names ->
+            deck.map { d -> (d?.cards.orEmpty() + d?.considering.orEmpty()).map { it.name } }.distinctUntilChanged().collectLatest { names ->
                 if (names.isNotEmpty()) RoleTags.ensure(names, cardRepository)
             }
         }

@@ -27,6 +27,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -100,6 +102,15 @@ class CollectionsViewModel(
             byCard.map { (id, acc) -> AllCardEntry(id, acc.name, acc.imageUrl, acc.total, acc.sources.toList(), acc.backImageUrl, acc.tags) }
                 .sortedBy { it.name.lowercase() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        // All cards is searched by tag too, and lists the decks' cards as well as the binders'.
+        viewModelScope.launch {
+            allCards.map { cards -> cards.map { it.name } }.distinctUntilChanged().collectLatest { names ->
+                if (names.isNotEmpty()) RoleTags.ensure(names, cardRepository)
+            }
+        }
+    }
 
     /**
      * Dashboard totals for the All Cards tab. Recomputes whenever [allCards] changes by fetching

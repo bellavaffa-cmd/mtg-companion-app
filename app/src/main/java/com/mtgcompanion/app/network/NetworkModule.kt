@@ -70,6 +70,10 @@ object NetworkModule {
         .readTimeout(15, TimeUnit.SECONDS)
         .addInterceptor(userAgentInterceptor)
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+        // Scryfall's rate limits: a lockout (429) is waited out and the request asked again once…
+        .addInterceptor(ScryfallPacer.retryAfterLockout)
+        // …and real requests to its API are spaced out (cached answers don't wait).
+        .addNetworkInterceptor(ScryfallPacer.pace)
 
     /**
      * API client with an on-disk HTTP cache so card data fetched while online is still available
