@@ -91,6 +91,9 @@ import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.Surface2
 import com.mtgcompanion.app.ui.collection.OwnedCard
 import com.mtgcompanion.app.data.GameResult
+import com.mtgcompanion.app.data.HandOdds
+import com.mtgcompanion.app.data.KEEPABLE_LANDS
+import com.mtgcompanion.app.data.oddsPercent
 import com.mtgcompanion.app.data.Matchup
 import com.mtgcompanion.app.data.gameStats
 import com.mtgcompanion.app.data.record
@@ -411,6 +414,65 @@ internal fun MatchRecordPanel(results: List<GameResult>, onLog: () -> Unit, onRe
                 Text(if (showAll) "Show fewer" else "Show all ${newest.size}", color = Gold, style = MaterialTheme.typography.labelMedium)
             }
         }
+    }
+}
+
+/**
+ * How the opening hand tends to look, worked out exactly from the list: a keepable seven, how many
+ * lands it holds, ramp in it, and hitting land drops.
+ */
+@Composable
+internal fun HandOddsPanel(odds: HandOdds) {
+    Panel {
+        SectionLabel("Opening hand")
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+            Text(oddsPercent(odds.keepable), style = NumberStyle(40), color = TextPrimary)
+            Column(Modifier.padding(bottom = 4.dp)) {
+                Text("chance of a keepable seven (${KEEPABLE_LANDS.first}–${KEEPABLE_LANDS.last} lands)", style = MaterialTheme.typography.bodyMedium, color = GoldLight)
+                Text(
+                    "${oddsPercent(odds.keepableWithMulligan)} within one mulligan" + if (odds.drawsOnTurnOne) " — the first is free in Commander" else "",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted
+                )
+            }
+        }
+        // Lands in the opening seven: 0 to 7.
+        val most = odds.landSpread.maxOrNull()?.takeIf { it > 0 } ?: 1.0
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth().padding(top = 14.dp).height(92.dp)) {
+            odds.landSpread.forEachIndexed { lands, p ->
+                val keep = lands in KEEPABLE_LANDS
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom, modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    Text(if (p >= 0.005) "${Math.round(p * 100)}" else "", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                    Box(
+                        Modifier.fillMaxWidth().fillMaxHeight(((p / most) * 0.7).toFloat().coerceAtLeast(0.02f))
+                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                            .background(if (keep) Gold else Surface3)
+                    )
+                    Text("$lands", style = MaterialTheme.typography.labelSmall, color = if (keep) TextPrimary else TextDim)
+                }
+            }
+        }
+        Text("Lands in the opening seven, as a % of hands", style = MaterialTheme.typography.labelSmall, color = TextDim, modifier = Modifier.padding(top = 4.dp))
+        Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (odds.ramp > 0) OddsRow("A ramp card in your opening hand", odds.rampInHand)
+            odds.landDrops.forEach { (turn, p) -> OddsRow("$turn lands by turn $turn", p) }
+            if (odds.ramp > 0) OddsRow("2+ lands and a ramp card by turn 2", odds.landsAndRampByTurn2)
+        }
+        Text(
+            "From the ${odds.library} cards in the library: ${odds.lands} lands, ${odds.ramp} ramp. " +
+                if (odds.drawsOnTurnOne) "Multiplayer Commander draws on turn 1." else "On the play, with no draw on turn 1.",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextDim,
+            modifier = Modifier.padding(top = 10.dp)
+        )
+    }
+}
+
+@Composable
+private fun OddsRow(label: String, p: Double) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+        Text(oddsPercent(p), style = NumberStyle(18), color = Gold)
     }
 }
 

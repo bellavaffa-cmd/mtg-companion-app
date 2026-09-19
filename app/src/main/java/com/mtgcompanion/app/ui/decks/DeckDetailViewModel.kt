@@ -46,6 +46,8 @@ import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.ui.collection.fetchPrices
 import com.mtgcompanion.app.ui.collection.OwnedCard
+import com.mtgcompanion.app.data.HandOdds
+import com.mtgcompanion.app.data.handOdds
 import com.mtgcompanion.app.ui.collection.ownedCards
 import com.mtgcompanion.app.ui.collection.ownedForTag
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
@@ -89,6 +91,8 @@ data class DeckAnalysis(
     val totalUsd: Double = 0.0,
     val deckSize: Int = 0,
     val landCount: Int = 0,
+    /** The deck's lands, by scryfallId — for the opening-hand odds. */
+    val landIds: Set<String> = emptySet(),
     val colorSourceCounts: List<Pair<String, Int>> = emptyList(),
     val bracket: Int = 0,
     val bracketName: String = "",
@@ -206,6 +210,25 @@ class DeckDetailViewModel(
             fromTagger = tagged,
             tags = tagCounts.toList().sortedByDescending { it.second }
         )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * The odds of the opening hand — lands, ramp, keeping it — from the library: the deck less one copy
+     * of each commander. Ramp counts once the cards' tags are known.
+     */
+    val handOdds: StateFlow<HandOdds?> = combine(deck, analysis, RoleTags.version) { d, a, _ ->
+        if (d == null || a.loading) return@combine null
+        val commanders = listOfNotNull(d.commander, d.partnerCommander).groupingBy { it.scryfallId }.eachCount()
+        var library = 0
+        var lands = 0
+        var ramp = 0
+        d.cards.forEach { e ->
+            val copies = (e.quantity - (commanders[e.scryfallId] ?: 0)).coerceAtLeast(0)
+            library += copies
+            if (e.scryfallId in a.landIds) lands += copies
+            else if (RoleTags.tagsOf(e.name)?.contains("ramp") == true) ramp += copies
+        }
+        handOdds(library, lands, ramp, drawsOnTurnOne = d.mode == GameMode.COMMANDER)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** Card name -> what it does (RoleTags ids), for the deck's cards and its considering list. */
@@ -484,6 +507,7 @@ class DeckDetailViewModel(
             totalUsd = totalUsd,
             deckSize = nonLandCount + landCount,
             landCount = landCount,
+            landIds = d.cards.filter { isLandType(byId[it.scryfallId]?.typeLine ?: it.typeLine) }.map { it.scryfallId }.toSet(),
             colorSourceCounts = sourceList,
             bracket = bracket,
             bracketName = bracketName,

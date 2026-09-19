@@ -1259,6 +1259,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
     var showLogResult by remember { mutableStateOf(false) }
     val roles by viewModel.roles.collectAsState()
     val ownedGaps by viewModel.ownedGaps.collectAsState()
+    val handOdds by viewModel.handOdds.collectAsState()
     var ownedFor by remember { mutableStateOf<DeckRole?>(null) }
     val context = LocalContext.current
     val versionHistory by viewModel.versionHistory.collectAsState()
@@ -1316,6 +1317,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
             }
         }
         item { RolesPanel(roles, onTag, ownedGaps, onOwned = { ownedFor = it }) }
+        handOdds?.let { odds -> item { HandOddsPanel(odds) } }
         item {
             Panel {
                 SectionLabel("Colors")
