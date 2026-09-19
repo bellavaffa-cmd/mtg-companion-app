@@ -142,12 +142,11 @@ data class HistoryEntry(
     val from: Int?,
     val to: Int?,
     val turn: Int,
-    val matchSeconds: Int,
     val atMillis: Long
 )
 
-/** Every player's d20 rolls, in order — more than one roll means they were in a tie for highest. */
-data class HighRollResult(val rolls: Map<Int, List<Int>>, val winnerId: Int)
+/** Every player's d20 roll, and who rolled highest. Never a tie: a tie for highest re-rolls everyone. */
+data class HighRollResult(val rolls: Map<Int, Int>, val winnerId: Int)
 
 /**
  * Session-only multiplayer life tracker — no persistence for game state (life totals only matter
@@ -179,12 +178,6 @@ class LifeCounterViewModel(
     val currentTurnPlayerId: StateFlow<Int> = _currentTurnPlayerId.asStateFlow()
     private val _turnNumber = MutableStateFlow(1)
     val turnNumber: StateFlow<Int> = _turnNumber.asStateFlow()
-    private val _turnSeconds = MutableStateFlow(0)
-    val turnSeconds: StateFlow<Int> = _turnSeconds.asStateFlow()
-    private val _matchSeconds = MutableStateFlow(0)
-    val matchSeconds: StateFlow<Int> = _matchSeconds.asStateFlow()
-    private val _timerRunning = MutableStateFlow(true)
-    val timerRunning: StateFlow<Boolean> = _timerRunning.asStateFlow()
 
     /** The Monarch and the Initiative are each held by at most one player at a time. */
     private val _monarchPlayerId = MutableStateFlow<Int?>(null)
@@ -225,15 +218,6 @@ class LifeCounterViewModel(
                 if (!_ready.value) {
                     newGame()
                     _ready.value = true
-                }
-            }
-        }
-        viewModelScope.launch {
-            while (true) {
-                delay(1000)
-                if (_timerRunning.value && _settings.value.gameTimerEnabled) {
-                    _matchSeconds.value += 1
-                    _turnSeconds.value += 1
                 }
             }
         }
@@ -286,9 +270,6 @@ class LifeCounterViewModel(
         _gameNumber.value += 1
         _currentTurnPlayerId.value = 1
         _turnNumber.value = 1
-        _turnSeconds.value = 0
-        _matchSeconds.value = 0
-        _timerRunning.value = true
         _monarchPlayerId.value = null
         _initiativePlayerId.value = null
         _dayNight.value = null
@@ -462,7 +443,7 @@ class LifeCounterViewModel(
         _dayNight.value = null
     }
 
-    // ---- Turn tracker + match timer ----
+    // ---- Turn tracker ----
 
     /** Passing the turn also empties every mana pool and resets storm counts, which don't carry over. */
     fun nextTurn() {
@@ -471,26 +452,18 @@ class LifeCounterViewModel(
         val idx = ids.indexOf(_currentTurnPlayerId.value)
         _currentTurnPlayerId.value = if (idx == -1 || idx == ids.lastIndex) ids.first() else ids[idx + 1]
         _turnNumber.value += 1
-        _turnSeconds.value = 0
         val perTurn = PlayerCounter.entries.filter { it.resetsEachTurn }.toSet()
         _players.value = _players.value.map { it.copy(manaPool = emptyMap(), counters = it.counters - perTurn) }
         log(HistoryEvent.TurnStarted, _currentTurnPlayerId.value, null, null)
     }
 
-    fun toggleTimer() {
-        _timerRunning.value = !_timerRunning.value
-    }
-
-    /** Rolls a d20 for every player, rerolling only those tied for highest until one remains. */
+    /** Rolls a d20 for every player; a tie for highest re-rolls everyone, so there's always one winner. */
     fun rollHighRoll(): HighRollResult = highRoll(_players.value.map { it.id })
 
-    /** Starts the clock and turn count over with [playerId] going first (the high-roll winner). */
+    /** Starts the turn count over with [playerId] going first (the high-roll winner). */
     fun setFirstPlayer(playerId: Int) {
         _currentTurnPlayerId.value = playerId
         _turnNumber.value = 1
-        _turnSeconds.value = 0
-        _matchSeconds.value = 0
-        _timerRunning.value = true
         log(HistoryEvent.WonHighRoll, playerId, null, null)
     }
 
@@ -519,7 +492,6 @@ class LifeCounterViewModel(
                 from = from,
                 to = to,
                 turn = _turnNumber.value,
-                matchSeconds = _matchSeconds.value,
                 atMillis = now
             )
             (entries + entry).takeLast(MAX_HISTORY)
@@ -765,13 +737,13 @@ class LifeCounterViewModel(
         /** Pure so it can be reasoned about independently of the ViewModel's state. */
         fun highRoll(playerIds: List<Int>, random: Random = Random): HighRollResult {
             require(playerIds.isNotEmpty()) { "High roll needs at least one player" }
-            val rolls = playerIds.associateWith { mutableListOf<Int>() }
-            var contenders = playerIds
+            // A tie for highest re-rolls the whole table, so what everyone sees is one clean roll
+            // with a single, highest winner.
             while (true) {
-                contenders.forEach { rolls.getValue(it) += random.nextInt(1, 21) }
-                val top = contenders.maxOf { rolls.getValue(it).last() }
-                contenders = contenders.filter { rolls.getValue(it).last() == top }
-                if (contenders.size == 1) return HighRollResult(rolls, contenders.first())
+                val rolls = playerIds.associateWith { random.nextInt(1, 21) }
+                val top = rolls.values.max()
+                val leaders = rolls.filterValues { it == top }.keys
+                if (leaders.size == 1) return HighRollResult(rolls, leaders.first())
             }
         }
     }

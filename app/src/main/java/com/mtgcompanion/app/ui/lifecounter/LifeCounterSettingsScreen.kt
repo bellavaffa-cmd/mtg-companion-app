@@ -62,9 +62,8 @@ internal fun LifeCounterSettingsOverlay(
                     Note("Takes effect on the next game, or right away if nothing's happened yet")
 
                     Group("Gameplay")
-                    Check("Turn tracker", "Highlights whose turn it is", settings.turnTrackerEnabled) { v -> onUpdate { it.copy(turnTrackerEnabled = v) } }
+                    Check("Turn tracker", "Whose turn it is gets a bigger tile and an End turn button", settings.turnTrackerEnabled) { v -> onUpdate { it.copy(turnTrackerEnabled = v) } }
                     Check("High roll at game start", null, settings.highRollAtStart) { v -> onUpdate { it.copy(highRollAtStart = v) } }
-                    Check("Game timer", "Game and turn time", settings.gameTimerEnabled) { v -> onUpdate { it.copy(gameTimerEnabled = v) } }
                     Check("Auto-kill", "Kill players from life, poison or commander damage", settings.autoKill) { v -> onUpdate { it.copy(autoKill = v) } }
                     Check("Commander damage", "Commander damage causes players to lose life", settings.commanderDamageCostsLife) { v -> onUpdate { it.copy(commanderDamageCostsLife = v) } }
 

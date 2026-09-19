@@ -23,7 +23,6 @@ data class LifeCounterSettings(
     val twoPlayerStartingLife: Int = 20,
 
     val turnTrackerEnabled: Boolean = false,
-    val gameTimerEnabled: Boolean = false,
     val highRollAtStart: Boolean = false,
     /** Off means players are only ever out when someone taps Kill. */
     val autoKill: Boolean = true,

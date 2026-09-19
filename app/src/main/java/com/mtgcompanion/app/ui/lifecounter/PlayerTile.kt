@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import com.mtgcompanion.app.data.social.Giphy
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -156,7 +161,12 @@ fun PlayerTile(
     profiles: List<PlayerProfile>,
     actions: PlayerTileActions,
     onTokenTap: (TokenKind) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // On the player whose turn it is: the turn number and the button that ends their turn.
+    turnNumber: Int = 0,
+    onEndTurn: (() -> Unit)? = null,
+    // This player's high roll, while one is showing.
+    roll: TileRoll? = null
 ) {
     val seat = seatColor(player.colorIndex)
     val hasImage = player.backgroundImageUri != null
@@ -369,6 +379,11 @@ fun PlayerTile(
             if (isActiveTurn) {
                 Box(Modifier.fillMaxSize().border(BorderStroke(5.dp, TableColors.Gold), TileShape))
             }
+            if (isActiveTurn && onEndTurn != null) {
+                AnimatedVisibility(visible = reveal == Reveal.NONE && alive, enter = fadeIn(tween(TableMotion.FAST)), exit = fadeOut(tween(150))) {
+                    TurnControls(turnNumber = turnNumber, ink = ink, onEndTurn = onEndTurn)
+                }
+            }
 
             AnimatedVisibility(visible = !alive, enter = fadeIn(tween(TableMotion.FAST)), exit = fadeOut(tween(TableMotion.FAST))) {
                 OutcomeOverlay(defeatMessage ?: "", Color.Black.copy(alpha = 0.6f))
@@ -385,10 +400,110 @@ fun PlayerTile(
                 )
             }
         }
+
+        // A high roll covers the whole seat, fading in and out; the last roll stays while it fades out.
+        var lastRoll by remember { mutableStateOf(roll) }
+        SideEffect { if (roll != null) lastRoll = roll }
+        AnimatedVisibility(visible = roll != null, enter = fadeIn(tween(TableMotion.FAST)), exit = fadeOut(tween(TableMotion.FAST))) {
+            (roll ?: lastRoll)?.let { RollFace(it) }
+        }
     }
 }
 
 private const val OPEN_THRESHOLD = 0.22f
+
+// ---- Turn and high roll ----
+
+/** One player's high roll: their d20, and whether it was the highest. */
+data class TileRoll(val value: Int, val winner: Boolean)
+
+/**
+ * The corners of the tile whose turn it is: the turn number top left, and the button that ends the
+ * turn bottom right — out of the way of the life total, which stays in the middle.
+ */
+@Composable
+private fun TurnControls(turnNumber: Int, ink: Color, onEndTurn: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        if (turnNumber > 0) {
+            TableLabel("Turn $turnNumber", 20.sp, color = ink, modifier = Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 16.dp))
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(14.dp)
+                .size(54.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.72f))
+                .clickable(onClick = onEndTurn)
+                .semantics { contentDescription = "End turn" }
+        ) {
+            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
+        }
+    }
+}
+
+private val RollGrey = Color(0xFF262628)
+private val RollRainbow = listOf(
+    Color(0xFFC7D172), Color(0xFFB9EB80), Color(0xFF7FE0D6), Color(0xFF8FB6FF),
+    Color(0xFFC79BFF), Color(0xFFFF9BD2), Color(0xFFFFC27A), Color(0xFFC7D172)
+)
+
+/**
+ * A seat during a high roll: just the roll, big, in the middle. Everyone else's goes dark grey; the
+ * winner's turns rainbow with stars twinkling across it. Taps land here, not on the life total.
+ */
+@Composable
+private fun RollFace(roll: TileRoll) {
+    val fill = if (roll.winner) Brush.sweepGradient(RollRainbow) else SolidColor(RollGrey)
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .clip(TileShape)
+            .background(fill)
+            // Covers the hairline of the seat's own colour that anti-aliasing leaves along the curve.
+            .border(BorderStroke(2.dp, fill), TileShape)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+            .semantics { contentDescription = if (roll.winner) "Rolled ${roll.value}, goes first" else "Rolled ${roll.value}" }
+    ) {
+        if (roll.winner) TwinklingStars()
+        val text = roll.value.toString()
+        val bySize = min(maxHeight.value * 0.62f, (maxWidth.value * 0.62f) / (text.length * 0.42f))
+        Text(
+            text,
+            style = tableText(with(LocalDensity.current) { bySize.dp.toSp() }, if (roll.winner) Color.Black else Color.White),
+            maxLines = 1,
+            modifier = Modifier.align(Alignment.Center)
+        )
+    }
+}
+
+private class Twinkle(val x: Float, val y: Float, val phase: Float, val size: Int, val color: Color)
+
+/** Stars scattered over the winner's seat, each fading, growing and turning in on its own beat. */
+@Composable
+private fun BoxWithConstraintsScope.TwinklingStars() {
+    val stars = remember {
+        List(18) { i ->
+            val color = if (i % 4 == 3) Color.White else seatColor(i).color
+            Twinkle(kotlin.random.Random.nextFloat(), kotlin.random.Random.nextFloat(), kotlin.random.Random.nextFloat(), 12 + kotlin.random.Random.nextInt(14), color)
+        }
+    }
+    val t by rememberInfiniteTransition(label = "stars").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "twinkle"
+    )
+    stars.forEach { star ->
+        val a = sin(((t + star.phase) % 1f) * PI.toFloat())
+        Text(
+            "★",
+            color = star.color,
+            fontSize = star.size.sp,
+            modifier = Modifier
+                .offset(x = maxWidth * star.x * 0.92f, y = maxHeight * star.y * 0.92f)
+                .graphicsLayer { alpha = a; scaleX = 0.4f + 0.7f * a; scaleY = 0.4f + 0.7f * a; rotationZ = 40f * a }
+        )
+    }
+}
 
 // ---- Life face ----
 

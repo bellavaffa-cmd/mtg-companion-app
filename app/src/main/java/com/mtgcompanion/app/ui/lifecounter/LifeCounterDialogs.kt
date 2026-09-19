@@ -136,27 +136,24 @@ private const val MAX_CUSTOM_SIDES = 1000
 
 @Composable
 internal fun DiceOverlay(
-    players: List<PlayerLife>,
-    startWithHighRoll: Boolean,
-    onHighRoll: () -> HighRollResult,
-    onSetFirstPlayer: (Int) -> Unit,
+    // Rolls for who goes first, shown on the table itself (this screen closes for it).
+    onHighRoll: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var result by remember { mutableStateOf<String?>(null) }
     var rollId by remember { mutableIntStateOf(0) }
     var diceCount by remember { mutableStateOf("1") }
     var diceSides by remember { mutableStateOf("20") }
-    var highRoll by remember { mutableStateOf(if (startWithHighRoll) onHighRoll() else null) }
     val count = diceCount.toIntOrNull()?.takeIf { it in 1..MAX_CUSTOM_DICE }
     val sides = diceSides.toIntOrNull()?.takeIf { it in 2..MAX_CUSTOM_SIDES }
     fun show(text: String) { result = text; rollId++ }
 
-    TableOverlay(title = if (startWithHighRoll) "High roll" else "Dice", onClose = onDismiss) {
+    TableOverlay(title = "Dice", onClose = onDismiss) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
         ) {
-            if (!startWithHighRoll) {
+            run {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().height(130.dp)) {
                     result?.let { RollResult(it, rollId) } ?: TableLabel("Tap a die", 40.sp, color = TableColors.TextMuted)
                 }
@@ -189,39 +186,7 @@ internal fun DiceOverlay(
                 SectionTitle("Who goes first")
             }
 
-            PillButton(if (highRoll == null) "Roll for everyone" else "Roll again", TableColors.MenuHighRoll, textColor = Color.Black, onClick = { highRoll = onHighRoll() })
-            highRoll?.let { roll ->
-                Spacer(Modifier.height(14.dp))
-                players.forEach { player ->
-                    val rolls = roll.rolls[player.id].orEmpty()
-                    val winner = player.id == roll.winnerId
-                    val seat = seatColor(player.colorIndex)
-                    val ink = if (seat.whiteText) Color.White else Color.Black
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp)
-                            .popIn(delayMillis = 40 * (player.id - 1), easing = TableMotion.Pop)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(seat.color)
-                            .border(BorderStroke(if (winner) 4.dp else 0.dp, if (winner) Color.White else Color.Transparent), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                    ) {
-                        TableLabel(player.displayName, 28.sp, color = ink, maxLines = 1, modifier = Modifier.weight(1f))
-                        // More than one roll means they tied for highest and rolled off.
-                        TableLabel(rolls.joinToString("  →  "), if (winner) 40.sp else 30.sp, color = ink)
-                    }
-                }
-                players.firstOrNull { it.id == roll.winnerId }?.let { winner ->
-                    PillButton(
-                        "Start with ${winner.displayName}",
-                        TableColors.Accent,
-                        onClick = { onSetFirstPlayer(winner.id); onDismiss() },
-                        modifier = Modifier.padding(top = 8.dp).popIn(delayMillis = 200)
-                    )
-                }
-            }
+            PillButton("Roll for everyone", TableColors.MenuHighRoll, textColor = Color.Black, onClick = { onHighRoll(); onDismiss() })
             Spacer(Modifier.height(28.dp))
         }
     }
@@ -338,7 +303,7 @@ internal fun GameHistoryOverlay(entries: List<HistoryEntry>, players: List<Playe
                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
                             InlineManaText(describeHistoryEntry(entry, nameOf).uppercase(), style = tableText(21.sp), color = Color.White)
                         }
-                        TableLabel("T${entry.turn} · ${formatElapsed(entry.matchSeconds)}", 17.sp, color = TableColors.TextMuted)
+                        TableLabel("T${entry.turn} · ${clockTime(entry.atMillis)}", 17.sp, color = TableColors.TextMuted)
                     }
                 }
             }
@@ -374,7 +339,9 @@ private fun describeHistoryEntry(entry: HistoryEntry, nameOf: (Int) -> String): 
     }
 }
 
-internal fun formatElapsed(totalSeconds: Int): String = "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+/** The time of day an entry happened, e.g. 21:04. */
+internal fun clockTime(atMillis: Long): String =
+    java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(atMillis))
 
 // ---- Seating layouts ----
 
