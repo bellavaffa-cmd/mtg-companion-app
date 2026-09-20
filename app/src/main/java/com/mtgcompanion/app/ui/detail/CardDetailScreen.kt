@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.detail
 
+import com.mtgcompanion.app.ui.common.openUrl
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.zoomSource
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -951,8 +952,4 @@ private fun DeckPickerDialog(
             TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
     )
-}
-
-private fun openUrl(context: android.content.Context, url: String) {
-    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
 }

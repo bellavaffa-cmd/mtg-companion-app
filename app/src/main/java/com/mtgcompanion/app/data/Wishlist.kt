@@ -43,7 +43,7 @@ fun withWishlist(collections: List<Collection>, decks: List<Deck>): List<Collect
 
     // Taken off by hand ("not interested"), and still considered — a card nobody considers any more
     // is forgotten, so putting it back in a deck's Considering list offers it again.
-    val notWanted = existing?.notWanted.orEmpty().map { key(it) }.toSet()
+    val notWanted = existing?.notWanted.orEmpty()
 
     // Owned: in any binder that isn't a wishlist (the Unsorted pile too).
     val owned = collections.filter { it.kind != CollectionType.WISHLIST }
@@ -52,8 +52,9 @@ fun withWishlist(collections: List<Collection>, decks: List<Deck>): List<Collect
     for (deck in decks) for (card in deck.considering) considered.putIfAbsent(key(card.name), card)
     // A card the user put on the list themselves is wanted, whatever they said before.
     val byHand = entries.filterNot { it.auto }.map { key(it.name) }.toSet()
-    val stillNotWanted = notWanted.filter { it in considered.keys && it !in byHand }
-    val wanted = considered.filterKeys { it !in owned && it !in stillNotWanted }
+    val stillNotWanted = notWanted.filter { key(it) in considered.keys && key(it) !in byHand }
+    val notWantedKeys = stillNotWanted.map { key(it) }.toSet()
+    val wanted = considered.filterKeys { it !in owned && it !in notWantedKeys }
 
     entries = entries.filter { !it.auto || key(it.name) in wanted }
     val have = entries.map { key(it.name) }.toSet()
@@ -98,8 +99,17 @@ fun withoutWishlistCard(collections: List<Collection>, cardName: String): List<C
         if (!c.isWishlist) c
         else c.copy(
             entries = c.entries.filterNot { key(it.name) == key(cardName) },
-            notWanted = (c.notWanted + key(cardName)).distinct()
+            notWanted = (c.notWanted + cardName.trim()).distinctBy { key(it) }
         )
+    }
+
+/**
+ * [collections] with [cardName] wanted again — undoing "not interested". The card comes back by
+ * itself while a deck considers it.
+ */
+fun withWishlistCardWantedAgain(collections: List<Collection>, cardName: String): List<Collection> =
+    collections.map { c ->
+        if (!c.isWishlist) c else c.copy(notWanted = c.notWanted.filterNot { key(it) == key(cardName) })
     }
 
 /** The names of [decks] considering [card] — for "Considering in …" on a card added from them. */

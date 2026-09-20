@@ -97,12 +97,24 @@ class WishlistTest {
 
         // Asking for a card undoes "not interested".
         val dismissed = withoutWishlistCard(again, "Lightning Bolt")
-        assertEquals(listOf("lightning bolt"), dismissed.first { it.isWishlist }.notWanted)
+        assertEquals(listOf("Lightning Bolt"), dismissed.first { it.isWishlist }.notWanted)
         val asked = withWantedCards(dismissed, listOf(want("Lightning Bolt", 1)))
         assertEquals(emptyList<String>(), asked.first { it.isWishlist }.notWanted)
         assertTrue(asked.first { it.isWishlist }.entries.any { it.name == "Lightning Bolt" })
 
         // Nothing missing changes nothing at all.
         assertSame(asked, withWantedCards(asked, emptyList()))
+    }
+
+    @Test
+    fun aCardYouSaidNoToCanBeWantedAgain() {
+        val decks = listOf(deck("Omnath", "Cultivate"))
+        val dismissed = withWishlist(withoutWishlistCard(withWishlist(listOf(Collection("b", "Binder", emptyList())), decks), "Cultivate"), decks)
+        assertEquals(listOf("Cultivate"), dismissed.first { it.isWishlist }.notWanted)
+        assertEquals(emptyList<CollectionEntry>(), dismissed.first { it.isWishlist }.entries)
+
+        val wanted = withWishlist(withWishlistCardWantedAgain(dismissed, "CULTIVATE"), decks)
+        assertEquals(emptyList<String>(), wanted.first { it.isWishlist }.notWanted)
+        assertEquals(listOf("Cultivate" to true), wanted.first { it.isWishlist }.entries.map { it.name to it.auto })
     }
 }

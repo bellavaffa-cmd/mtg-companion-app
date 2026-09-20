@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.openUrl
+import com.mtgcompanion.app.data.buyListUrl
+import com.mtgcompanion.app.data.BuyLine
 import com.mtgcompanion.app.data.decksConsidering
 import com.mtgcompanion.app.data.isWishlist
 import com.mtgcompanion.app.ui.common.rememberMoney
@@ -139,6 +142,7 @@ fun CollectionDetailScreen(
     var confirmDeleteBinder by remember { mutableStateOf(false) }
     val decks by viewModel.decks.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     var listDialog by remember { mutableStateOf<String?>(null) } // "import" or "export"
     val importProgress by viewModel.importProgress.collectAsState()
     // Cards picked by pressing and holding (scryfall ids), and the action open for them:
@@ -195,6 +199,14 @@ fun CollectionDetailScreen(
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.background(Surface2)) {
                             DropdownMenuItem(text = { Text("Import cards", color = TextPrimary) }, onClick = { menuOpen = false; viewModel.resetImport(); listDialog = "import" })
                             DropdownMenuItem(text = { Text("Export as text", color = TextPrimary) }, onClick = { menuOpen = false; listDialog = "export" })
+                            // The Wishlist is a shopping list: buy the lot in one basket.
+                            if (collection?.isWishlist == true && collection?.entries?.isNotEmpty() == true) DropdownMenuItem(
+                                text = { Text("Buy these cards", color = TextPrimary) },
+                                onClick = {
+                                    menuOpen = false
+                                    buyListUrl(collection?.entries.orEmpty().map { BuyLine(it.name, it.quantity) })?.let { openUrl(context, it) }
+                                }
+                            )
                             // The Wishlist is always there.
                             if (collection?.isWishlist != true) DropdownMenuItem(
                                 text = { Text(if (collection?.isUnsorted == true) "Remove all cards" else "Delete binder", color = LocalAppColors.current.error) },
@@ -272,6 +284,34 @@ fun CollectionDetailScreen(
                     color = TextMuted,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
                 )
+            }
+            val notWanted = collection?.notWanted.orEmpty()
+            if (collection?.isWishlist == true && notWanted.isNotEmpty()) {
+                var showNotWanted by remember { mutableStateOf(false) }
+                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                    Text(
+                        "${notWanted.size} ${if (notWanted.size == 1) "card" else "cards"} you said no to" +
+                            if (showNotWanted) "" else " · tap to show",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Gold,
+                        modifier = Modifier.clickable { showNotWanted = !showNotWanted }
+                    )
+                    if (showNotWanted) {
+                        notWanted.forEach { name ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                                Text(
+                                    name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextMuted,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                TextButton(onClick = { viewModel.wantAgain(name) }) { Text("Want it", color = Gold) }
+                            }
+                        }
+                    }
+                }
             }
             if (collection?.isUnsorted == true && collection?.entries?.isNotEmpty() == true) {
                 Text(

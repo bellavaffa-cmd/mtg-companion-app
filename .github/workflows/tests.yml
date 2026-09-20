@@ -3,6 +3,9 @@ name: Tests
 # Unit tests on every push and pull request: sync (SyncCoreTest runs the sync scenarios against
 # both push functions), merging, and the rest of app/src/test. No secrets needed — without
 # supabase.properties and keystore.properties the debug build still compiles.
+#
+# The relay (supabase/functions/api-relay) is TypeScript, and its cache has checks of its own that
+# run under Node against a stubbed Commander Spellbook.
 on:
   push:
   pull_request:
@@ -27,3 +30,13 @@ jobs:
         with:
           name: test-results
           path: app/build/reports/tests/testDebugUnitTest
+
+  relay-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # 22 or newer: the test imports the function's TypeScript directly.
+          node-version: 22
+      - run: node supabase/functions/api-relay/cache.test.mjs

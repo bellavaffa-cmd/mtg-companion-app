@@ -203,6 +203,11 @@ class CollectionDetailViewModel(
         }
     }
 
+    /** Undoes "not interested" for [cardName] — it comes back while a deck considers it. */
+    fun wantAgain(cardName: String) {
+        viewModelScope.launch { repository.wantAgain(cardName) }
+    }
+
     /** Removes the picked cards [ids] from this binder — see [remove] for the Wishlist. */
     fun removeEntries(ids: Set<String>) {
         viewModelScope.launch {
