@@ -11,9 +11,16 @@ data class DeckCombos(val included: List<Variant>, val almostIncluded: List<Vari
 class ComboRepository {
     private val api = NetworkModule.spellbookApi
 
+    /**
+     * The combos [cardName] is in. Kept on the device for a week (see [ComboCache]): the lookup
+     * takes about a second, and the same card comes up again and again as cards are looked at.
+     */
     suspend fun findCombosUsing(cardName: String): List<Variant> {
+        ComboCache.get(cardName)?.let { return it }
         val query = "card=\"$cardName\""
-        return api.findCombosForCard(query).results
+        val results = api.findCombosForCard(query).results
+        ComboCache.put(cardName, results)
+        return results
     }
 
     /**
