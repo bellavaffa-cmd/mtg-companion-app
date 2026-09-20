@@ -408,6 +408,13 @@ class ScanViewModel(
             }
     }
 
+    /** Everything scanned, thrown away — leaving the scanner with cards still in the list. */
+    fun clearScanned() {
+        _uiState.value = _uiState.value.copy(scannedCards = emptyList(), status = "")
+        lastAddedCard = null
+        lastLookedUp = null
+    }
+
     /** Takes one scan off the pile — a card read twice, or read wrongly. */
     fun removeScan(rowId: Long) {
         _uiState.value = _uiState.value.copy(scannedCards = _uiState.value.scannedCards.filterNot { it.id == rowId })
@@ -422,7 +429,7 @@ class ScanViewModel(
     fun addToCollection(card: ScryfallCard, quantity: Int, collectionId: String) {
         viewModelScope.launch {
             collectionRepository.addEntry(collectionId, collectionEntry(card, quantity))
-            _uiState.value = _uiState.value.copy(status = "Added $quantity × ${card.name} to binder")
+            putAway(card, quantity, "binder")
         }
     }
 
@@ -430,8 +437,21 @@ class ScanViewModel(
         viewModelScope.launch {
             val collection = collectionRepository.createCollection(name)
             collectionRepository.addEntry(collection.id, collectionEntry(card, quantity))
-            _uiState.value = _uiState.value.copy(status = "Added $quantity × ${card.name} to \"${collection.name}\"")
+            putAway(card, quantity, "\"${collection.name}\"")
         }
+    }
+
+    /**
+     * A card that's been put away leaves the list: what's left is what still has to go somewhere,
+     * and scanning that card again starts a fresh count rather than adding to a filed one.
+     */
+    private fun putAway(card: ScryfallCard, quantity: Int, where: String) {
+        val left = _uiState.value.scannedCards.filterNot { it.card.id == card.id }
+        _uiState.value = _uiState.value.copy(
+            status = "Added $quantity × ${card.name} to $where",
+            scannedCards = left
+        )
+        if (lastAddedCard?.id == card.id) lastAddedCard = null
     }
 
     fun addToDeck(card: ScryfallCard, quantity: Int, deckId: String) {
@@ -441,7 +461,8 @@ class ScanViewModel(
             val warning = deckRepository.decksFlow.first().find { it.id == deckId }
                 ?.let { duplicateWarning(it, card, addingQuantity = quantity) }
             deckRepository.addEntry(deckId, deckEntry(card, quantity))
-            _uiState.value = _uiState.value.copy(status = warning ?: "Added $quantity × ${card.name} to deck")
+            putAway(card, quantity, "deck")
+            warning?.let { _uiState.value = _uiState.value.copy(status = it) }
         }
     }
 
@@ -449,7 +470,7 @@ class ScanViewModel(
         viewModelScope.launch {
             val deck = deckRepository.createDeck(name)
             deckRepository.addEntry(deck.id, deckEntry(card, quantity))
-            _uiState.value = _uiState.value.copy(status = "Added $quantity × ${card.name} to \"${deck.name}\"")
+            putAway(card, quantity, "\"${deck.name}\"")
         }
     }
 

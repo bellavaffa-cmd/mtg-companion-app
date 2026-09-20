@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.ui.theme.LocalAppColors
+import androidx.activity.compose.BackHandler
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
@@ -155,6 +157,12 @@ fun ScanScreen(
     var deckPickerForAll by remember { mutableStateOf(false) }
     var collectionPickerForAll by remember { mutableStateOf(false) }
     var showList by remember { mutableStateOf(false) }
+    // Cards scanned but not put away yet: leaving would throw them away, so it asks first.
+    var confirmLeave by remember { mutableStateOf(false) }
+    val leave = {
+        if (state.scannedCards.isEmpty()) onBack() else confirmLeave = true
+    }
+    BackHandler(enabled = state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
     var showManualAdd by remember { mutableStateOf(false) }
 
     // Bound once the camera provider resolves, so the torch button has something to control.
@@ -204,7 +212,7 @@ fun ScanScreen(
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-            OverlayBackButton(onBack)
+            OverlayBackButton(leave)
             return@Box
         }
 
@@ -324,7 +332,7 @@ fun ScanScreen(
                 .padding(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ScrimIconButton(onClick = onBack, icon = Icons.Filled.ArrowBack, desc = "Back")
+                ScrimIconButton(onClick = leave, icon = Icons.Filled.ArrowBack, desc = "Back")
                 Box(modifier = Modifier.weight(1f))
                 if (camera?.cameraInfo?.hasFlashUnit() == true) {
                     ScrimIconButton(
@@ -439,6 +447,30 @@ fun ScanScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+    }
+
+    if (confirmLeave) {
+        val waiting = state.scannedCards.size
+        AlertDialog(
+            onDismissRequest = { confirmLeave = false },
+            containerColor = Surface,
+            title = { Text("Leave $waiting ${if (waiting == 1) "scan" else "scans"} behind?", color = GoldLight) },
+            text = {
+                Text(
+                    "They haven't been put into a deck or binder yet, and leaving throws them away.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmLeave = false; showList = true }) { Text("Put them away", color = Gold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmLeave = false; viewModel.clearScanned(); onBack() }) {
+                    Text("Leave", color = LocalAppColors.current.error)
+                }
+            }
+        )
     }
 
     if (deckPickerForAll) {
