@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.confirmRead
+import com.mtgcompanion.app.data.STEADY_READS
+import com.mtgcompanion.app.data.Confirmation
 import com.mtgcompanion.app.data.scannedTwiceOver
 import com.mtgcompanion.app.data.copyNumber
 import com.mtgcompanion.app.data.ScanRow
@@ -92,6 +95,8 @@ class ScanViewModel(
     private var lastLookedUp: String? = null
     private var lastAddedCard: ScryfallCard? = null
     private var blankFrameStreak = 0
+    // Reads of the same title in a row; a card is looked up at STEADY_READS of them.
+    private var steadyReads = 0
     private val nameCache = HashMap<String, ScryfallCard>()
 
     // Set by captureNow() (the manual "tap to scan" button): the next successfully OCR'd frame is
@@ -135,6 +140,7 @@ class ScanViewModel(
             // No title in view. Only treat this as "the card actually left" after a real streak
             // of blank frames — see blankFrameStreak's doc comment above.
             if (++blankFrameStreak >= BLANK_FRAMES_TO_RESET) {
+                steadyReads = 0
                 lastCandidate = null
                 lastLookedUp = null
                 lastAddedCard = null
@@ -161,10 +167,12 @@ class ScanViewModel(
         }
 
         val normalized = candidate.lowercase()
-        // Require the same title on two consecutive frames before spending a lookup — this
-        // rejects blurry mid-motion misreads — and don't re-look-up a title still in frame.
-        // A forced scan accepts whatever's in frame right now instead of waiting.
-        val stable = forced || normalized == lastCandidate
+        // Require the same title on STEADY_READS frames in a row before spending a lookup — a card
+        // halfway into the frame, or caught mid-motion, rarely reads the same three times running —
+        // and don't re-look-up a title still in frame. A forced scan accepts whatever's in frame
+        // right now instead of waiting.
+        steadyReads = if (normalized == lastCandidate) steadyReads + 1 else 1
+        val stable = forced || steadyReads >= STEADY_READS
         lastCandidate = normalized
         if (!stable || (!forced && normalized == lastLookedUp)) {
             busy.set(false)
@@ -179,8 +187,7 @@ class ScanViewModel(
         val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: normalized
 
         nameCache[cacheKey]?.let { cached ->
-            addScannedCard(cached)
-            lastAddedCard = cached
+            if (accept(candidate, cached, forced)) lastAddedCard = cached
             busy.set(false)
             onProcessed()
             return
@@ -189,9 +196,10 @@ class ScanViewModel(
         viewModelScope.launch {
             try {
                 val card = resolveCard(candidate, printing)
-                nameCache[cacheKey] = card
-                addScannedCard(card)
-                lastAddedCard = card
+                if (accept(candidate, card, forced)) {
+                    nameCache[cacheKey] = card
+                    lastAddedCard = card
+                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(status = "Didn't recognize \"$candidate\" — keep scanning…")
             } finally {
@@ -199,6 +207,30 @@ class ScanViewModel(
                 onProcessed()
             }
         }
+    }
+
+    /**
+     * Adds [card] only if the read really named it. A fuzzy lookup answers half a title with a real
+     * card, so a card that wasn't all in the frame would otherwise join the list as if it had been
+     * scanned properly. Tapping "Scan now" ([forced]) says "yes, really" and skips the check.
+     */
+    private fun accept(candidate: String, card: ScryfallCard, forced: Boolean): Boolean {
+        val confirmation = if (forced) Confirmation.YES else confirmRead(candidate, card.name)
+        if (confirmation == Confirmation.YES) {
+            addScannedCard(card)
+            return true
+        }
+        // Nothing is added, and this reading isn't spent on another lookup; more of the card coming
+        // into the frame reads differently, and that is looked up.
+        steadyReads = 0
+        _uiState.value = _uiState.value.copy(
+            status = if (confirmation == Confirmation.PARTIAL) {
+                "Only read \"$candidate\" — hold the whole card in the frame, its name in the gold strip."
+            } else {
+                "Read \"$candidate\", which looks like ${card.name} — hold the card still and try again."
+            }
+        )
+        return false
     }
 
     /**
