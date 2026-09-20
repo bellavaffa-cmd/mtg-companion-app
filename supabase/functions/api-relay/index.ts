@@ -8,6 +8,8 @@
 //
 //   GET  /api-relay/news                        merged headlines from the RSS feeds, newest first
 //   GET  /api-relay/combos/variants?q=&limit=   Commander Spellbook combo search (held for a day)
+//
+// A card lookup is held in the combo_cache table, since each request may run in a fresh isolate.
 //   POST /api-relay/combos/find-my-combos       combos a decklist contains or is one card short of
 //
 // Deployed with JWT verification on, so callers send the project's anon key as the bearer token.
@@ -24,9 +26,30 @@ const MAX_BODY_BYTES = 256 * 1024
 const NEWS_TTL_MS = 15 * 60 * 1000
 // A card's combos change when cards are printed or banned, so a day-old answer is a good answer.
 const COMBOS_TTL_MS = 24 * 60 * 60 * 1000
-// Card lookups held here. Every app keeps its own copy for a week (ComboCache), so this is for the
-// first look at a card — the popular ones, which many people look up, stay warm between them.
+// Card lookups held in this isolate. Each request may get a fresh one, so the table below is what
+// actually remembers a card; this only saves a repeat inside one warm isolate.
 const COMBOS_KEEP = 500
+// Where a card lookup is remembered across requests (see migrations/..._combo_cache.sql).
+const COMBOS_TABLE = 'combo_cache'
+// One write in this many sweeps out what's a day old, so the table stays small without a cron job.
+const COMBOS_SWEEP_ODDS = 20
+
+/** An environment variable, under Deno where this runs and under Node where the test drives it. */
+function env(name: string): string | undefined {
+  const holder = globalThis as { Deno?: { env: { get: (k: string) => string | undefined } }; process?: { env: Record<string, string | undefined> } }
+  return holder.Deno?.env.get(name) ?? holder.process?.env[name]
+}
+
+/**
+ * The project's own REST API and a key that may use it. Edge functions are handed these; the secret
+ * key is this function's own (never a caller's), and it only ever touches [COMBOS_TABLE].
+ */
+function db(): { url: string; key: string } | null {
+  const url = env('SUPABASE_URL')
+  const key = env('SUPABASE_SERVICE_ROLE_KEY')
+    ?? (() => { try { return JSON.parse(env('SUPABASE_SECRET_KEYS') ?? '{}').default as string | undefined } catch { return undefined } })()
+  return url && key ? { url, key } : null
+}
 
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('Origin') ?? ''
@@ -98,8 +121,8 @@ async function news(req: Request): Promise<Response> {
 // ---- Commander Spellbook ----
 
 /**
- * What card lookups came back with, per instance of this function. Holding the answer here means
- * the first person to open a popular card pays Spellbook's second, and the rest don't.
+ * What card lookups came back with, in this isolate. The table behind it is what holds an answer
+ * between requests; this saves a second trip to the database when an isolate is reused.
  */
 const comboCache = new Map<string, { at: number; body: string }>()
 /** Lookups under way, so ten people opening the same card make one request upstream. */
@@ -110,6 +133,51 @@ function sweepCombos(now: number) {
   for (const [key, entry] of comboCache) if (now - entry.at > COMBOS_TTL_MS) comboCache.delete(key)
   // A Map keeps insertion order and a hit is re-inserted, so the oldest key is the coldest.
   while (comboCache.size > COMBOS_KEEP) comboCache.delete(comboCache.keys().next().value as string)
+}
+
+/** What the table holds for [key], if it was fetched within the day. Never throws: this is a shortcut. */
+async function heldInDb(key: string): Promise<string | null> {
+  const conn = db()
+  if (!conn) return null
+  try {
+    const since = new Date(Date.now() - COMBOS_TTL_MS).toISOString()
+    const query = `${COMBOS_TABLE}?select=body&key=eq.${encodeURIComponent(key)}&fetched_at=gte.${encodeURIComponent(since)}&limit=1`
+    const res = await fetch(`${conn.url}/rest/v1/${query}`, {
+      headers: { apikey: conn.key, Authorization: `Bearer ${conn.key}`, Accept: 'application/json' },
+    })
+    if (!res.ok) return null
+    const rows = await res.json() as { body?: string }[]
+    return rows[0]?.body ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Holds [body] for [key], and now and then drops what's a day old. Never throws. */
+async function holdInDb(key: string, body: string): Promise<void> {
+  const conn = db()
+  if (!conn) return
+  try {
+    await fetch(`${conn.url}/rest/v1/${COMBOS_TABLE}`, {
+      method: 'POST',
+      headers: {
+        apikey: conn.key,
+        Authorization: `Bearer ${conn.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({ key, body, fetched_at: new Date().toISOString() }),
+    })
+    if (Math.random() < 1 / COMBOS_SWEEP_ODDS) {
+      const stale = new Date(Date.now() - COMBOS_TTL_MS).toISOString()
+      await fetch(`${conn.url}/rest/v1/${COMBOS_TABLE}?fetched_at=lt.${encodeURIComponent(stale)}`, {
+        method: 'DELETE',
+        headers: { apikey: conn.key, Authorization: `Bearer ${conn.key}`, Prefer: 'return=minimal' },
+      })
+    }
+  } catch {
+    // The answer still goes back to the caller; it just isn't held.
+  }
 }
 
 async function relaySpellbook(req: Request, upstream: string, init: RequestInit): Promise<Response> {
@@ -139,6 +207,13 @@ async function comboVariants(req: Request, url: URL): Promise<Response> {
     return combosResponse(req, held.body, 'hit')
   }
 
+  const fromDb = await heldInDb(key)
+  if (fromDb !== null) {
+    comboCache.set(key, { at: now, body: fromDb })
+    sweepCombos(now)
+    return combosResponse(req, fromDb, 'db')
+  }
+
   const upstream = `${SPELLBOOK}/variants?${new URLSearchParams({ q, limit: String(limit) })}`
   let request = comboInFlight.get(key)
   if (!request) {
@@ -160,10 +235,12 @@ async function fetchCombos(upstream: string, key: string, now: number): Promise<
   if (!res.ok) throw new Error(`Spellbook ${res.status}`)
   comboCache.set(key, { at: now, body })
   sweepCombos(now)
+  await holdInDb(key, body)
   return body
 }
 
-function combosResponse(req: Request, body: string, cache: 'hit' | 'miss'): Response {
+/** [cache]: "hit" from this isolate, "db" from the table, "miss" from Spellbook just now. */
+function combosResponse(req: Request, body: string, cache: 'hit' | 'db' | 'miss'): Response {
   return new Response(body, {
     status: 200,
     headers: {
