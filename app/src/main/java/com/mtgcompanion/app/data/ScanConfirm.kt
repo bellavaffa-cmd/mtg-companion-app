@@ -20,8 +20,22 @@ enum class Confirmation { YES, PARTIAL, DIFFERENT }
 
 private fun letters(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
 
-/** Whether the card a lookup found is really the card that was read. */
-fun confirmRead(title: String, cardName: String): Confirmation {
+/**
+ * Whether the card a lookup found is really the card that was read. [flavorName] is the name
+ * printed large on a Universes Beyond card — "Kefka's Tower" over "Bolas's Citadel" — and is what
+ * the camera reads, so a card answering to it has been read correctly.
+ */
+fun confirmRead(title: String, cardName: String, flavorName: String? = null): Confirmation {
+    val names = listOfNotNull(cardName, flavorName)
+    val answers = names.map { against(title, it) }
+    return when {
+        Confirmation.YES in answers -> Confirmation.YES
+        Confirmation.PARTIAL in answers -> Confirmation.PARTIAL
+        else -> Confirmation.DIFFERENT
+    }
+}
+
+private fun against(title: String, cardName: String): Confirmation {
     val read = letters(title)
     // A double-faced card is named by its front: "Delver of Secrets // Insectile Aberration".
     val name = letters(cardName.substringBefore(" // "))

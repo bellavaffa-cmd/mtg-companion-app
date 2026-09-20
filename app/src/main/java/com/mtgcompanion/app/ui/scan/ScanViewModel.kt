@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.scan
 
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import com.mtgcompanion.app.data.ScanBox
 import com.mtgcompanion.app.data.ScanPile
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
@@ -115,6 +119,8 @@ class ScanViewModel(
     private var previewHeight = 0
     // Frames in a row with text read, none of it inside the guide (see GUIDE_GIVE_UP_FRAMES).
     private var outsideGuideStreak = 0
+    // The picture the frame being read came from, for a second look at the card's small print.
+    private var currentFrame: (() -> Bitmap?)? = null
 
     /** The screen says how big the camera preview is; the guide is a share of it (see ScanScreen). */
     fun previewSized(width: Int, height: Int) {
@@ -143,7 +149,8 @@ class ScanViewModel(
     )
 
     /** Called for each analyzed camera frame; [onProcessed] must always run so the frame is released. */
-    fun onFrame(image: InputImage, onProcessed: () -> Unit) {
+    fun onFrame(image: InputImage, frame: (() -> Bitmap?)? = null, onProcessed: () -> Unit) {
+        currentFrame = frame
         if (!busy.compareAndSet(false, true)) {
             onProcessed()
             return
@@ -214,21 +221,30 @@ class ScanViewModel(
         lastLookedUp = normalized
 
         // Also read the set code + collector number so we can fetch the exact printing, not just
-        // the default one. Cache by that printing when known so a re-scan skips the network.
-        val printing = extractSetAndNumber(lines)
-        val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: normalized
-
-        nameCache[cacheKey]?.let { cached ->
-            if (accept(candidate, cached, forced)) lastAddedCard = cached
-            busy.set(false)
-            onProcessed()
-            return
-        }
+        // the default one. At the camera's resolution that line is often unreadable in the frame's
+        // own pass, so the bottom strip of the card gets blown up and read again on its own.
+        val fromFrame = extractSetAndNumber(lines)
+        val grabFrame = currentFrame
+        val guide = guideInImage(
+            if (image.rotationDegrees == 90 || image.rotationDegrees == 270) image.height else image.width,
+            if (image.rotationDegrees == 90 || image.rotationDegrees == 270) image.width else image.height,
+            previewWidth, previewHeight, GUIDE_WIDTH, GUIDE_HEIGHT
+        )
 
         viewModelScope.launch {
+            val printing = fromFrame ?: readSmallPrint(grabFrame, image.rotationDegrees, guide)
+            val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: normalized
+
+            nameCache[cacheKey]?.let { cached ->
+                if (accept(candidate, cached, forced, exact = printing != null)) lastAddedCard = cached
+                busy.set(false)
+                onProcessed()
+                return@launch
+            }
+
             try {
                 val card = resolveCard(candidate, printing)
-                if (accept(candidate, card, forced)) {
+                if (accept(candidate, card, forced, exact = printing != null)) {
                     nameCache[cacheKey] = card
                     lastAddedCard = card
                 }
@@ -242,14 +258,32 @@ class ScanViewModel(
     }
 
     /**
+     * A second look at the card's small print, blown up: the set code and collector number say
+     * which printing is in your hand — the alternate art, the borderless one — where the name alone
+     * only gets the usual printing. Null when it still can't be read.
+     */
+    private suspend fun readSmallPrint(frame: (() -> Bitmap?)?, rotation: Int, guide: ScanBox?): Pair<String, String>? {
+        val picture = withContext(Dispatchers.Default) { frame?.invoke() } ?: return null
+        val strip = withContext(Dispatchers.Default) { smallPrintStrip(picture, rotation, guide) } ?: return null
+        val text = runCatching {
+            suspendCancellableCoroutine { cont ->
+                recognizer.process(InputImage.fromBitmap(strip, 0))
+                    .addOnSuccessListener { cont.resume(it) {} }
+                    .addOnFailureListener { cont.resume(null) {} }
+            }
+        }.getOrNull() ?: return null
+        return extractSetAndNumber(text.textBlocks.flatMap { it.lines })
+    }
+
+    /**
      * Adds [card] only if the read really named it. A fuzzy lookup answers half a title with a real
      * card, so a card that wasn't all in the frame would otherwise join the list as if it had been
      * scanned properly. Tapping "Scan now" ([forced]) says "yes, really" and skips the check.
      */
-    private fun accept(candidate: String, card: ScryfallCard, forced: Boolean): Boolean {
-        val confirmation = if (forced) Confirmation.YES else confirmRead(candidate, card.name)
+    private fun accept(candidate: String, card: ScryfallCard, forced: Boolean, exact: Boolean = false): Boolean {
+        val confirmation = if (forced) Confirmation.YES else confirmRead(candidate, card.name, card.flavorName)
         if (confirmation == Confirmation.YES) {
-            addScannedCard(card)
+            addScannedCard(card, exact)
             return true
         }
         // Nothing is added, and this reading isn't spent on another lookup; more of the card coming
@@ -259,7 +293,7 @@ class ScanViewModel(
             status = if (confirmation == Confirmation.PARTIAL) {
                 "Only read \"$candidate\" — hold the whole card in the frame, its name in the gold strip."
             } else {
-                "Read \"$candidate\", which looks like ${card.name} — hold the card still and try again."
+                "Read \"$candidate\", which looks like ${card.flavorName ?: card.name} — hold the card still and try again."
             }
         )
         return false
@@ -292,8 +326,8 @@ class ScanViewModel(
     }
 
     /** Every scan is its own row, newest first, so a card read twice shows twice. */
-    private fun addScannedCard(card: ScryfallCard) {
-        val row = ScanRow(nextScanId++, card, System.currentTimeMillis())
+    private fun addScannedCard(card: ScryfallCard, exact: Boolean = false) {
+        val row = ScanRow(nextScanId++, card, System.currentTimeMillis(), exact)
         val rows = listOf(row) + _uiState.value.scannedCards
         val copy = copyNumber(rows, row)
         val status = if (copy > 1) {
@@ -374,6 +408,18 @@ class ScanViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Every printing of a scanned card, for picking the art actually in hand when the tiny set code
+     * couldn't be read and the card came in as its usual printing.
+     */
+    suspend fun printingsOf(card: ScryfallCard): List<ScryfallCard> =
+        runCatching { cardRepository.getPrintings(card.name) }.getOrDefault(emptyList())
+
+    /** The printing on a row, swapped for the art the user picked. */
+    fun setPrinting(rowId: Long, card: ScryfallCard) {
+        setScanned(_uiState.value.scannedCards.map { if (it.id == rowId) it.copy(card = card, exact = true) else it })
     }
 
     /** One more copy of a card already scanned — its own row, as if it went past the camera again. */

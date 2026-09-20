@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.scan
 
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.ui.platform.LocalView
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import androidx.activity.compose.BackHandler
@@ -157,6 +161,8 @@ fun ScanScreen(
     // The whole pile at once, rather than a card at a time.
     var deckPickerForAll by remember { mutableStateOf(false) }
     var collectionPickerForAll by remember { mutableStateOf(false) }
+    // The row picking the printing it's really holding, when the set code couldn't be read.
+    var artPickerRow by remember { mutableStateOf<ScanRow?>(null) }
     var showList by remember { mutableStateOf(false) }
     // Scanning a pile is minutes of not touching the screen: don't let it dim and lock.
     val view = LocalView.current
@@ -263,7 +269,12 @@ fun ScanScreen(
                                 // While a code's panel is up, cards wait.
                                 val readCard = {
                                     if (links.showing) imageProxy.close()
-                                    else viewModel.onFrame(inputImage, onProcessed = { imageProxy.close() })
+                                    else viewModel.onFrame(
+                                        inputImage,
+                                        // Only taken when the small print needs a second, closer look.
+                                        frame = { runCatching { imageProxy.toBitmap() }.getOrNull() },
+                                        onProcessed = { imageProxy.close() }
+                                    )
                                 }
                                 if (frameCount.incrementAndGet() % 3 == 0) {
                                     qrReader.process(inputImage).addOnCompleteListener { task ->
@@ -449,6 +460,7 @@ fun ScanScreen(
                 onAddToDeck = { deckPickerCard = it },
                 onScanAgain = { viewModel.scanAgain(it.card) },
                 onRemove = { viewModel.removeScan(it.id) },
+                onPickArt = { artPickerRow = it },
                 onAllToDeck = { deckPickerForAll = true },
                 onAllToCollection = { collectionPickerForAll = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -477,6 +489,15 @@ fun ScanScreen(
                     Text("Leave", color = LocalAppColors.current.error)
                 }
             }
+        )
+    }
+
+    artPickerRow?.let { row ->
+        ArtPickerDialog(
+            row = row,
+            load = { viewModel.printingsOf(row.card) },
+            onPick = { viewModel.setPrinting(row.id, it); artPickerRow = null },
+            onDismiss = { artPickerRow = null }
         )
     }
 
@@ -703,6 +724,7 @@ private fun ScannedListPanel(
     onAddToDeck: (ScanRow) -> Unit,
     onScanAgain: (ScanRow) -> Unit,
     onRemove: (ScanRow) -> Unit,
+    onPickArt: (ScanRow) -> Unit,
     onAllToDeck: () -> Unit,
     onAllToCollection: () -> Unit,
     modifier: Modifier = Modifier
@@ -785,7 +807,8 @@ private fun ScannedListPanel(
                         onAddToCollection = { onAddToCollection(scanned) },
                         onAddToDeck = { onAddToDeck(scanned) },
                         onScanAgain = { onScanAgain(scanned) },
-                        onRemove = { onRemove(scanned) }
+                        onRemove = { onRemove(scanned) },
+                        onPickArt = { onPickArt(scanned) }
                     )
                 }
             }
@@ -804,7 +827,8 @@ private fun ScannedCardRow(
     onAddToCollection: () -> Unit,
     onAddToDeck: () -> Unit,
     onScanAgain: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onPickArt: () -> Unit
 ) {
     val card = scanned.card
     Column(
@@ -835,6 +859,15 @@ private fun ScannedCardRow(
                         if (justNow) "copy $copy · scanned just now" else "copy $copy",
                         style = MaterialTheme.typography.labelMedium,
                         color = if (justNow) Gold else TextMuted
+                    )
+                }
+                if (!scanned.exact) {
+                    // The set code couldn't be read, so this is the card's usual printing.
+                    Text(
+                        "Usual printing · pick art",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Gold,
+                        modifier = Modifier.clickable(onClick = onPickArt)
                     )
                 }
             }
@@ -917,5 +950,65 @@ private fun DeckPickerDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
         }
+    )
+}
+
+/**
+ * Which printing is in your hand. The camera reads a card's name easily; the tiny set code that
+ * says *which* printing often can't be read at all, and then the card comes in as its usual
+ * printing. This shows every printing there is, so the right art is a tap away.
+ */
+@Composable
+private fun ArtPickerDialog(
+    row: ScanRow,
+    load: suspend () -> List<ScryfallCard>,
+    onPick: (ScryfallCard) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var printings by remember(row.id) { mutableStateOf<List<ScryfallCard>?>(null) }
+    LaunchedEffect(row.id) { printings = load() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = { Text(row.card.name, color = GoldLight) },
+        text = {
+            val found = printings
+            when {
+                found == null -> Text("Looking up printings…", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                found.isEmpty() -> Text("Only one printing of this card.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                else -> LazyVerticalGrid(
+                    columns = GridCells.Adaptive(96.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.height(420.dp)
+                ) {
+                    items(found, key = { it.id }) { card ->
+                        Column(modifier = Modifier.clickable { onPick(card) }) {
+                            val picked = card.id == row.card.id
+                            AsyncImage(
+                                model = card.displayImageUrl,
+                                contentDescription = card.printingLabel,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(0.72f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(
+                                        BorderStroke(if (picked) 2.dp else 1.dp, if (picked) Gold else BorderColor),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                            )
+                            Text(
+                                card.printingLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = TextMuted,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = Gold) } }
     )
 }

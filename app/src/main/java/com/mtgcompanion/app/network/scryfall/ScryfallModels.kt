@@ -60,6 +60,12 @@ data class ScryfallCard(
     val set: String? = null,
     @Json(name = "set_name") val setName: String? = null,
     @Json(name = "collector_number") val collectorNumber: String? = null,
+    /**
+     * The name printed large on a Universes Beyond card, with the real name in smaller type beneath
+     * it ("Kefka's Tower" over "Bolas's Citadel"). It's what the camera reads, so the scanner has to
+     * know it (see ScanConfirm.kt).
+     */
+    @Json(name = "flavor_name") val flavorName: String? = null,
     val rarity: String? = null,
     val power: String? = null,
     val toughness: String? = null,

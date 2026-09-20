@@ -9,8 +9,12 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
  * when the pile is put into a binder or deck. Mirrors the web app's src/scan/scanLog.ts.
  */
 
-/** [id] counts up per scan, so rows stay apart even when they're the same card. */
-data class ScanRow(val id: Long, val card: ScryfallCard, val at: Long)
+/**
+ * [id] counts up per scan, so rows stay apart even when they're the same card. [exact] is whether
+ * the printing was read off the card (its set code and collector number) rather than guessed from
+ * the name — a guess is the card's usual printing, which may not be the one in hand.
+ */
+data class ScanRow(val id: Long, val card: ScryfallCard, val at: Long, val exact: Boolean = false)
 
 /** A repeat within this long of the card's last scan reads as the camera catching it twice. */
 const val DOUBLE_MS = 8_000L

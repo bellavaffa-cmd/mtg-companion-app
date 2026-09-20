@@ -35,4 +35,16 @@ class ScanConfirmTest {
         assertEquals(Confirmation.DIFFERENT, confirmRead("Lightning Helix", "Lightning Bolt"))
         assertEquals(Confirmation.DIFFERENT, confirmRead("", "Lightning Bolt"))
     }
+
+    @Test
+    fun aCardPrintedUnderAnotherNameAnswersToTheNameOnTheCard() {
+        // Universes Beyond: "Kefka's Tower" is printed large, "Bolas's Citadel" in smaller type beneath.
+        assertEquals(Confirmation.YES, confirmRead("Kefka's ToWer", "Bolas's Citadel", "Kefka's Tower"))
+        // The real name underneath is just as good a read.
+        assertEquals(Confirmation.YES, confirmRead("Bolas's Citadel", "Bolas's Citadel", "Kefka's Tower"))
+        // Half of the flavour name is still half a card.
+        assertEquals(Confirmation.PARTIAL, confirmRead("Kefka's", "Bolas's Citadel", "Kefka's Tower"))
+        // And something else entirely is still something else.
+        assertEquals(Confirmation.DIFFERENT, confirmRead("Sol Ring", "Bolas's Citadel", "Kefka's Tower"))
+    }
 }
