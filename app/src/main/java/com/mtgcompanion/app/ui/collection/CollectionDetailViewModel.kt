@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.WISHLIST_ID
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.CardListImporter
 import com.mtgcompanion.app.data.buildCardListText
@@ -157,8 +158,15 @@ class CollectionDetailViewModel(
         viewModelScope.launch { repository.setQuantity(collectionId, entry.scryfallId, quantity, foilQuantity) }
     }
 
+    /**
+     * Takes a card off. On the Wishlist, one the app added by itself means "not interested": it
+     * stays off while decks consider it, instead of coming straight back.
+     */
     fun remove(entry: CollectionEntry) {
-        viewModelScope.launch { repository.removeEntry(collectionId, entry.scryfallId) }
+        viewModelScope.launch {
+            if (collectionId == WISHLIST_ID && entry.auto) repository.notInterested(entry.name)
+            else repository.removeEntry(collectionId, entry.scryfallId)
+        }
     }
 
     /** Add a card not yet in this binder — e.g. one picked from the zoom overlay's "find similar" list. */
@@ -195,9 +203,13 @@ class CollectionDetailViewModel(
         }
     }
 
-    /** Removes the picked cards [ids] from this binder. */
+    /** Removes the picked cards [ids] from this binder — see [remove] for the Wishlist. */
     fun removeEntries(ids: Set<String>) {
-        viewModelScope.launch { repository.removeEntries(collectionId, ids) }
+        viewModelScope.launch {
+            val picked = collection.value?.entries.orEmpty().filter { it.scryfallId in ids }
+            if (collectionId == WISHLIST_ID) picked.filter { it.auto }.forEach { repository.notInterested(it.name) }
+            repository.removeEntries(collectionId, ids)
+        }
     }
 
     /** Makes a binder named [name] and moves the card into it — or with [keepHere], copies it. */

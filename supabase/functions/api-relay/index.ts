@@ -9,8 +9,8 @@
 //   GET  /api-relay/news                        merged headlines from the RSS feeds, newest first
 //   GET  /api-relay/combos/variants?q=&limit=   Commander Spellbook combo search (held for a day)
 //
-// A card lookup is held in the combo_cache table, since each request may run in a fresh isolate.
-//   POST /api-relay/combos/find-my-combos       combos a decklist contains or is one card short of
+// Both combo lookups are held in the combo_cache table, since each request may run in a fresh isolate.
+//   POST /api-relay/combos/find-my-combos       combos a decklist contains or is one card short of (held for a day)
 //
 // Deployed with JWT verification on, so callers send the project's anon key as the bearer token.
 
@@ -271,12 +271,59 @@ async function findMyCombos(req: Request): Promise<Response> {
       .filter((c): c is { card: string; quantity?: number } => typeof c?.card === 'string' && c.card.length <= 200)
       .slice(0, 250)
       .map((c) => ({ card: c.card, quantity: Math.max(1, Math.min(99, Number(c.quantity) || 1)) }))
-  const body = JSON.stringify({ commanders: cards(parsed.commanders), main: cards(parsed.main) })
-  return relaySpellbook(req, `${SPELLBOOK}/find-my-combos`, {
+  const commanders = cards(parsed.commanders)
+  const main = cards(parsed.main)
+  const body = JSON.stringify({ commanders, main })
+  // Held under the decklist itself, so anyone opening the same deck — the owner on another device,
+  // or a friend it's shared with — is answered without asking Spellbook again.
+  const key = await deckKey(commanders, main)
+  const now = Date.now()
+
+  const held = comboCache.get(key)
+  if (held && now - held.at <= COMBOS_TTL_MS) return combosResponse(req, held.body, 'hit')
+  const fromDb = await heldInDb(key)
+  if (fromDb !== null) {
+    comboCache.set(key, { at: now, body: fromDb })
+    sweepCombos(now)
+    return combosResponse(req, fromDb, 'db')
+  }
+
+  let request = comboInFlight.get(key)
+  if (!request) {
+    request = fetchDeckCombos(body, key, now).finally(() => comboInFlight.delete(key))
+    comboInFlight.set(key, request)
+  }
+  try {
+    return combosResponse(req, await request, 'miss')
+  } catch {
+    return json(req, 502, { error: 'Commander Spellbook is unavailable right now.' })
+  }
+}
+
+/** Asks Spellbook about a decklist and holds the answer. Only a 200 is held. */
+async function fetchDeckCombos(body: string, key: string, now: number): Promise<string> {
+  const res = await fetch(`${SPELLBOOK}/find-my-combos`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', 'Content-Type': 'application/json' },
     body,
   })
+  const answer = await res.text()
+  if (!res.ok) throw new Error(`Spellbook ${res.status}`)
+  comboCache.set(key, { at: now, body: answer })
+  sweepCombos(now)
+  await holdInDb(key, answer)
+  return answer
+}
+
+/**
+ * A decklist's key: the cards it holds, hashed so a 250-card list is a short row key. Order and
+ * repeats don't matter, so the same deck on two devices is the same question.
+ */
+async function deckKey(commanders: { card: string }[], main: { card: string }[]): Promise<string> {
+  const names = (list: { card: string }[]) => [...new Set(list.map((c) => c.card.trim().toLowerCase()))].sort().join('|')
+  const text = `${names(commanders)}#${names(main)}`
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return `deck:${[...new Uint8Array(digest)].slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('')}`
 }
 
 /** The routes, as one handler — exported so cache.test.mjs can drive it without a server. */

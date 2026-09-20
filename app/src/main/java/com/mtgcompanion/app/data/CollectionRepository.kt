@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.data
 
+import com.mtgcompanion.app.data.withWantedCards
+import com.mtgcompanion.app.data.withoutWishlistCard
 import com.mtgcompanion.app.data.social.CollectionChange
 import com.mtgcompanion.app.data.social.applyCollectionChanges
 
@@ -37,6 +39,19 @@ class CollectionRepository(private val context: Context) {
     suspend fun deleteCollection(collectionId: String) {
         if (collectionId == WISHLIST_ID) return
         update { collections -> collections.filterNot { it.id == collectionId } }
+    }
+
+    /** Puts [cards] on the Wishlist (making it if needed), keeping the larger count of any already there. */
+    suspend fun addWanted(cards: List<CollectionEntry>) {
+        update { collections -> withWantedCards(collections, cards) }
+    }
+
+    /**
+     * Takes [cardName] off the Wishlist and leaves it off while decks still consider it — "not
+     * interested". Adding the card back by hand undoes it.
+     */
+    suspend fun notInterested(cardName: String) {
+        update { collections -> withoutWishlistCard(collections, cardName) }
     }
 
     /** Makes the Wishlist if it isn't there yet (it's kept up by [maintainWishlist] too). */

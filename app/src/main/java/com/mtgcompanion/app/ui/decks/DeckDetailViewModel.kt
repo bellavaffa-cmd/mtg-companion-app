@@ -589,14 +589,11 @@ class DeckDetailViewModel(
                 onDone("Nothing missing.")
                 return@launch
             }
-            collectionRepository.ensureWishlist()
-            val target = WISHLIST_ID
-            cards.forEach { (entry, need) ->
-                collectionRepository.addEntry(
-                    target,
+            collectionRepository.addWanted(
+                cards.map { (entry, need) ->
                     CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = need, foilQuantity = 0, backImageUrl = entry.backImageUrl, tags = entry.tags)
-                )
-            }
+                }
+            )
             onDone("Added ${cards.size} card${if (cards.size == 1) "" else "s"} to your Wishlist.")
         }
     }

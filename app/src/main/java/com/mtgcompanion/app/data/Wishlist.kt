@@ -41,12 +41,19 @@ fun withWishlist(collections: List<Collection>, decks: List<Deck>): List<Collect
         }
     }
 
+    // Taken off by hand ("not interested"), and still considered — a card nobody considers any more
+    // is forgotten, so putting it back in a deck's Considering list offers it again.
+    val notWanted = existing?.notWanted.orEmpty().map { key(it) }.toSet()
+
     // Owned: in any binder that isn't a wishlist (the Unsorted pile too).
     val owned = collections.filter { it.kind != CollectionType.WISHLIST }
         .flatMap { it.entries }.filter { it.quantity + it.foilQuantity > 0 }.map { key(it.name) }.toSet()
     val considered = LinkedHashMap<String, DeckCardEntry>()
     for (deck in decks) for (card in deck.considering) considered.putIfAbsent(key(card.name), card)
-    val wanted = considered.filterKeys { it !in owned }
+    // A card the user put on the list themselves is wanted, whatever they said before.
+    val byHand = entries.filterNot { it.auto }.map { key(it.name) }.toSet()
+    val stillNotWanted = notWanted.filter { it in considered.keys && it !in byHand }
+    val wanted = considered.filterKeys { it !in owned && it !in stillNotWanted }
 
     entries = entries.filter { !it.auto || key(it.name) in wanted }
     val have = entries.map { key(it.name) }.toSet()
@@ -55,10 +62,45 @@ fun withWishlist(collections: List<Collection>, decks: List<Deck>): List<Collect
     }
 
     val wishlist = (existing ?: Collection(WISHLIST_ID, WISHLIST_NAME, createdAt = 0, type = CollectionType.WISHLIST.name))
-        .copy(name = WISHLIST_NAME, type = CollectionType.WISHLIST.name, entries = entries)
+        .copy(name = WISHLIST_NAME, type = CollectionType.WISHLIST.name, entries = entries, notWanted = stillNotWanted)
     if (others.isEmpty() && existing == wishlist) return collections
     return collections.filterNot { it.kind == CollectionType.WISHLIST || it.isWishlist } + wishlist
 }
+
+/**
+ * [collections] with [cards] on the Wishlist, making it if it isn't there. A card already on the
+ * list keeps the larger count rather than doubling, and asking for a card by hand undoes an earlier
+ * "not interested". [CollectionEntry.quantity] is the copies wanted — a deck's missing cards ask
+ * for as many as the deck plays.
+ */
+fun withWantedCards(collections: List<Collection>, cards: List<CollectionEntry>): List<Collection> {
+    if (cards.isEmpty()) return collections
+    val existing = collections.firstOrNull { it.isWishlist }
+    var entries = existing?.entries.orEmpty()
+    for (card in cards) {
+        val at = entries.indexOfFirst { key(it.name) == key(card.name) }
+        val want = maxOf(1, card.quantity)
+        entries = if (at < 0) entries + card.copy(quantity = want, auto = false)
+        else entries.mapIndexed { i, e -> if (i != at) e else e.copy(quantity = maxOf(e.quantity, want), auto = false) }
+    }
+    val asked = cards.map { key(it.name) }.toSet()
+    val wishlist = (existing ?: Collection(WISHLIST_ID, WISHLIST_NAME, createdAt = 0, type = CollectionType.WISHLIST.name))
+        .copy(entries = entries, notWanted = existing?.notWanted.orEmpty().filterNot { key(it) in asked })
+    return if (existing != null) collections.map { if (it.isWishlist) wishlist else it } else collections + wishlist
+}
+
+/**
+ * [collections] with [cardName] off the Wishlist and left off while decks still consider it — what
+ * taking off a card the Wishlist added by itself means. Adding it back by hand undoes this.
+ */
+fun withoutWishlistCard(collections: List<Collection>, cardName: String): List<Collection> =
+    collections.map { c ->
+        if (!c.isWishlist) c
+        else c.copy(
+            entries = c.entries.filterNot { key(it.name) == key(cardName) },
+            notWanted = (c.notWanted + key(cardName)).distinct()
+        )
+    }
 
 /** The names of [decks] considering [card] — for "Considering in …" on a card added from them. */
 fun decksConsidering(decks: List<Deck>, cardName: String): List<String> =

@@ -57,4 +57,52 @@ class WishlistTest {
         val after = withWishlist(bought, listOf(deck("Omnath", "Sol Ring", "Cultivate")))
         assertEquals(listOf("Rhystic Study"), after.first { it.isWishlist }.entries.map { it.name })
     }
+
+    @Test
+    fun takingOffACardTheAppAddedMeansNotInterested() {
+        val binder = Collection("b", "Binder", emptyList())
+        val decks = listOf(deck("Omnath", "Cultivate", "Rhystic Study"))
+        val start = withWishlist(listOf(binder), decks)
+        assertEquals(listOf("Cultivate", "Rhystic Study"), start.first { it.isWishlist }.entries.map { it.name })
+
+        // Off it goes, and it stays off while the deck still considers it.
+        val after = withWishlist(withoutWishlistCard(start, "cultivate"), decks)
+        val wish = after.first { it.isWishlist }
+        assertEquals(listOf("Rhystic Study"), wish.entries.map { it.name })
+        assertEquals(listOf("cultivate"), wish.notWanted)
+
+        // Asking for it by hand undoes that.
+        val added = after.map { if (it.isWishlist) it.copy(entries = it.entries + entry("cult", "Cultivate")) else it }
+        val back = withWishlist(added, decks)
+        assertEquals(listOf("Rhystic Study", "Cultivate"), back.first { it.isWishlist }.entries.map { it.name })
+        assertEquals(emptyList<String>(), back.first { it.isWishlist }.notWanted)
+
+        // No deck considers it any more: forgotten, so considering it again offers it again.
+        val forgotten = withWishlist(withoutWishlistCard(back, "Cultivate"), listOf(deck("Omnath", "Rhystic Study")))
+        assertEquals(emptyList<String>(), forgotten.first { it.isWishlist }.notWanted)
+        assertEquals(listOf("Cultivate"), withWishlist(forgotten, decks).first { it.isWishlist }.entries.map { it.name }.filter { it == "Cultivate" })
+    }
+
+    @Test
+    fun aDecksMissingCardsGoOnTheWishlistAsManyAsTheDeckPlays() {
+        fun want(name: String, quantity: Int) = CollectionEntry("id-$name", name, null, quantity = quantity)
+        val made = withWantedCards(listOf(Collection("b", "Binder", emptyList())), listOf(want("Lightning Bolt", 4), want("Sol Ring", 1)))
+        val wish = made.first { it.isWishlist }
+        assertEquals(listOf("Lightning Bolt" to 4, "Sol Ring" to 1), wish.entries.map { it.name to it.quantity })
+        assertEquals(listOf(false, false), wish.entries.map { it.auto })
+
+        // Asking again keeps the larger count instead of doubling it.
+        val again = withWantedCards(made, listOf(want("Lightning Bolt", 4), want("Sol Ring", 2)))
+        assertEquals(listOf("Lightning Bolt" to 4, "Sol Ring" to 2), again.first { it.isWishlist }.entries.map { it.name to it.quantity })
+
+        // Asking for a card undoes "not interested".
+        val dismissed = withoutWishlistCard(again, "Lightning Bolt")
+        assertEquals(listOf("lightning bolt"), dismissed.first { it.isWishlist }.notWanted)
+        val asked = withWantedCards(dismissed, listOf(want("Lightning Bolt", 1)))
+        assertEquals(emptyList<String>(), asked.first { it.isWishlist }.notWanted)
+        assertTrue(asked.first { it.isWishlist }.entries.any { it.name == "Lightning Bolt" })
+
+        // Nothing missing changes nothing at all.
+        assertSame(asked, withWantedCards(asked, emptyList()))
+    }
 }

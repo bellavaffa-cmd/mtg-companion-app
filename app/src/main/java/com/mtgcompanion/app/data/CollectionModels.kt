@@ -37,7 +37,12 @@ data class Collection(
     val name: String,
     val entries: List<CollectionEntry> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
-    val type: String = CollectionType.DEFAULT.name
+    val type: String = CollectionType.DEFAULT.name,
+    /**
+     * The Wishlist: cards taken off it that a deck is still considering, so they aren't put back
+     * (see [withWishlist]). Lower-cased names. Forgotten once no deck considers the card.
+     */
+    val notWanted: List<String> = emptyList()
 ) {
     val kind: CollectionType get() = CollectionType.fromName(type)
     /** The pile of cards not in a binder yet (see [UNSORTED_COLLECTION_ID]) — not a binder itself. */

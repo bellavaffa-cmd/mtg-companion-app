@@ -154,6 +154,7 @@ object ItemMerge {
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         type = pick(base.type, mine.type, theirs.type, minePreferred),
         createdAt = minOf(mine.createdAt, theirs.createdAt),
+        notWanted = mergeStringSet(base.notWanted, mine.notWanted, theirs.notWanted),
         entries = mergeEntries(
             base.entries, mine.entries, theirs.entries,
             id = { it.scryfallId },

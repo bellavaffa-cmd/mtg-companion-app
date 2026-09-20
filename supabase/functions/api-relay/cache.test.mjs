@@ -129,6 +129,36 @@ for (let i = 0; i < COMBOS_KEEP + 50; i++) await ask(`filler ${i}`)
 assert.ok(comboCache.size <= COMBOS_KEEP, `size ${comboCache.size}`)
 assert.equal((await ask(`filler ${COMBOS_KEEP + 49}`)).cache, 'hit')
 
+// A decklist is held the same way, under the cards it holds.
+const askDeck = async (commanders, main, { freshIsolate = false } = {}) => {
+  if (freshIsolate) comboCache.clear()
+  const res = await handle(new Request('https://relay.test/api-relay/combos/find-my-combos', {
+    method: 'POST',
+    headers: { Origin: 'https://bellavaffa-cmd.github.io', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ commanders: commanders.map((card) => ({ card })), main: main.map((card) => ({ card })) }),
+  }))
+  return { status: res.status, cache: res.headers.get('X-Relay-Cache'), body: await res.text() }
+}
+
+const deckCallsBefore = upstreamCalls
+const deckFirst = await askDeck(['Omnath, Locus of Mana'], ['Sol Ring', 'Cultivate'])
+assert.equal(deckFirst.cache, 'miss')
+assert.equal(upstreamCalls, deckCallsBefore + 1)
+
+// The same deck from another device — order and case aside — is answered from the table.
+const deckAgain = await askDeck(['omnath, locus of mana'], ['cultivate', 'Sol Ring'], { freshIsolate: true })
+assert.equal(deckAgain.cache, 'db')
+assert.equal(deckAgain.body, deckFirst.body)
+assert.equal(upstreamCalls, deckCallsBefore + 1)
+
+// A card added makes it a different deck, so it's asked again.
+const edited = await askDeck(['Omnath, Locus of Mana'], ['Sol Ring', 'Cultivate', 'Rhystic Study'], { freshIsolate: true })
+assert.equal(edited.cache, 'miss')
+assert.equal(upstreamCalls, deckCallsBefore + 2)
+
+// A decklist's key is a short row key, not the whole list.
+for (const key of dbRows.keys()) assert.ok(key.length <= 64, `key too long: ${key.length}`)
+
 // An unknown route is still an unknown route.
 assert.equal((await handle(new Request('https://relay.test/api-relay/nope'))).status, 404)
 

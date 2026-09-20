@@ -267,7 +267,7 @@ fun CollectionDetailScreen(
             val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
             if (collection?.isWishlist == true) {
                 Text(
-                    "Cards you want. They don't count as owned. Cards your decks are considering that you don't own are added here by themselves, until you own them.",
+                    "Cards you want. They don't count as owned. Cards your decks are considering that you don't own are added here by themselves, until you own them — take one off and it stays off.",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
@@ -537,7 +537,12 @@ private fun CollectionCardRow(
                     Icon(Icons.Filled.Add, contentDescription = "Increase quantity", tint = Gold)
                 }
                 IconButton(onClick = onRemove) {
-                    Icon(Icons.Filled.Close, contentDescription = "Remove from binder", tint = TextDim)
+                    Icon(
+                        Icons.Filled.Close,
+                        // On the Wishlist, taking off a card it added by itself means "not interested".
+                        contentDescription = if (considering != null) "Not interested" else "Remove from binder",
+                        tint = TextDim
+                    )
                 }
             }
         }
