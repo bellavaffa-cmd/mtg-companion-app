@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.scannedTwiceOver
+import com.mtgcompanion.app.data.copyNumber
+import com.mtgcompanion.app.data.ScanRow
 import android.graphics.Bitmap
 import android.media.MediaActionSound
 import androidx.lifecycle.ViewModel
@@ -28,8 +31,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** A scanned card and how many copies were scanned (adjustable before adding to a deck/binder). */
-data class ScannedCard(val card: ScryfallCard, val quantity: Int = 1)
+// The scanned list is one row per scan, newest first — see data/ScanLog.kt.
 
 /** Consecutive title-less frames required before concluding a card has actually left the frame
  * (as opposed to one blurry/glared frame while it's still sitting there). At the analyzer's
@@ -45,7 +47,7 @@ private const val ART_MATCH_MIN_MARGIN = 4000
 
 data class ScanUiState(
     val status: String? = null,
-    val scannedCards: List<ScannedCard> = emptyList(),
+    val scannedCards: List<ScanRow> = emptyList(),
     /** Bumped on every successful add — a one-shot event distinct from [status] (which is also
      * used for non-success messages like a failed lookup) so the UI can trigger a haptic/visual
      * flash only on real successes, via a LaunchedEffect keyed on this value. */
@@ -225,26 +227,22 @@ class ScanViewModel(
         return a.contains(b) || b.contains(a) || a.commonPrefixWith(b).length >= 4
     }
 
+    /** Every scan is its own row, newest first, so a card read twice shows twice. */
     private fun addScannedCard(card: ScryfallCard) {
-        val existing = _uiState.value.scannedCards.find { it.card.id == card.id }
-        val next = if (existing != null) {
-            // Re-scanning a card bumps its copy count instead of duplicating the row.
-            _uiState.value.copy(
-                status = "${card.name} ×${existing.quantity + 1}",
-                scannedCards = _uiState.value.scannedCards.map {
-                    if (it.card.id == card.id) it.copy(quantity = it.quantity + 1) else it
-                }
-            )
+        val row = ScanRow(nextScanId++, card, System.currentTimeMillis())
+        val rows = listOf(row) + _uiState.value.scannedCards
+        val copy = copyNumber(rows, row)
+        val status = if (copy > 1) {
+            "${card.name} again — copy $copy" + if (scannedTwiceOver(rows, row)) ", scanned just now" else ""
         } else {
-            // Newest first so the just-scanned card is visible at the top of the list.
-            _uiState.value.copy(
-                status = "Added ${card.name}",
-                scannedCards = listOf(ScannedCard(card, 1)) + _uiState.value.scannedCards
-            )
+            "Added ${card.name}"
         }
+        val next = _uiState.value.copy(status = status, scannedCards = rows)
         _uiState.value = next.copy(successToken = next.successToken + 1)
         scanSound.play(MediaActionSound.SHUTTER_CLICK)
     }
+
+    private var nextScanId = 1L
 
     /** The manual "tap to scan" button: force the very next camera frame's OCR result straight
      * through, bypassing the stability wait and the same-card guard (see [forceScanNext]'s doc). */
@@ -308,25 +306,9 @@ class ScanViewModel(
         }
     }
 
-    fun incrementScanned(card: ScryfallCard) {
-        _uiState.value = _uiState.value.copy(
-            scannedCards = _uiState.value.scannedCards.map {
-                if (it.card.id == card.id) it.copy(quantity = it.quantity + 1) else it
-            }
-        )
-    }
-
-    /** Lower a scanned card's count; drops it from the list at zero. */
-    fun decrementScanned(card: ScryfallCard) {
-        _uiState.value = _uiState.value.copy(
-            scannedCards = _uiState.value.scannedCards.mapNotNull {
-                when {
-                    it.card.id != card.id -> it
-                    it.quantity > 1 -> it.copy(quantity = it.quantity - 1)
-                    else -> null
-                }
-            }
-        )
+    /** One more copy of a card already scanned — its own row, as if it went past the camera again. */
+    fun scanAgain(card: ScryfallCard) {
+        addScannedCard(card)
     }
 
     override fun onCleared() {
@@ -362,8 +344,9 @@ class ScanViewModel(
             }
     }
 
-    fun removeFromList(card: ScryfallCard) {
-        _uiState.value = _uiState.value.copy(scannedCards = _uiState.value.scannedCards.filterNot { it.card.id == card.id })
+    /** Takes one scan off the pile — a card read twice, or read wrongly. */
+    fun removeScan(rowId: Long) {
+        _uiState.value = _uiState.value.copy(scannedCards = _uiState.value.scannedCards.filterNot { it.id == rowId })
     }
 
     private fun collectionEntry(card: ScryfallCard, quantity: Int) =

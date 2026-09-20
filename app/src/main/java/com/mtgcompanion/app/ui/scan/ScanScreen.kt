@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.scannedTwiceOver
+import com.mtgcompanion.app.data.repeatedCards
+import com.mtgcompanion.app.data.onlyRepeats
+import com.mtgcompanion.app.data.copyNumber
+import com.mtgcompanion.app.data.ScanRow
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -138,8 +143,8 @@ fun ScanScreen(
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    var deckPickerCard by remember { mutableStateOf<ScannedCard?>(null) }
-    var collectionPickerCard by remember { mutableStateOf<ScannedCard?>(null) }
+    var deckPickerCard by remember { mutableStateOf<ScanRow?>(null) }
+    var collectionPickerCard by remember { mutableStateOf<ScanRow?>(null) }
     var showList by remember { mutableStateOf(false) }
     var showManualAdd by remember { mutableStateOf(false) }
 
@@ -386,7 +391,7 @@ fun ScanScreen(
                 .padding(24.dp)
         ) {
             Text(
-                "View list (${state.scannedCards.sumOf { it.quantity }})",
+                "View list (${state.scannedCards.size})",
                 style = MaterialTheme.typography.labelLarge,
                 color = Bg
             )
@@ -411,40 +416,42 @@ fun ScanScreen(
                 onCardClick = { showList = false; onCardClick(it.card.name) },
                 onAddToCollection = { collectionPickerCard = it },
                 onAddToDeck = { deckPickerCard = it },
-                onIncrement = { viewModel.incrementScanned(it.card) },
-                onDecrement = { viewModel.decrementScanned(it.card) },
-                onRemove = { viewModel.removeFromList(it.card) },
+                onScanAgain = { viewModel.scanAgain(it.card) },
+                onRemove = { viewModel.removeScan(it.id) },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
     }
 
     deckPickerCard?.let { scanned ->
+        // Filing a card files every copy of it in the pile, however many rows that is.
+        val copies = state.scannedCards.count { it.card.id == scanned.card.id }
         DeckPickerDialog(
             decks = decks,
             onDismiss = { deckPickerCard = null },
             onPickDeck = { deckId ->
                 deckPickerCard = null
-                viewModel.addToDeck(scanned.card, scanned.quantity, deckId)
+                viewModel.addToDeck(scanned.card, copies, deckId)
             },
             onCreateDeck = { name ->
                 deckPickerCard = null
-                viewModel.createDeckAndAdd(scanned.card, scanned.quantity, name)
+                viewModel.createDeckAndAdd(scanned.card, copies, name)
             }
         )
     }
 
     collectionPickerCard?.let { scanned ->
+        val copies = state.scannedCards.count { it.card.id == scanned.card.id }
         CollectionPickerDialog(
             collections = collections,
             onDismiss = { collectionPickerCard = null },
             onPickCollection = { collectionId ->
                 collectionPickerCard = null
-                viewModel.addToCollection(scanned.card, scanned.quantity, collectionId)
+                viewModel.addToCollection(scanned.card, copies, collectionId)
             },
             onCreateCollection = { name ->
                 collectionPickerCard = null
-                viewModel.createCollectionAndAdd(scanned.card, scanned.quantity, name)
+                viewModel.createCollectionAndAdd(scanned.card, copies, name)
             }
         )
     }
@@ -596,14 +603,13 @@ private fun ScrimIconButton(
 
 @Composable
 private fun ScannedListPanel(
-    cards: List<ScannedCard>,
+    cards: List<ScanRow>,
     onClose: () -> Unit,
-    onCardClick: (ScannedCard) -> Unit,
-    onAddToCollection: (ScannedCard) -> Unit,
-    onAddToDeck: (ScannedCard) -> Unit,
-    onIncrement: (ScannedCard) -> Unit,
-    onDecrement: (ScannedCard) -> Unit,
-    onRemove: (ScannedCard) -> Unit,
+    onCardClick: (ScanRow) -> Unit,
+    onAddToCollection: (ScanRow) -> Unit,
+    onAddToDeck: (ScanRow) -> Unit,
+    onScanAgain: (ScanRow) -> Unit,
+    onRemove: (ScanRow) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -614,9 +620,16 @@ private fun ScannedListPanel(
             .background(Surface)
             .padding(16.dp)
     ) {
+        // Cards read more than once: what a double scan or a wrong read looks like.
+        val repeats = repeatedCards(cards)
+        var repeatsOnly by remember { mutableStateOf(false) }
+        // With nothing scanned twice the filter has nothing to hide, and its chip is gone.
+        val filtered = repeatsOnly && repeats.isNotEmpty()
+        val shown = if (filtered) onlyRepeats(cards) else cards
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Scanned (${cards.sumOf { it.quantity }})",
+                "Scanned (${cards.size})",
                 style = MaterialTheme.typography.titleMedium,
                 color = GoldLight
             )
@@ -624,6 +637,15 @@ private fun ScannedListPanel(
             IconButton(onClick = onClose) {
                 Icon(Icons.Filled.Close, contentDescription = "Close list", tint = TextDim)
             }
+        }
+        if (repeats.isNotEmpty()) {
+            Text(
+                "${repeats.size} ${if (repeats.size == 1) "card" else "cards"} scanned more than once" +
+                    if (filtered) " · showing those" else " · tap to show those",
+                style = MaterialTheme.typography.labelMedium,
+                color = Gold,
+                modifier = Modifier.clickable { repeatsOnly = !repeatsOnly }.padding(vertical = 4.dp)
+            )
         }
         if (cards.isEmpty()) {
             Text(
@@ -636,14 +658,15 @@ private fun ScannedListPanel(
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(cards, key = { it.card.id }) { scanned ->
+                items(shown, key = { it.id }) { scanned ->
                     ScannedCardRow(
                         scanned = scanned,
+                        copy = copyNumber(cards, scanned),
+                        justNow = scannedTwiceOver(cards, scanned),
                         onClick = { onCardClick(scanned) },
                         onAddToCollection = { onAddToCollection(scanned) },
                         onAddToDeck = { onAddToDeck(scanned) },
-                        onIncrement = { onIncrement(scanned) },
-                        onDecrement = { onDecrement(scanned) },
+                        onScanAgain = { onScanAgain(scanned) },
                         onRemove = { onRemove(scanned) }
                     )
                 }
@@ -654,12 +677,15 @@ private fun ScannedListPanel(
 
 @Composable
 private fun ScannedCardRow(
-    scanned: ScannedCard,
+    scanned: ScanRow,
+    /** Which copy of its card this row is: 1 the first time, 2 the next… */
+    copy: Int,
+    /** Whether the copy before it was scanned seconds ago — the camera catching one card twice. */
+    justNow: Boolean,
     onClick: () -> Unit,
     onAddToCollection: () -> Unit,
     onAddToDeck: () -> Unit,
-    onIncrement: () -> Unit,
-    onDecrement: () -> Unit,
+    onScanAgain: () -> Unit,
     onRemove: () -> Unit
 ) {
     val card = scanned.card
@@ -668,7 +694,7 @@ private fun ScannedCardRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(Bg)
-            .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(10.dp))
+            .border(BorderStroke(1.dp, if (justNow) Gold else BorderColor), RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(10.dp)
     ) {
@@ -678,24 +704,28 @@ private fun ScannedCardRow(
                 contentDescription = card.name,
                 modifier = Modifier.size(width = 40.dp, height = 56.dp).clip(RoundedCornerShape(8.dp))
             )
-            Text(
-                card.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            // Compact quantity stepper for how many copies were scanned.
-            IconButton(onClick = onDecrement, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Filled.Remove, contentDescription = "One fewer", tint = Gold, modifier = Modifier.size(18.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    card.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (copy > 1) {
+                    Text(
+                        if (justNow) "copy $copy · scanned just now" else "copy $copy",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (justNow) Gold else TextMuted
+                    )
+                }
             }
-            Text("${scanned.quantity}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            IconButton(onClick = onIncrement, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = "One more", tint = Gold, modifier = Modifier.size(18.dp))
+            // One more copy of this card: another row, as if it went past the camera again.
+            IconButton(onClick = onScanAgain, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Add, contentDescription = "One more copy", tint = Gold, modifier = Modifier.size(18.dp))
             }
             IconButton(onClick = onRemove, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Filled.Close, contentDescription = "Remove from list", tint = TextDim, modifier = Modifier.size(18.dp))
+                Icon(Icons.Filled.Close, contentDescription = "Take off this scan", tint = TextDim, modifier = Modifier.size(18.dp))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
