@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
+import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
+import com.mtgcompanion.app.data.grouped
+import com.mtgcompanion.app.data.ScanGroup
 import com.mtgcompanion.app.data.GUIDE_WIDTH
 import com.mtgcompanion.app.data.GUIDE_GIVE_UP_FRAMES
 import com.mtgcompanion.app.data.GUIDE_HEIGHT
@@ -446,6 +450,66 @@ class ScanViewModel(
             val deck = deckRepository.createDeck(name)
             deckRepository.addEntry(deck.id, deckEntry(card, quantity))
             _uiState.value = _uiState.value.copy(status = "Added $quantity × ${card.name} to \"${deck.name}\"")
+        }
+    }
+
+    /** Everything scanned, copies added together — what a whole pile goes into a binder or deck as. */
+    private fun pile(): List<ScanGroup> = grouped(_uiState.value.scannedCards)
+
+    private fun pileAdded(where: String, cards: Int) {
+        _uiState.value = _uiState.value.copy(
+            status = "Added $cards ${if (cards == 1) "card" else "cards"} to $where",
+            scannedCards = emptyList()
+        )
+        lastAddedCard = null
+        lastLookedUp = null
+    }
+
+    /** The whole pile into a binder; the list is emptied, ready for the next pile. */
+    fun addAllToCollection(collectionId: String) {
+        val pile = pile()
+        if (pile.isEmpty()) return
+        viewModelScope.launch {
+            val entries = pile.map { collectionEntry(it.card, it.quantity) }
+            val name = collectionRepository.collectionsFlow.first().find { it.id == collectionId }?.name
+                ?: UNSORTED_COLLECTION_NAME
+            // The Unsorted pile is made when the first cards go into it.
+            if (collectionId == UNSORTED_COLLECTION_ID) collectionRepository.addUnsorted(entries)
+            else collectionRepository.addEntries(collectionId, entries)
+            pileAdded("\"$name\"", pile.sumOf { it.quantity })
+        }
+    }
+
+    /** The whole pile into a new binder named [name]. */
+    fun createCollectionAndAddAll(name: String) {
+        val pile = pile()
+        if (pile.isEmpty()) return
+        viewModelScope.launch {
+            val collection = collectionRepository.createCollection(name)
+            collectionRepository.addEntries(collection.id, pile.map { collectionEntry(it.card, it.quantity) })
+            pileAdded("\"${collection.name}\"", pile.sumOf { it.quantity })
+        }
+    }
+
+    /** The whole pile into a deck. */
+    fun addAllToDeck(deckId: String) {
+        val pile = pile()
+        if (pile.isEmpty()) return
+        viewModelScope.launch {
+            val deck = deckRepository.decksFlow.first().find { it.id == deckId }
+            pile.forEach { deckRepository.addEntry(deckId, deckEntry(it.card, it.quantity)) }
+            pileAdded("\"${deck?.name ?: "deck"}\"", pile.sumOf { it.quantity })
+        }
+    }
+
+    /** The whole pile into a new deck named [name]. */
+    fun createDeckAndAddAll(name: String) {
+        val pile = pile()
+        if (pile.isEmpty()) return
+        viewModelScope.launch {
+            val deck = deckRepository.createDeck(name)
+            pile.forEach { deckRepository.addEntry(deck.id, deckEntry(it.card, it.quantity)) }
+            pileAdded("\"${deck.name}\"", pile.sumOf { it.quantity })
         }
     }
 

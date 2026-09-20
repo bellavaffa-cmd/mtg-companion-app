@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
+import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
 import com.mtgcompanion.app.data.GUIDE_WIDTH
 import com.mtgcompanion.app.data.GUIDE_HEIGHT
 import androidx.compose.ui.layout.onSizeChanged
@@ -148,6 +151,9 @@ fun ScanScreen(
 
     var deckPickerCard by remember { mutableStateOf<ScanRow?>(null) }
     var collectionPickerCard by remember { mutableStateOf<ScanRow?>(null) }
+    // The whole pile at once, rather than a card at a time.
+    var deckPickerForAll by remember { mutableStateOf(false) }
+    var collectionPickerForAll by remember { mutableStateOf(false) }
     var showList by remember { mutableStateOf(false) }
     var showManualAdd by remember { mutableStateOf(false) }
 
@@ -428,9 +434,47 @@ fun ScanScreen(
                 onAddToDeck = { deckPickerCard = it },
                 onScanAgain = { viewModel.scanAgain(it.card) },
                 onRemove = { viewModel.removeScan(it.id) },
+                onAllToDeck = { deckPickerForAll = true },
+                onAllToCollection = { collectionPickerForAll = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+    }
+
+    if (deckPickerForAll) {
+        DeckPickerDialog(
+            decks = decks,
+            onDismiss = { deckPickerForAll = false },
+            onPickDeck = { deckId ->
+                deckPickerForAll = false
+                showList = false
+                viewModel.addAllToDeck(deckId)
+            },
+            onCreateDeck = { name ->
+                deckPickerForAll = false
+                showList = false
+                viewModel.createDeckAndAddAll(name)
+            }
+        )
+    }
+
+    if (collectionPickerForAll) {
+        CollectionPickerDialog(
+            // Cards you own but haven't sorted: offered even before the pile exists.
+            collections = if (collections.any { it.isUnsorted }) collections
+            else listOf(Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME)) + collections,
+            onDismiss = { collectionPickerForAll = false },
+            onPickCollection = { collectionId ->
+                collectionPickerForAll = false
+                showList = false
+                viewModel.addAllToCollection(collectionId)
+            },
+            onCreateCollection = { name ->
+                collectionPickerForAll = false
+                showList = false
+                viewModel.createCollectionAndAddAll(name)
+            }
+        )
     }
 
     deckPickerCard?.let { scanned ->
@@ -620,6 +664,8 @@ private fun ScannedListPanel(
     onAddToDeck: (ScanRow) -> Unit,
     onScanAgain: (ScanRow) -> Unit,
     onRemove: (ScanRow) -> Unit,
+    onAllToDeck: () -> Unit,
+    onAllToCollection: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -668,6 +714,29 @@ private fun ScannedListPanel(
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                item(key = "add-all") {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                    ) {
+                        Button(
+                            onClick = onAllToDeck,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("All to a deck", style = MaterialTheme.typography.labelLarge, color = Bg)
+                        }
+                        OutlinedButton(
+                            onClick = onAllToCollection,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, BorderColor),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("All to a binder", style = MaterialTheme.typography.labelLarge, color = TextPrimary)
+                        }
+                    }
+                }
                 items(shown, key = { it.id }) { scanned ->
                     ScannedCardRow(
                         scanned = scanned,
