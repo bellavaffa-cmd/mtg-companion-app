@@ -7,7 +7,7 @@
 // parameters / body that route needs are passed on.
 //
 //   GET  /api-relay/news                        merged headlines from the RSS feeds, newest first
-//   GET  /api-relay/combos/variants?q=&limit=   Commander Spellbook combo search
+//   GET  /api-relay/combos/variants?q=&limit=   Commander Spellbook combo search (held for a day)
 //   POST /api-relay/combos/find-my-combos       combos a decklist contains or is one card short of
 //
 // Deployed with JWT verification on, so callers send the project's anon key as the bearer token.
@@ -22,6 +22,11 @@ const NEWS_FEEDS = [
 const USER_AGENT = 'MtgCompanionRelay/1.0 (+https://github.com/bellavaffa-cmd/mtg-companion-app)'
 const MAX_BODY_BYTES = 256 * 1024
 const NEWS_TTL_MS = 15 * 60 * 1000
+// A card's combos change when cards are printed or banned, so a day-old answer is a good answer.
+const COMBOS_TTL_MS = 24 * 60 * 60 * 1000
+// Card lookups held here. Every app keeps its own copy for a week (ComboCache), so this is for the
+// first look at a card — the popular ones, which many people look up, stay warm between them.
+const COMBOS_KEEP = 500
 
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('Origin') ?? ''
@@ -92,6 +97,21 @@ async function news(req: Request): Promise<Response> {
 
 // ---- Commander Spellbook ----
 
+/**
+ * What card lookups came back with, per instance of this function. Holding the answer here means
+ * the first person to open a popular card pays Spellbook's second, and the rest don't.
+ */
+const comboCache = new Map<string, { at: number; body: string }>()
+/** Lookups under way, so ten people opening the same card make one request upstream. */
+const comboInFlight = new Map<string, Promise<string>>()
+
+/** Drops what's a day old, then the least recently used, down to COMBOS_KEEP. */
+function sweepCombos(now: number) {
+  for (const [key, entry] of comboCache) if (now - entry.at > COMBOS_TTL_MS) comboCache.delete(key)
+  // A Map keeps insertion order and a hit is re-inserted, so the oldest key is the coldest.
+  while (comboCache.size > COMBOS_KEEP) comboCache.delete(comboCache.keys().next().value as string)
+}
+
 async function relaySpellbook(req: Request, upstream: string, init: RequestInit): Promise<Response> {
   const res = await fetch(upstream, {
     ...init,
@@ -108,8 +128,51 @@ async function comboVariants(req: Request, url: URL): Promise<Response> {
   const q = url.searchParams.get('q') ?? ''
   if (!q.trim() || q.length > 500) return json(req, 400, { error: 'Missing or oversized q.' })
   const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? '30') || 30))
+  const key = `${q}\u0000${limit}`
+  const now = Date.now()
+
+  const held = comboCache.get(key)
+  if (held && now - held.at <= COMBOS_TTL_MS) {
+    // Re-inserting marks it as the most recently used, so a popular card outlives a one-off.
+    comboCache.delete(key)
+    comboCache.set(key, held)
+    return combosResponse(req, held.body, 'hit')
+  }
+
   const upstream = `${SPELLBOOK}/variants?${new URLSearchParams({ q, limit: String(limit) })}`
-  return relaySpellbook(req, upstream, { method: 'GET' })
+  let request = comboInFlight.get(key)
+  if (!request) {
+    request = fetchCombos(upstream, key, now).finally(() => comboInFlight.delete(key))
+    comboInFlight.set(key, request)
+  }
+  try {
+    return combosResponse(req, await request, 'miss')
+  } catch {
+    // Spellbook refused or is down: say so the way the other routes do, and hold nothing.
+    return json(req, 502, { error: 'Commander Spellbook is unavailable right now.' })
+  }
+}
+
+/** Asks Spellbook and holds the answer. Only a 200 is held — an error is not an answer. */
+async function fetchCombos(upstream: string, key: string, now: number): Promise<string> {
+  const res = await fetch(upstream, { headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' } })
+  const body = await res.text()
+  if (!res.ok) throw new Error(`Spellbook ${res.status}`)
+  comboCache.set(key, { at: now, body })
+  sweepCombos(now)
+  return body
+}
+
+function combosResponse(req: Request, body: string, cache: 'hit' | 'miss'): Response {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      ...corsHeaders(req),
+      'Content-Type': 'application/json',
+      'Cache-Control': `public, max-age=${Math.floor(COMBOS_TTL_MS / 1000)}`,
+      'X-Relay-Cache': cache,
+    },
+  })
 }
 
 async function findMyCombos(req: Request): Promise<Response> {
@@ -134,7 +197,8 @@ async function findMyCombos(req: Request): Promise<Response> {
   })
 }
 
-Deno.serve(async (req) => {
+/** The routes, as one handler — exported so cache.test.mjs can drive it without a server. */
+export async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(req) })
   const url = new URL(req.url)
   // The path arrives as /api-relay/<route> (or /functions/v1/api-relay/<route> locally).
@@ -147,4 +211,10 @@ Deno.serve(async (req) => {
   } catch (e) {
     return json(req, 502, { error: `Upstream request failed: ${e instanceof Error ? e.message : String(e)}` })
   }
-})
+}
+
+// Served under Deno; importing this file elsewhere (the cache test) just gets the handler.
+const deno = (globalThis as { Deno?: { serve: (handler: (req: Request) => Promise<Response>) => void } }).Deno
+if (deno) deno.serve(handle)
+
+export { comboCache, COMBOS_KEEP }
