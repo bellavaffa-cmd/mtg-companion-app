@@ -182,6 +182,8 @@ data class MissingCard(val entry: DeckCardEntry, val need: Int)
  * A Physical deck covers itself, and so never has anything missing.
  */
 fun missingCards(deck: Deck, collections: List<Collection>, decks: List<Deck>): List<MissingCard> {
+    // A proxy deck is built and sitting on the shelf; its cards are print-outs, not ones to buy.
+    if (deck.ownershipType == DeckOwnership.PROXY) return emptyList()
     val owned = mutableMapOf<String, Int>()
     collections.filter { it.kind == CollectionType.OWNED }.forEach { collection ->
         collection.entries.forEach { entry ->

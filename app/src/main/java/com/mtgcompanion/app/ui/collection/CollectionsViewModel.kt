@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.RoleTags
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +41,8 @@ data class AllCardEntry(
     val name: String,
     val imageUrl: String?,
     val total: Int,
+    /** How many of [total] are proxies — held, but worth nothing and not copies you can trade. */
+    val proxies: Int = 0,
     val sources: List<CardSource> = emptyList(),
     val backImageUrl: String? = null,
     val tags: List<String> = emptyList()
@@ -78,13 +81,15 @@ class CollectionsViewModel(
             // Accumulate total copies plus the list of binders/decks holding each card.
             class Acc(val name: String, val imageUrl: String?, val backImageUrl: String?, val tags: List<String>) {
                 var total = 0
+                var proxies = 0
                 val sources = mutableListOf<CardSource>()
             }
             val byCard = LinkedHashMap<String, Acc>()
-            fun add(id: String, name: String, imageUrl: String?, backImageUrl: String?, tags: List<String>, qty: Int, source: CardSource) {
+            fun add(id: String, name: String, imageUrl: String?, backImageUrl: String?, tags: List<String>, qty: Int, source: CardSource, proxy: Boolean = false) {
                 if (qty <= 0) return
                 val acc = byCard.getOrPut(id) { Acc(name, imageUrl, backImageUrl, tags) }
                 acc.total += qty
+                if (proxy) acc.proxies += qty
                 acc.sources += source
             }
             // Wishlist binders track cards not yet owned, so they don't count toward "owned" totals.
@@ -95,11 +100,12 @@ class CollectionsViewModel(
                 }
             }
             decks.forEach { deck ->
+                val proxy = deck.ownershipType == DeckOwnership.PROXY
                 deck.cards.forEach {
-                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, it.quantity, CardSource(SourceKind.DECK, deck.id, deck.name, it.quantity))
+                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, it.quantity, CardSource(SourceKind.DECK, deck.id, deck.name, it.quantity), proxy)
                 }
             }
-            byCard.map { (id, acc) -> AllCardEntry(id, acc.name, acc.imageUrl, acc.total, acc.sources.toList(), acc.backImageUrl, acc.tags) }
+            byCard.map { (id, acc) -> AllCardEntry(id, acc.name, acc.imageUrl, acc.total, acc.proxies, acc.sources.toList(), acc.backImageUrl, acc.tags) }
                 .sortedBy { it.name.lowercase() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -117,7 +123,8 @@ class CollectionsViewModel(
      * full card data (price/colour/type) from Scryfall in bulk. Null while empty or still loading.
      */
     val dashboard: StateFlow<CollectionDashboard?> = allCards.mapLatest { entries ->
-        computeDashboard(cardRepository, entries.map { it.scryfallId to it.total })
+        // Proxies are print-outs: held, but they add nothing to what the collection is worth.
+        computeDashboard(cardRepository, entries.map { it.scryfallId to (it.total - it.proxies) }.filter { it.second > 0 })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** scryfallId -> USD price across all owned cards, for the enlarged-card value/total display. */

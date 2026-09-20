@@ -148,7 +148,12 @@ fun CollectionsScreen(
     var query by remember { mutableStateOf("") }
     // A card's name or one of its tags.
     val filtered = remember(allCards, query, tagVersion) {
-        if (query.isBlank()) allCards else allCards.filter { RoleTags.matches(it.name, RoleTags.tagsOf(it.name).orEmpty(), query) }
+        // "proxy" reads as a tag of its own, so a search finds the cards standing in for real ones.
+        if (query.isBlank()) allCards
+        else allCards.filter { card ->
+            val tags = RoleTags.tagsOf(card.name).orEmpty() + if (card.proxies > 0) listOf("proxy") else emptyList()
+            RoleTags.matches(card.name, tags, query)
+        }
     }
     // Cards picked on All cards by pressing and holding (scryfall ids), and the action open for
     // them: "binder", "deck", "export" or "remove". Cards no longer owned drop from the pick.
@@ -469,7 +474,7 @@ private fun AllCardsTab(
                 onSelectPrinting = { chosen -> viewModel.changePrintingEverywhere(c.scryfallId, chosen) },
                 onViewDetails = { zoomId = null; onViewDetails(c.name) },
                 backImageUrl = c.backImageUrl,
-                tags = c.tags,
+                tags = if (c.proxies > 0) c.tags + "proxy" else c.tags,
                 // No "add" here — an All Cards entry already lives in a specific binder/deck, and
                 // this tab has no destination-picker of its own to add a brand-new card into.
                 onFindSimilar = { zoomId = null; similarSearchFor = c.name }
@@ -522,7 +527,11 @@ private fun AllCardRow(card: AllCardEntry, selecting: Boolean, selected: Boolean
             Column(modifier = Modifier.weight(1f)) {
                 Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
                 Text(
-                    "${card.total} total",
+                    "${card.total} total" + when {
+                        card.proxies == 0 -> ""
+                        card.proxies == card.total -> " · proxy"
+                        else -> " · ${card.proxies} proxy"
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = TextMuted
                 )

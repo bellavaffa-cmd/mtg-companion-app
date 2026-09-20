@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.scan
 
+import androidx.compose.ui.platform.LocalView
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import androidx.activity.compose.BackHandler
 import com.mtgcompanion.app.data.Collection
@@ -157,6 +158,12 @@ fun ScanScreen(
     var deckPickerForAll by remember { mutableStateOf(false) }
     var collectionPickerForAll by remember { mutableStateOf(false) }
     var showList by remember { mutableStateOf(false) }
+    // Scanning a pile is minutes of not touching the screen: don't let it dim and lock.
+    val view = LocalView.current
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
     // Cards scanned but not put away yet: leaving would throw them away, so it asks first.
     var confirmLeave by remember { mutableStateOf(false) }
     val leave = {

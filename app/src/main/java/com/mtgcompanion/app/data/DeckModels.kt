@@ -41,6 +41,7 @@ enum class GameMode(
  */
 enum class DeckOwnership(val label: String, val description: String) {
     PHYSICAL("Physical", "You own this deck's cards — they count toward your collection."),
+    PROXY("Proxy", "A real deck built with proxies. It counts as built, but its cards are worth nothing and aren't real copies you can trade."),
     VIRTUAL("Virtual", "You don't own this deck physically — its cards aren't counted as owned."),
     PROTOTYPE("Prototype", "Still being built — its cards aren't counted as owned yet.");
 
