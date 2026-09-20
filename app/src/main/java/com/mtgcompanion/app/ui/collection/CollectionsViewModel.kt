@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.spares
+import com.mtgcompanion.app.data.Spare
 import com.mtgcompanion.app.data.proxyCopies
 import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.RoleTags
@@ -158,6 +160,12 @@ class CollectionsViewModel(
     private val _importProgress = MutableStateFlow<ImportProgress>(ImportProgress.Idle)
     /** Where importing a binder from another app is up to. */
     val importProgress: StateFlow<ImportProgress> = _importProgress.asStateFlow()
+
+    /** Cards in the binders no deck plays — the obvious things to trade away (see Spares.kt). */
+    val spares: StateFlow<List<Spare>> =
+        combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
+            spares(collections, decks)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Binders picked cards can be gathered into: owned ones and the Unsorted pile, not wishlists. */
     val binderTargets: StateFlow<List<MoveTarget>> = repository.collectionsFlow

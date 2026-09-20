@@ -124,6 +124,9 @@ fun CollectionsScreen(
     val tagVersion by RoleTags.version.collectAsState()
     val collections by viewModel.collections.collectAsState()
     val allCards by viewModel.allCards.collectAsState()
+    val spares by viewModel.spares.collectAsState()
+    // Spares only: binder cards no deck of yours plays.
+    var sparesOnly by remember { mutableStateOf(false) }
     val dashboard by viewModel.dashboard.collectAsState()
     val prices by viewModel.prices.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
@@ -147,13 +150,15 @@ fun CollectionsScreen(
     // All cards' search: it filters the list, and Select all takes what it shows.
     var query by remember { mutableStateOf("") }
     // A card's name or one of its tags.
-    val filtered = remember(allCards, query, tagVersion) {
+    val filtered = remember(allCards, query, tagVersion, sparesOnly, spares) {
+        val spareIds = spares.map { it.entry.scryfallId }.toSet()
         // "proxy" reads as a tag of its own, so a search finds the cards standing in for real ones.
-        if (query.isBlank()) allCards
+        val matching = if (query.isBlank()) allCards
         else allCards.filter { card ->
             val tags = RoleTags.tagsOf(card.name).orEmpty() + if (card.proxies > 0) listOf("proxy") else emptyList()
             RoleTags.matches(card.name, tags, query)
         }
+        if (sparesOnly) matching.filter { it.scryfallId in spareIds } else matching
     }
     // Cards picked on All cards by pressing and holding (scryfall ids), and the action open for
     // them: "binder", "deck", "export" or "remove". Cards no longer owned drop from the pick.
@@ -230,6 +235,9 @@ fun CollectionsScreen(
             HorizontalPager(state = pagerState, userScrollEnabled = !selecting, modifier = Modifier.fillMaxSize()) { page ->
                 if (page == 0) {
                     AllCardsTab(
+                        spares = spares.size,
+                        sparesOnly = sparesOnly,
+                        onSparesOnly = { sparesOnly = it },
                         unsorted = unsorted,
                         onOpenUnsorted = { onCollectionClick(it) },
                         onImport = { viewModel.resetImport(); showImport = true },
@@ -356,6 +364,10 @@ private fun CollectionsTab(
 
 @Composable
 private fun AllCardsTab(
+    /** How many spare cards there are, and whether the list is showing only those. */
+    spares: Int,
+    sparesOnly: Boolean,
+    onSparesOnly: (Boolean) -> Unit,
     unsorted: Collection?,
     onOpenUnsorted: (String) -> Unit,
     onImport: () -> Unit,
@@ -421,6 +433,17 @@ private fun AllCardsTab(
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+            if (spares > 0) {
+                item {
+                    Text(
+                        if (sparesOnly) "Showing $spares spare ${if (spares == 1) "card" else "cards"} · tap to show everything"
+                        else "Spares · $spares in your binders, in none of your decks",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Gold,
+                        modifier = Modifier.clickable { onSparesOnly(!sparesOnly) }.padding(vertical = 4.dp)
+                    )
+                }
             }
             item {
                 val label = if (query.isBlank()) {

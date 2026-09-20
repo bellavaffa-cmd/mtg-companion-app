@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.home
 
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.SwapHoriz
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.LocalLayoutSize
@@ -105,6 +107,7 @@ fun HomeScreen(
     val collectionValue by viewModel.collectionValue.collectAsState()
     val lastOpenedDeck by viewModel.lastOpenedDeck.collectAsState()
     val decks by viewModel.decks.collectAsState()
+    val proxySwaps by viewModel.proxySwaps.collectAsState()
     val deckColors by viewModel.deckColors.collectAsState()
     val matchSummary by viewModel.matchSummary.collectAsState()
     val cardOfDay by viewModel.cardOfDay.collectAsState()
@@ -281,6 +284,36 @@ fun HomeScreen(
                         Text("${matchSummary.wins * 100 / matchSummary.total}% win rate across all decks", style = MaterialTheme.typography.bodySmall)
                     }
                 }
+            }
+        }
+
+        // Proxies you've since bought for real: said here, rather than only inside the deck.
+        if (proxySwaps.isNotEmpty()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(colors.surface)
+                    .clickable { onOpenDeck(proxySwaps.first().deck.id) }
+                    .padding(14.dp)
+                    .riseIn(3)
+            ) {
+                Icon(Icons.Filled.SwapHoriz, contentDescription = null, tint = colors.accent)
+                Column(Modifier.weight(1f)) {
+                    Text("Proxies you own for real", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (proxySwaps.size == 1) {
+                            "${proxySwaps.first().entry.name} in ${proxySwaps.first().deck.name} — swap it in"
+                        } else {
+                            "${proxySwaps.size} cards in your decks — swap them in"
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
             }
         }
 

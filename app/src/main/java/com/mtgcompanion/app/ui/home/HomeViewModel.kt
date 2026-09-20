@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.home
 
+import com.mtgcompanion.app.data.proxySwaps
+import com.mtgcompanion.app.data.ProxySwap
 import com.mtgcompanion.app.data.PricedCard
 import com.mtgcompanion.app.data.PriceMovers
 import androidx.lifecycle.ViewModel
@@ -69,6 +71,12 @@ class HomeViewModel(
 
     val deckCount: StateFlow<Int> = decks.map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    /** Proxies in the decks that the user now owns a real copy of (see Proxies.kt). */
+    val proxySwaps: StateFlow<List<ProxySwap>> =
+        combine(collectionRepository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
+            proxySwaps(collections, decks)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val binderCount: StateFlow<Int> = collectionRepository.collectionsFlow
         .map { all -> all.count { !it.isUnsorted } }
