@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
@@ -56,6 +57,16 @@ class DeckRepository(private val context: Context) {
 
     suspend fun setGameMode(deckId: String, gameMode: GameMode) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(gameMode = gameMode.name) else it } }
+    }
+
+    /**
+     * One proxy swapped for the real card: the copy leaves the binder and the deck stops counting
+     * that copy as a proxy. Both stores are written, so the card is never in two places at once.
+     */
+    suspend fun swapInProxy(deckId: String, scryfallId: String, collectionRepository: CollectionRepository) {
+        val swap = withSwapIn(collectionRepository.collectionsFlow.first(), decksFlow.first(), deckId, scryfallId) ?: return
+        collectionRepository.applySync { swap.collections }
+        update { swap.decks }
     }
 
     suspend fun setOwnership(deckId: String, ownership: DeckOwnership) {

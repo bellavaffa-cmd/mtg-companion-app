@@ -117,7 +117,8 @@ object ItemMerge {
                 partnerAbility = pick(b.partnerAbility, m.partnerAbility, t.partnerAbility, minePreferred),
                 backImageUrl = pick(b.backImageUrl, m.backImageUrl, t.backImageUrl, minePreferred),
                 tags = pick(b.tags, m.tags, t.tags, minePreferred),
-                replaceable = pick(b.replaceable, m.replaceable, t.replaceable, minePreferred)
+                replaceable = pick(b.replaceable, m.replaceable, t.replaceable, minePreferred),
+                proxyQuantity = pick(b.proxyQuantity, m.proxyQuantity, t.proxyQuantity, minePreferred)
             )
         }
     )

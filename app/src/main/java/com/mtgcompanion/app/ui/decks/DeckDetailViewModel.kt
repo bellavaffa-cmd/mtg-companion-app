@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.proxySwaps
+import com.mtgcompanion.app.data.deckProxyCopies
+import com.mtgcompanion.app.data.ProxySwap
 import com.mtgcompanion.app.data.WISHLIST_ID
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -624,6 +627,18 @@ class DeckDetailViewModel(
 
     fun setGameMode(mode: GameMode) {
         viewModelScope.launch { repository.setGameMode(deckId, mode) }
+    }
+
+    /** Proxies in this deck, and which of them are sitting spare in a binder (see Proxies.kt). */
+    val proxies: StateFlow<Pair<Int, List<ProxySwap>>> =
+        combine(repository.decksFlow, collectionRepository.collectionsFlow) { decks, collections ->
+            val deck = decks.firstOrNull { it.id == deckId } ?: return@combine 0 to emptyList<ProxySwap>()
+            deckProxyCopies(deck) to proxySwaps(collections, listOf(deck))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0 to emptyList())
+
+    /** One proxy swapped for a real copy out of a binder. */
+    fun swapInProxy(scryfallId: String) {
+        viewModelScope.launch { repository.swapInProxy(deckId, scryfallId, collectionRepository) }
     }
 
     fun setOwnership(ownership: DeckOwnership) {

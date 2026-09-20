@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.proxyCopies
 import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.RoleTags
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -100,9 +101,11 @@ class CollectionsViewModel(
                 }
             }
             decks.forEach { deck ->
-                val proxy = deck.ownershipType == DeckOwnership.PROXY
                 deck.cards.forEach {
-                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, it.quantity, CardSource(SourceKind.DECK, deck.id, deck.name, it.quantity), proxy)
+                    // A deck marked Proxy is proxies until real copies are swapped in, card by card.
+                    val proxies = proxyCopies(deck, it)
+                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, it.quantity - proxies, CardSource(SourceKind.DECK, deck.id, deck.name, it.quantity - proxies))
+                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, proxies, CardSource(SourceKind.DECK, deck.id, deck.name, proxies), proxy = true)
                 }
             }
             byCard.map { (id, acc) -> AllCardEntry(id, acc.name, acc.imageUrl, acc.total, acc.proxies, acc.sources.toList(), acc.backImageUrl, acc.tags) }

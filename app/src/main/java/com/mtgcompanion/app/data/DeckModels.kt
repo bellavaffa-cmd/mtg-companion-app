@@ -73,7 +73,12 @@ data class DeckCardEntry(
     val tags: List<String> = emptyList(),
     // A cut candidate: still in the deck (and in every stat) but flagged as the first thing to take
     // out for something better. Always false for entries on a deck's considering list.
-    val replaceable: Boolean = false
+    val replaceable: Boolean = false,
+    /**
+     * How many of this entry's copies are proxies (see Proxies.kt). Null means "whatever the deck
+     * is": all of them in a deck marked Proxy, none in any other.
+     */
+    val proxyQuantity: Int? = null
 )
 
 /** Whether [a] and [b] can legally be co-commanders under the Partner mechanic. */

@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.social.GoldButton
+import com.mtgcompanion.app.data.ProxySwap
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.data.DeckRole
@@ -1263,11 +1265,23 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
     val context = LocalContext.current
     val versionHistory by viewModel.versionHistory.collectAsState()
     var openVersion by remember { mutableStateOf<VersionSummary?>(null) }
+    val proxies by viewModel.proxies.collectAsState()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        val (proxiesLeft, swaps) = proxies
+        if (proxiesLeft > 0 || deck.ownershipType == DeckOwnership.PROXY) {
+            item {
+                ProxiesPanel(
+                    proxiesLeft = proxiesLeft,
+                    swaps = swaps,
+                    onSwapIn = { viewModel.swapInProxy(it) },
+                    onMarkPhysical = { viewModel.setOwnership(DeckOwnership.PHYSICAL) }
+                )
+            }
+        }
         item { MatchRecordPanel(deck.gameResults, onLog = { showLogResult = true }, onRemove = { viewModel.removeGameResult(it) }) }
         item { VersionHistoryPanel(versionHistory, onOpen = { openVersion = it }) }
         item {
@@ -2151,6 +2165,69 @@ private fun QuantityStepper(quantity: Int, onDecrement: () -> Unit, onIncrement:
         Text("$quantity", style = NumberStyle(20), color = app.textPrimary, modifier = Modifier.graphicsLayer { scaleX = bump.value; scaleY = bump.value })
         Box(Modifier.size(width = 32.dp, height = 36.dp).clickable(onClick = onIncrement), contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.Add, contentDescription = "Add a copy", tint = app.textMuted, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+/**
+ * A deck built with proxies: how many are left, and the ones sitting spare in a binder, each a tap
+ * away from being the real card (see Proxies.kt).
+ */
+@Composable
+private fun ProxiesPanel(
+    proxiesLeft: Int,
+    swaps: List<ProxySwap>,
+    onSwapIn: (String) -> Unit,
+    onMarkPhysical: () -> Unit
+) {
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Proxies", style = MaterialTheme.typography.titleSmall, color = GoldLight, modifier = Modifier.weight(1f))
+            Text("$proxiesLeft left", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+        }
+        Spacer(Modifier.height(8.dp))
+        when {
+            proxiesLeft == 0 -> {
+                Text(
+                    "Every card in here is the real thing now.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+                Spacer(Modifier.height(8.dp))
+                GoldButton("Mark it Physical", onMarkPhysical)
+            }
+            swaps.isEmpty() -> Text(
+                "None of these are sitting spare in your binders yet — the Wishlist is where to note the ones to buy.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted
+            )
+            else -> {
+                Text(
+                    "You already own ${if (swaps.size == 1) "one of these" else "${swaps.size} of these"} for real. Swapping one in takes the copy out of your binder and stops counting it as a proxy.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+                Spacer(Modifier.height(8.dp))
+                swaps.forEach { swap ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        AsyncImage(
+                            model = swap.entry.imageUrl.toArtCropUrl(),
+                            contentDescription = swap.entry.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(8.dp))
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(swap.entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${swap.spare} spare in your binders", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                        }
+                        TextButton(onClick = { onSwapIn(swap.entry.scryfallId) }) { Text("Swap in", color = Gold) }
+                    }
+                }
+            }
         }
     }
 }
