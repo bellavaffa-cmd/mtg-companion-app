@@ -8,10 +8,10 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * The combos each card is in, kept on the device. Commander Spellbook is a slow lookup (about a
- * second), so the same card is never asked for twice: what came back is kept for a week, "no
- * combos" included. A card is a file of its own, so keeping one doesn't rewrite the rest.
- * Mirrors the web app's src/api/comboCache.ts.
+ * What Commander Spellbook said, kept on the device: the combos a card is in, and the combos a
+ * decklist holds. Both are slow lookups (about a second), so the same question is never asked
+ * twice — the answer is kept for a week, "none" included. Each answer is a file of its own, so
+ * keeping one doesn't rewrite the rest. Mirrors the web app's src/api/comboCache.ts.
  */
 object ComboCache {
 
@@ -21,59 +21,95 @@ object ComboCache {
     /** Cards kept; the ones asked for longest ago go first. */
     const val KEEP = 200
 
-    private const val DIR = "combos"
-    private val adapter = localMoshi.adapter<List<Variant>>(
+    /** Decklists kept. A deck's answer is only good for that exact list, so a few is plenty. */
+    const val KEEP_DECKS = 20
+
+    private const val CARD_DIR = "combos"
+    private const val DECK_DIR = "deck-combos"
+
+    private val variantsAdapter = localMoshi.adapter<List<Variant>>(
         Types.newParameterizedType(List::class.java, Variant::class.java)
     )
+    private val deckAdapter = localMoshi.adapter(DeckCombos::class.java)
 
-    private var dir: File? = null
-    private val memory = ConcurrentHashMap<String, List<Variant>>()
+    private var filesDir: File? = null
+    private val cardMemory = ConcurrentHashMap<String, List<Variant>>()
+    private val deckMemory = ConcurrentHashMap<String, DeckCombos>()
 
     fun key(cardName: String): String = cardName.trim().lowercase()
 
-    /** A card's file: its name hashed, so any card name is a name a file system accepts. */
-    internal fun fileName(cardName: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(key(cardName).toByteArray())
+    /**
+     * A decklist's key: its commanders and its cards, so a deck that's edited asks again while two
+     * decks holding the same cards share the one answer.
+     */
+    fun deckKey(commanders: List<String>, cards: List<String>): String =
+        commanders.map { key(it) }.sorted().joinToString("|") + "#" + cards.map { key(it) }.distinct().sorted().joinToString("|")
+
+    /** A file name for [key]: hashed, so any card or decklist is a name a file system accepts. */
+    internal fun fileName(key: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(key.trim().lowercase().toByteArray())
         return digest.take(8).joinToString("") { "%02x".format(it) } + ".json"
     }
 
-    /** Opens the store and clears out what's stale or beyond [KEEP]. */
+    /** Opens the store and clears out what's stale or beyond what's kept. */
     fun init(context: Context) {
-        dir = File(context.filesDir, DIR).apply { mkdirs() }
-        runCatching { sweep(System.currentTimeMillis()) }
-    }
-
-    /** The combos kept for [cardName], or null to go and ask. */
-    fun get(cardName: String, now: Long = System.currentTimeMillis()): List<Variant>? {
-        memory[key(cardName)]?.let { return it }
-        val file = dir?.let { File(it, fileName(cardName)) } ?: return null
-        if (!file.exists() || now - file.lastModified() > TTL_MS) return null
-        val variants = runCatching { adapter.fromJson(file.readText()) }.getOrNull() ?: return null
-        memory[key(cardName)] = variants
-        return variants
-    }
-
-    /** Keeps [variants] for [cardName] — an empty list ("no combos") too, since that's an answer. */
-    fun put(cardName: String, variants: List<Variant>, now: Long = System.currentTimeMillis()) {
-        memory[key(cardName)] = variants
-        val folder = dir ?: return
+        filesDir = context.filesDir
         runCatching {
-            File(folder, fileName(cardName)).writeText(adapter.toJson(variants))
-            sweep(now)
+            dir(CARD_DIR); dir(DECK_DIR)
+            sweep(CARD_DIR, KEEP, System.currentTimeMillis())
+            sweep(DECK_DIR, KEEP_DECKS, System.currentTimeMillis())
         }
     }
 
-    /** Which of the cards saved at [savedAt] to keep: the fresh ones, newest first, at most [KEEP]. */
-    fun toKeep(savedAt: Map<String, Long>, now: Long): Set<String> =
+    /** The combos kept for [cardName], or null to go and ask. */
+    fun get(cardName: String, now: Long = System.currentTimeMillis()): List<Variant>? =
+        cardMemory[key(cardName)] ?: read(CARD_DIR, key(cardName), now) { variantsAdapter.fromJson(it) }
+            ?.also { cardMemory[key(cardName)] = it }
+
+    /** Keeps [variants] for [cardName] — an empty list ("no combos") too, since that's an answer. */
+    fun put(cardName: String, variants: List<Variant>, now: Long = System.currentTimeMillis()) {
+        cardMemory[key(cardName)] = variants
+        write(CARD_DIR, key(cardName), variantsAdapter.toJson(variants), KEEP, now)
+    }
+
+    /** What's kept for the decklist [deckKey], or null to go and ask. */
+    fun getDeck(deckKey: String, now: Long = System.currentTimeMillis()): DeckCombos? =
+        deckMemory[deckKey] ?: read(DECK_DIR, deckKey, now) { deckAdapter.fromJson(it) }
+            ?.also { deckMemory[deckKey] = it }
+
+    /** Keeps [combos] for the decklist [deckKey]. */
+    fun putDeck(deckKey: String, combos: DeckCombos, now: Long = System.currentTimeMillis()) {
+        deckMemory[deckKey] = combos
+        write(DECK_DIR, deckKey, deckAdapter.toJson(combos), KEEP_DECKS, now)
+    }
+
+    /** Which of the answers saved at [savedAt] to keep: the fresh ones, newest first, at most [keep]. */
+    fun toKeep(savedAt: Map<String, Long>, keep: Int, now: Long): Set<String> =
         savedAt.filterValues { now - it <= TTL_MS }
-            .entries.sortedByDescending { it.value }.take(KEEP)
+            .entries.sortedByDescending { it.value }.take(keep)
             .map { it.key }.toSet()
 
-    /** Deletes the cards [toKeep] leaves out. */
-    private fun sweep(now: Long) {
-        val files = dir?.listFiles()?.filter { it.isFile } ?: return
-        if (files.size <= KEEP && files.none { now - it.lastModified() > TTL_MS }) return
-        val keep = toKeep(files.associate { it.name to it.lastModified() }, now)
-        files.filterNot { it.name in keep }.forEach { it.delete() }
+    private fun dir(name: String): File? = filesDir?.let { File(it, name).apply { mkdirs() } }
+
+    private fun <T> read(folder: String, key: String, now: Long, parse: (String) -> T?): T? {
+        val file = dir(folder)?.let { File(it, fileName(key)) } ?: return null
+        if (!file.exists() || now - file.lastModified() > TTL_MS) return null
+        return runCatching { parse(file.readText()) }.getOrNull()
+    }
+
+    private fun write(folder: String, key: String, json: String, keep: Int, now: Long) {
+        val target = dir(folder) ?: return
+        runCatching {
+            File(target, fileName(key)).writeText(json)
+            sweep(folder, keep, now)
+        }
+    }
+
+    /** Deletes what [toKeep] leaves out. */
+    private fun sweep(folder: String, keep: Int, now: Long) {
+        val files = dir(folder)?.listFiles()?.filter { it.isFile } ?: return
+        if (files.size <= keep && files.none { now - it.lastModified() > TTL_MS }) return
+        val kept = toKeep(files.associate { it.name to it.lastModified() }, keep, now)
+        files.filterNot { it.name in kept }.forEach { it.delete() }
     }
 }

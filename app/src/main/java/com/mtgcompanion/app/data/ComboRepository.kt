@@ -30,13 +30,17 @@ class ComboRepository {
      */
     suspend fun findCombosInDeck(commanderNames: List<String>, cardNames: List<String>): DeckCombos? {
         if (cardNames.isEmpty() && commanderNames.isEmpty()) return DeckCombos(emptyList(), emptyList())
+        // Kept for a week under this exact decklist, so opening a deck again is instant while an
+        // edited deck asks afresh.
+        val key = ComboCache.deckKey(commanderNames, cardNames)
+        ComboCache.getDeck(key)?.let { return it }
         val body = FindMyCombosRequest(
             commanders = commanderNames.map { DeckCardRef(it) },
             main = cardNames.map { DeckCardRef(it) }
         )
         return try {
             val results = api.findMyCombos(body).results
-            DeckCombos(results?.included.orEmpty(), results?.almostIncluded.orEmpty())
+            DeckCombos(results?.included.orEmpty(), results?.almostIncluded.orEmpty()).also { ComboCache.putDeck(key, it) }
         } catch (e: Exception) {
             null
         }
