@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import com.mtgcompanion.app.ui.social.GoldButton
 import com.mtgcompanion.app.data.ProxySwap
 import com.mtgcompanion.app.ui.common.rememberMoney
@@ -827,6 +829,7 @@ private fun ExportFormatChip(label: String, selected: Boolean, onClick: () -> Un
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun DeckSettingsDialog(
     current: GameMode,
     onSelect: (GameMode) -> Unit,
@@ -853,13 +856,20 @@ private fun DeckSettingsDialog(
                 Spacer(Modifier.height(20.dp))
                 Text("Ownership", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Four of these don't fit a phone's width: they wrap onto a second line rather
+                // than squeezing "Prototype" into a column of letters.
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     DeckOwnership.entries.forEach { option ->
                         val selected = option == ownership
                         Text(
                             option.label,
                             style = MaterialTheme.typography.labelMedium,
                             color = if (selected) Bg else TextPrimary,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
                                 .background(if (selected) Gold else Bg)
