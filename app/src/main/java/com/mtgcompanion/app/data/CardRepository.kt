@@ -11,6 +11,9 @@ import retrofit2.HttpException
 /** One page of search results, plus whether Scryfall has more beyond it. */
 data class SearchPage(val cards: List<ScryfallCard>, val hasMore: Boolean)
 
+/** Pages of printings to follow at most. A basic land runs to five; nothing runs to ten. */
+private const val MOST_PRINTING_PAGES = 10
+
 class CardRepository {
     private val api = NetworkModule.scryfallApi
 
@@ -43,7 +46,16 @@ class CardRepository {
     /** Every printing of a card (unique arts/sets), newest first, for alternate-art selection. */
     suspend fun getPrintings(cardName: String): List<ScryfallCard> {
         return try {
-            api.searchCards(query = "!\"$cardName\"", unique = "prints", order = "released").data
+            val all = mutableListOf<ScryfallCard>()
+            // Scryfall answers 175 printings at a time; a basic land runs to hundreds of them.
+            for (page in 1..MOST_PRINTING_PAGES) {
+                val response = api.searchCards(
+                    query = "!\"$cardName\"", page = page, unique = "prints", order = "released"
+                )
+                all += response.data
+                if (!response.hasMore) break
+            }
+            all
         } catch (e: HttpException) {
             if (e.code() == 404) emptyList() else throw e
         }

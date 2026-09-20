@@ -556,7 +556,12 @@ fun MtgNavGraph(
 
             destination(Routes.SCAN) {
                 val viewModel: ScanViewModel = viewModel(
-                    factory = ScanViewModel.Factory(collectionRepository, deckRepository, artIndexRepository)
+                    factory = ScanViewModel.Factory(
+                        LocalContext.current.applicationContext,
+                        collectionRepository,
+                        deckRepository,
+                        artIndexRepository
+                    )
                 )
                 ScanScreen(
                     viewModel = viewModel,

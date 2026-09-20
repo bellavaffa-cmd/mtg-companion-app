@@ -864,7 +864,7 @@ private fun ScannedCardRow(
                 if (!scanned.exact) {
                     // The set code couldn't be read, so this is the card's usual printing.
                     Text(
-                        "Usual printing · pick art",
+                        "Best guess · pick art",
                         style = MaterialTheme.typography.labelMedium,
                         color = Gold,
                         modifier = Modifier.clickable(onClick = onPickArt)

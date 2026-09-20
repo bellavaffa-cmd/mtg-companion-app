@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.scan
 
+import android.content.Context
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +73,7 @@ data class ScanUiState(
 )
 
 class ScanViewModel(
+    private val appContext: Context,
     private val cardRepository: CardRepository = CardRepository(),
     private val collectionRepository: CollectionRepository,
     private val deckRepository: DeckRepository,
@@ -235,8 +237,15 @@ class ScanViewModel(
             val printing = fromFrame ?: readSmallPrint(grabFrame, image.rotationDegrees, guide)
             val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: normalized
 
+            // What the card looked like, taken while it was still in the frame. When the set code
+            // was read there's nothing left to work out; otherwise this decides the printing.
+            val look = if (printing != null) null else lookOf(grabFrame, image.rotationDegrees, guide)
+
             nameCache[cacheKey]?.let { cached ->
-                if (accept(candidate, cached, forced, exact = printing != null)) lastAddedCard = cached
+                accept(candidate, cached, forced, exact = printing != null)?.let { row ->
+                    lastAddedCard = cached
+                    matchArt(row, cached, look)
+                }
                 busy.set(false)
                 onProcessed()
                 return@launch
@@ -244,9 +253,10 @@ class ScanViewModel(
 
             try {
                 val card = resolveCard(candidate, printing)
-                if (accept(candidate, card, forced, exact = printing != null)) {
+                accept(candidate, card, forced, exact = printing != null)?.let { row ->
                     nameCache[cacheKey] = card
                     lastAddedCard = card
+                    matchArt(row, card, look)
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(status = "Didn't recognize \"$candidate\" — keep scanning…")
@@ -275,16 +285,47 @@ class ScanViewModel(
         return extractSetAndNumber(text.textBlocks.flatMap { it.lines })
     }
 
+    /** What the card in the frame looks like, off the camera's own picture. */
+    private suspend fun lookOf(frame: (() -> Bitmap?)?, rotation: Int, guide: ScanBox?): FloatArray? {
+        val picture = withContext(Dispatchers.Default) { frame?.invoke() } ?: return null
+        return withContext(Dispatchers.Default) { cameraSignature(picture, rotation, guide) }
+    }
+
+    /**
+     * Works out which printing was really in the frame from what the card looked like, and corrects
+     * the row without being asked. This runs behind the scan rather than in front of it: fetching a
+     * card's printings and their pictures takes a moment, and nobody should have to hold a card
+     * still while it happens. The row is left alone if it's been deleted, or its printing already
+     * picked by hand, since the scan.
+     */
+    private fun matchArt(rowId: Long, scanned: ScryfallCard, look: FloatArray?) {
+        if (look == null) return
+        viewModelScope.launch {
+            val printings = printingsByName[scanned.name]
+                // Nothing came back — offline, most likely. Don't hold on to that as the answer.
+                ?: runCatching { cardRepository.getPrintings(scanned.name) }.getOrDefault(emptyList())
+                    .also { if (it.isNotEmpty()) printingsByName[scanned.name] = it }
+            if (printings.size < 2) return@launch
+            val found = runCatching { matchPrinting(appContext, look, printings) }.getOrNull() ?: return@launch
+            val rows = _uiState.value.scannedCards
+            if (rows.none { it.id == rowId && it.card.id == scanned.id && !it.exact }) return@launch
+            setScanned(
+                rows.map { if (it.id == rowId) it.copy(card = found.pick, exact = found.only) else it },
+                if (found.pick.id == scanned.id) null
+                else "${scanned.name} — matched the art to ${found.pick.setName ?: found.pick.set?.uppercase()}"
+            )
+        }
+    }
+
     /**
      * Adds [card] only if the read really named it. A fuzzy lookup answers half a title with a real
      * card, so a card that wasn't all in the frame would otherwise join the list as if it had been
      * scanned properly. Tapping "Scan now" ([forced]) says "yes, really" and skips the check.
      */
-    private fun accept(candidate: String, card: ScryfallCard, forced: Boolean, exact: Boolean = false): Boolean {
+    private fun accept(candidate: String, card: ScryfallCard, forced: Boolean, exact: Boolean = false): Long? {
         val confirmation = if (forced) Confirmation.YES else confirmRead(candidate, card.name, card.flavorName)
         if (confirmation == Confirmation.YES) {
-            addScannedCard(card, exact)
-            return true
+            return addScannedCard(card, exact)
         }
         // Nothing is added, and this reading isn't spent on another lookup; more of the card coming
         // into the frame reads differently, and that is looked up.
@@ -296,7 +337,7 @@ class ScanViewModel(
                 "Read \"$candidate\", which looks like ${card.flavorName ?: card.name} — hold the card still and try again."
             }
         )
-        return false
+        return null
     }
 
     /**
@@ -326,7 +367,7 @@ class ScanViewModel(
     }
 
     /** Every scan is its own row, newest first, so a card read twice shows twice. */
-    private fun addScannedCard(card: ScryfallCard, exact: Boolean = false) {
+    private fun addScannedCard(card: ScryfallCard, exact: Boolean = false): Long {
         val row = ScanRow(nextScanId++, card, System.currentTimeMillis(), exact)
         val rows = listOf(row) + _uiState.value.scannedCards
         val copy = copyNumber(rows, row)
@@ -338,9 +379,16 @@ class ScanViewModel(
         setScanned(rows, status)
         _uiState.value = _uiState.value.copy(successToken = _uiState.value.successToken + 1)
         scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        return row.id
     }
 
     private var nextScanId = ScanPile.nextId(_uiState.value.scannedCards)
+
+    /**
+     * Printings looked up this session, by card name. Scanning a pile of lands asks after the same
+     * eight hundred Plains printings over and over otherwise, and Scryfall is owed better than that.
+     */
+    private val printingsByName = mutableMapOf<String, List<ScryfallCard>>()
 
     /** Every change to the pile is kept, so shutting the app down mid-session doesn't lose it. */
     private fun setScanned(rows: List<ScanRow>, status: String? = null) {
@@ -584,6 +632,7 @@ class ScanViewModel(
     }
 
     class Factory(
+        private val appContext: Context,
         private val collectionRepository: CollectionRepository,
         private val deckRepository: DeckRepository,
         private val artIndexRepository: ArtIndexRepository
@@ -591,6 +640,7 @@ class ScanViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ScanViewModel(
+                appContext = appContext,
                 cardRepository = CardRepository(),
                 collectionRepository = collectionRepository,
                 deckRepository = deckRepository,
