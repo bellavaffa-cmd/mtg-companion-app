@@ -65,6 +65,12 @@ assert.equal(first.cache, 'miss')
 assert.equal(upstreamCalls, 1)
 assert.equal(dbWrites, 1)
 
+// Postgres text has no room for a NUL, so a key holding one is written as nothing at all.
+for (const key of dbRows.keys()) {
+  assert.ok(!/[\u0000]/.test(key), `key must be plain text: ${JSON.stringify(key)}`)
+  assert.ok(/^\d+:/.test(key), `key should start with the limit: ${JSON.stringify(key)}`)
+}
+
 // The same isolate answers from memory, without even reading the table.
 const readsBefore = dbReads
 const second = await ask('Sol Ring')

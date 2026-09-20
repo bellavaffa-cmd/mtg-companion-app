@@ -196,7 +196,9 @@ async function comboVariants(req: Request, url: URL): Promise<Response> {
   const q = url.searchParams.get('q') ?? ''
   if (!q.trim() || q.length > 500) return json(req, 400, { error: 'Missing or oversized q.' })
   const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? '30') || 30))
-  const key = `${q}\u0000${limit}`
+  // Kept as text in Postgres, which has no room for a NUL. The limit is digits, so putting it
+  // first keeps one lookup from reading as another.
+  const key = `${limit}:${q}`
   const now = Date.now()
 
   const held = comboCache.get(key)
@@ -248,6 +250,9 @@ function combosResponse(req: Request, body: string, cache: 'hit' | 'db' | 'miss'
       'Content-Type': 'application/json',
       'Cache-Control': `public, max-age=${Math.floor(COMBOS_TTL_MS / 1000)}`,
       'X-Relay-Cache': cache,
+      // Whether the relay can reach its own store — without it, every first look goes upstream.
+      'X-Relay-Store': db() ? 'on' : 'off',
+      'Access-Control-Expose-Headers': 'X-Relay-Cache, X-Relay-Store',
     },
   })
 }
