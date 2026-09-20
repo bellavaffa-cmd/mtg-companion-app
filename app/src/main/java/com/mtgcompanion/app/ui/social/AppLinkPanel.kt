@@ -156,7 +156,7 @@ fun AppLinkPanel(handler: AppLinkHandler, profile: Profile?, onDone: () -> Unit,
         is LinkResult.Unknown -> Column(panel, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Filled.QrCode2, contentDescription = null, tint = colors.textDim)
-                Text("That isn't an MTG Companion code.", color = colors.textPrimary)
+                Text("That isn't a Manabind code.", color = colors.textPrimary)
             }
             LineButton("Scan again", handler::dismiss)
         }

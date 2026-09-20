@@ -267,7 +267,7 @@ internal fun SeatCodeOverlay(seat: Int, playerName: String, code: String?, error
                         QrCode(SocialApi.seatLink(code, seat), 260.dp, "QR code to sit at seat $seat")
                     }
                     TableLabel(
-                        "Scan with the MTG Companion app (Friends → Scan QR code) or any phone camera. Waiting for them to join…",
+                        "Scan with the Manabind app (Friends → Scan QR code) or any phone camera. Waiting for them to join…",
                         20.sp,
                         color = TableColors.TextMuted,
                         align = TextAlign.Center

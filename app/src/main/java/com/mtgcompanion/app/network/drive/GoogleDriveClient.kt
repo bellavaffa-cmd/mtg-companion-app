@@ -25,6 +25,9 @@ class GoogleDriveClient {
     private companion object {
         const val FILES = "https://www.googleapis.com/drive/v3/files"
         const val FOLDER_MIME = "application/vnd.google-apps.folder"
+        // Deliberately still the old app name: this is the folder people's existing backups
+        // are already sitting in. Rename it and the app makes a new empty one and can no longer
+        // see anything backed up before the rename.
         const val FOLDER_NAME = "MTG Companion"
         const val BACKUP_NAME = "mtg-companion-backup.json"
     }

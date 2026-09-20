@@ -171,7 +171,7 @@ fun NavSidebar(
             modifier = Modifier.padding(start = 8.dp, bottom = 20.dp)
         ) {
             AppMark { onNavigate(NavDestination.HOME) }
-            Text("MTG Companion", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold))
+            Text("Manabind", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold))
         }
 
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {

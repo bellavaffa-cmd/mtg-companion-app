@@ -1,14 +1,77 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manabind's mark: three cards in a fan, an M cut out of the front one.
+
+  Drawn in the mark's own space and scaled into the middle of the 108x108 icon, where the launcher's
+  safe zone is the inner 72x72 (18..90 on both sides) — anything outside that is cropped away by
+  whatever shape the launcher masks to. The wider the fan, the smaller the whole mark has to be
+  drawn to stay inside that square, which is what settled the spread at 18 degrees.
+
+  Each card behind is pushed up before it is swung out. Without that lift only a bare wedge of it
+  shows past the card in front and the mark reads as wings rather than cards. They are filled rather
+  than outlined for the same reason: a sliver of an outline is a stray stroke, a sliver of a solid
+  card still reads as a card.
+
+  Every card is also stroked in the background colour. That dark gap is what holds the fan apart —
+  three gold cards meeting edge to edge read as one lumpy shape.
+
+  This is the icon cut of the mark: the M is a size larger and heavier than the display cut used for
+  the wordmark, because a knocked-out letterform closes up as it shrinks and the notch between the
+  diagonals is the first thing to go. See public/wordmark.svg in the web app.
+
+  The M is painted in the background colour rather than punched through, since a VectorDrawable has
+  no masking. Over the flat background layer that reads identically.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Gold diamond/orb glyph matching mtgoracle.gg's ornament marks -->
-    <path
-        android:fillColor="#C4893A"
-        android:pathData="M54,30 L74,54 L54,78 L34,54 Z" />
-    <path
-        android:fillColor="#E0A84E"
-        android:pathData="M54,42 L64,54 L54,66 L44,54 Z" />
+    <group
+        android:pivotX="36"
+        android:pivotY="50.5"
+        android:scaleX="0.82"
+        android:scaleY="0.82"
+        android:translateX="18"
+        android:translateY="3.5">
+
+        <group
+            android:pivotX="36"
+            android:pivotY="86"
+            android:rotation="-18">
+            <group android:translateY="-8">
+                <path
+                    android:fillColor="#C4893A"
+                    android:strokeColor="#07080E"
+                    android:strokeWidth="6"
+                    android:pathData="M21,26 L51,26 A5,5 0 0 1 56,31 L56,79 A5,5 0 0 1 51,84 L21,84 A5,5 0 0 1 16,79 L16,31 A5,5 0 0 1 21,26 Z" />
+            </group>
+        </group>
+        <group
+            android:pivotX="36"
+            android:pivotY="86"
+            android:rotation="18">
+            <group android:translateY="-8">
+                <path
+                    android:fillColor="#C4893A"
+                    android:strokeColor="#07080E"
+                    android:strokeWidth="6"
+                    android:pathData="M21,26 L51,26 A5,5 0 0 1 56,31 L56,79 A5,5 0 0 1 51,84 L21,84 A5,5 0 0 1 16,79 L16,31 A5,5 0 0 1 21,26 Z" />
+            </group>
+        </group>
+
+        <!-- The card in front, solid, with the M through it. -->
+        <path
+            android:fillColor="#E6B45E"
+            android:strokeColor="#07080E"
+            android:strokeWidth="6"
+            android:pathData="M21,26 L51,26 A5,5 0 0 1 56,31 L56,79 A5,5 0 0 1 51,84 L21,84 A5,5 0 0 1 16,79 L16,31 A5,5 0 0 1 21,26 Z" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#07080E"
+            android:strokeWidth="7"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M23,67 L23,43 L36,57 L49,43 L49,67" />
+    </group>
 </vector>

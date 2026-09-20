@@ -141,7 +141,7 @@ object PushNotifications {
         val notification = NotificationCompat.Builder(context, if (open == "trades") CHANNEL_TRADES else CHANNEL_FRIENDS)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(0xFFE6B45E.toInt())
-            .setContentTitle(data["title"] ?: "MTG Companion")
+            .setContentTitle(data["title"] ?: "Manabind")
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)

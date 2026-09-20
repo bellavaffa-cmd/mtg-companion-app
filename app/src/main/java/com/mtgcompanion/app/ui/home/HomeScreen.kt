@@ -177,7 +177,7 @@ fun HomeScreen(
             Column(Modifier.weight(1f)) {
                 Text(greeting.uppercase(), style = EyebrowStyle, color = colors.textMuted)
                 Text(
-                    if (layout == LayoutSize.DESKTOP) "Welcome back" else "MTG Companion",
+                    if (layout == LayoutSize.DESKTOP) "Welcome back" else "Manabind",
                     style = if (wide) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineSmall
                 )
             }

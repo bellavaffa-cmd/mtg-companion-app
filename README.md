@@ -1,4 +1,4 @@
-# MTG Companion
+# Manabind
 
 A native Android app (Kotlin + Jetpack Compose) for searching Magic: The Gathering cards, pulling
 data from these sources:

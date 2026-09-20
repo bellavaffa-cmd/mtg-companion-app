@@ -155,7 +155,7 @@ class UpdateManager(
         if (!context.packageManager.canRequestPackageInstalls()) {
             _state.value = _state.value.copy(
                 installing = false,
-                message = "Allow MTG Companion to install apps, then tap Update again."
+                message = "Allow Manabind to install apps, then tap Update again."
             )
             val settings = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
