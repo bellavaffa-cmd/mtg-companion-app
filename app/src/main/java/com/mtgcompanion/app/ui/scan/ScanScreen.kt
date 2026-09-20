@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.GUIDE_WIDTH
+import com.mtgcompanion.app.data.GUIDE_HEIGHT
+import androidx.compose.ui.layout.onSizeChanged
 import com.mtgcompanion.app.data.scannedTwiceOver
 import com.mtgcompanion.app.data.repeatedCards
 import com.mtgcompanion.app.data.onlyRepeats
@@ -177,7 +180,14 @@ fun ScanScreen(
     val frameCount = remember { AtomicInteger() }
     DisposableEffect(Unit) { onDispose { cameraExecutor.shutdown(); qrReader.close() } }
 
-    Box(modifier = Modifier.fillMaxSize().background(Bg)) {
+    // The preview's size in pixels: with it the scanner can place the framing guide in the
+    // camera's own picture and leave the next card along unread.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Bg)
+            .onSizeChanged { viewModel.previewSized(it.width, it.height) }
+    ) {
         if (!hasCameraPermission) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -274,8 +284,8 @@ fun ScanScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .fillMaxWidth(0.8f)
-                .fillMaxHeight(0.55f)
+                .fillMaxWidth(GUIDE_WIDTH)
+                .fillMaxHeight(GUIDE_HEIGHT)
                 .border(
                     BorderStroke(
                         (2 + 3 * successFlash.value).dp,

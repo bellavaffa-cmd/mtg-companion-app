@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.GUIDE_WIDTH
+import com.mtgcompanion.app.data.GUIDE_GIVE_UP_FRAMES
+import com.mtgcompanion.app.data.GUIDE_HEIGHT
+import com.mtgcompanion.app.data.guideInImage
+import com.mtgcompanion.app.data.GUIDE_SLACK
 import com.mtgcompanion.app.data.confirmRead
 import com.mtgcompanion.app.data.STEADY_READS
 import com.mtgcompanion.app.data.Confirmation
@@ -99,6 +104,19 @@ class ScanViewModel(
     private var steadyReads = 0
     private val nameCache = HashMap<String, ScryfallCard>()
 
+    // The preview's size in pixels, set by the screen: with it, the framing guide can be placed in
+    // the camera's own picture, and text outside it (the next card along) left unread.
+    private var previewWidth = 0
+    private var previewHeight = 0
+    // Frames in a row with text read, none of it inside the guide (see GUIDE_GIVE_UP_FRAMES).
+    private var outsideGuideStreak = 0
+
+    /** The screen says how big the camera preview is; the guide is a share of it (see ScanScreen). */
+    fun previewSized(width: Int, height: Int) {
+        previewWidth = width
+        previewHeight = height
+    }
+
     // Set by captureNow() (the manual "tap to scan" button): the next successfully OCR'd frame is
     // accepted immediately, skipping the two-frame stability wait and the same-card-still-in-frame
     // guard — an explicit user tap is itself the confirmation those guards otherwise stand in for,
@@ -126,16 +144,25 @@ class ScanViewModel(
             return
         }
         recognizer.process(image)
-            .addOnSuccessListener { visionText -> handleRecognizedText(visionText, onProcessed) }
+            .addOnSuccessListener { visionText -> handleRecognizedText(visionText, image, onProcessed) }
             .addOnFailureListener {
                 busy.set(false)
                 onProcessed()
             }
     }
 
-    private fun handleRecognizedText(visionText: Text, onProcessed: () -> Unit) {
-        val candidate = extractCardName(visionText)
+    private fun handleRecognizedText(visionText: Text, image: InputImage, onProcessed: () -> Unit) {
         val forced = forceScanNext.getAndSet(false)
+        // Only text inside the framing guide is the card being scanned; the rest is whatever else is
+        // on the table. Tapping "Scan now" with nothing in the guide reads the whole frame instead.
+        val all = visionText.textBlocks.flatMap { it.lines }
+        val inGuide = linesInGuide(visionText, image, previewWidth, previewHeight)
+        // Safety net: if text keeps being read but never inside the guide — a phone whose reader
+        // measures its picture differently — the guide is set aside rather than scanning nothing.
+        outsideGuideStreak = if (all.isNotEmpty() && inGuide.isEmpty()) outsideGuideStreak + 1 else 0
+        val ignoreGuide = forced || outsideGuideStreak >= GUIDE_GIVE_UP_FRAMES
+        val lines = if (inGuide.isEmpty() && ignoreGuide) all else inGuide
+        val candidate = extractCardName(lines)
         if (candidate == null) {
             // No title in view. Only treat this as "the card actually left" after a real streak
             // of blank frames — see blankFrameStreak's doc comment above.
@@ -183,7 +210,7 @@ class ScanViewModel(
 
         // Also read the set code + collector number so we can fetch the exact printing, not just
         // the default one. Cache by that printing when known so a re-scan skips the network.
-        val printing = extractSetAndNumber(visionText)
+        val printing = extractSetAndNumber(lines)
         val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: normalized
 
         nameCache[cacheKey]?.let { cached ->
@@ -356,12 +383,13 @@ class ScanViewModel(
     fun debugScan(image: InputImage) {
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
-                val candidate = extractCardName(visionText)
+                val lines = visionText.textBlocks.flatMap { it.lines }
+                val candidate = extractCardName(lines)
                 if (candidate == null) {
                     _uiState.value = _uiState.value.copy(status = "OCR read no card title")
                     return@addOnSuccessListener
                 }
-                val printing = extractSetAndNumber(visionText)
+                val printing = extractSetAndNumber(lines)
                 _uiState.value = _uiState.value.copy(status = "OCR read \"$candidate\" — looking up…")
                 viewModelScope.launch {
                     try {
@@ -439,13 +467,31 @@ class ScanViewModel(
 }
 
 /**
+ * The lines of text inside the framing guide, with a little room to spare for a card held large.
+ * Every line when the preview's size isn't known yet, or the guide can't be worked out.
+ */
+internal fun linesInGuide(visionText: Text, image: InputImage, previewWidth: Int, previewHeight: Int): List<Text.Line> {
+    val lines = visionText.textBlocks.flatMap { it.lines }
+    // The reader turns the picture upright, and the boxes it hands back are in that upright picture.
+    val upright = image.rotationDegrees == 90 || image.rotationDegrees == 270
+    val width = if (upright) image.height else image.width
+    val height = if (upright) image.width else image.height
+    val guide = guideInImage(width, height, previewWidth, previewHeight, GUIDE_WIDTH, GUIDE_HEIGHT)
+        ?.grownBy(GUIDE_SLACK)
+        ?: return lines
+    return lines.filter { line ->
+        val box = line.boundingBox ?: return@filter true
+        guide.holdsCentreOf(box.left, box.top, box.right, box.bottom)
+    }
+}
+
+/**
  * A card's title is printed as the top-most line of text on its frame, above the type line and
  * rules text. Scryfall's fuzzy search then tolerates the remaining OCR noise (mana symbols read
  * as stray characters, minor misreads, etc).
  */
-internal fun extractCardName(visionText: Text): String? {
-    return visionText.textBlocks
-        .flatMap { it.lines }
+internal fun extractCardName(lines: List<Text.Line>): String? {
+    return lines
         .filter { line -> line.text.count { c -> c.isLetter() } >= 3 }
         .minByOrNull { it.boundingBox?.top ?: Int.MAX_VALUE }
         ?.text
@@ -464,8 +510,8 @@ private val SLASH_NUMBER = Regex("\\b(\\d{1,4})\\s*/\\s*\\d{1,4}\\b")
  * letter ("U 0211") or is written as "number/total". Returns (setCode, collectorNumber) with leading
  * zeros stripped, or null when either can't be read confidently (the caller then falls back to name).
  */
-internal fun extractSetAndNumber(visionText: Text): Pair<String, String>? {
-    val lines = visionText.textBlocks.flatMap { it.lines }.map { it.text }
+internal fun extractSetAndNumber(textLines: List<Text.Line>): Pair<String, String>? {
+    val lines = textLines.map { it.text }
     val setCode = lines.firstNotNullOfOrNull { SET_LANG.find(it)?.groupValues?.get(1) } ?: return null
     val number = lines.firstNotNullOfOrNull { RARITY_NUMBER.find(it)?.groupValues?.get(1) }
         ?: lines.firstNotNullOfOrNull { SLASH_NUMBER.find(it)?.groupValues?.get(1) }
