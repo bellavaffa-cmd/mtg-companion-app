@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.data
 
+import com.mtgcompanion.app.data.proxyCopies
 import com.mtgcompanion.app.network.spellbook.Variant
 
 /**
@@ -176,10 +177,26 @@ fun versionSummaries(deck: Deck): List<VersionSummary> {
 /** A deck card the user doesn't have enough copies of, and how many more they'd need. */
 data class MissingCard(val entry: DeckCardEntry, val need: Int)
 
+/** Basic lands: nobody buys these, so a deck short of them isn't short of anything. */
+private val BASIC_LANDS = setOf("plains", "island", "swamp", "mountain", "forest", "wastes")
+
+private fun isBasicLand(name: String) = name.trim().lowercase().removePrefix("snow-covered ") in BASIC_LANDS
+
+/** Copies of each card this deck really holds — proxies are print-outs, not copies you have. */
+internal fun copiesHeld(deck: Deck): Map<String, Int> = when (deck.ownershipType) {
+    DeckOwnership.PHYSICAL, DeckOwnership.PROXY ->
+        deck.cards.groupBy { it.name.lowercase() }
+            .mapValues { (_, printings) -> printings.sumOf { it.quantity - proxyCopies(deck, it) } }
+            .filterValues { it > 0 }
+    else -> emptyMap()
+}
+
 /**
- * Cards in [deck] not covered by the user's OWNED binders plus their Physical decks, matched by
- * name so any printing counts. Wishlist binders are cards the user *wants*, so they don't count.
- * A Physical deck covers itself, and so never has anything missing.
+ * Cards in [deck] the user doesn't own: what their OWNED binders and the decks they really hold
+ * (Physical, and the cards swapped into a Proxy deck) don't cover, matched by name so any printing
+ * counts. Wishlist binders are cards the user *wants*, so they don't count, and basic lands are
+ * left out. A Physical deck covers itself, and so never has anything missing.
+ * The web app does the same — see MtgCompanionWeb/src/decks/missing.ts.
  */
 fun missingCards(deck: Deck, collections: List<Collection>, decks: List<Deck>): List<MissingCard> {
     // A proxy deck is built and sitting on the shelf; its cards are print-outs, not ones to buy.
@@ -191,15 +208,13 @@ fun missingCards(deck: Deck, collections: List<Collection>, decks: List<Deck>): 
             owned[key] = (owned[key] ?: 0) + entry.quantity + entry.foilQuantity
         }
     }
-    decks.filter { it.ownershipType == DeckOwnership.PHYSICAL }.forEach { physical ->
-        physical.cards.forEach { entry ->
-            val key = entry.name.lowercase()
-            owned[key] = (owned[key] ?: 0) + entry.quantity
-        }
+    decks.forEach { other ->
+        copiesHeld(other).forEach { (key, copies) -> owned[key] = (owned[key] ?: 0) + copies }
     }
     // Grouped by name like ownership is, so a deck's three Swamp printings are one "30 Swamp" line
     // — per printing, owned copies would be subtracted from each printing again.
     return deck.cards.groupBy { it.name.lowercase() }.mapNotNull { (key, printings) ->
+        if (isBasicLand(key)) return@mapNotNull null
         val need = printings.sumOf { it.quantity } - (owned[key] ?: 0)
         if (need > 0) MissingCard(printings.first(), need) else null
     }.sortedBy { it.entry.name }

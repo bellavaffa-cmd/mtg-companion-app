@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.ScanPile
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
 import com.mtgcompanion.app.data.grouped
@@ -130,7 +131,7 @@ class ScanViewModel(
     // A camera-shutter click played on each successful scan.
     private val scanSound = MediaActionSound().apply { load(MediaActionSound.SHUTTER_CLICK) }
 
-    private val _uiState = MutableStateFlow(ScanUiState())
+    private val _uiState = MutableStateFlow(ScanUiState(scannedCards = ScanPile.read()))
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
 
     val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(
@@ -300,12 +301,18 @@ class ScanViewModel(
         } else {
             "Added ${card.name}"
         }
-        val next = _uiState.value.copy(status = status, scannedCards = rows)
-        _uiState.value = next.copy(successToken = next.successToken + 1)
+        setScanned(rows, status)
+        _uiState.value = _uiState.value.copy(successToken = _uiState.value.successToken + 1)
         scanSound.play(MediaActionSound.SHUTTER_CLICK)
     }
 
-    private var nextScanId = 1L
+    private var nextScanId = ScanPile.nextId(_uiState.value.scannedCards)
+
+    /** Every change to the pile is kept, so shutting the app down mid-session doesn't lose it. */
+    private fun setScanned(rows: List<ScanRow>, status: String? = null) {
+        _uiState.value = _uiState.value.copy(scannedCards = rows, status = status ?: _uiState.value.status)
+        ScanPile.write(rows)
+    }
 
     /** The manual "tap to scan" button: force the very next camera frame's OCR result straight
      * through, bypassing the stability wait and the same-card guard (see [forceScanNext]'s doc). */
@@ -410,14 +417,14 @@ class ScanViewModel(
 
     /** Everything scanned, thrown away — leaving the scanner with cards still in the list. */
     fun clearScanned() {
-        _uiState.value = _uiState.value.copy(scannedCards = emptyList(), status = "")
+        setScanned(emptyList(), status = "")
         lastAddedCard = null
         lastLookedUp = null
     }
 
     /** Takes one scan off the pile — a card read twice, or read wrongly. */
     fun removeScan(rowId: Long) {
-        _uiState.value = _uiState.value.copy(scannedCards = _uiState.value.scannedCards.filterNot { it.id == rowId })
+        setScanned(_uiState.value.scannedCards.filterNot { it.id == rowId })
     }
 
     private fun collectionEntry(card: ScryfallCard, quantity: Int) =
@@ -446,10 +453,9 @@ class ScanViewModel(
      * and scanning that card again starts a fresh count rather than adding to a filed one.
      */
     private fun putAway(card: ScryfallCard, quantity: Int, where: String) {
-        val left = _uiState.value.scannedCards.filterNot { it.card.id == card.id }
-        _uiState.value = _uiState.value.copy(
-            status = "Added $quantity × ${card.name} to $where",
-            scannedCards = left
+        setScanned(
+            _uiState.value.scannedCards.filterNot { it.card.id == card.id },
+            status = "Added $quantity × ${card.name} to $where"
         )
         if (lastAddedCard?.id == card.id) lastAddedCard = null
     }
@@ -478,10 +484,7 @@ class ScanViewModel(
     private fun pile(): List<ScanGroup> = grouped(_uiState.value.scannedCards)
 
     private fun pileAdded(where: String, cards: Int) {
-        _uiState.value = _uiState.value.copy(
-            status = "Added $cards ${if (cards == 1) "card" else "cards"} to $where",
-            scannedCards = emptyList()
-        )
+        setScanned(emptyList(), status = "Added $cards ${if (cards == 1) "card" else "cards"} to $where")
         lastAddedCard = null
         lastLookedUp = null
     }
