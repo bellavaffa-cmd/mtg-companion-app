@@ -24,6 +24,7 @@ import com.mtgcompanion.app.data.guideInImage
 import com.mtgcompanion.app.data.GUIDE_SLACK
 import com.mtgcompanion.app.data.confirmRead
 import com.mtgcompanion.app.data.STEADY_READS
+import com.mtgcompanion.app.data.parseSetAndNumber
 import com.mtgcompanion.app.data.Confirmation
 import com.mtgcompanion.app.data.scannedTwiceOver
 import com.mtgcompanion.app.data.copyNumber
@@ -352,7 +353,9 @@ class ScanViewModel(
 
         var started = SystemClock.elapsedRealtime()
         val printing = scan.fromFrame ?: picture?.let { readSmallPrint(it, scan.guide) }
-        if (scan.fromFrame == null && picture != null) timing("small print", started)
+        // What it read, as well as how long it took: a quicker read is no use if it reads less.
+        if (scan.fromFrame == null && picture != null) timing("small print ${printing?.let { "read ${it.first} #${it.second}" } ?: "not read"}", started)
+        else if (scan.fromFrame != null) Log.d("ScanTiming", "small print read in the frame itself: ${scan.fromFrame.first} #${scan.fromFrame.second}")
         val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: scan.normalized
 
         // What the card looked like. When the set code was read there's nothing left to work out;
@@ -819,22 +822,10 @@ internal fun extractCardName(lines: List<Text.Line>): String? {
         ?.takeIf { it.isNotBlank() }
 }
 
-private val SET_LANG = Regex("\\b([A-Z0-9]{3,5})\\s*[•·・∙]\\s*[A-Z]{2}\\b")
-private val RARITY_NUMBER = Regex("\\b[CURMSPLT]\\s+(\\d{1,4})\\b")
-private val SLASH_NUMBER = Regex("\\b(\\d{1,4})\\s*/\\s*\\d{1,4}\\b")
-
 /**
- * Try to read the exact printing from the small print at the bottom of a card: the set code sits
- * before a bullet and 2-letter language ("MSC • EN"), and the collector number follows the rarity
- * letter ("U 0211") or is written as "number/total". Returns (setCode, collectorNumber) with leading
- * zeros stripped, or null when either can't be read confidently (the caller then falls back to name).
+ * Try to read the exact printing from the small print at the bottom of a card (see
+ * [parseSetAndNumber]). Returns (setCode, collectorNumber), or null when either can't be read
+ * confidently (the caller then falls back to name).
  */
-internal fun extractSetAndNumber(textLines: List<Text.Line>): Pair<String, String>? {
-    val lines = textLines.map { it.text }
-    val setCode = lines.firstNotNullOfOrNull { SET_LANG.find(it)?.groupValues?.get(1) } ?: return null
-    val number = lines.firstNotNullOfOrNull { RARITY_NUMBER.find(it)?.groupValues?.get(1) }
-        ?: lines.firstNotNullOfOrNull { SLASH_NUMBER.find(it)?.groupValues?.get(1) }
-        ?: return null
-    val trimmed = number.trimStart('0').ifEmpty { "0" }
-    return setCode to trimmed
-}
+internal fun extractSetAndNumber(textLines: List<Text.Line>): Pair<String, String>? =
+    parseSetAndNumber(textLines.map { it.text })
