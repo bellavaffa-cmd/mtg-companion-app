@@ -71,3 +71,47 @@ fun guideInImage(
         bottom = (centreY + halfHeight).toInt().coerceAtMost(imageHeight)
     )
 }
+
+/** This box kept inside a picture [width] x [height]; a box grown past the edge is cut back to it. */
+fun ScanBox.clampedTo(width: Int, height: Int): ScanBox = ScanBox(
+    left = left.coerceIn(0, width),
+    top = top.coerceIn(0, height),
+    right = right.coerceIn(0, width),
+    bottom = bottom.coerceIn(0, height)
+)
+
+/** This box as seen from inside [outer] — its position once [outer] is cut out as a picture of its own. */
+fun ScanBox.relativeTo(outer: ScanBox): ScanBox =
+    ScanBox(left - outer.left, top - outer.top, right - outer.left, bottom - outer.top)
+
+/**
+ * Where a box in the upright picture sits in the camera's own, sideways one. The camera hands over
+ * its picture as the sensor sees it, with [rotation] saying how far to turn it upright — so to cut
+ * the guide out *before* turning it (turning a whole frame is the costly part), the guide has to be
+ * found in the sensor's picture first. [sensorWidth] x [sensorHeight] is that picture's size.
+ */
+fun sensorBox(upright: ScanBox, rotation: Int, sensorWidth: Int, sensorHeight: Int): ScanBox = when ((rotation % 360 + 360) % 360) {
+    // Turned a quarter clockwise: the upright picture's x runs down the sensor's, backwards.
+    90 -> ScanBox(upright.top, sensorHeight - upright.right, upright.bottom, sensorHeight - upright.left)
+    180 -> ScanBox(sensorWidth - upright.right, sensorHeight - upright.bottom, sensorWidth - upright.left, sensorHeight - upright.top)
+    270 -> ScanBox(sensorWidth - upright.bottom, upright.left, sensorWidth - upright.top, upright.right)
+    else -> upright
+}
+
+/**
+ * How far the strip of small print is blown up before it's read, for a card [cardHeight] pixels
+ * tall in the picture. The set line's letters are about 1.5% of a card's height; the reader wants
+ * them around 32 px, and past that it gains nothing but work — a fixed 3x made the strip more than
+ * twice the pixels it needed at 1080p, and the strip was the slowest read in a scan. Never shrunk,
+ * never more than 3x.
+ */
+fun smallPrintScale(cardHeight: Int): Float {
+    if (cardHeight <= 0) return 3f
+    return (SMALL_PRINT_TEXT_PX / (cardHeight * SMALL_PRINT_SHARE)).coerceIn(1f, 3f)
+}
+
+/** The small print's letters as a share of the card's height. */
+private const val SMALL_PRINT_SHARE = 0.015f
+
+/** How tall the reader wants the small print's letters, in pixels. */
+private const val SMALL_PRINT_TEXT_PX = 32f

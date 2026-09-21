@@ -3,6 +3,7 @@ package com.mtgcompanion.app.ui.scan
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import com.mtgcompanion.app.data.ScanBox
+import com.mtgcompanion.app.data.smallPrintScale
 
 /**
  * The tiny line at the bottom of a card — set code, language and collector number — is what says
@@ -28,9 +29,6 @@ fun uprightFrame(frame: Bitmap, rotation: Int): Bitmap? {
     return runCatching { Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, matrix, true) }.getOrNull()
 }
 
-/** How much the strip is blown up before it's read. Past this the reader gains nothing. */
-const val STRIP_SCALE = 3
-
 /**
  * The bottom strip of the guide, upright and blown up, or null when there's nothing worth reading.
  * [frame] is the camera's picture, [rotation] how far it has to be turned to stand upright.
@@ -49,7 +47,10 @@ fun smallPrintStrip(frame: Bitmap, rotation: Int, guide: ScanBox?): Bitmap? {
     if (right - left < 40 || bottom - top < 8) return null
 
     val strip = runCatching { Bitmap.createBitmap(upright, left, top, right - left, bottom - top) }.getOrNull() ?: return null
+    // Blown up only as far as the letters need (see smallPrintScale): a bigger strip reads no better,
+    // only slower, and this read shares the reader with the camera.
+    val scale = smallPrintScale(height)
     return runCatching {
-        Bitmap.createScaledBitmap(strip, strip.width * STRIP_SCALE, strip.height * STRIP_SCALE, true)
+        Bitmap.createScaledBitmap(strip, (strip.width * scale).toInt(), (strip.height * scale).toInt(), true)
     }.getOrNull()
 }

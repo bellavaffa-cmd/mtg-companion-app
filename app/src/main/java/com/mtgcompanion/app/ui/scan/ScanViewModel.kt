@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.sensorBox
+import com.mtgcompanion.app.data.relativeTo
+import com.mtgcompanion.app.data.clampedTo
 import com.mtgcompanion.app.data.ScanInFlight
 import kotlinx.coroutines.channels.Channel
 import android.util.Log
@@ -61,6 +64,22 @@ import java.util.concurrent.atomic.AtomicBoolean
  * fraction of a second — enough to absorb a flicker without meaningfully delaying recognition of
  * a genuinely new card. */
 private const val BLANK_FRAMES_TO_RESET = 4
+
+/**
+ * Blank frames in a row, read guide-only, before one whole frame is read to check the guide is still
+ * where the card is (see [ScanViewModel.onFrame]).
+ */
+private const val PROBE_EVERY = 10
+
+/** Whole-frame checks in a row finding text only outside the guide before guide-only reading stops. */
+private const val PROBES_TO_GIVE_UP = 3
+
+/**
+ * The framing guide cut out of a frame: what the reader reads instead of the whole picture, and —
+ * if a card is confirmed from it — the picture its small print and art are read from. [guide] is
+ * the drawn guide within [picture] once it's upright; [picture] itself has the guide's slack around it.
+ */
+private class GuideCut(val input: InputImage, val picture: Bitmap, val guide: ScanBox)
 
 /**
  * A card the camera has confirmed, waiting for its lookup: what was read, and — when the set code
@@ -151,6 +170,13 @@ class ScanViewModel(
     // When the frame being read reached the reader, for the timings in the log.
     private var frameStartedAt = 0L
 
+    // Reading just the guide (see onFrame). Frames in a row with no card name read that way; and
+    // whole-frame checks in a row that found text only outside the guide — and whether that's
+    // happened often enough that the guide is set aside and whole frames are read again.
+    @Volatile private var guideBlankStreak = 0
+    private var probeOutsideStreak = 0
+    @Volatile private var guideOff = false
+
     // The preview's size in pixels, set by the screen: with it, the framing guide can be placed in
     // the camera's own picture, and text outside it (the next card along) left unread.
     private var previewWidth = 0
@@ -194,27 +220,48 @@ class ScanViewModel(
             return
         }
         frameStartedAt = SystemClock.elapsedRealtime()
-        recognizer.process(image)
-            .addOnSuccessListener { visionText -> handleRecognizedText(visionText, image, onProcessed) }
+        // Only the guide is read: text outside it is thrown away anyway, and reading a third to half
+        // the pixels is that much quicker. Not for Scan now, which reads the whole frame when there's
+        // nothing in the guide, and not once the guide has been set aside. And now and then, after a
+        // run of blank frames, one whole frame is read to check the card isn't sitting outside the
+        // guide on a phone that places it wrong — the same safety net as before, checked less often.
+        val wholeFrame = frame == null || guideOff || forceScanNext.get() || guideBlankStreak >= PROBE_EVERY
+        val probe = frame != null && !guideOff && guideBlankStreak >= PROBE_EVERY
+        if (probe) guideBlankStreak = 0
+        val cut = if (wholeFrame) null else guideCut(image, frame!!)
+        recognizer.process(cut?.input ?: image)
+            .addOnSuccessListener { visionText -> handleRecognizedText(visionText, image, onProcessed, cut, probe) }
             .addOnFailureListener {
                 busy.set(false)
                 onProcessed()
             }
     }
 
-    private fun handleRecognizedText(visionText: Text, image: InputImage, onProcessed: () -> Unit) {
-        timing("read frame", frameStartedAt)
+    private fun handleRecognizedText(
+        visionText: Text,
+        image: InputImage,
+        onProcessed: () -> Unit,
+        cut: GuideCut? = null,
+        probe: Boolean = false
+    ) {
+        timing(if (cut != null) "read guide" else "read frame", frameStartedAt)
         val forced = forceScanNext.getAndSet(false)
         // Only text inside the framing guide is the card being scanned; the rest is whatever else is
         // on the table. Tapping "Scan now" with nothing in the guide reads the whole frame instead.
+        // When only the guide was read, everything read is in it.
         val all = visionText.textBlocks.flatMap { it.lines }
-        val inGuide = linesInGuide(visionText, image, previewWidth, previewHeight)
+        val inGuide = if (cut != null) all else linesInGuide(visionText, image, previewWidth, previewHeight)
+        if (probe) {
+            probeOutsideStreak = if (all.isNotEmpty() && inGuide.isEmpty()) probeOutsideStreak + 1 else 0
+            if (probeOutsideStreak >= PROBES_TO_GIVE_UP) guideOff = true
+        }
         // Safety net: if text keeps being read but never inside the guide — a phone whose reader
         // measures its picture differently — the guide is set aside rather than scanning nothing.
         outsideGuideStreak = if (all.isNotEmpty() && inGuide.isEmpty()) outsideGuideStreak + 1 else 0
         val ignoreGuide = forced || outsideGuideStreak >= GUIDE_GIVE_UP_FRAMES
         val lines = if (inGuide.isEmpty() && ignoreGuide) all else inGuide
         val candidate = extractCardName(lines)
+        if (cut != null) guideBlankStreak = if (candidate == null) guideBlankStreak + 1 else 0
         if (candidate == null) {
             // No title in view. Only treat this as "the card actually left" after a real streak
             // of blank frames — see blankFrameStreak's doc comment above.
@@ -267,9 +314,9 @@ class ScanViewModel(
         // at the small print and for matching the art — both done in the lookup queue, off the
         // camera.
         val fromFrame = extractSetAndNumber(lines)
-        val grabFrame = currentFrame
+        val grabFrame: (() -> Bitmap?)? = if (cut != null) ({ cut.picture }) else currentFrame
         val rotation = image.rotationDegrees
-        val guide = guideInImage(
+        val guide = cut?.guide ?: guideInImage(
             if (rotation == 90 || rotation == 270) image.height else image.width,
             if (rotation == 90 || rotation == 270) image.width else image.height,
             previewWidth, previewHeight, GUIDE_WIDTH, GUIDE_HEIGHT
@@ -332,6 +379,29 @@ class ScanViewModel(
             // has, the next card in is a new one — even another copy of this card.
             if (inFlight.finished(scan.token, scan.normalized)) added?.let { lastAddedCard = it }
         }
+    }
+
+    /**
+     * The guide, with its slack, cut out of the camera's picture before it's turned upright — so
+     * neither the reading nor the turning deals with the rest of the frame. The camera hands over a
+     * sideways picture, so the upright guide is first found in the sensor's (see sensorBox). Null
+     * when there's no guide to cut yet (the preview hasn't been measured) or the picture can't be had;
+     * the whole frame is read instead.
+     */
+    private fun guideCut(image: InputImage, frame: () -> Bitmap?): GuideCut? {
+        val rotation = image.rotationDegrees
+        val sideways = rotation == 90 || rotation == 270
+        val width = if (sideways) image.height else image.width
+        val height = if (sideways) image.width else image.height
+        val guide = guideInImage(width, height, previewWidth, previewHeight, GUIDE_WIDTH, GUIDE_HEIGHT) ?: return null
+        val area = guide.grownBy(GUIDE_SLACK).clampedTo(width, height)
+        if (area.right - area.left < 40 || area.bottom - area.top < 40) return null
+        val started = SystemClock.elapsedRealtime()
+        val picture = frame() ?: return null
+        val s = sensorBox(area, rotation, picture.width, picture.height).clampedTo(picture.width, picture.height)
+        val cut = runCatching { Bitmap.createBitmap(picture, s.left, s.top, s.right - s.left, s.bottom - s.top) }.getOrNull() ?: return null
+        timing("cut guide", started)
+        return GuideCut(InputImage.fromBitmap(cut, rotation), cut, guide.relativeTo(area))
     }
 
     /** How long a step of a scan took, logged under "ScanTiming" — for finding what's slow. */
