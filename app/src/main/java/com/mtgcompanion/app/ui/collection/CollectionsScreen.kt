@@ -259,7 +259,9 @@ fun CollectionsScreen(
                     sharedPage()
                 } else {
                     CollectionsTab(
-                        // The Wishlist first; it's always there.
+                        // The Unsorted pile on top, then the Wishlist; both are always there.
+                        unsorted = unsorted,
+                        onOpenUnsorted = { onCollectionClick(it) },
                         collections = collections.filterNot { it.isUnsorted }.sortedByDescending { it.isWishlist },
                         onCollectionClick = onCollectionClick,
                         onDelete = { viewModel.deleteCollection(it) },
@@ -316,6 +318,8 @@ fun CollectionsScreen(
 
 @Composable
 private fun CollectionsTab(
+    unsorted: Collection?,
+    onOpenUnsorted: (String) -> Unit,
     collections: List<Collection>,
     onCollectionClick: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -337,6 +341,9 @@ private fun CollectionsTab(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (unsorted != null) {
+                item(key = "unsorted") { UnsortedRow(unsorted) { onOpenUnsorted(unsorted.id) } }
+            }
             cardGrid(collections, columns = listCols, key = { it.id }) { collection ->
                 CollectionRow(
                     collection = collection,
@@ -669,7 +676,7 @@ private fun CollectionRow(collection: Collection, onClick: () -> Unit, onDelete:
     }
 }
 
-/** The Unsorted pile on All cards: cards owned but not in a binder yet, opened to sort them. */
+/** The Unsorted pile: cards owned but not in a binder or deck yet, opened to sort them. */
 @Composable
 private fun UnsortedRow(unsorted: Collection, onClick: () -> Unit) {
     val total = unsorted.entries.sumOf { it.quantity + it.foilQuantity }
@@ -688,7 +695,8 @@ private fun UnsortedRow(unsorted: Collection, onClick: () -> Unit) {
         Column(modifier = Modifier.weight(1f)) {
             Text("Unsorted", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
             Text(
-                "$total card${if (total == 1) "" else "s"} not in a binder yet — tap to sort them",
+                if (total > 0) "$total card${if (total == 1) "" else "s"} not in a binder yet — tap to sort them"
+                else "Empty — for cards you own that aren't in a binder or a deck",
                 style = MaterialTheme.typography.labelMedium,
                 color = TextMuted
             )

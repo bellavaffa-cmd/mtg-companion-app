@@ -1,5 +1,6 @@
 package com.mtgcompanion.app
 
+import com.mtgcompanion.app.data.withStandingCollections
 import com.mtgcompanion.app.data.ScanPile
 import com.mtgcompanion.app.data.ComboCache
 import com.mtgcompanion.app.data.withWishlist
@@ -82,11 +83,12 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         PriceMovers.init(this)
         ComboCache.init(this)
         ScanPile.init(this)
-        // The Wishlist: always there, holding what decks are considering that isn't owned.
+        // The Wishlist, always there, holding what decks are considering that isn't owned; and the
+        // Unsorted pile, always there for cards not in a binder or deck.
         appScope.launch {
             kotlinx.coroutines.flow.combine(collectionRepository.collectionsFlow, deckRepository.decksFlow) { c, d -> c to d }
                 .collect { (collections, decks) ->
-                    if (withWishlist(collections, decks) !== collections) collectionRepository.maintainWishlist(decks)
+                    if (withStandingCollections(collections, decks) !== collections) collectionRepository.maintainStandingCollections(decks)
                 }
         }
         appScope.launch {

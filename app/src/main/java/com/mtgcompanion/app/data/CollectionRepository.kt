@@ -36,9 +36,9 @@ class CollectionRepository(private val context: Context) {
         return collection
     }
 
-    /** Deletes a binder — never the Wishlist, which is always there. */
+    /** Deletes a binder — never the Wishlist or the Unsorted pile, which are always there. */
     suspend fun deleteCollection(collectionId: String) {
-        if (collectionId == WISHLIST_ID) return
+        if (collectionId == WISHLIST_ID || collectionId == UNSORTED_COLLECTION_ID) return
         update { collections -> collections.filterNot { it.id == collectionId } }
     }
 
@@ -60,7 +60,7 @@ class CollectionRepository(private val context: Context) {
         update { collections -> withWishlistCardWantedAgain(collections, cardName) }
     }
 
-    /** Makes the Wishlist if it isn't there yet (it's kept up by [maintainWishlist] too). */
+    /** Makes the Wishlist if it isn't there yet (it's kept up by [maintainStandingCollections] too). */
     suspend fun ensureWishlist() {
         update { collections ->
             if (collections.any { it.isWishlist }) collections
@@ -183,10 +183,7 @@ class CollectionRepository(private val context: Context) {
 
     /** Adds cards to the Unsorted pile (owned, not in a binder yet), making the pile if there isn't one. */
     suspend fun addUnsorted(added: List<CollectionEntry>) {
-        update { collections ->
-            if (collections.any { it.isUnsorted }) collections
-            else collections + Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME, type = CollectionType.OWNED.name)
-        }
+        update { collections -> withUnsortedPile(collections) }
         addEntries(UNSORTED_COLLECTION_ID, added)
     }
 
@@ -225,13 +222,14 @@ class CollectionRepository(private val context: Context) {
 
     /** Overwrite all collections — used when restoring/pulling from Drive sync. */
     /**
-     * Keeps the Wishlist as it should be for [decks] (see [withWishlist]) — written only when
+     * Keeps the collections that are always there as they should be: the Wishlist for [decks]
+     * (see [withWishlist]) and the Unsorted pile (see [withUnsortedPile]) — written only when
      * something changes.
      */
-    suspend fun maintainWishlist(decks: List<Deck>) {
+    suspend fun maintainStandingCollections(decks: List<Deck>) {
         context.collectionDataStore.edit { prefs ->
             val current = readCollections(prefs)
-            val next = withWishlist(current, decks)
+            val next = withStandingCollections(current, decks)
             if (next !== current) prefs[key] = adapter.toJson(CollectionStore(collections = next))
         }
     }
