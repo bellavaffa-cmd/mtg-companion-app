@@ -531,7 +531,8 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() },
                     onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
                     onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null,
-                    onWhoHasIt = if (supabaseSync.auth.configured) ({ names -> whoHas = names }) else null
+                    onWhoHasIt = if (supabaseSync.auth.configured) ({ names -> whoHas = names }) else null,
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) }
                 )
                 whoHas?.let { names ->
                     WhoHasItDialog(

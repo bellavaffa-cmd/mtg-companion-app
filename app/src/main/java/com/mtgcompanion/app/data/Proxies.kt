@@ -57,6 +57,35 @@ fun proxySwaps(collections: List<Collection>, decks: List<Deck>): List<ProxySwap
     return out
 }
 
+/** A proxy the user owns a real copy of, but only in another deck — where it is, and how many. */
+data class ProxyHeldElsewhere(
+    val entry: DeckCardEntry,
+    /** Proxies of it still left once the binder copies have been swapped in. */
+    val proxies: Int,
+    /** The other decks holding a real copy, and how many each has. */
+    val decks: List<Pair<Deck, Int>>
+)
+
+/**
+ * Proxies in [deck] the user already owns for real, but only in another deck. These aren't offered
+ * as a swap: moving the card would leave that deck a card short without anyone saying so. Knowing
+ * where it is lets the user decide which deck gets it. A proxy a binder copy can cover is left to
+ * the swap, and only decks the user actually holds count, the same as for the cards a deck is
+ * missing. Mirrors proxiesHeldElsewhere in the web app's src/decks/proxies.ts.
+ */
+fun proxiesHeldElsewhere(collections: List<Collection>, decks: List<Deck>, deck: Deck): List<ProxyHeldElsewhere> {
+    val swappable = proxySwaps(collections, listOf(deck)).associate { it.entry.scryfallId to it.spare }
+    val held = decks.filter { it.id != deck.id }.map { it to copiesHeld(it) }
+    return deck.cards.mapNotNull { entry ->
+        val proxies = proxyCopies(deck, entry) - (swappable[entry.scryfallId] ?: 0)
+        if (proxies <= 0) return@mapNotNull null
+        val found = held.mapNotNull { (other, copies) ->
+            (copies[entry.name.lowercase()] ?: 0).takeIf { it > 0 }?.let { other to it }
+        }
+        if (found.isEmpty()) null else ProxyHeldElsewhere(entry, proxies, found)
+    }
+}
+
 /** What one swap changes: the deck's cards and the binders, or null when there's nothing to swap. */
 data class SwapResult(val collections: List<Collection>, val decks: List<Deck>)
 

@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.proxiesHeldElsewhere
+import com.mtgcompanion.app.data.ProxyHeldElsewhere
 import com.mtgcompanion.app.data.proxySwaps
 import com.mtgcompanion.app.data.deckProxyCopies
 import com.mtgcompanion.app.data.ProxySwap
@@ -635,6 +637,16 @@ class DeckDetailViewModel(
             val deck = decks.firstOrNull { it.id == deckId } ?: return@combine 0 to emptyList<ProxySwap>()
             deckProxyCopies(deck) to proxySwaps(collections, listOf(deck))
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0 to emptyList())
+
+    /**
+     * Proxies in this deck the user owns for real, but only in another deck — pointed out, never
+     * moved for them (see proxiesHeldElsewhere in Proxies.kt).
+     */
+    val proxiesElsewhere: StateFlow<List<ProxyHeldElsewhere>> =
+        combine(repository.decksFlow, collectionRepository.collectionsFlow) { decks, collections ->
+            val deck = decks.firstOrNull { it.id == deckId } ?: return@combine emptyList()
+            proxiesHeldElsewhere(collections, decks, deck)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** One proxy swapped for a real copy out of a binder. */
     fun swapInProxy(scryfallId: String) {

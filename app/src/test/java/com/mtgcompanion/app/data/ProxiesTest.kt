@@ -69,4 +69,43 @@ class ProxiesTest {
         // Nothing left to swap.
         assertNull(withSwapIn(second.collections, second.decks, "Pile", "id-Sol Ring"))
     }
+
+    @Test
+    fun aRealCopyInAnotherDeckIsPointedOutNeverOfferedAsASwap() {
+        val pile = deck("Pile", DeckOwnership.PROXY, card("Sol Ring"), card("Cultivate", 2), card("Mana Crypt"))
+        val decks = listOf(
+            pile,
+            deck("Atraxa", DeckOwnership.PHYSICAL, card("Sol Ring"), card("Cultivate")),
+            deck("Kinnan", DeckOwnership.PHYSICAL, card("Sol Ring")),
+            // Proxies of it elsewhere, and decks the user doesn't hold, aren't a real copy anywhere.
+            deck("Other pile", DeckOwnership.PROXY, card("Mana Crypt")),
+            deck("Idea", DeckOwnership.VIRTUAL, card("Mana Crypt"))
+        )
+        val found = proxiesHeldElsewhere(emptyList(), decks, pile)
+        assertEquals(
+            listOf(
+                Triple("Sol Ring", 1, listOf("Atraxa:1", "Kinnan:1")),
+                Triple("Cultivate", 2, listOf("Atraxa:1"))
+            ),
+            found.map { f -> Triple(f.entry.name, f.proxies, f.decks.map { (d, n) -> "${d.name}:$n" }) }
+        )
+        // Nothing moved: it's a pointer, not a swap.
+        assertEquals(emptyList<ProxySwap>(), proxySwaps(emptyList(), listOf(pile)))
+    }
+
+    @Test
+    fun aProxyABinderCopyCoversIsLeftToTheSwap() {
+        val pile = deck("Pile", DeckOwnership.PROXY, card("Sol Ring"), card("Cultivate", 2))
+        val decks = listOf(pile, deck("Atraxa", DeckOwnership.PHYSICAL, card("Sol Ring"), card("Cultivate", 2)))
+        // One Cultivate is in a binder, so only the second still needs finding.
+        val found = proxiesHeldElsewhere(listOf(binder("Blue", listOf(entry("Sol Ring"), entry("Cultivate")))), decks, pile)
+        assertEquals(listOf("Cultivate" to 1), found.map { it.entry.name to it.proxies })
+    }
+
+    @Test
+    fun theDeckItselfIsNeverWhereItsOwnProxyIsHeld() {
+        val mixed = deck("Mixed", DeckOwnership.PHYSICAL, card("Sol Ring", 2, 1))
+        // One real Sol Ring and one proxy, in the same deck: the real one is no answer to the proxy.
+        assertEquals(emptyList<ProxyHeldElsewhere>(), proxiesHeldElsewhere(emptyList(), listOf(mixed), mixed))
+    }
 }

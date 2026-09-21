@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.ProxyHeldElsewhere
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import com.mtgcompanion.app.ui.social.GoldButton
@@ -184,7 +185,9 @@ fun DeckDetailScreen(
     onViewDetails: (String) -> Unit,
     onShare: (() -> Unit)? = null,
     /** "Who has it?" for the cards the user doesn't own (signed in only). */
-    onWhoHasIt: ((names: List<String>) -> Unit)? = null
+    onWhoHasIt: ((names: List<String>) -> Unit)? = null,
+    /** Opens another of the user's decks — where a proxy's real copy is. */
+    onOpenDeck: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val deck by viewModel.deck.collectAsState()
@@ -355,7 +358,7 @@ fun DeckDetailScreen(
                         onSwapIn = { swapIn = it },
                         onRemove = { viewModel.removeFromConsidering(it.scryfallId) }
                     )
-                    "Stats" -> StatsTab(analysis, currentDeck, viewModel, onTag = searchTag)
+                    "Stats" -> StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck)
                     "Suggestions" -> AnalysisTab(
                         analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel,
                         onConsiderName = { name -> viewModel.considerByName(name, toast) },
@@ -370,7 +373,7 @@ fun DeckDetailScreen(
         if (layout == LayoutSize.DESKTOP) {
             // Stats beside the cards, the way the web app's deck page shows them.
             Box(Modifier.width(360.dp).fillMaxHeight()) {
-                StatsTab(analysis, currentDeck, viewModel, onTag = searchTag)
+                StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck)
             }
         }
         }
@@ -1262,7 +1265,13 @@ private fun CardsTab(
 }
 
 @Composable
-private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailViewModel, onTag: (String) -> Unit) {
+private fun StatsTab(
+    analysis: DeckAnalysis,
+    deck: Deck,
+    viewModel: DeckDetailViewModel,
+    onTag: (String) -> Unit,
+    onOpenDeck: ((String) -> Unit)? = null
+) {
     if (analysis.loading) {
         LoadingBox()
         return
@@ -1276,6 +1285,7 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
     val versionHistory by viewModel.versionHistory.collectAsState()
     var openVersion by remember { mutableStateOf<VersionSummary?>(null) }
     val proxies by viewModel.proxies.collectAsState()
+    val proxiesElsewhere by viewModel.proxiesElsewhere.collectAsState()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -1287,6 +1297,8 @@ private fun StatsTab(analysis: DeckAnalysis, deck: Deck, viewModel: DeckDetailVi
                 ProxiesPanel(
                     proxiesLeft = proxiesLeft,
                     swaps = swaps,
+                    elsewhere = proxiesElsewhere,
+                    onOpenDeck = onOpenDeck,
                     onSwapIn = { viewModel.swapInProxy(it) },
                     onMarkPhysical = { viewModel.setOwnership(DeckOwnership.PHYSICAL) }
                 )
@@ -2181,12 +2193,17 @@ private fun QuantityStepper(quantity: Int, onDecrement: () -> Unit, onIncrement:
 
 /**
  * A deck built with proxies: how many are left, and the ones sitting spare in a binder, each a tap
- * away from being the real card (see Proxies.kt).
+ * away from being the real card (see Proxies.kt). Below them, the ones owned for real but only in
+ * another deck — named, with the deck a tap away, but never moved: taking one out would leave that
+ * deck a card short, so which deck gets it is the user's call.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProxiesPanel(
     proxiesLeft: Int,
     swaps: List<ProxySwap>,
+    elsewhere: List<ProxyHeldElsewhere>,
+    onOpenDeck: ((String) -> Unit)?,
     onSwapIn: (String) -> Unit,
     onMarkPhysical: () -> Unit
 ) {
@@ -2235,6 +2252,44 @@ private fun ProxiesPanel(
                             Text("${swap.spare} spare in your binders", style = MaterialTheme.typography.labelMedium, color = TextMuted)
                         }
                         TextButton(onClick = { onSwapIn(swap.entry.scryfallId) }) { Text("Swap in", color = Gold) }
+                    }
+                }
+            }
+        }
+        if (proxiesLeft > 0 && elsewhere.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "In your other decks. Nothing here moves on its own — taking one out leaves that deck a card short, so it's your call which deck gets it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted
+            )
+            Spacer(Modifier.height(8.dp))
+            elsewhere.forEach { held ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    AsyncImage(
+                        model = held.entry.imageUrl.toArtCropUrl(),
+                        contentDescription = held.entry.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(8.dp))
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(held.entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Real copy in", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                            held.decks.forEachIndexed { i, (other, copies) ->
+                                val label = other.name + (if (copies > 1) " ($copies)" else "") + if (i < held.decks.lastIndex) "," else ""
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (onOpenDeck != null) Gold else TextMuted,
+                                    modifier = if (onOpenDeck != null) Modifier.clickable { onOpenDeck(other.id) } else Modifier
+                                )
+                            }
+                        }
                     }
                 }
             }
