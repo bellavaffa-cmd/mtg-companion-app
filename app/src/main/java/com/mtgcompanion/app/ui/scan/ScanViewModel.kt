@@ -355,8 +355,12 @@ class ScanViewModel(
             // The copy is the only part that needs the frame itself; once it's taken the camera is
             // handed back, and the card waits its turn for a lookup while the next one is read.
             val grabbed = SystemClock.elapsedRealtime()
+            // Only the close read of the small print and the art match look at the picture; Fast
+            // scanning does neither, so it doesn't take the copy.
+            val mode = _uiState.value.scanMode
+            val needsPicture = fromFrame == null && (mode.readsSmallPrint || mode.matchesArt)
             val picture = try {
-                if (fromFrame != null) null else withContext(Dispatchers.Default) { grabFrame?.invoke() }
+                if (!needsPicture) null else withContext(Dispatchers.Default) { grabFrame?.invoke() }
             } finally {
                 busy.set(false)
                 onProcessed()
@@ -388,9 +392,10 @@ class ScanViewModel(
         val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: scan.normalized
 
         // What the card looked like. When the set code was read there's nothing left to work out;
-        // otherwise this decides the printing (see matchArt).
+        // otherwise this decides the printing (see matchArt) — except in Fast scanning, which
+        // leaves the card as its usual printing rather than fetching every printing to compare.
         started = SystemClock.elapsedRealtime()
-        val look = if (printing != null) null else picture?.let { withContext(Dispatchers.Default) { cameraSignatures(it, 0, scan.guide) } }?.ifEmpty { null }
+        val look = if (printing != null || !_uiState.value.scanMode.matchesArt) null else picture?.let { withContext(Dispatchers.Default) { cameraSignatures(it, 0, scan.guide) } }?.ifEmpty { null }
         if (look != null) timing("art signature", started)
 
         var added: ScryfallCard? = null

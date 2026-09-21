@@ -55,9 +55,11 @@ class ScanConfirmTest {
         assertEquals(ScanMode.ACCURATE, ScanMode.fromName("not a mode"))
         assertEquals(STEADY_READS, ScanMode.ACCURATE.steadyReads)
         assertEquals(true, ScanMode.ACCURATE.readsSmallPrint)
-        // Fast takes a card sooner and leaves the printing to the frame or the art.
+        assertEquals(true, ScanMode.ACCURATE.matchesArt)
+        // Fast takes a card sooner and leaves its printing a best guess: no close read, no art match.
         assertEquals(2, ScanMode.FAST.steadyReads)
         assertEquals(false, ScanMode.FAST.readsSmallPrint)
+        assertEquals(false, ScanMode.FAST.matchesArt)
         assertEquals(ScanMode.FAST, ScanMode.fromName("FAST"))
     }
 }

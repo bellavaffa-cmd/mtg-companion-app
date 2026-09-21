@@ -14,15 +14,17 @@ const val STEADY_READS = 3
 
 /**
  * How careful the scanner is, chosen on the scan screen. [ACCURATE] is how it has always been: a
- * name has to read the same on [STEADY_READS] frames running, and the small print is read up close
- * for the exact printing. [FAST] takes a name after two, and skips that close read — the printing
- * comes from the frame when it's legible there, otherwise from matching the art — so more rows say
- * "best guess", and a card caught halfway into the frame is a little likelier to be read.
+ * name has to read the same on [STEADY_READS] frames running, the small print is read up close for
+ * the exact printing, and when that can't be read the art is matched against every printing. [FAST]
+ * takes a name after two reads and does neither: the card comes in as its usual printing, unless
+ * the frame itself happened to show the set code — a best guess, changed with a tap on the row or
+ * later with "change printing". The art match fetches every printing of the card, and on a quick
+ * pile those fetches queued in front of the next card's lookup; Fast is for getting through a pile.
  * Mirrors the web app's ScanMode in src/scan/scanLogic.ts.
  */
-enum class ScanMode(val label: String, val steadyReads: Int, val readsSmallPrint: Boolean) {
-    ACCURATE("Accurate", STEADY_READS, true),
-    FAST("Fast", 2, false);
+enum class ScanMode(val label: String, val steadyReads: Int, val readsSmallPrint: Boolean, val matchesArt: Boolean) {
+    ACCURATE("Accurate", STEADY_READS, true, true),
+    FAST("Fast", 2, false, false);
 
     companion object {
         fun fromName(name: String?): ScanMode = entries.firstOrNull { it.name == name } ?: ACCURATE

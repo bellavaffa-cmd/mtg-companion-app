@@ -728,8 +728,8 @@ private fun ScrimIconButton(
 }
 
 /**
- * Fast or Accurate scanning, a tap to switch. Fast takes a card sooner and skips the close read of
- * the small print — so more cards come in as a best guess of their printing (see ScanMode).
+ * Fast or Accurate scanning, a tap to switch. Fast takes a card sooner and leaves its printing a
+ * best guess — no close read of the small print, no art match (see ScanMode).
  */
 @Composable
 private fun ScanModePill(mode: ScanMode, onToggle: () -> Unit) {
