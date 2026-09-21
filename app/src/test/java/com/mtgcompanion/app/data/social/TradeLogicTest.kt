@@ -123,7 +123,11 @@ class TradeLogicTest {
         assertEquals(AppLink.AddFriend("alice_1"), AppLink.parse("${base}add/Alice_1"))
         assertEquals(AppLink.JoinSeat("0123456789abcdef", 3), AppLink.parse("${base}join/0123456789abcdef/3"))
         assertEquals(AppLink.SharedLink("0123456789abcdef0123456789abcdef"), AppLink.parse("${base}s/0123456789abcdef0123456789abcdef"))
+        assertEquals(AppLink.AddFriend("bob"), AppLink.parse("http://localhost:5174/add/bob/"))
+        // Codes made before manabind.com: on the old address, or anywhere serving the app under its old path.
+        assertEquals(AppLink.AddFriend("bob"), AppLink.parse("https://bellavaffa-cmd.github.io/mtg-companion-web/add/bob"))
         assertEquals(AppLink.AddFriend("bob"), AppLink.parse("http://localhost:5174/mtg-companion-web/add/bob/"))
+        assertEquals(AppLink.AddFriend("bob"), AppLink.parse("https://www.manabind.com/add/bob"))
         assertNull(AppLink.parse("https://example.com/add/bob"))
         assertNull(AppLink.parse("${base}join/not-a-code/3"))
         assertNull(AppLink.parse("${base}add/a"))

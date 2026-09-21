@@ -287,7 +287,7 @@ class SocialApi(private val auth: SupabaseAuth) {
         const val MAX_AVATAR_BYTES = 2 * 1024 * 1024
 
         /** Links for QR codes and sharing always point at the live web app, which the Android app also understands. */
-        const val PUBLIC_APP_URL = "https://bellavaffa-cmd.github.io/mtg-companion-web/"
+        const val PUBLIC_APP_URL = "https://manabind.com/"
         fun friendLink(username: String) = PUBLIC_APP_URL + "add/" + URLEncoder.encode(username, "UTF-8")
         fun seatLink(code: String, seat: Int) = PUBLIC_APP_URL + "join/$code/$seat"
         fun shareLink(token: String) = PUBLIC_APP_URL + "s/$token"
@@ -331,9 +331,23 @@ sealed interface AppLink {
     data class SharedLink(val token: String) : AppLink
 
     companion object {
-        /** Reads one of the web app's links (any host serving it, so a dev build's links work too). */
+        /** Where the web app lived before manabind.com: codes and links made then still carry it. */
+        private const val OLD_PATH = "/mtg-companion-web/"
+
+        /** The web app's own addresses: its site, and a dev build's. */
+        private val APP_HOST = Regex("""^https?://(?:(?:www\.)?manabind\.com|localhost(?::\d+)?)/""", RegexOption.IGNORE_CASE)
+
+        /**
+         * Reads one of the web app's links: on manabind.com, or from before it (any host serving the
+         * app under /mtg-companion-web/, so an old dev build's links work too).
+         */
         fun parse(text: String): AppLink? {
-            val path = text.trim().substringAfter("/mtg-companion-web/", missingDelimiterValue = "").substringBefore('?').substringBefore('#').trimEnd('/')
+            val trimmed = text.trim()
+            val rest = when {
+                OLD_PATH in trimmed -> trimmed.substringAfter(OLD_PATH)
+                else -> APP_HOST.find(trimmed)?.let { trimmed.substring(it.range.last + 1) } ?: return null
+            }
+            val path = rest.substringBefore('?').substringBefore('#').trimEnd('/')
             val parts = path.split('/').filter { it.isNotEmpty() }
             return when {
                 parts.size == 2 && parts[0] == "add" && Regex("[a-zA-Z0-9_]{3,20}").matches(parts[1]) -> AddFriend(parts[1].lowercase())
