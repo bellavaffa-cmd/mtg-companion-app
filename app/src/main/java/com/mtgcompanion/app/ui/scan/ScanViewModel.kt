@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.SetDecision
+import com.mtgcompanion.app.data.decideInSet
+import com.mtgcompanion.app.data.regularInSet
+import com.mtgcompanion.app.data.parseSetCode
 import kotlinx.coroutines.flow.update
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.ScanMode
@@ -96,6 +100,8 @@ private class PendingScan(
     val normalized: String,
     val forced: Boolean,
     val fromFrame: Pair<String, String>?,
+    /** The set code alone, when the frame showed it but not the number beside it. */
+    val frameSet: String?,
     val picture: Bitmap?,
     val rotation: Int,
     val guide: ScanBox?,
@@ -342,6 +348,7 @@ class ScanViewModel(
         // at the small print and for matching the art — both done in the lookup queue, off the
         // camera.
         val fromFrame = extractSetAndNumber(lines)
+        val frameSet = if (fromFrame != null) null else parseSetCode(lines.map { it.text })
         val grabFrame: (() -> Bitmap?)? = if (cut != null) ({ cut.picture }) else currentFrame
         val rotation = image.rotationDegrees
         val guide = cut?.guide ?: guideInImage(
@@ -367,7 +374,7 @@ class ScanViewModel(
             }
             if (picture != null) timing("copy picture", grabbed)
             lookups.send(
-                PendingScan(candidate, normalized, forced, fromFrame, picture, rotation, guide, token, SystemClock.elapsedRealtime())
+                PendingScan(candidate, normalized, forced, fromFrame, frameSet, picture, rotation, guide, token, SystemClock.elapsedRealtime())
             )
         }
     }
@@ -385,9 +392,13 @@ class ScanViewModel(
         var started = SystemClock.elapsedRealtime()
         // Fast scanning skips the close read: the printing comes from the frame, or from the art.
         val readsSmallPrint = _uiState.value.scanMode.readsSmallPrint
-        val printing = scan.fromFrame ?: if (readsSmallPrint) picture?.let { readSmallPrint(it, scan.guide) } else null
+        val strip = if (scan.fromFrame == null && readsSmallPrint) picture?.let { readSmallPrint(it, scan.guide) } else null
+        val printing = scan.fromFrame ?: strip?.let { parseSetAndNumber(it) }
+        // When the number wouldn't read, the set code on its own still narrows the printings to
+        // that set's few, for the look to choose between (see matchArt).
+        val setCode = if (printing != null) null else strip?.let { parseSetCode(it) } ?: scan.frameSet
         // What it read, as well as how long it took: a quicker read is no use if it reads less.
-        if (scan.fromFrame == null && picture != null && readsSmallPrint) timing("small print ${printing?.let { "read ${it.first} #${it.second}" } ?: "not read"}", started)
+        if (scan.fromFrame == null && picture != null && readsSmallPrint) timing("small print ${printing?.let { "read ${it.first} #${it.second}" } ?: setCode?.let { "read set $it only" } ?: "not read"}", started)
         else if (scan.fromFrame != null) Log.d("ScanTiming", "small print read in the frame itself: ${scan.fromFrame.first} #${scan.fromFrame.second}")
         val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: scan.normalized
 
@@ -407,7 +418,7 @@ class ScanViewModel(
             accept(scan.candidate, card, scan.forced, exact = printing != null)?.let { row ->
                 nameCache[cacheKey] = card
                 added = card
-                matchArt(row, card, look)
+                matchArt(row, card, look, setCode)
             }
         } catch (e: Exception) {
             _uiState.value = _uiState.value.copy(status = "Didn't recognize \"${scan.candidate}\" — keep scanning…")
@@ -449,9 +460,10 @@ class ScanViewModel(
     /**
      * A second look at the card's small print, blown up: the set code and collector number say
      * which printing is in your hand — the alternate art, the borderless one — where the name alone
-     * only gets the usual printing. Null when it still can't be read.
+     * only gets the usual printing. The lines it read, for parseSetAndNumber and parseSetCode; null
+     * when nothing could be read.
      */
-    private suspend fun readSmallPrint(upright: Bitmap, guide: ScanBox?): Pair<String, String>? {
+    private suspend fun readSmallPrint(upright: Bitmap, guide: ScanBox?): List<String>? {
         val strip = withContext(Dispatchers.Default) { smallPrintStrip(upright, 0, guide) } ?: return null
         val text = runCatching {
             suspendCancellableCoroutine { cont ->
@@ -460,7 +472,7 @@ class ScanViewModel(
                     .addOnFailureListener { cont.resume(null) {} }
             }
         }.getOrNull() ?: return null
-        return extractSetAndNumber(text.textBlocks.flatMap { it.lines })
+        return text.textBlocks.flatMap { it.lines }.map { it.text }
     }
 
     /**
@@ -469,24 +481,64 @@ class ScanViewModel(
      * card's printings and their pictures takes a moment, and nobody should have to hold a card
      * still while it happens. The row is left alone if it's been deleted, or its printing already
      * picked by hand, since the scan.
+     *
+     * When the small print gave the set code but not the number, [setCode] narrows it first: the
+     * name says which card, the set code which of its printings are in play, and the whole card's
+     * look — framed, full art, borderless — which of that set's few it is. If that set turns up
+     * nothing that looks like the card, the set code was misread, and every printing is compared
+     * as if it had never been read.
      */
-    private fun matchArt(rowId: Long, scanned: ScryfallCard, look: List<FloatArray>?) {
+    private fun matchArt(rowId: Long, scanned: ScryfallCard, look: List<FloatArray>?, setCode: String? = null) {
         if (look == null) return
         viewModelScope.launch {
+            if (setCode != null) {
+                val started = SystemClock.elapsedRealtime()
+                val inSet = runCatching { decideFromSet(scanned.name, setCode, look) }.getOrNull()
+                timing("set $setCode ${if (inSet == null) "didn't match" else "matched"}", started)
+                if (inSet != null) {
+                    val (pick, only) = inSet
+                    correctRow(rowId, scanned, pick, only, "matched the art in ${pick.setName ?: pick.set?.uppercase()}")
+                    return@launch
+                }
+            }
             val printings = printingsByName[scanned.name]
                 // Nothing came back — offline, most likely. Don't hold on to that as the answer.
                 ?: runCatching { cardRepository.getPrintings(scanned.name) }.getOrDefault(emptyList())
                     .also { if (it.isNotEmpty()) printingsByName[scanned.name] = it }
             if (printings.size < 2) return@launch
             val found = runCatching { matchPrinting(appContext, look, printings) }.getOrNull() ?: return@launch
-            val rows = _uiState.value.scannedCards
-            if (rows.none { it.id == rowId && it.card.id == scanned.id && !it.exact }) return@launch
-            setScanned(
-                rows.map { if (it.id == rowId) it.copy(card = found.pick, exact = found.only) else it },
-                if (found.pick.id == scanned.id) null
-                else "${scanned.name} — matched the art to ${found.pick.setName ?: found.pick.set?.uppercase()}"
-            )
+            correctRow(rowId, scanned, found.pick, found.only, "matched the art to ${found.pick.setName ?: found.pick.set?.uppercase()}")
         }
+    }
+
+    /**
+     * Which of [name]'s printings in [setCode] the card looks like, and whether it's the only one
+     * that does. The set's usual version, not sure, when its versions look too alike to tell; null
+     * when none of them look like the card — or the set has none — so the set code was misread.
+     */
+    private suspend fun decideFromSet(name: String, setCode: String, look: List<FloatArray>): Pair<ScryfallCard, Boolean>? {
+        // Every printing may already be here from an earlier copy; then the set's are among them.
+        val inSet = printingsByName[name]?.filter { it.set.equals(setCode, ignoreCase = true) }
+            ?: cardRepository.getPrintings(name, setCode)
+        val regular = regularInSet(inSet) ?: return null
+        return when (val decision = decideInSet(look, measurePrintings(appContext, inSet), regular)) {
+            is SetDecision.Found -> decision.pick to decision.only
+            is SetDecision.Unsure -> decision.regular to false
+            SetDecision.Misread -> null
+        }
+    }
+
+    /**
+     * Row [rowId] switched to [pick] — unless it's been deleted, or its printing picked by hand, since
+     * the scan. [only] says whether that's certain or a best guess.
+     */
+    private fun correctRow(rowId: Long, scanned: ScryfallCard, pick: ScryfallCard, only: Boolean, how: String) {
+        val rows = _uiState.value.scannedCards
+        if (rows.none { it.id == rowId && it.card.id == scanned.id && !it.exact }) return
+        setScanned(
+            rows.map { if (it.id == rowId) it.copy(card = pick, exact = only) else it },
+            if (pick.id == scanned.id) null else "${scanned.name} — $how"
+        )
     }
 
     /**

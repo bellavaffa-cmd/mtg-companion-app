@@ -35,6 +35,14 @@ private val SLASH_NUMBER = Regex("\\b(\\d{1,4})\\s*/\\s*\\d{1,4}\\b")
  * number (leading zeros dropped), or null when either can't be read with confidence — the card is
  * then found by name.
  */
+/**
+ * Just the set code from the small print, whether or not the collector number read. The set code is
+ * short and bold and reads far more often than the number beside it; on its own it narrows a card's
+ * printings to the few in that set, and the card's look can settle which of those it is.
+ */
+fun parseSetCode(lines: List<String>): String? =
+    lines.firstNotNullOfOrNull { SET_LANG.find(it)?.groupValues?.get(1) }
+
 fun parseSetAndNumber(lines: List<String>): Pair<String, String>? {
     val setCode = lines.firstNotNullOfOrNull { SET_LANG.find(it)?.groupValues?.get(1) } ?: return null
     val number = lines.firstNotNullOfOrNull { RARITY_NUMBER.find(it)?.groupValues?.get(1) }

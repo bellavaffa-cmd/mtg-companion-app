@@ -193,4 +193,32 @@ class PrintingMatchTest {
         // A box running off the pixels is left out rather than measured half empty.
         assertNull(signatureOfRegion(px, size, size, ScanBox(-5, 0, size, size)))
     }
+
+    @Test
+    fun theSetsVersionThatLooksLikeTheCardIsTheOne() {
+        // The set code said which set: of its regular and full-art versions, the look says which.
+        val decision = decideInSet(
+            listOf(throughACamera(4)),
+            listOf(printing("regular", art(7)), printing("full art", art(4))),
+            regular = "regular"
+        )
+        assertEquals(SetDecision.Found("full art", only = true), decision)
+    }
+
+    @Test
+    fun aSetWhoseVersionsLookNothingLikeTheCardMeansTheSetCodeWasMisread() {
+        // Even a set holding just one version of the card is checked against the look.
+        assertEquals(SetDecision.Misread, decideInSet(listOf(throughACamera(20)), listOf(printing("regular", art(2))), "regular"))
+        assertEquals(SetDecision.Misread, decideInSet(listOf(throughACamera(1)), emptyList(), "regular"))
+    }
+
+    @Test
+    fun aSetsVersionsTooAlikeToCallFallBackToItsRegularOne() {
+        // Close to both, clearly nearer neither: in the set, but which of its versions can't be said.
+        val a = art(2)
+        val b = FloatArray(a.size) { a[it] * 0.8f + art(5)[it] * 0.2f }
+        val between = FloatArray(a.size) { (a[it] + b[it]) / 2 }
+        val decision = decideInSet(listOf(between), listOf(printing("showcase", b), printing("regular", a)), "regular")
+        assertTrue("got $decision", decision == SetDecision.Unsure("regular") || (decision is SetDecision.Found && !decision.only))
+    }
 }

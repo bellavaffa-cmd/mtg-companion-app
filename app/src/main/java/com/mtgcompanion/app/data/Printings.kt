@@ -31,6 +31,16 @@ fun withEntryPrinting(entries: List<CollectionEntry>, oldId: String, card: Scryf
     }
 }
 
+/**
+ * The regular version among one set's printings of a card: the lowest collector number, since the
+ * special versions — borderless, showcase, extended art — are numbered after the set's main run.
+ * Numbers with no digits ("★") come last.
+ */
+fun regularInSet(printings: List<ScryfallCard>): ScryfallCard? =
+    printings.minWithOrNull(compareBy<ScryfallCard> {
+        it.collectorNumber?.takeWhile { c -> c.isDigit() }?.toIntOrNull() ?: Int.MAX_VALUE
+    }.thenBy { it.collectorNumber.orEmpty() })
+
 /** A deck entry turned into [card]'s printing, everything about the copies kept. */
 private fun DeckCardEntry.retargeted(card: ScryfallCard) = copy(
     scryfallId = card.id,

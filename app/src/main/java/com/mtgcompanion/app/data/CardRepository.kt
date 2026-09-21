@@ -44,13 +44,15 @@ class CardRepository {
     suspend fun getRandom(): ScryfallCard = api.getRandomCard()
 
     /** Every printing of a card (unique arts/sets), newest first, for alternate-art selection. */
-    suspend fun getPrintings(cardName: String): List<ScryfallCard> {
+    suspend fun getPrintings(cardName: String, set: String? = null): List<ScryfallCard> {
         return try {
             val all = mutableListOf<ScryfallCard>()
+            // [set] narrows it to that one set's printings — a handful, in one request.
+            val query = "!\"$cardName\"" + (set?.let { " set:${it.lowercase()}" } ?: "")
             // Scryfall answers 175 printings at a time; a basic land runs to hundreds of them.
             for (page in 1..MOST_PRINTING_PAGES) {
                 val response = api.searchCards(
-                    query = "!\"$cardName\"", page = page, unique = "prints", order = "released"
+                    query = query, page = page, unique = "prints", order = "released"
                 )
                 all += response.data
                 if (!response.hasMore) break

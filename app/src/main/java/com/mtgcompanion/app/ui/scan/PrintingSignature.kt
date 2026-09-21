@@ -130,6 +130,16 @@ private suspend fun signatureOfUrl(context: Context, url: String): FloatArray? {
 private fun pictureOf(card: ScryfallCard): String? =
     card.imageUris?.small ?: card.cardFaces?.firstOrNull()?.imageUris?.small
 
+/** Each of [printings] measured from its picture, for choosing among a short list (see decideInSet). */
+suspend fun measurePrintings(context: Context, printings: List<ScryfallCard>): List<Candidate<ScryfallCard>> =
+    withContext(Dispatchers.IO) {
+        printings.filter { pictureOf(it) != null }.chunked(AT_ONCE).flatMap { batch ->
+            coroutineScope {
+                batch.map { card -> async { signatureOfUrl(context, pictureOf(card)!!)?.let { Candidate(card, it) } } }.awaitAll()
+            }.filterNotNull()
+        }
+    }
+
 /**
  * The printing among [printings] that the card the camera saw looks most like. Fetches each
  * printing's picture, so this is meant to run behind the scan rather than in front of it.

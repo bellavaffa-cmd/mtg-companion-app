@@ -79,6 +79,15 @@ class PrintingsTest {
     }
 
     @Test
+    fun aSetsRegularVersionIsItsLowestNumberedOne() {
+        fun numbered(n: String) = ScryfallCard(id = n, name = "Sol Ring", collectorNumber = n)
+        // Borderless and showcase versions are numbered after the set's main run.
+        assertEquals("12", regularInSet(listOf("300", "12a", "★", "12", "45").map(::numbered))?.id)
+        assertEquals("★", regularInSet(listOf(numbered("★")))?.id)
+        assertNull(regularInSet(emptyList()))
+    }
+
+    @Test
     fun theWishlistAndTheUnsortedPileAreNotBinders() {
         val all = listOf(
             Collection(WISHLIST_ID, "Wishlist", type = CollectionType.WISHLIST.name),

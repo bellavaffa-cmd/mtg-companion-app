@@ -53,4 +53,13 @@ class SmallPrintParseTest {
         // A set code has to stand apart from the language: letters run together are a word.
         assertNull(read("U 0021\nTHEORYEN"))
     }
+
+    @Test
+    fun theSetCodeReadsOnItsOwnWhenTheNumberWont() {
+        // No number beside it, but the set code still narrows the printings to that set's.
+        assertEquals("MSC", parseSetCode(listOf("MSC • EN")))
+        assertEquals("FRC", parseSetCode(listOf("Illus. Someone", "FRC ENTTUS LUNTER")))
+        assertNull(parseSetCode(listOf("U 0211")))
+        assertNull(parseSetCode(listOf("U 0021", "RAY XY")))
+    }
 }

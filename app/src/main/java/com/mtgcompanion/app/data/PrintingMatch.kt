@@ -255,6 +255,33 @@ data class PrintingMatch<T>(
  * genuinely look different are too near to call. Saying nothing is the right answer there: a wrong
  * printing recorded silently is worse than none, and the scan falls back to asking.
  */
+/** How close the camera's card comes to the closest of [candidates]. */
+fun <T> bestDistance(looks: List<FloatArray>, candidates: List<Candidate<T>>): Float =
+    candidates.minOfOrNull { lookDistance(looks, it.signature) } ?: Float.MAX_VALUE
+
+/** What one set's printings of a card say about the card in the frame (see [decideInSet]). */
+sealed interface SetDecision<out T> {
+    /** It's this one. [only] is false when another printing in the set looks just like it. */
+    data class Found<T>(val pick: T, val only: Boolean) : SetDecision<T>
+    /** It's in this set, but its versions look too alike to call: [regular] is the best guess. */
+    data class Unsure<T>(val regular: T) : SetDecision<T>
+    /** Nothing in the set looks like it — the set code was most likely misread. */
+    data object Misread : SetDecision<Nothing>
+}
+
+/**
+ * The card's printings in the set its small print named, held up against what the camera saw. A set
+ * rarely holds more than a few versions of a card — regular, full art, borderless, showcase — and
+ * they differ in the whole layout, not just the picture, which is far easier to tell apart than one
+ * printing among a hundred. Even a set with a single version is checked: a set code misread as
+ * another real set mustn't quietly name a printing the card in hand looks nothing like.
+ */
+fun <T> decideInSet(looks: List<FloatArray>, candidates: List<Candidate<T>>, regular: T): SetDecision<T> {
+    if (candidates.isEmpty() || looks.isEmpty() || bestDistance(looks, candidates) > MATCH_MAX) return SetDecision.Misread
+    val found = bestPrinting(looks, candidates) ?: return SetDecision.Unsure(regular)
+    return SetDecision.Found(found.pick, found.only)
+}
+
 fun <T> bestPrinting(camera: FloatArray, candidates: List<Candidate<T>>): PrintingMatch<T>? =
     bestPrinting(listOf(camera), candidates)
 
