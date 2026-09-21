@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.ScanInFlight
+import kotlinx.coroutines.channels.Channel
+import android.util.Log
+import android.os.SystemClock
 import android.content.Context
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -58,6 +62,23 @@ import java.util.concurrent.atomic.AtomicBoolean
  * a genuinely new card. */
 private const val BLANK_FRAMES_TO_RESET = 4
 
+/**
+ * A card the camera has confirmed, waiting for its lookup: what was read, and — when the set code
+ * wasn't — a copy of the picture, so the small print and the art can still be read once the camera
+ * has moved on to the next card.
+ */
+private class PendingScan(
+    val candidate: String,
+    val normalized: String,
+    val forced: Boolean,
+    val fromFrame: Pair<String, String>?,
+    val picture: Bitmap?,
+    val rotation: Int,
+    val guide: ScanBox?,
+    val token: Long,
+    val queuedAt: Long
+)
+
 /** Minimum (score minus runner-up) an art match needs before it's trusted enough to auto-add —
  * calibrated against synthetic camera-like distortion (crop/rotation/lighting/JPEG noise) of clean
  * reference scans, not real photographs yet; a conservative starting point pending real-world use. */
@@ -82,10 +103,10 @@ class ScanViewModel(
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    // Gates one frame's OCR+lookup at a time; combined with ImageAnalysis's
+    // Gates one frame's reading at a time; combined with ImageAnalysis's
     // STRATEGY_KEEP_ONLY_LATEST (which withholds the next frame until this one's
-    // ImageProxy is closed), this naturally throttles scanning to roughly one
-    // attempt per round trip instead of hammering ML Kit/Scryfall at camera frame rate.
+    // ImageProxy is closed), this throttles scanning to one frame per read. The lookup is no
+    // longer part of that: a confirmed card goes to [lookups] and the camera moves straight on.
     private val busy = AtomicBoolean(false)
 
     // Scan-throughput guards so we don't fire a Scryfall lookup on every frame:
@@ -114,6 +135,21 @@ class ScanViewModel(
     // Reads of the same title in a row; a card is looked up at STEADY_READS of them.
     private var steadyReads = 0
     private val nameCache = HashMap<String, ScryfallCard>()
+
+    // The card confirmed but not yet looked up, so it isn't looked up twice while it sits in view.
+    private val inFlight = ScanInFlight()
+
+    // Confirmed cards waiting for their lookup. One at a time, in the order they were scanned: the
+    // list keeps scan order, and Scryfall is asked no faster than before — only the camera stops
+    // waiting on it.
+    private val lookups = Channel<PendingScan>(Channel.UNLIMITED)
+
+    init {
+        viewModelScope.launch { for (scan in lookups) lookUp(scan) }
+    }
+
+    // When the frame being read reached the reader, for the timings in the log.
+    private var frameStartedAt = 0L
 
     // The preview's size in pixels, set by the screen: with it, the framing guide can be placed in
     // the camera's own picture, and text outside it (the next card along) left unread.
@@ -157,6 +193,7 @@ class ScanViewModel(
             onProcessed()
             return
         }
+        frameStartedAt = SystemClock.elapsedRealtime()
         recognizer.process(image)
             .addOnSuccessListener { visionText -> handleRecognizedText(visionText, image, onProcessed) }
             .addOnFailureListener {
@@ -166,6 +203,7 @@ class ScanViewModel(
     }
 
     private fun handleRecognizedText(visionText: Text, image: InputImage, onProcessed: () -> Unit) {
+        timing("read frame", frameStartedAt)
         val forced = forceScanNext.getAndSet(false)
         // Only text inside the framing guide is the card being scanned; the rest is whatever else is
         // on the table. Tapping "Scan now" with nothing in the guide reads the whole frame instead.
@@ -185,6 +223,7 @@ class ScanViewModel(
                 lastCandidate = null
                 lastLookedUp = null
                 lastAddedCard = null
+                inFlight.cardLeft()
             }
             busy.set(false)
             onProcessed()
@@ -196,14 +235,15 @@ class ScanViewModel(
         // slightly different from the exact string we last looked up — don't re-add it. A forced
         // (manual capture) scan skips this: the user tapping the button IS the "yes, really"
         // confirmation, and re-scanning the same card on purpose is how you bump its count.
+        // The card still waiting on its lookup counts too: the camera no longer waits for it, so
+        // it's still in view while its lookup is out.
         if (!forced) {
-            lastAddedCard?.let { last ->
-                if (looksLikeSameCard(candidate, last.name)) {
-                    lastCandidate = candidate.lowercase()
-                    busy.set(false)
-                    onProcessed()
-                    return
-                }
+            val added = lastAddedCard?.let { looksLikeSameCard(candidate, it.name) } == true
+            if (added || inFlight.isOnItsWay(candidate, ::looksLikeSameCard)) {
+                lastCandidate = candidate.lowercase()
+                busy.set(false)
+                onProcessed()
+                return
             }
         }
 
@@ -222,49 +262,81 @@ class ScanViewModel(
         }
         lastLookedUp = normalized
 
-        // Also read the set code + collector number so we can fetch the exact printing, not just
-        // the default one. At the camera's resolution that line is often unreadable in the frame's
-        // own pass, so the bottom strip of the card gets blown up and read again on its own.
+        // The set code + collector number name the exact printing. The camera's own pass sometimes
+        // reads them; when it doesn't, a copy of the picture goes with the card, for a closer look
+        // at the small print and for matching the art — both done in the lookup queue, off the
+        // camera.
         val fromFrame = extractSetAndNumber(lines)
         val grabFrame = currentFrame
+        val rotation = image.rotationDegrees
         val guide = guideInImage(
-            if (image.rotationDegrees == 90 || image.rotationDegrees == 270) image.height else image.width,
-            if (image.rotationDegrees == 90 || image.rotationDegrees == 270) image.width else image.height,
+            if (rotation == 90 || rotation == 270) image.height else image.width,
+            if (rotation == 90 || rotation == 270) image.width else image.height,
             previewWidth, previewHeight, GUIDE_WIDTH, GUIDE_HEIGHT
         )
+        val token = inFlight.start(normalized)
 
         viewModelScope.launch {
-            val printing = fromFrame ?: readSmallPrint(grabFrame, image.rotationDegrees, guide)
-            val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: normalized
-
-            // What the card looked like, taken while it was still in the frame. When the set code
-            // was read there's nothing left to work out; otherwise this decides the printing.
-            val look = if (printing != null) null else lookOf(grabFrame, image.rotationDegrees, guide)
-
-            nameCache[cacheKey]?.let { cached ->
-                accept(candidate, cached, forced, exact = printing != null)?.let { row ->
-                    lastAddedCard = cached
-                    matchArt(row, cached, look)
-                }
-                busy.set(false)
-                onProcessed()
-                return@launch
-            }
-
-            try {
-                val card = resolveCard(candidate, printing)
-                accept(candidate, card, forced, exact = printing != null)?.let { row ->
-                    nameCache[cacheKey] = card
-                    lastAddedCard = card
-                    matchArt(row, card, look)
-                }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(status = "Didn't recognize \"$candidate\" — keep scanning…")
+            // The copy is the only part that needs the frame itself; once it's taken the camera is
+            // handed back, and the card waits its turn for a lookup while the next one is read.
+            val grabbed = SystemClock.elapsedRealtime()
+            val picture = try {
+                if (fromFrame != null) null else withContext(Dispatchers.Default) { grabFrame?.invoke() }
             } finally {
                 busy.set(false)
                 onProcessed()
             }
+            if (picture != null) timing("copy picture", grabbed)
+            lookups.send(
+                PendingScan(candidate, normalized, forced, fromFrame, picture, rotation, guide, token, SystemClock.elapsedRealtime())
+            )
         }
+    }
+
+    /**
+     * One confirmed card, looked up: the small print read closer if the camera's pass missed it,
+     * the card fetched (from this session's cache when it's been seen), checked against what was
+     * read, and added. Runs in [lookups], one card at a time.
+     */
+    private suspend fun lookUp(scan: PendingScan) {
+        timing("waited for lookup", scan.queuedAt)
+        // Turned upright once and shared: the small print and the art both read it.
+        val picture = scan.picture?.let { withContext(Dispatchers.Default) { uprightFrame(it, scan.rotation) } }
+
+        var started = SystemClock.elapsedRealtime()
+        val printing = scan.fromFrame ?: picture?.let { readSmallPrint(it, scan.guide) }
+        if (scan.fromFrame == null && picture != null) timing("small print", started)
+        val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: scan.normalized
+
+        // What the card looked like. When the set code was read there's nothing left to work out;
+        // otherwise this decides the printing (see matchArt).
+        started = SystemClock.elapsedRealtime()
+        val look = if (printing != null) null else picture?.let { withContext(Dispatchers.Default) { cameraSignature(it, 0, scan.guide) } }
+        if (look != null) timing("art signature", started)
+
+        var added: ScryfallCard? = null
+        try {
+            val cached = nameCache[cacheKey]
+            started = SystemClock.elapsedRealtime()
+            val card = cached ?: resolveCard(scan.candidate, printing)
+            if (cached == null) timing("lookup", started)
+            accept(scan.candidate, card, scan.forced, exact = printing != null)?.let { row ->
+                nameCache[cacheKey] = card
+                added = card
+                matchArt(row, card, look)
+            }
+        } catch (e: Exception) {
+            _uiState.value = _uiState.value.copy(status = "Didn't recognize \"${scan.candidate}\" — keep scanning…")
+        } finally {
+            // Remembered as the card in view only if it hasn't left since it was confirmed; if it
+            // has, the next card in is a new one — even another copy of this card.
+            if (inFlight.finished(scan.token, scan.normalized)) added?.let { lastAddedCard = it }
+        }
+    }
+
+    /** How long a step of a scan took, logged under "ScanTiming" — for finding what's slow. */
+    private fun timing(step: String, since: Long) {
+        Log.d("ScanTiming", "$step: ${SystemClock.elapsedRealtime() - since} ms")
     }
 
     /**
@@ -272,9 +344,8 @@ class ScanViewModel(
      * which printing is in your hand — the alternate art, the borderless one — where the name alone
      * only gets the usual printing. Null when it still can't be read.
      */
-    private suspend fun readSmallPrint(frame: (() -> Bitmap?)?, rotation: Int, guide: ScanBox?): Pair<String, String>? {
-        val picture = withContext(Dispatchers.Default) { frame?.invoke() } ?: return null
-        val strip = withContext(Dispatchers.Default) { smallPrintStrip(picture, rotation, guide) } ?: return null
+    private suspend fun readSmallPrint(upright: Bitmap, guide: ScanBox?): Pair<String, String>? {
+        val strip = withContext(Dispatchers.Default) { smallPrintStrip(upright, 0, guide) } ?: return null
         val text = runCatching {
             suspendCancellableCoroutine { cont ->
                 recognizer.process(InputImage.fromBitmap(strip, 0))
@@ -283,12 +354,6 @@ class ScanViewModel(
             }
         }.getOrNull() ?: return null
         return extractSetAndNumber(text.textBlocks.flatMap { it.lines })
-    }
-
-    /** What the card in the frame looks like, off the camera's own picture. */
-    private suspend fun lookOf(frame: (() -> Bitmap?)?, rotation: Int, guide: ScanBox?): FloatArray? {
-        val picture = withContext(Dispatchers.Default) { frame?.invoke() } ?: return null
-        return withContext(Dispatchers.Default) { cameraSignature(picture, rotation, guide) }
     }
 
     /**

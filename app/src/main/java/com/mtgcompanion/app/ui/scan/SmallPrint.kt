@@ -18,6 +18,16 @@ import com.mtgcompanion.app.data.ScanBox
 private const val STRIP_TOP = 0.88f
 private const val STRIP_BOTTOM = 0.99f
 
+/**
+ * The camera's picture turned upright, or null if it couldn't be. Done once per scanned card and
+ * shared, since the small print and the art match both need it and turning a full frame is costly.
+ */
+fun uprightFrame(frame: Bitmap, rotation: Int): Bitmap? {
+    if (rotation % 360 == 0) return frame
+    val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+    return runCatching { Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, matrix, true) }.getOrNull()
+}
+
 /** How much the strip is blown up before it's read. Past this the reader gains nothing. */
 const val STRIP_SCALE = 3
 
