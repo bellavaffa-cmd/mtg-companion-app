@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
                         offlineCardRepository = app.offlineCardRepository,
                         playerProfileRepository = app.playerProfileRepository,
                         lifeCounterSettingsRepository = app.lifeCounterSettingsRepository,
-                        artIndexRepository = app.artIndexRepository,
+                        cardIndexRepository = app.cardIndexRepository,
                         socialRepository = app.socialRepository,
                         pendingOpen = app.pendingOpen
                     )

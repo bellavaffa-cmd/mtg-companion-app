@@ -87,7 +87,7 @@ import com.mtgcompanion.app.data.DriveImporter
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.GRID_COLUMNS_RANGE
 import com.mtgcompanion.app.data.SettingsRepository
-import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
+import com.mtgcompanion.app.data.CardIndexRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.update.UpdateManager
 import kotlinx.coroutines.launch
@@ -110,7 +110,7 @@ fun SettingsScreen(
     supabaseSync: SupabaseSync,
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
-    artIndexRepository: ArtIndexRepository,
+    cardIndexRepository: CardIndexRepository,
     settingsRepository: SettingsRepository,
     onBack: () -> Unit,
     onOpenFriends: (() -> Unit)? = null
@@ -168,7 +168,7 @@ fun SettingsScreen(
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
-            SettingsCategory("Scanner Art Recognition") { ArtRecognitionSection(artIndexRepository) }
+            SettingsCategory("Card Recognition") { CardRecognitionSection(cardIndexRepository) }
 
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
@@ -491,39 +491,29 @@ private fun OfflineSearchSection(offlineCardRepository: OfflineCardRepository) {
 }
 
 @Composable
-private fun ArtRecognitionSection(artIndexRepository: ArtIndexRepository) {
-    val status by artIndexRepository.status.collectAsState()
+private fun CardRecognitionSection(cardIndexRepository: CardIndexRepository) {
+    val status by cardIndexRepository.status.collectAsState()
 
     Text(
-        "Download a visual-fingerprint database and recognition model (~75 MB) so the scanner can " +
-            "identify a card by its art when the printed text is hard to read (glare, damage, an " +
-            "unusual frame).",
+        "The scanner knows cards by sight — the art and frame of every English printing — so it can " +
+            "tell a full-art or borderless version from the usual one, and still recognize a card " +
+            "whose name it can't read. The data (~26 MB) downloads the first time you scan; Update " +
+            "picks up newly released sets.",
         style = MaterialTheme.typography.bodySmall
     )
 
-    if (status.hasData) {
-        Text("${status.cardCount} cards recognized", style = MaterialTheme.typography.labelMedium, color = GoldLight)
+    if (status.ready) {
+        Text("${status.cardCount} card pictures", style = MaterialTheme.typography.labelMedium, color = GoldLight)
     }
 
-    val buttonLabel = if (status.hasData) "Update data" else "Download data"
-    if (status.hasData) {
-        OutlinedButton(
-            // Only the explicit update re-fetches what's already on disk; a first-time download
-            // picks up whatever half is missing.
-            onClick = { artIndexRepository.downloadData(force = true) },
-            enabled = !status.downloading,
-            shape = RoundedCornerShape(8.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
-        ) { DownloadButtonContent(status.downloading, buttonLabel, Gold) }
-    } else {
-        Button(
-            onClick = { artIndexRepository.downloadData() },
-            enabled = !status.downloading,
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-        ) { DownloadButtonContent(status.downloading, buttonLabel, Bg) }
-    }
+    val label = if (status.ready) "Update" else "Download now"
+    OutlinedButton(
+        onClick = { cardIndexRepository.download(force = status.ready) },
+        enabled = !status.downloading,
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
+    ) { DownloadButtonContent(status.downloading, label, Gold) }
 
     if (status.downloading) {
         LinearProgressIndicator(

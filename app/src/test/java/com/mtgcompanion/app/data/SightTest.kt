@@ -57,4 +57,30 @@ class SightTest {
         assertNull(looksLikeAnotherCard("Lightning Bolt", listOf(m("Lightning Bolt", 9, 0.84f)), anywhere))
         assertNull(looksLikeAnotherCard("Lightning Helix", listOf(m("Lightning Helix", 7, 0.88f)), anywhere))
     }
+
+    @Test
+    fun aReadSetCodeNarrowsThePrintingUnlessNothingInThatSetLooksRight() {
+        val fullArt = m("Island", 1, 0.84f, "znr")
+        val regular = m("Island", 2, 0.7f, "znr")
+        val other = m("Island", 3, 0.86f, "dmu")
+        // The set's full-art version, though another set's Island scores a hair higher.
+        assertEquals("znr", choosePrinting(listOf(other, fullArt, regular), listOf(fullArt, regular))?.entry?.set)
+        assertEquals(1, choosePrinting(listOf(other, fullArt, regular), listOf(fullArt, regular))?.entry?.group)
+        // Nothing in the set looks like it: the set code was misread, and the name decides.
+        val poor = m("Island", 4, 0.5f, "lea")
+        assertEquals("dmu", choosePrinting(listOf(other, m("Island", 6, 0.7f)), listOf(poor))?.entry?.set)
+        // No set read: the name decides.
+        assertEquals("dmu", choosePrinting(listOf(other, m("Island", 5, 0.6f)), emptyList())?.entry?.set)
+    }
+
+    @Test
+    fun aSmallPrintMisreadAsAnotherRealPrintingIsCaughtByTheCardsLook() {
+        val znr = m("Island", 1, 0.85f, "znr")
+        val named = listOf(znr, m("Island", 2, 0.78f, "dmu"))
+        assertFalse(smallPrintAgrees(m("Island", 3, 0.66f, "trk"), named))
+        assertTrue(smallPrintAgrees(znr, named))
+        assertTrue(smallPrintAgrees(m("Island", 4, 0.81f, "znr"), named))
+        assertTrue(smallPrintAgrees(m("Island", 1, 0.7f, "plst"), named))
+        assertTrue(smallPrintAgrees(null, named))
+    }
 }

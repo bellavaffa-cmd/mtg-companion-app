@@ -125,7 +125,7 @@ import com.mtgcompanion.app.ui.social.SharedItemScreen
 import com.mtgcompanion.app.ui.social.SharedSource
 import com.mtgcompanion.app.ui.social.TradeComposerScreen
 import com.mtgcompanion.app.ui.social.TradesScreen
-import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
+import com.mtgcompanion.app.data.CardIndexRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
 import com.mtgcompanion.app.ui.collection.CollectionDetailViewModel
@@ -230,7 +230,7 @@ fun MtgNavGraph(
     offlineCardRepository: OfflineCardRepository,
     playerProfileRepository: PlayerProfileRepository,
     lifeCounterSettingsRepository: LifeCounterSettingsRepository,
-    artIndexRepository: ArtIndexRepository,
+    cardIndexRepository: CardIndexRepository,
     socialRepository: SocialRepository,
     pendingOpen: MutableStateFlow<String?>
 ) {
@@ -561,7 +561,7 @@ fun MtgNavGraph(
                         LocalContext.current.applicationContext,
                         collectionRepository,
                         deckRepository,
-                        artIndexRepository,
+                        cardIndexRepository,
                         settingsRepository
                     )
                 )
@@ -609,7 +609,7 @@ fun MtgNavGraph(
                     supabaseSync = supabaseSync,
                     updateManager = updateManager,
                     offlineCardRepository = offlineCardRepository,
-                    artIndexRepository = artIndexRepository,
+                    cardIndexRepository = cardIndexRepository,
                     settingsRepository = settingsRepository,
                     onBack = { navController.popBackStack() },
                     onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) }

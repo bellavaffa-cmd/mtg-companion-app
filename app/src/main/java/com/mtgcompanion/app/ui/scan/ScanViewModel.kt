@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.SightPick
+import com.mtgcompanion.app.data.smallPrintAgrees
+import com.mtgcompanion.app.data.looksLikeAnotherCard
+import com.mtgcompanion.app.data.choosePrinting
+import com.mtgcompanion.app.data.cardBySight
 import com.mtgcompanion.app.data.SetDecision
 import com.mtgcompanion.app.data.decideInSet
 import com.mtgcompanion.app.data.regularInSet
@@ -54,7 +59,7 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.duplicateWarning
-import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
+import com.mtgcompanion.app.data.CardIndexRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -73,6 +78,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * fraction of a second — enough to absorb a flicker without meaningfully delaying recognition of
  * a genuinely new card. */
 private const val BLANK_FRAMES_TO_RESET = 4
+
+/** Frames in a row the title has to fail to read before the card is looked for by sight instead. */
+private const val SIGHT_AFTER_BLANK = 2
+
+/** At most one look by sight this often while the title won't read — each is a run of the model. */
+private const val SIGHT_EVERY_MS = 400L
 
 /**
  * Blank frames in a row, read guide-only, before one whole frame is read to check the guide is still
@@ -100,6 +111,8 @@ private class PendingScan(
     val normalized: String,
     val forced: Boolean,
     val fromFrame: Pair<String, String>?,
+    /** Known by sight, its title unread: nothing read to hold the card up against. */
+    val seenBySight: Boolean,
     /** The set code alone, when the frame showed it but not the number beside it. */
     val frameSet: String?,
     val picture: Bitmap?,
@@ -108,11 +121,6 @@ private class PendingScan(
     val token: Long,
     val queuedAt: Long
 )
-
-/** Minimum (score minus runner-up) an art match needs before it's trusted enough to auto-add —
- * calibrated against synthetic camera-like distortion (crop/rotation/lighting/JPEG noise) of clean
- * reference scans, not real photographs yet; a conservative starting point pending real-world use. */
-private const val ART_MATCH_MIN_MARGIN = 4000
 
 data class ScanUiState(
     val status: String? = null,
@@ -130,7 +138,7 @@ class ScanViewModel(
     private val cardRepository: CardRepository = CardRepository(),
     private val collectionRepository: CollectionRepository,
     private val deckRepository: DeckRepository,
-    private val artIndexRepository: ArtIndexRepository,
+    private val cardIndexRepository: CardIndexRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
@@ -198,6 +206,7 @@ class ScanViewModel(
     // whole-frame checks in a row that found text only outside the guide — and whether that's
     // happened often enough that the guide is set aside and whole frames are read again.
     @Volatile private var guideBlankStreak = 0
+    private var lastSightAt = 0L
     private var probeOutsideStreak = 0
     @Volatile private var guideOff = false
 
@@ -232,6 +241,9 @@ class ScanViewModel(
     // they write to: the saved choice often arrives the moment it's asked for, and a coroutine that
     // starts running before the state exists crashes the scanner.
     init {
+        // Knowing cards by sight needs its data on the phone: fetched the first time the scanner
+        // opens (~26 MB), and until it's here the art is matched the old way, online.
+        cardIndexRepository.download()
         viewModelScope.launch { for (scan in lookups) lookUp(scan) }
         viewModelScope.launch {
             settingsRepository.scanMode.collect { mode -> _uiState.update { it.copy(scanMode = mode) } }
@@ -297,20 +309,76 @@ class ScanViewModel(
         val candidate = extractCardName(lines)
         if (cut != null) guideBlankStreak = if (candidate == null) guideBlankStreak + 1 else 0
         if (candidate == null) {
-            // No title in view. Only treat this as "the card actually left" after a real streak
-            // of blank frames — see blankFrameStreak's doc comment above.
-            if (++blankFrameStreak >= BLANK_FRAMES_TO_RESET) {
-                steadyReads = 0
-                lastCandidate = null
-                lastLookedUp = null
-                lastAddedCard = null
-                inFlight.cardLeft()
+            // A title that won't read — busy borderless art, glare, a foreign-language card, a torn
+            // corner — needn't stop the card: once the card index is here, the whole card is looked
+            // up by sight, and a clear match counts as the read (see lookBySight).
+            val recognizer = cardIndexRepository.recognizer()
+            val now = SystemClock.elapsedRealtime()
+            if (cut != null && recognizer != null && !forced && guideBlankStreak >= SIGHT_AFTER_BLANK && now - lastSightAt >= SIGHT_EVERY_MS) {
+                lastSightAt = now
+                lookBySight(recognizer, image, onProcessed, cut)
+                return
             }
-            busy.set(false)
-            onProcessed()
+            noTitle(onProcessed)
             return
         }
         blankFrameStreak = 0
+        proceed(candidate, lines, image, onProcessed, cut, forced, seenBySight = false)
+    }
+
+    /**
+     * No title in this frame. Only treated as "the card actually left" after a real streak of blank
+     * frames — see blankFrameStreak's doc comment above.
+     */
+    private fun noTitle(onProcessed: () -> Unit) {
+        if (++blankFrameStreak >= BLANK_FRAMES_TO_RESET) {
+            steadyReads = 0
+            lastCandidate = null
+            lastLookedUp = null
+            lastAddedCard = null
+            inFlight.cardLeft()
+        }
+        busy.set(false)
+        onProcessed()
+    }
+
+    /**
+     * The card in the guide, its title unread, looked up by sight: found by its edges, run through
+     * the model, and taken as the read only when it's clearly one card (see cardBySight). The camera
+     * waits meanwhile — the same frame's picture is being looked at.
+     */
+    private fun lookBySight(recognizer: CardRecognizer, image: InputImage, onProcessed: () -> Unit, cut: GuideCut) {
+        viewModelScope.launch {
+            val started = SystemClock.elapsedRealtime()
+            val sight = withContext(Dispatchers.Default) {
+                runCatching {
+                    uprightFrame(cut.picture, image.rotationDegrees)?.let { FlatCard.find(it, cut.guide) }
+                        ?.let { cardBySight(recognizer.recognize(it).anywhere) }
+                }.getOrNull()
+            }
+            if (sight == null) {
+                noTitle(onProcessed)
+                return@launch
+            }
+            timing("title unread; by sight: ${sight.name} ${sight.set} #${sight.number}", started)
+            blankFrameStreak = 0
+            proceed(sight.name, emptyList(), image, onProcessed, cut, forced = false, seenBySight = true)
+        }
+    }
+
+    /**
+     * A title read — or a card known by sight ([seenBySight]) — on its way to a lookup: once it's
+     * read the same on enough frames running, and isn't the card just added still in view.
+     */
+    private fun proceed(
+        candidate: String,
+        lines: List<Text.Line>,
+        image: InputImage,
+        onProcessed: () -> Unit,
+        cut: GuideCut?,
+        forced: Boolean,
+        seenBySight: Boolean
+    ) {
 
         // Still the same physical card sitting in frame, even if this frame's OCR came out
         // slightly different from the exact string we last looked up — don't re-add it. A forced
@@ -374,7 +442,7 @@ class ScanViewModel(
             }
             if (picture != null) timing("copy picture", grabbed)
             lookups.send(
-                PendingScan(candidate, normalized, forced, fromFrame, frameSet, picture, rotation, guide, token, SystemClock.elapsedRealtime())
+                PendingScan(candidate, normalized, forced, fromFrame, seenBySight, frameSet, picture, rotation, guide, token, SystemClock.elapsedRealtime())
             )
         }
     }
@@ -408,11 +476,15 @@ class ScanViewModel(
         else if (scan.fromFrame != null) Log.d("ScanTiming", "small print read in the frame itself: ${scan.fromFrame.first} #${scan.fromFrame.second}")
         val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: scan.normalized
 
-        // What the card looked like. When the set code was read there's nothing left to work out;
-        // otherwise this decides the printing (see matchArt) — except in Fast scanning, which
-        // leaves the card as its usual printing rather than fetching every printing to compare.
+        // Which printing it is, when the small print didn't say: by sight, from the card index on
+        // the phone (see sightPrinting) — or, until that's downloaded or when the card's edges
+        // weren't found, from what the card looked like compared with every printing online (see
+        // matchArt). Fast scanning does neither and leaves the card as its usual printing.
+        // With the card index, the look also checks a printing the small print named.
+        val recognizer = if (_uiState.value.scanMode.matchesArt && flat != null) cardIndexRepository.recognizer() else null
+        val matchesArt = printing == null && _uiState.value.scanMode.matchesArt
         started = SystemClock.elapsedRealtime()
-        val look = if (printing != null || !_uiState.value.scanMode.matchesArt) null else picture?.let {
+        val look = if (!matchesArt || recognizer != null) null else picture?.let {
             withContext(Dispatchers.Default) { flat?.signatures() ?: cameraSignatures(it, 0, scan.guide) }
         }?.ifEmpty { null }
         if (look != null) timing("art signature", started)
@@ -421,12 +493,19 @@ class ScanViewModel(
         try {
             val cached = nameCache[cacheKey]
             started = SystemClock.elapsedRealtime()
-            val card = cached ?: resolveCard(scan.candidate, printing)
+            val named = cached ?: resolveCard(scan.candidate, printing)
             if (cached == null) timing("lookup", started)
-            accept(scan.candidate, card, scan.forced, exact = printing != null)?.let { row ->
-                nameCache[cacheKey] = card
+            // The name is settled by now; by sight, which of its printings is in hand — or whether
+            // the printing the small print named is borne out.
+            val printed = printing != null && named.set.equals(printing.first, ignoreCase = true)
+            val sight = if (recognizer != null && flat != null) sightPrinting(recognizer, flat, named, setCode, printed) else null
+            val card = sight?.card ?: named
+            val exact = if (sight != null) sight.certain else printed
+            // A card known by sight needs no reading to account for it: its look already did.
+            accept(scan.candidate, card, scan.forced || scan.seenBySight, exact = exact)?.let { row ->
+                nameCache[cacheKey] = named
                 added = card
-                matchArt(row, card, look, setCode)
+                if (recognizer == null) matchArt(row, card, look, setCode)
             }
         } catch (e: Exception) {
             _uiState.value = _uiState.value.copy(status = "Didn't recognize \"${scan.candidate}\" — keep scanning…")
@@ -436,6 +515,47 @@ class ScanViewModel(
             if (inFlight.finished(scan.token, scan.normalized)) added?.let { lastAddedCard = it }
         }
     }
+
+    /**
+     * Which printing of [named] the flattened card is, by sight — the card index on the phone, no
+     * fetching every printing to compare — and whether that's certain (see printingBySight). The set
+     * code narrows it when it was read (see choosePrinting). Null when the look can't tell, and the
+     * card stays as it was looked up. If the look plainly says it's another card altogether, that's
+     * said, and the row is left as a best guess for a tap to fix.
+     *
+     * When [named] came from the small print ([printed]), the look checks it instead: a set code and
+     * number misread as another real printing of the same card would otherwise go in as certain. It's
+     * kept (null) when the look bears it out, and overruled by the look when it doesn't.
+     */
+    private suspend fun sightPrinting(recognizer: CardRecognizer, flat: FlatCard, named: ScryfallCard, setCode: String?, printed: Boolean): SightResult? {
+        val started = SystemClock.elapsedRealtime()
+        val seen = withContext(Dispatchers.Default) {
+            runCatching { recognizer.recognize(flat, named.name, setCode, if (printed) named.id else null) }.getOrNull()
+        } ?: return null
+        timing("by sight", started)
+        looksLikeAnotherCard(named.name, seen.named, seen.anywhere)?.let { other ->
+            _uiState.value = _uiState.value.copy(status = "Read \"${named.name}\", but it looks like ${other.name} — tap the row to check.")
+            return null
+        }
+        val overruled = printed && !smallPrintAgrees(seen.printing, seen.named)
+        if (printed && !overruled) return null
+        if (overruled) Log.d("ScanTiming", "small print said ${named.set} #${named.collectorNumber}, but it doesn't look like it — going by sight")
+        // Once the small print is overruled, the look's best is the best there is, sure or not.
+        val pick = choosePrinting(seen.named, if (overruled) emptyList() else seen.inSet)
+            ?: seen.named.firstOrNull()?.takeIf { overruled }?.let { SightPick(it.entry, certain = false) }
+            ?: return null
+        if (pick.entry.id == named.id) return SightResult(named, pick.certain)
+        val card = printingById[pick.entry.id]
+            ?: runCatching { cardRepository.getCardsByIds(listOf(pick.entry.id)).firstOrNull() }.getOrNull()?.also { printingById[pick.entry.id] = it }
+            ?: return null
+        return SightResult(card, pick.certain)
+    }
+
+    /** A printing decided by sight, and whether it's certain. */
+    private class SightResult(val card: ScryfallCard, val certain: Boolean)
+
+    /** Printings fetched by id this session, for a card seen by sight more than once. */
+    private val printingById = mutableMapOf<String, ScryfallCard>()
 
     /**
      * The guide, with its slack, cut out of the camera's picture before it's turned upright — so
@@ -663,39 +783,48 @@ class ScanViewModel(
     }
 
     /**
-     * Identify a card by its art instead of text — the fallback for exactly what OCR struggles
-     * with (glare, damage, an unusual frame) as long as the art itself is still legible. Requires
-     * the art-recognition data to have been downloaded in Settings first.
+     * Identify a card by sight instead of text — for what the reader struggles with (glare, damage,
+     * a foreign-language card, an unusual frame) as long as the card itself is in view. [bitmap] is
+     * a full photo from the camera, upright.
      */
     fun matchByArt(bitmap: Bitmap) {
-        _uiState.value = _uiState.value.copy(status = "Matching by art…")
+        val recognizer = cardIndexRepository.recognizer()
+        if (recognizer == null) {
+            val status = cardIndexRepository.status.value
+            _uiState.value = _uiState.value.copy(
+                status = if (status.downloading) "Card recognition is still downloading — try again in a moment." else "Card recognition isn't downloaded yet — see Settings."
+            )
+            cardIndexRepository.download()
+            return
+        }
+        _uiState.value = _uiState.value.copy(status = "Looking at the card…")
         viewModelScope.launch {
-            val match = try {
-                artIndexRepository.match(bitmap)
-            } catch (e: Exception) {
-                null
+            val seen = withContext(Dispatchers.Default) {
+                runCatching {
+                    // A full photo is far more than finding the card needs, and all of it would be held in memory.
+                    val scale = minOf(1f, 1280f / bitmap.width)
+                    val photo = if (scale < 1f) Bitmap.createScaledBitmap(bitmap, 1280, (bitmap.height * scale).toInt(), true) else bitmap
+                    val guide = guideInImage(photo.width, photo.height, previewWidth, previewHeight, GUIDE_WIDTH, GUIDE_HEIGHT)
+                    FlatCard.find(photo, guide)?.let { recognizer.recognize(it) }
+                }.getOrNull()
             }
-            when {
-                match == null && !artIndexRepository.status.value.hasData ->
-                    _uiState.value = _uiState.value.copy(status = "Download art-recognition data in Settings first.")
-                match == null ->
-                    _uiState.value = _uiState.value.copy(status = "Couldn't match this card by art.")
-                match.margin < ART_MATCH_MIN_MARGIN ->
-                    _uiState.value = _uiState.value.copy(status = "Not confident enough — try again, or type the name.")
-                else -> {
-                    val card = try {
-                        cardRepository.getCardsByIds(listOf(match.card.scryfallId)).firstOrNull()
-                    } catch (e: Exception) {
-                        null
-                    }
-                    if (card != null) {
-                        addScannedCard(card)
-                        lastAddedCard = card
-                    } else {
-                        _uiState.value = _uiState.value.copy(status = "Matched \"${match.card.name}\" by art, but couldn't load its data.")
-                    }
-                }
+            val sight = seen?.let { cardBySight(it.anywhere) }
+            if (sight == null) {
+                val guess = seen?.anywhere?.firstOrNull()?.entry?.name
+                _uiState.value = _uiState.value.copy(
+                    status = if (guess != null) "Not sure — it might be $guess. Hold it flat in the frame and try again, or type the name."
+                    else "Couldn't make out a card — hold it flat in the frame and try again."
+                )
+                return@launch
             }
+            val card = runCatching { cardRepository.getCardsByIds(listOf(sight.id)).firstOrNull() }.getOrNull()
+            if (card == null) {
+                _uiState.value = _uiState.value.copy(status = "Recognized ${sight.name}, but couldn't load it — check the connection.")
+                return@launch
+            }
+            // The picture says which art; only when no other printing shares it is it certain.
+            addScannedCard(card, exact = seen.anywhere.drop(1).none { it.entry.group == sight.group })
+            lastAddedCard = card
         }
     }
 
@@ -879,7 +1008,7 @@ class ScanViewModel(
         private val appContext: Context,
         private val collectionRepository: CollectionRepository,
         private val deckRepository: DeckRepository,
-        private val artIndexRepository: ArtIndexRepository,
+        private val cardIndexRepository: CardIndexRepository,
         private val settingsRepository: SettingsRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -889,7 +1018,7 @@ class ScanViewModel(
                 cardRepository = CardRepository(),
                 collectionRepository = collectionRepository,
                 deckRepository = deckRepository,
-                artIndexRepository = artIndexRepository,
+                cardIndexRepository = cardIndexRepository,
                 settingsRepository = settingsRepository
             ) as T
         }

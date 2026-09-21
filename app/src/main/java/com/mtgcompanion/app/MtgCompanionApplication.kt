@@ -34,7 +34,7 @@ import com.mtgcompanion.app.data.DriveImporter
 import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.SyncStateRepository
-import com.mtgcompanion.app.data.artrecognition.ArtIndexRepository
+import com.mtgcompanion.app.data.CardIndexRepository
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterSettingsRepository
 import com.mtgcompanion.app.network.NetworkModule
@@ -57,7 +57,7 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
     val offlineCardRepository by lazy { OfflineCardRepository(this) }
     val playerProfileRepository by lazy { PlayerProfileRepository(this) }
     val lifeCounterSettingsRepository by lazy { LifeCounterSettingsRepository(this) }
-    val artIndexRepository by lazy { ArtIndexRepository(this) }
+    val cardIndexRepository by lazy { CardIndexRepository(this) }
     /** Friends, pods, sharing, trades and life counter seats (Supabase). */
     val socialRepository by lazy { SocialRepository(supabaseSync.auth) }
     /** The screen a tapped notification asked for ("friends" / "trades"), until the app has opened it. */

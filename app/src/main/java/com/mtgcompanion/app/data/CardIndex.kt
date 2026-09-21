@@ -114,6 +114,17 @@ class CardIndex(bytes: ByteArray) {
         return ByteArray(dim) { (z[it] / norm * scale).roundToInt().coerceIn(-127, 127).toByte() }
     }
 
+    // Built the first time a printing is asked for by id.
+    private val byId: Map<String, IntArray> by lazy {
+        (0 until count).groupBy { entry(it).id }.mapValues { it.value.toIntArray() }
+    }
+
+    /** The rows of the printing with Scryfall id [id] — one per face. */
+    fun rowsWithId(id: String): IntArray = byId[id] ?: IntArray(0)
+
+    /** The set code of row [row]'s printing. */
+    fun setOf(row: Int): String = sets[setOf[row].toInt() and 0xFFFF]
+
     /** The rows of every printing of [name] (either face's name, for a double-faced card). */
     fun rowsNamed(name: String): IntArray = byName[name.lowercase()] ?: IntArray(0)
 

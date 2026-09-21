@@ -3,14 +3,15 @@ package com.mtgcompanion.app.data
 /**
  * What the card index (CardIndex.kt) says about a scanned card, turned into decisions: which printing
  * of a name the card in hand is, and — when its title couldn't be read — which card it is at all.
- * The thresholds were set on photos of real cards against the full index of 101,312 pictures
- * (MtgCompanionWeb/tools/card-index): real cards cleared the nearest other name by 0.07 or more (95%
- * by 0.115), the nearest other picture of their own name by 0.1 or more; crops of bare table and
- * half-cards mostly by about 0.01, but by as much as 0.15. Mirrors the web app's src/scan/sight.ts.
+ * The thresholds were set on 199 photos of real cards and 120 of things that aren't (bare table,
+ * half a card) against the full index of 101,312 pictures (MtgCompanionWeb/tools/card-index, 8-bit
+ * model): real cards always found the right picture of their own name, by as little as 0.03; known
+ * by sight alone, the rule below takes 182 of the 199 cards and none of the 120 others. Mirrors the
+ * web app's src/scan/sight.ts.
  */
 
 /** Among a name's printings, the winner must beat the nearest *other picture* by this much. */
-const val PICTURE_MARGIN = 0.05f
+const val PICTURE_MARGIN = 0.03f
 
 /** A card known by sight alone must look at least this much like its picture... */
 const val SIGHT_SCORE = 0.72f
@@ -36,6 +37,38 @@ fun printingBySight(matches: List<IndexMatch>): SightPick? {
     val rival = matches.firstOrNull { it.entry.group != best.entry.group }
     if (rival != null && best.score - rival.score < PICTURE_MARGIN) return null
     return SightPick(best.entry, certain = matches.drop(1).none { it.entry.group == best.entry.group })
+}
+
+/**
+ * Which printing, when a set code was read as well: among that set's printings of the name
+ * ([inSet]) — unless none of them looks as much like the card as the name's best printing overall
+ * ([named]) does, and the set code was misread. Within the set, versions too alike to call still
+ * give its best, as a guess.
+ */
+fun choosePrinting(named: List<IndexMatch>, inSet: List<IndexMatch>): SightPick? {
+    val setBest = inSet.firstOrNull()
+    val nameBest = named.firstOrNull()
+    if (setBest != null && (nameBest == null || setBest.score >= nameBest.score - PICTURE_MARGIN)) {
+        return printingBySight(inSet) ?: SightPick(setBest.entry, certain = false)
+    }
+    return printingBySight(named)
+}
+
+/**
+ * How far the printing the small print named may look less like the card than its name's best
+ * printing does, before the small print is taken to be misread: a set code and number misread as
+ * another real printing of the same card (ZNR 381 read as TRK 319) passes every other check.
+ */
+const val SMALL_PRINT_SLACK = 0.06f
+
+/**
+ * Whether what the card looks like bears out the printing its small print named ([printing], its
+ * likeness; null when that printing isn't in the index, and there's nothing to say against it).
+ */
+fun smallPrintAgrees(printing: IndexMatch?, named: List<IndexMatch>): Boolean {
+    val best = named.firstOrNull()
+    if (printing == null || best == null) return true
+    return printing.entry.group == best.entry.group || printing.score >= best.score - SMALL_PRINT_SLACK
 }
 
 /** The same card's name: either face of a double-faced card counts. */

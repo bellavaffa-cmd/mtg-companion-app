@@ -24,15 +24,19 @@ class CardRecognizer(modelFile: File, indexFile: File) {
         /** The nearest printings to the card's look, over the whole index, best first. */
         val anywhere: List<IndexMatch>,
         /** The nearest among [name]'s printings, when a name was given. */
-        val named: List<IndexMatch>
+        val named: List<IndexMatch>,
+        /** The nearest among [name]'s printings in [set], when a set code was read too. */
+        val inSet: List<IndexMatch>,
+        /** How much the card looks like the printing [printingId] (the one its small print named), if asked. */
+        val printing: IndexMatch?
     )
 
     /**
      * The flattened card fingerprinted — through each of its likeliest outlines, as edge and as
-     * frame — and looked up: over the whole index, and among the printings of [name] if the title
-     * was read.
+     * frame — and looked up: over the whole index, among the printings of [name] if the title was
+     * read, and among those of them in [set] if its set code was.
      */
-    fun recognize(flat: FlatCard, name: String? = null): Recognized {
+    fun recognize(flat: FlatCard, name: String? = null, set: String? = null, printingId: String? = null): Recognized {
         val size = index.inputSize
         val count = flat.modelInputCount
         val looks = OnnxTensor.createTensor(env, FloatBuffer.wrap(flat.modelInputs(size)), longArrayOf(count.toLong(), 3, size.toLong(), size.toLong())).use { input ->
@@ -42,10 +46,13 @@ class CardRecognizer(modelFile: File, indexFile: File) {
                 features.map { index.fingerprint(it) }
             }
         }
-        val rows = name?.let { index.rowsNamed(it) }
+        val rows = name?.let { index.rowsNamed(it) } ?: IntArray(0)
+        val inSet = if (set == null) IntArray(0) else rows.filter { index.setOf(it).equals(set, ignoreCase = true) }.toIntArray()
         return Recognized(
             anywhere = index.nearest(looks, 8),
-            named = if (rows != null && rows.isNotEmpty()) index.nearest(looks, 8, rows) else emptyList()
+            named = if (rows.isNotEmpty()) index.nearest(looks, 8, rows) else emptyList(),
+            inSet = if (inSet.isNotEmpty()) index.nearest(looks, 8, inSet) else emptyList(),
+            printing = printingId?.let { id -> index.rowsWithId(id).takeIf { it.isNotEmpty() }?.let { index.nearest(looks, 1, it).firstOrNull() } }
         )
     }
 
