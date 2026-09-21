@@ -133,21 +133,8 @@ class DeckRepository(private val context: Context) {
 
     /** Swap a card to a different printing (art), keeping its quantity; updates the commander(s) too. */
     suspend fun changeCardPrinting(deckId: String, oldScryfallId: String, newCard: ScryfallCard) {
-        update { decks ->
-            decks.map { deck ->
-                if (deck.id != deckId) return@map deck
-                val newCards = deck.cards.map {
-                    if (it.scryfallId == oldScryfallId)
-                        it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine, partnerAbility = newCard.partnerAbility, backImageUrl = newCard.backImageUrl, tags = newCard.tags)
-                    else it
-                }
-                fun retarget(entry: DeckCardEntry?) = entry
-                    ?.takeIf { it.scryfallId == oldScryfallId }
-                    ?.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, typeLine = newCard.typeLine, partnerAbility = newCard.partnerAbility, backImageUrl = newCard.backImageUrl, tags = newCard.tags)
-                    ?: entry
-                deck.copy(cards = newCards, commander = retarget(deck.commander), partnerCommander = retarget(deck.partnerCommander))
-            }
-        }
+        // Merges into the new printing if the deck already holds it (see withDeckPrinting).
+        update { decks -> decks.map { deck -> if (deck.id != deckId) deck else withDeckPrinting(deck, oldScryfallId, newCard) } }
     }
 
     /**

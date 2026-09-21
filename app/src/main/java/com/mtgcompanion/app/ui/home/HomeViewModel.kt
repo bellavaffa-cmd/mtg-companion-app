@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.home
 
+import com.mtgcompanion.app.data.isBinder
 import com.mtgcompanion.app.data.proxySwaps
 import com.mtgcompanion.app.data.ProxySwap
 import com.mtgcompanion.app.data.PricedCard
@@ -79,7 +80,8 @@ class HomeViewModel(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val binderCount: StateFlow<Int> = collectionRepository.collectionsFlow
-        .map { all -> all.count { !it.isUnsorted } }
+        // Binders only: the Wishlist and the Unsorted pile are always there, and aren't binders.
+        .map { all -> all.count { it.isBinder } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     /** Total value of OWNED binders only (wishlist binders don't count toward this). */

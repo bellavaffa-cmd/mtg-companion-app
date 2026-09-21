@@ -17,6 +17,12 @@ fun withUnsortedPile(collections: List<Collection>): List<Collection> =
     if (collections.any { it.isUnsorted }) collections
     else collections + Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME, createdAt = 0, type = CollectionType.OWNED.name)
 
+/**
+ * Whether this is one of the user's binders — not the Wishlist, and not the Unsorted pile. Both of
+ * those are always there, so counting them as binders told an empty library it had two.
+ */
+val Collection.isBinder: Boolean get() = !isUnsorted && !isWishlist
+
 /** The collections that are always there: the Wishlist, kept up for [decks], and the Unsorted pile. */
 fun withStandingCollections(collections: List<Collection>, decks: List<Deck>): List<Collection> =
     withUnsortedPile(withWishlist(collections, decks))

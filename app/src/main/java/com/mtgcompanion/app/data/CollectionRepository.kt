@@ -107,12 +107,8 @@ class CollectionRepository(private val context: Context) {
 
     /** Swap an entry to a different printing (art), keeping its quantities. */
     suspend fun changeEntryPrinting(collectionId: String, oldScryfallId: String, newCard: ScryfallCard) {
-        updateEntries(collectionId) { entries ->
-            entries.map {
-                if (it.scryfallId != oldScryfallId) it
-                else it.copy(scryfallId = newCard.id, name = newCard.name, imageUrl = newCard.displayImageUrl, backImageUrl = newCard.backImageUrl, tags = newCard.tags)
-            }
-        }
+        // Merges into the new printing if the binder already holds it (see withEntryPrinting).
+        updateEntries(collectionId) { entries -> withEntryPrinting(entries, oldScryfallId, newCard) }
     }
 
     suspend fun removeEntry(collectionId: String, scryfallId: String) {
