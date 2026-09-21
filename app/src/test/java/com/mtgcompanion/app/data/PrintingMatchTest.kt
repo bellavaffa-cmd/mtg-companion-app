@@ -151,4 +151,46 @@ class PrintingMatchTest {
         while (i < out.size) { red += out[i]; i += 3 }
         assertTrue(abs(red) < 1e-5)
     }
+
+    @Test
+    fun theCameraCardIsMeasuredAtAGridOfPlacesAndSizesAroundTheGuide() {
+        val boxes = lookBoxes(ScanBox(100, 100, 400, 519))
+        assertEquals(LOOK_SCALES.size * LOOK_SHIFTS.size * LOOK_SHIFTS.size, boxes.size)
+        for (b in boxes) {
+            val aspect = (b.right - b.left).toFloat() / (b.bottom - b.top)
+            assertTrue("aspect $aspect", abs(aspect - CARD_ASPECT) < 0.02f)
+        }
+    }
+
+    @Test
+    fun aReflectionOverPartOfTheCardNoLongerDecidesTheMatch() {
+        // The same card with twelve of its 88 cells washed out: with the worst fifth left out, the
+        // rest of the card still says which card it is.
+        val card = art(3)
+        val glared = card.copyOf()
+        for (i in 0 until 12 * 3) glared[i] = 3f
+        assertTrue(trimmedDistance(glared, card) < trimmedDistance(glared, art(9)))
+        assertTrue(trimmedDistance(glared, card) < artDistance(glared, card))
+    }
+
+    @Test
+    fun aPrintingIsMatchedAtWhicheverMeasuringOfTheCameraCardSuitsIt() {
+        // One measuring of the table beside the card, one of the card: the card's own printing wins.
+        val found = bestPrinting(
+            listOf(art(40), throughACamera(4)),
+            listOf(printing("borderless", art(4)), printing("usual", art(7)))
+        )
+        assertEquals("borderless", found?.pick)
+    }
+
+    @Test
+    fun measuringARegionOfThePixelsAgreesWithMeasuringThePictureItself() {
+        // The whole picture as a region comes out as the picture's own signature.
+        val px = picture { x, y -> Triple(clamp(x * 3.0), clamp(y * 2.0), clamp((x + y) * 1.5)) }
+        val region = signatureOfRegion(px, size, size, ScanBox(0, 0, size, size))!!
+        val whole = signatureFromPixels(px, size, size)
+        assertTrue(artDistance(region, whole) < 1e-4f)
+        // A box running off the pixels is left out rather than measured half empty.
+        assertNull(signatureOfRegion(px, size, size, ScanBox(-5, 0, size, size)))
+    }
 }

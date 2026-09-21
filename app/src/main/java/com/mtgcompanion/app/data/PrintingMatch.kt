@@ -35,6 +35,105 @@ const val CARD_ASPECT = 63f / 88f
  */
 const val PRINTING_INSET = 0.04f
 
+/**
+ * Where the card in the frame might really be, around the guide. Nobody holds a card exactly inside
+ * the guide, and a picture cut from the guide alone was card and table and a sliver of whatever was
+ * next to it — tried on Sol Ring's printings photographed a little off centre, it named the printing
+ * 25 times in 48 and got it wrong twice. So the camera's card is measured at a small grid of
+ * positions and sizes around the guide, and each printing is compared at whichever suits it best:
+ * 48 in 48, none wrong. Mirrors the web app's lookBoxes.
+ */
+val LOOK_SCALES = floatArrayOf(0.9f, 1f, 1.1f)
+val LOOK_SHIFTS = floatArrayOf(-0.08f, -0.04f, 0f, 0.04f, 0.08f)
+
+/** The card-shaped boxes, around [guide], that the camera's card is measured at. */
+fun lookBoxes(guide: ScanBox): List<ScanBox> {
+    val card = guide.cardShaped()
+    val w = (card.right - card.left).toFloat()
+    val h = (card.bottom - card.top).toFloat()
+    val cx = card.left + w / 2
+    val cy = card.top + h / 2
+    val out = ArrayList<ScanBox>(LOOK_SCALES.size * LOOK_SHIFTS.size * LOOK_SHIFTS.size)
+    for (s in LOOK_SCALES) for (ox in LOOK_SHIFTS) for (oy in LOOK_SHIFTS) {
+        val bw = w * s
+        val bh = h * s
+        val left = cx + ox * w - bw / 2
+        val top = cy + oy * h - bh / 2
+        out += ScanBox(left.toInt(), top.toInt(), (left + bw).toInt(), (top + bh).toInt())
+    }
+    return out
+}
+
+/**
+ * A signature straight from packed-colour pixels [width] x [height] for the part of them inside
+ * [box]: each grid cell's colour averaged, then levelled — the same as cutting the box out and
+ * shrinking it, without making seventy-five small pictures to do it. Null when the box doesn't lie
+ * inside the pixels.
+ */
+fun signatureOfRegion(px: IntArray, width: Int, height: Int, box: ScanBox): FloatArray? {
+    if (box.left < 0 || box.top < 0 || box.right > width || box.bottom > height) return null
+    val bw = box.right - box.left
+    val bh = box.bottom - box.top
+    if (bw < GRID_W || bh < GRID_H) return null
+    val raw = FloatArray(GRID_W * GRID_H * 3)
+    for (gy in 0 until GRID_H) {
+        val y0 = box.top + gy * bh / GRID_H
+        val y1 = maxOf(y0 + 1, box.top + (gy + 1) * bh / GRID_H)
+        for (gx in 0 until GRID_W) {
+            val x0 = box.left + gx * bw / GRID_W
+            val x1 = maxOf(x0 + 1, box.left + (gx + 1) * bw / GRID_W)
+            var r = 0L
+            var g = 0L
+            var b = 0L
+            var n = 0
+            for (y in y0 until y1) {
+                val row = y * width
+                for (x in x0 until x1) {
+                    val c = px[row + x]
+                    r += (c shr 16) and 0xFF
+                    g += (c shr 8) and 0xFF
+                    b += c and 0xFF
+                    n++
+                }
+            }
+            val cell = (gy * GRID_W + gx) * 3
+            raw[cell] = r.toFloat() / n
+            raw[cell + 1] = g.toFloat() / n
+            raw[cell + 2] = b.toFloat() / n
+        }
+    }
+    return levelled(raw)
+}
+
+/** The share of the card compared: the fifth that agrees worst is left out. */
+private const val TRIM_KEEP = 0.8f
+
+/**
+ * How unlike a photographed card is to a printing, leaving out the fifth of the card that agrees
+ * worst. A reflection, a thumb, a sleeve's edge washes out part of the picture, and on a plain
+ * average that one patch decides the answer; left out, the rest of the card does. Photos with a
+ * reflection went from 2 in 12 to 6 in 12, and still none wrong.
+ */
+fun trimmedDistance(camera: FloatArray, printing: FloatArray): Float {
+    if (camera.size != printing.size || camera.isEmpty()) return Float.MAX_VALUE
+    val cells = camera.size / 3
+    val diffs = FloatArray(cells)
+    for (i in 0 until cells) {
+        var sum = 0f
+        for (k in 0 until 3) { val d = camera[i * 3 + k] - printing[i * 3 + k]; sum += d * d }
+        diffs[i] = sum / 3
+    }
+    diffs.sort()
+    val keep = maxOf(1, (cells * TRIM_KEEP).toInt())
+    var total = 0f
+    for (i in 0 until keep) total += diffs[i]
+    return total / keep
+}
+
+/** How unlike the camera's card is to a printing: at whichever of its measurings suits it best. */
+private fun lookDistance(looks: List<FloatArray>, printing: FloatArray): Float =
+    looks.minOfOrNull { trimmedDistance(it, printing) } ?: Float.MAX_VALUE
+
 /** Closer than this and two printings are the same picture — the same art in the same frame. */
 const val SAME_LOOK = 0.08f
 
@@ -156,18 +255,21 @@ data class PrintingMatch<T>(
  * genuinely look different are too near to call. Saying nothing is the right answer there: a wrong
  * printing recorded silently is worse than none, and the scan falls back to asking.
  */
-fun <T> bestPrinting(camera: FloatArray, candidates: List<Candidate<T>>): PrintingMatch<T>? {
-    if (candidates.isEmpty()) return null
-    val ranked = candidates.sortedBy { artDistance(camera, it.signature) }
-    val best = ranked.first()
-    val distance = artDistance(camera, best.signature)
+fun <T> bestPrinting(camera: FloatArray, candidates: List<Candidate<T>>): PrintingMatch<T>? =
+    bestPrinting(listOf(camera), candidates)
+
+/** As [bestPrinting] for one picture, with the camera's card measured at several places (see lookBoxes). */
+fun <T> bestPrinting(looks: List<FloatArray>, candidates: List<Candidate<T>>): PrintingMatch<T>? {
+    if (candidates.isEmpty() || looks.isEmpty()) return null
+    val ranked = candidates.map { it to lookDistance(looks, it.signature) }.sortedBy { it.second }
+    val (best, distance) = ranked.first()
     if (distance > MATCH_MAX) return null
 
     val others = ranked.drop(1)
-    val sharesLook = others.any { artDistance(best.signature, it.signature) <= SAME_LOOK }
+    val sharesLook = others.any { artDistance(best.signature, it.first.signature) <= SAME_LOOK }
     // The nearest printing that isn't just this one reprinted — the one it could be confused with.
-    val rival = others.firstOrNull { artDistance(best.signature, it.signature) > SAME_LOOK }
-    if (rival != null && distance > artDistance(camera, rival.signature) * CLEAR_BY) return null
+    val rival = others.firstOrNull { artDistance(best.signature, it.first.signature) > SAME_LOOK }
+    if (rival != null && distance > rival.second * CLEAR_BY) return null
 
     return PrintingMatch(best.item, distance, only = !sharesLook)
 }

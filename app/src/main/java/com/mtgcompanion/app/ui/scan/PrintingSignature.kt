@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.signatureOfRegion
+import com.mtgcompanion.app.data.lookBoxes
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
@@ -54,23 +56,40 @@ private const val WORTH_STOPPING = 150
 /** [box] with [PRINTING_INSET] of it taken off each edge. */
 private fun ScanBox.inset(): ScanBox = grownBy(-PRINTING_INSET * 2)
 
+/** How wide the area around the guide is shrunk to before the card is measured in it. */
+private const val LOOK_AREA_WIDTH = 240
+
 /**
- * What the card in the frame looks like, or null when there's nothing worth looking at. [frame] is
- * the camera's picture and [rotation] how far it has to be turned to stand upright.
+ * What the card in the frame looks like, measured at every look box around the guide (see
+ * lookBoxes) — empty when there's nothing worth looking at. [frame] is the camera's picture and
+ * [rotation] how far it has to be turned to stand upright. The area the boxes cover is shrunk once
+ * and every box measured from its pixels; a box running off the picture is left out.
  */
-fun cameraSignature(frame: Bitmap, rotation: Int, guide: ScanBox?): FloatArray? {
+fun cameraSignatures(frame: Bitmap, rotation: Int, guide: ScanBox?): List<FloatArray> {
     val upright = if (rotation % 360 == 0) frame else {
         val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
-        runCatching { Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, matrix, true) }.getOrNull() ?: return null
+        runCatching { Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, matrix, true) }.getOrNull() ?: return emptyList()
     }
-    val box = (guide ?: ScanBox(0, 0, upright.width, upright.height)).cardShaped().inset()
-    val left = box.left.coerceIn(0, upright.width - 1)
-    val top = box.top.coerceIn(0, upright.height - 1)
-    val right = box.right.coerceIn(left + 1, upright.width)
-    val bottom = box.bottom.coerceIn(top + 1, upright.height)
-    if (right - left < 20 || bottom - top < 20) return null
-    val card = runCatching { Bitmap.createBitmap(upright, left, top, right - left, bottom - top) }.getOrNull() ?: return null
-    return signatureOf(card)
+    val boxes = lookBoxes(guide ?: ScanBox(0, 0, upright.width, upright.height))
+    val left = boxes.minOf { it.left }.coerceIn(0, upright.width - 1)
+    val top = boxes.minOf { it.top }.coerceIn(0, upright.height - 1)
+    val right = boxes.maxOf { it.right }.coerceIn(left + 1, upright.width)
+    val bottom = boxes.maxOf { it.bottom }.coerceIn(top + 1, upright.height)
+    if (right - left < 20 || bottom - top < 20) return emptyList()
+    val scale = LOOK_AREA_WIDTH.toFloat() / (right - left)
+    val sw = LOOK_AREA_WIDTH
+    val sh = maxOf(1, ((bottom - top) * scale).toInt())
+    val area = runCatching { Bitmap.createBitmap(upright, left, top, right - left, bottom - top) }.getOrNull() ?: return emptyList()
+    val small = runCatching { Bitmap.createScaledBitmap(area, sw, sh, true) }.getOrNull() ?: return emptyList()
+    val px = IntArray(sw * sh)
+    small.getPixels(px, 0, sw, 0, 0, sw, sh)
+    return boxes.mapNotNull { b ->
+        val inSmall = ScanBox(
+            ((b.left - left) * scale).toInt(), ((b.top - top) * scale).toInt(),
+            ((b.right - left) * scale).toInt(), ((b.bottom - top) * scale).toInt()
+        ).inset()
+        signatureOfRegion(px, sw, sh, inSmall)
+    }
 }
 
 /** A picture boiled down to a signature, at the size everything is compared at. */
@@ -117,7 +136,7 @@ private fun pictureOf(card: ScryfallCard): String? =
  */
 suspend fun matchPrinting(
     context: Context,
-    camera: FloatArray,
+    camera: List<FloatArray>,
     printings: List<ScryfallCard>
 ): PrintingMatch<ScryfallCard>? = withContext(Dispatchers.IO) {
     val wanted = printings.take(MOST_PRINTINGS).filter { pictureOf(it) != null }

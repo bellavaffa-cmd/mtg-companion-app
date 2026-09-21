@@ -390,7 +390,7 @@ class ScanViewModel(
         // What the card looked like. When the set code was read there's nothing left to work out;
         // otherwise this decides the printing (see matchArt).
         started = SystemClock.elapsedRealtime()
-        val look = if (printing != null) null else picture?.let { withContext(Dispatchers.Default) { cameraSignature(it, 0, scan.guide) } }
+        val look = if (printing != null) null else picture?.let { withContext(Dispatchers.Default) { cameraSignatures(it, 0, scan.guide) } }?.ifEmpty { null }
         if (look != null) timing("art signature", started)
 
         var added: ScryfallCard? = null
@@ -465,7 +465,7 @@ class ScanViewModel(
      * still while it happens. The row is left alone if it's been deleted, or its printing already
      * picked by hand, since the scan.
      */
-    private fun matchArt(rowId: Long, scanned: ScryfallCard, look: FloatArray?) {
+    private fun matchArt(rowId: Long, scanned: ScryfallCard, look: List<FloatArray>?) {
         if (look == null) return
         viewModelScope.launch {
             val printings = printingsByName[scanned.name]
