@@ -34,6 +34,14 @@ class SmallPrintParseTest {
     }
 
     @Test
+    fun aNumberWithItsZerosReadAsTheLetterOOrALowercaseRarityStillReads() {
+        assertEquals("FRC" to "21", read("u oo21 ™ & © 2026 Wi\nFRC + EN » Trrus Lunren"))
+        assertEquals("FRC" to "21", read("U 0O21\nFRC « EN"))
+        // All letters and no digit is not a number.
+        assertNull(read("Uv oon\nFRC « EN » Titus Lunten"))
+    }
+
+    @Test
     fun smallPrintThatCantBeReadWithConfidenceGivesNoPrinting() {
         assertNull(read("Illus. Some Artist")) // an older card: no set code line
         assertNull(read("MSC • EN")) // no number

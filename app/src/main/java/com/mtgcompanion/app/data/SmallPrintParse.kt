@@ -21,8 +21,12 @@ private const val LANGUAGES = "EN|DE|ES|FR|IT|JA|JP|KO|KR|PT|RU|CS|CT|ZH|PH"
  */
 private val SET_LANG = Regex("\\b([A-Z0-9]{3,5})(?:\\s*[^\\sA-Za-z0-9]\\s*|\\s+)(?:$LANGUAGES)(?![a-z])")
 
-/** The rarity letter — sometimes read twice over ("Cc") — then the collector number. */
-private val RARITY_NUMBER = Regex("\\b[CURMSPLT][a-z]?\\s+(\\d{1,4})\\b")
+/**
+ * The rarity letter — sometimes read twice over ("Cc"), or lowercase ("u") — then the collector
+ * number, whose zeros can come out as the letter o ("oo21"): o counts as a zero, but only in a
+ * number with a real digit in it.
+ */
+private val RARITY_NUMBER = Regex("\\b(?:[CURMSPLT][a-z]?|[curmsplt])\\s+((?=[0-9Oo]*\\d)[0-9Oo]{1,4})\\b")
 
 private val SLASH_NUMBER = Regex("\\b(\\d{1,4})\\s*/\\s*\\d{1,4}\\b")
 
@@ -36,5 +40,5 @@ fun parseSetAndNumber(lines: List<String>): Pair<String, String>? {
     val number = lines.firstNotNullOfOrNull { RARITY_NUMBER.find(it)?.groupValues?.get(1) }
         ?: lines.firstNotNullOfOrNull { SLASH_NUMBER.find(it)?.groupValues?.get(1) }
         ?: return null
-    return setCode to number.trimStart('0').ifEmpty { "0" }
+    return setCode to number.replace('O', '0').replace('o', '0').trimStart('0').ifEmpty { "0" }
 }
