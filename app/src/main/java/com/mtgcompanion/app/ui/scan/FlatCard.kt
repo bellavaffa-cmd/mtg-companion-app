@@ -48,6 +48,41 @@ class FlatCard private constructor(
     }
 
     /**
+     * The whole card, for the recognition model: through each of the likeliest outlines, as the
+     * card's edge and as its printed frame, squashed to [size] × [size] like the index's pictures
+     * were, in the model's layout (channels first, ImageNet-normalised) — one after another.
+     */
+    fun modelInputs(size: Int): FloatArray {
+        val plane = size * size
+        val out = FloatArray(quads.size * 2 * 3 * plane)
+        var at = 0
+        for (quad in quads) for (frame in listOf(false, true)) {
+            val u0 = if (frame) -BORDER_SIDE / (1 - 2 * BORDER_SIDE) else 0f
+            val u1 = if (frame) 1 + BORDER_SIDE / (1 - 2 * BORDER_SIDE) else 1f
+            val v0 = if (frame) -BORDER_TOP / (1 - BORDER_TOP - BORDER_BOTTOM) else 0f
+            val v1 = if (frame) (1 - BORDER_TOP) / (1 - BORDER_TOP - BORDER_BOTTOM) else 1f
+            // Drawn at twice the size and averaged down, so the picture isn't speckled by sampling.
+            val big = flatten(px, width, height, quad, size * 2, size * 2, u0, v0, u1, v1)
+            for (y in 0 until size) for (x in 0 until size) {
+                var r = 0; var g = 0; var b = 0
+                for (dy in 0..1) for (dx in 0..1) {
+                    val c = big[(y * 2 + dy) * size * 2 + x * 2 + dx]
+                    r += (c shr 16) and 0xFF; g += (c shr 8) and 0xFF; b += c and 0xFF
+                }
+                val i = y * size + x
+                out[at + i] = (r / 1020f - 0.485f) / 0.229f
+                out[at + plane + i] = (g / 1020f - 0.456f) / 0.224f
+                out[at + 2 * plane + i] = (b / 1020f - 0.406f) / 0.225f
+            }
+            at += 3 * plane
+        }
+        return out
+    }
+
+    /** How many pictures [modelInputs] holds. */
+    val modelInputCount: Int get() = quads.size * 2
+
+    /**
      * The strip of small print along the bottom of the likeliest outline, flattened and blown up so
      * its letters stand about as tall as the reader wants them.
      */
