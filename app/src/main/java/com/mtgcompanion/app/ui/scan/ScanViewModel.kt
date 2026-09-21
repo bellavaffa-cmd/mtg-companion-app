@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.scan
 
+import java.util.concurrent.Executors
 import com.mtgcompanion.app.data.sensorBox
 import com.mtgcompanion.app.data.relativeTo
 import com.mtgcompanion.app.data.clampedTo
@@ -122,6 +123,14 @@ class ScanViewModel(
 ) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+    // The small print gets a reader of its own, on a thread of its own. On one shared reader the
+    // camera's frames and the small print queued behind each other — and the small print is the
+    // slowest read in a scan, so the camera stalled on it and it waited on the camera.
+    private val stripThread = Executors.newSingleThreadExecutor()
+    private val stripReader = TextRecognition.getClient(
+        TextRecognizerOptions.Builder().setExecutor(stripThread).build()
+    )
 
     // Gates one frame's reading at a time; combined with ImageAnalysis's
     // STRATEGY_KEEP_ONLY_LATEST (which withholds the next frame until this one's
@@ -421,7 +430,7 @@ class ScanViewModel(
         val strip = withContext(Dispatchers.Default) { smallPrintStrip(upright, 0, guide) } ?: return null
         val text = runCatching {
             suspendCancellableCoroutine { cont ->
-                recognizer.process(InputImage.fromBitmap(strip, 0))
+                stripReader.process(InputImage.fromBitmap(strip, 0))
                     .addOnSuccessListener { cont.resume(it) {} }
                     .addOnFailureListener { cont.resume(null) {} }
             }
@@ -615,6 +624,9 @@ class ScanViewModel(
 
     override fun onCleared() {
         scanSound.release()
+        recognizer.close()
+        stripReader.close()
+        stripThread.shutdown()
         super.onCleared()
     }
 
