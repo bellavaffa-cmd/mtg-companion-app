@@ -1,0 +1,68 @@
+name: Card index
+
+# Keeps the scanner's card index (the fingerprint of every English paper printing it knows by
+# sight) up to date with Scryfall: twice a week, the new printings' pictures are fetched and
+# fingerprinted, the index rebuilt, and — only if the printings in it changed — published to the
+# card-index-v1 release, where both apps look for it (see card-index.json). The tools live in the
+# web repo, tools/card-index.
+#
+# Each printing's fingerprint is kept on the release too (features.npz), so a run only works on
+# pictures it hasn't seen: a few hundred when a set comes out, not all hundred thousand.
+
+on:
+  schedule:
+    # Mondays and Thursdays, early morning UTC (the web site redeploys two hours later).
+    - cron: '0 3 * * 1,4'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: card-index
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DATA: ${{ github.workspace }}/data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: bellavaffa-cmd/mtg-companion-web
+          path: web
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install numpy pillow onnxruntime
+
+      - name: What's published now
+        run: |
+          mkdir -p "$DATA"
+          gh release download card-index-v1 --repo "$GITHUB_REPOSITORY" -D "$DATA" -p card-model.onnx -p features.npz
+          gh release download card-index-v1 --repo "$GITHUB_REPOSITORY" -O "$DATA/published.json" -p card-index.json || echo '{}' > "$DATA/published.json"
+
+      - name: New printings' pictures
+        run: python web/tools/card-index/fetch_cards.py "$DATA" --skip-have "$DATA/features.npz"
+
+      - name: Rebuild the index
+        run: >
+          python web/tools/card-index/build_index.py --data "$DATA" --model "$DATA/card-model.onnx"
+          --features "$DATA/features.npz" --write 128 --out "$DATA/card-index.bin" --meta "$DATA/card-index.json"
+
+      - name: Publish if it changed
+        run: |
+          new=$(jq -r .contents "$DATA/card-index.json")
+          old=$(jq -r '.contents // ""' "$DATA/published.json")
+          if [ "$new" = "$old" ]; then
+            echo "No new printings — nothing to publish."
+            exit 0
+          fi
+          echo "Printings changed ($(jq -r '.count // "?"' "$DATA/published.json") -> $(jq -r .count "$DATA/card-index.json")); publishing."
+          # The index first and its description last: an app that sees the new card-index.json can
+          # always fetch the index it describes.
+          gh release upload card-index-v1 --repo "$GITHUB_REPOSITORY" --clobber "$DATA/card-index.bin" "$DATA/features.npz"
+          gh release upload card-index-v1 --repo "$GITHUB_REPOSITORY" --clobber "$DATA/card-index.json"

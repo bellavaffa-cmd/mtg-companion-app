@@ -242,8 +242,9 @@ class ScanViewModel(
     // starts running before the state exists crashes the scanner.
     init {
         // Knowing cards by sight needs its data on the phone: fetched the first time the scanner
-        // opens (~26 MB), and until it's here the art is matched the old way, online.
-        cardIndexRepository.download()
+        // opens (~26 MB), and until it's here the art is matched the old way, online. After that
+        // it's checked every few days for new sets.
+        cardIndexRepository.refresh()
         viewModelScope.launch { for (scan in lookups) lookUp(scan) }
         viewModelScope.launch {
             settingsRepository.scanMode.collect { mode -> _uiState.update { it.copy(scanMode = mode) } }
