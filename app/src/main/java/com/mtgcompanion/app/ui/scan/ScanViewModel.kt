@@ -389,10 +389,16 @@ class ScanViewModel(
         // Turned upright once and shared: the small print and the art both read it.
         val picture = scan.picture?.let { withContext(Dispatchers.Default) { uprightFrame(it, scan.rotation) } }
 
+        // The card itself, found by its edges and flattened: both the small print and the look
+        // are then read off exactly the card, however it was held in the guide.
         var started = SystemClock.elapsedRealtime()
+        val flat = picture?.let { withContext(Dispatchers.Default) { runCatching { FlatCard.find(it, scan.guide) }.getOrNull() } }
+        if (picture != null) timing("card edges ${if (flat != null) "found" else "not found"}", started)
+
+        started = SystemClock.elapsedRealtime()
         // Fast scanning skips the close read: the printing comes from the frame, or from the art.
         val readsSmallPrint = _uiState.value.scanMode.readsSmallPrint
-        val strip = if (scan.fromFrame == null && readsSmallPrint) picture?.let { readSmallPrint(it, scan.guide) } else null
+        val strip = if (scan.fromFrame == null && readsSmallPrint) picture?.let { readSmallPrint(it, scan.guide, flat) } else null
         val printing = scan.fromFrame ?: strip?.let { parseSetAndNumber(it) }
         // When the number wouldn't read, the set code on its own still narrows the printings to
         // that set's few, for the look to choose between (see matchArt).
@@ -406,7 +412,9 @@ class ScanViewModel(
         // otherwise this decides the printing (see matchArt) — except in Fast scanning, which
         // leaves the card as its usual printing rather than fetching every printing to compare.
         started = SystemClock.elapsedRealtime()
-        val look = if (printing != null || !_uiState.value.scanMode.matchesArt) null else picture?.let { withContext(Dispatchers.Default) { cameraSignatures(it, 0, scan.guide) } }?.ifEmpty { null }
+        val look = if (printing != null || !_uiState.value.scanMode.matchesArt) null else picture?.let {
+            withContext(Dispatchers.Default) { flat?.signatures() ?: cameraSignatures(it, 0, scan.guide) }
+        }?.ifEmpty { null }
         if (look != null) timing("art signature", started)
 
         var added: ScryfallCard? = null
@@ -463,8 +471,17 @@ class ScanViewModel(
      * only gets the usual printing. The lines it read, for parseSetAndNumber and parseSetCode; null
      * when nothing could be read.
      */
-    private suspend fun readSmallPrint(upright: Bitmap, guide: ScanBox?): List<String>? {
-        val strip = withContext(Dispatchers.Default) { smallPrintStrip(upright, 0, guide) } ?: return null
+    private suspend fun readSmallPrint(upright: Bitmap, guide: ScanBox?, flat: FlatCard?): List<String>? {
+        // Off the flattened card first. Should its edges have been found wrong, the strip of the
+        // guide is read as well, so finding them never reads less than before.
+        val fromCard = flat?.let { card -> withContext(Dispatchers.Default) { card.smallPrintStrip() }?.let { readStrip(it) } }
+        if (fromCard != null && parseSetCode(fromCard) != null) return fromCard
+        val strip = withContext(Dispatchers.Default) { smallPrintStrip(upright, 0, guide) } ?: return fromCard
+        return (fromCard.orEmpty() + readStrip(strip).orEmpty()).ifEmpty { null }
+    }
+
+    /** The lines of text the small-print reader makes out in [strip]; null when it fails. */
+    private suspend fun readStrip(strip: Bitmap): List<String>? {
         val text = runCatching {
             suspendCancellableCoroutine { cont ->
                 stripReader.process(InputImage.fromBitmap(strip, 0))
