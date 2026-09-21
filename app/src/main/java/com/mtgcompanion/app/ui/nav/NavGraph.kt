@@ -561,7 +561,8 @@ fun MtgNavGraph(
                         LocalContext.current.applicationContext,
                         collectionRepository,
                         deckRepository,
-                        artIndexRepository
+                        artIndexRepository,
+                        settingsRepository
                     )
                 )
                 ScanScreen(

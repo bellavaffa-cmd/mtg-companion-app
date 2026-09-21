@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.scan
 
+import kotlinx.coroutines.flow.update
+import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.data.ScanMode
 import java.util.concurrent.Executors
 import com.mtgcompanion.app.data.sensorBox
 import com.mtgcompanion.app.data.relativeTo
@@ -111,7 +114,9 @@ data class ScanUiState(
     /** Bumped on every successful add — a one-shot event distinct from [status] (which is also
      * used for non-success messages like a failed lookup) so the UI can trigger a haptic/visual
      * flash only on real successes, via a LaunchedEffect keyed on this value. */
-    val successToken: Int = 0
+    val successToken: Int = 0,
+    /** How careful the scanner is being — see ScanMode. */
+    val scanMode: ScanMode = ScanMode.ACCURATE
 )
 
 class ScanViewModel(
@@ -119,7 +124,8 @@ class ScanViewModel(
     private val cardRepository: CardRepository = CardRepository(),
     private val collectionRepository: CollectionRepository,
     private val deckRepository: DeckRepository,
-    private val artIndexRepository: ArtIndexRepository
+    private val artIndexRepository: ArtIndexRepository,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -173,8 +179,10 @@ class ScanViewModel(
     // waiting on it.
     private val lookups = Channel<PendingScan>(Channel.UNLIMITED)
 
-    init {
-        viewModelScope.launch { for (scan in lookups) lookUp(scan) }
+
+    /** Switches between Fast and Accurate scanning; kept for next time. */
+    fun setScanMode(mode: ScanMode) {
+        viewModelScope.launch { settingsRepository.setScanMode(mode) }
     }
 
     // When the frame being read reached the reader, for the timings in the log.
@@ -213,6 +221,16 @@ class ScanViewModel(
 
     private val _uiState = MutableStateFlow(ScanUiState(scannedCards = ScanPile.read()))
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
+
+    // The lookup queue's worker, and Fast or Accurate as last chosen. Both come after _uiState, which
+    // they write to: the saved choice often arrives the moment it's asked for, and a coroutine that
+    // starts running before the state exists crashes the scanner.
+    init {
+        viewModelScope.launch { for (scan in lookups) lookUp(scan) }
+        viewModelScope.launch {
+            settingsRepository.scanMode.collect { mode -> _uiState.update { it.copy(scanMode = mode) } }
+        }
+    }
 
     val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
@@ -310,7 +328,7 @@ class ScanViewModel(
         // and don't re-look-up a title still in frame. A forced scan accepts whatever's in frame
         // right now instead of waiting.
         steadyReads = if (normalized == lastCandidate) steadyReads + 1 else 1
-        val stable = forced || steadyReads >= STEADY_READS
+        val stable = forced || steadyReads >= _uiState.value.scanMode.steadyReads
         lastCandidate = normalized
         if (!stable || (!forced && normalized == lastLookedUp)) {
             busy.set(false)
@@ -361,9 +379,11 @@ class ScanViewModel(
         val picture = scan.picture?.let { withContext(Dispatchers.Default) { uprightFrame(it, scan.rotation) } }
 
         var started = SystemClock.elapsedRealtime()
-        val printing = scan.fromFrame ?: picture?.let { readSmallPrint(it, scan.guide) }
+        // Fast scanning skips the close read: the printing comes from the frame, or from the art.
+        val readsSmallPrint = _uiState.value.scanMode.readsSmallPrint
+        val printing = scan.fromFrame ?: if (readsSmallPrint) picture?.let { readSmallPrint(it, scan.guide) } else null
         // What it read, as well as how long it took: a quicker read is no use if it reads less.
-        if (scan.fromFrame == null && picture != null) timing("small print ${printing?.let { "read ${it.first} #${it.second}" } ?: "not read"}", started)
+        if (scan.fromFrame == null && picture != null && readsSmallPrint) timing("small print ${printing?.let { "read ${it.first} #${it.second}" } ?: "not read"}", started)
         else if (scan.fromFrame != null) Log.d("ScanTiming", "small print read in the frame itself: ${scan.fromFrame.first} #${scan.fromFrame.second}")
         val cacheKey = printing?.let { "${it.first}:${it.second}" } ?: scan.normalized
 
@@ -785,7 +805,8 @@ class ScanViewModel(
         private val appContext: Context,
         private val collectionRepository: CollectionRepository,
         private val deckRepository: DeckRepository,
-        private val artIndexRepository: ArtIndexRepository
+        private val artIndexRepository: ArtIndexRepository,
+        private val settingsRepository: SettingsRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -794,7 +815,8 @@ class ScanViewModel(
                 cardRepository = CardRepository(),
                 collectionRepository = collectionRepository,
                 deckRepository = deckRepository,
-                artIndexRepository = artIndexRepository
+                artIndexRepository = artIndexRepository,
+                settingsRepository = settingsRepository
             ) as T
         }
     }

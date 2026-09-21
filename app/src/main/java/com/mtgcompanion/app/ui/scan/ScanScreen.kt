@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.scan
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.Bolt
+import com.mtgcompanion.app.data.ScanMode
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -351,6 +356,13 @@ fun ScanScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ScrimIconButton(onClick = leave, icon = Icons.Filled.ArrowBack, desc = "Back")
+                Spacer(Modifier.width(8.dp))
+                ScanModePill(
+                    mode = state.scanMode,
+                    onToggle = {
+                        viewModel.setScanMode(if (state.scanMode == ScanMode.FAST) ScanMode.ACCURATE else ScanMode.FAST)
+                    }
+                )
                 Box(modifier = Modifier.weight(1f))
                 if (camera?.cameraInfo?.hasFlashUnit() == true) {
                     ScrimIconButton(
@@ -712,6 +724,32 @@ private fun ScrimIconButton(
             .background(Bg.copy(alpha = 0.6f))
     ) {
         Icon(icon, contentDescription = desc, tint = tint ?: Gold)
+    }
+}
+
+/**
+ * Fast or Accurate scanning, a tap to switch. Fast takes a card sooner and skips the close read of
+ * the small print — so more cards come in as a best guess of their printing (see ScanMode).
+ */
+@Composable
+private fun ScanModePill(mode: ScanMode, onToggle: () -> Unit) {
+    val fast = mode == ScanMode.FAST
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Bg.copy(alpha = 0.6f))
+            .clickable(onClickLabel = if (fast) "Switch to accurate scanning" else "Switch to fast scanning", onClick = onToggle)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Icon(
+            if (fast) Icons.Filled.Bolt else Icons.Filled.Verified,
+            contentDescription = null,
+            tint = Gold,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(mode.label, style = MaterialTheme.typography.labelLarge, color = GoldLight)
     }
 }
 

@@ -47,4 +47,17 @@ class ScanConfirmTest {
         // And something else entirely is still something else.
         assertEquals(Confirmation.DIFFERENT, confirmRead("Sol Ring", "Bolas's Citadel", "Kefka's Tower"))
     }
+
+    @Test
+    fun accurateScanningIsTheCarefulDefaultAndFastTradesCareForSpeed() {
+        // Accurate is how the scanner has always worked, and what anyone gets until they choose.
+        assertEquals(ScanMode.ACCURATE, ScanMode.fromName(null))
+        assertEquals(ScanMode.ACCURATE, ScanMode.fromName("not a mode"))
+        assertEquals(STEADY_READS, ScanMode.ACCURATE.steadyReads)
+        assertEquals(true, ScanMode.ACCURATE.readsSmallPrint)
+        // Fast takes a card sooner and leaves the printing to the frame or the art.
+        assertEquals(2, ScanMode.FAST.steadyReads)
+        assertEquals(false, ScanMode.FAST.readsSmallPrint)
+        assertEquals(ScanMode.FAST, ScanMode.fromName("FAST"))
+    }
 }

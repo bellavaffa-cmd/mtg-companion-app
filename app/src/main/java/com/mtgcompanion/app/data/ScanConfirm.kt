@@ -13,6 +13,23 @@ package com.mtgcompanion.app.data
 const val STEADY_READS = 3
 
 /**
+ * How careful the scanner is, chosen on the scan screen. [ACCURATE] is how it has always been: a
+ * name has to read the same on [STEADY_READS] frames running, and the small print is read up close
+ * for the exact printing. [FAST] takes a name after two, and skips that close read — the printing
+ * comes from the frame when it's legible there, otherwise from matching the art — so more rows say
+ * "best guess", and a card caught halfway into the frame is a little likelier to be read.
+ * Mirrors the web app's ScanMode in src/scan/scanLogic.ts.
+ */
+enum class ScanMode(val label: String, val steadyReads: Int, val readsSmallPrint: Boolean) {
+    ACCURATE("Accurate", STEADY_READS, true),
+    FAST("Fast", 2, false);
+
+    companion object {
+        fun fromName(name: String?): ScanMode = entries.firstOrNull { it.name == name } ?: ACCURATE
+    }
+}
+
+/**
  * What came back for a read title: the card itself, a piece of a card's name (the card wasn't all
  * in the frame, or its title was cut off), or a different card altogether.
  */

@@ -48,6 +48,7 @@ enum class AccentTheme(val label: String) {
 class SettingsRepository(private val context: Context) {
 
     private val searchViewModeKey = stringPreferencesKey("search_view_mode")
+    private val scanModeKey = stringPreferencesKey("scan_mode")
     private val collectionViewModeKey = stringPreferencesKey("collection_view_mode")
     private val deckViewModeKey = stringPreferencesKey("deck_view_mode")
     private val allCardsViewModeKey = stringPreferencesKey("allcards_view_mode")
@@ -86,6 +87,13 @@ class SettingsRepository(private val context: Context) {
     val cardOfDayDate: Flow<String?> = context.dataStore.data.map { it[cardOfDayDateKey] }
     val cardOfDayName: Flow<String?> = context.dataStore.data.map { it[cardOfDayNameKey] }
     val cardOfDayImageUrl: Flow<String?> = context.dataStore.data.map { it[cardOfDayImageUrlKey] }
+
+    /** How careful the scanner is (see [ScanMode]); Accurate until changed. */
+    val scanMode: Flow<ScanMode> = context.dataStore.data.map { ScanMode.fromName(it[scanModeKey]) }
+
+    suspend fun setScanMode(mode: ScanMode) {
+        context.dataStore.edit { it[scanModeKey] = mode.name }
+    }
 
     suspend fun setSearchViewMode(mode: CardViewMode) {
         context.dataStore.edit { it[searchViewModeKey] = mode.name }
