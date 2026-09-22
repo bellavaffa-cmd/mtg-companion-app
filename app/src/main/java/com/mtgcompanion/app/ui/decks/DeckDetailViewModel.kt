@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.holdsOwnCopies
 import com.mtgcompanion.app.data.realCopiesOf
 import com.mtgcompanion.app.data.proxiesHeldElsewhere
 import com.mtgcompanion.app.data.ProxyHeldElsewhere
@@ -690,8 +691,24 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.swapInProxy(deckId, scryfallId, collectionRepository) }
     }
 
-    fun setOwnership(ownership: DeckOwnership) {
-        viewModelScope.launch { repository.setOwnership(deckId, ownership) }
+    /**
+     * Changes whether the deck holds the user's real cards. Becoming physical, the loose copies it now
+     * holds come out of the Unsorted pile; no longer physical, its real copies go back to the pile —
+     * or, with [keepCards] false, out of the collection (see realCopiesOf).
+     */
+    fun setOwnership(ownership: DeckOwnership, keepCards: Boolean = true) {
+        viewModelScope.launch {
+            val before = deck.value ?: return@launch
+            if (before.ownershipType == ownership) return@launch
+            val after = before.copy(ownership = ownership.name)
+            repository.setOwnership(deckId, ownership)
+            when {
+                before.holdsOwnCopies && !after.holdsOwnCopies ->
+                    if (keepCards) realCopiesOf(before).takeIf { it.isNotEmpty() }?.let { collectionRepository.addUnsorted(it) }
+                !before.holdsOwnCopies && after.holdsOwnCopies ->
+                    realCopiesOf(after).forEach { collectionRepository.takeIntoDeck(after, it.scryfallId, it.name, it.quantity) }
+            }
+        }
     }
 
     fun setTags(tags: List<String>) {

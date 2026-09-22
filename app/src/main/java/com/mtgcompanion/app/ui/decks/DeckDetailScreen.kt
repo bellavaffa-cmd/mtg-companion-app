@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.holdsOwnCopies
 import com.mtgcompanion.app.data.realCopiesOf
 import com.mtgcompanion.app.data.ProxyHeldElsewhere
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -213,6 +214,8 @@ fun DeckDetailScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    // A physical deck becoming one that holds no real cards: asked what happens to the cards it has.
+    var leavingPhysical by remember { mutableStateOf<DeckOwnership?>(null) }
     // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
     // Holds (source, key): source "card" -> deck card by scryfallId, "sugg" -> suggestion by id/name.
     var zoom by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -479,7 +482,10 @@ fun DeckDetailScreen(
                 current = currentDeck.mode,
                 onSelect = { viewModel.setGameMode(it) },
                 ownership = currentDeck.ownershipType,
-                onOwnershipChange = { viewModel.setOwnership(it) },
+                onOwnershipChange = { o ->
+                    if (currentDeck.holdsOwnCopies && o != DeckOwnership.PHYSICAL && realCopiesOf(currentDeck).isNotEmpty()) leavingPhysical = o
+                    else viewModel.setOwnership(o)
+                },
                 tags = currentDeck.tags,
                 onTagsChange = { viewModel.setTags(it) },
                 onDismiss = { showSettings = false }
@@ -505,6 +511,34 @@ fun DeckDetailScreen(
         }
         importState?.let { state ->
             ImportResultDialog(state = state, onDismiss = { importState = null })
+        }
+        leavingPhysical?.let { target ->
+            val real = realCopiesOf(currentDeck).sumOf { it.quantity }
+            AlertDialog(
+                containerColor = Surface,
+                onDismissRequest = { leavingPhysical = null },
+                title = { Text("Make it ${target.label.lowercase()}?", color = GoldLight) },
+                text = {
+                    Text(
+                        "\"${currentDeck.name}\" holds $real of your cards, and a ${target.label.lowercase()} deck doesn't count " +
+                            "its cards as yours. Keep them and they go to Unsorted; or remove them from your collection.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary
+                    )
+                },
+                confirmButton = {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Button(
+                            onClick = { viewModel.setOwnership(target, keepCards = true); leavingPhysical = null },
+                            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+                        ) { Text("Keep cards", color = Bg) }
+                        TextButton(onClick = { viewModel.setOwnership(target, keepCards = false); leavingPhysical = null }) {
+                            Text("Remove the cards", color = Color(0xFFD3402F))
+                        }
+                        TextButton(onClick = { leavingPhysical = null }) { Text("Cancel", color = TextMuted) }
+                    }
+                }
+            )
         }
         if (confirmDelete) {
             DeleteDeckDialog(
