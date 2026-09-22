@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.social
 
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -44,6 +45,8 @@ sealed interface LinkResult {
     data object Joining : LinkResult
     data class Joined(val host: Profile, val matchId: String, val seat: Int) : LinkResult
     data class Failed(val message: String) : LinkResult
+    /** A browser is waiting to be signed in: which one, and how it went once answered. */
+    data class SignInWeb(val code: String, val browser: String, val message: String? = null, val ok: Boolean = true, val busy: Boolean = false) : LinkResult
 }
 
 /**
@@ -80,6 +83,18 @@ class AppLinkHandler internal constructor(
             null -> if (!ignoreOthers) result = LinkResult.Unknown(text)
             is AppLink.SharedLink -> openSharedLink()(link.token)
             is AppLink.AddFriend -> result = LinkResult.AddFriend(link.username)
+            is AppLink.WebSignIn -> {
+                result = LinkResult.Joining
+                scope.launch {
+                    result = try {
+                        val browser = social.api.webSignInRequest(link.code)
+                        if (browser == null) LinkResult.Failed("That code has run out or has already been used. Show a new one on the other device.")
+                        else LinkResult.SignInWeb(link.code, browser)
+                    } catch (e: Exception) {
+                        LinkResult.Failed(e.message ?: "Something went wrong.")
+                    }
+                }
+            }
             is AppLink.JoinSeat -> {
                 result = LinkResult.Joining
                 scope.launch {
@@ -118,6 +133,19 @@ class AppLinkHandler internal constructor(
                     "already" -> "Already asked — waiting for their answer (or you're already friends)."
                     else -> "Asked! They'll see your request."
                 })
+            } catch (e: Exception) {
+                r.copy(busy = false, ok = false, message = e.message ?: "Something went wrong.")
+            }
+        }
+    }
+
+    /** The user said yes: the waiting browser is signed in as them. */
+    internal fun signInWeb(r: LinkResult.SignInWeb) {
+        result = r.copy(busy = true)
+        scope.launch {
+            result = try {
+                social.api.approveWebSignIn(r.code)
+                r.copy(busy = false, message = "${r.browser} is signed in as you.")
             } catch (e: Exception) {
                 r.copy(busy = false, ok = false, message = e.message ?: "Something went wrong.")
             }
@@ -182,6 +210,20 @@ fun AppLinkPanel(handler: AppLinkHandler, profile: Profile?, onDone: () -> Unit,
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LineButton("Leave this seat", { handler.leaveSeat(r) })
                 GoldButton("Done", { handler.dismiss(); onDone() })
+            }
+        }
+        is LinkResult.SignInWeb -> Column(panel, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Filled.Computer, contentDescription = null, tint = colors.accent)
+                Text("Sign in ${r.browser}?", style = MaterialTheme.typography.titleMedium)
+            }
+            Text(
+                r.message ?: "It's showing this code and waiting. It will be signed in as you until it's signed out — only do this on a device you trust.",
+                color = if (r.ok) colors.textMuted else colors.error
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (r.message == null) GoldButton("Sign it in", { handler.signInWeb(r) }, enabled = !r.busy)
+                LineButton(if (r.message == null) "Not me" else "Done", handler::dismiss)
             }
         }
         is LinkResult.Failed -> Column(panel, verticalArrangement = Arrangement.spacedBy(10.dp)) {

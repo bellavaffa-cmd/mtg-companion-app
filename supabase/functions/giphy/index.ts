@@ -8,7 +8,8 @@
 // shared between users: the key's free tier allows 100 calls an hour, and most people look at the
 // same trending GIFs and search for the same few things.
 
-const ALLOWED_ORIGINS = [/^https:\/\/bellavaffa-cmd\.github\.io$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/]
+// manabind.com is the web app's home; the github.io address it moved from still redirects there.
+const ALLOWED_ORIGINS = [/^https:\/\/(www\.)?manabind\.com$/, /^https:\/\/bellavaffa-cmd\.github\.io$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/]
 const PAGE = 24
 const TTL_MS = 30 * 60 * 1000
 const MAX_CACHED = 300

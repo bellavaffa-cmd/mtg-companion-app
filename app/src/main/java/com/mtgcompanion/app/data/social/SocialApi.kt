@@ -262,6 +262,40 @@ class SocialApi(private val auth: SupabaseAuth) {
         JSONObject(call("set_notification_prefs", JSONObject().put("p_friends", friends).put("p_trades", trades)))
             .let { it.optBoolean("friends", true) to it.optBoolean("trades", true) }
 
+    // ---- Signing a browser in (see the web app's src/sync/qrLogin.ts) ----
+
+    /** What a waiting browser looks like ("Chrome on Windows"), for the user to recognise before approving. */
+    suspend fun webSignInRequest(code: String): String? {
+        val rows = JSONArray(call("qr_login_request", JSONObject().put("p_code", code)).ifBlank { "[]" })
+        val row = rows.optJSONObject(0) ?: return null
+        return row.optString("browser").ifBlank { "A browser" }
+    }
+
+    /** Signs that browser in as this account. Throws when the code has run out or been used. */
+    suspend fun approveWebSignIn(code: String): Unit = withContext(Dispatchers.IO) {
+        val token = auth.accessToken() ?: throw SocialException("not_signed_in", MESSAGES.getValue("not_signed_in"))
+        val request = Request.Builder()
+            .url(BuildConfig.SUPABASE_URL + "/functions/v1/qr-login")
+            .header("apikey", BuildConfig.SUPABASE_ANON_KEY)
+            .header("Authorization", "Bearer $token")
+            .post(JSONObject().put("code", code).toString().toRequestBody(JSON_MEDIA))
+            .build()
+        val response = try {
+            auth.http.newCall(request).execute()
+        } catch (e: IOException) {
+            throw SocialException("offline", "You're offline — try again when you're connected.")
+        }
+        response.use {
+            if (!it.isSuccessful) {
+                val why = runCatching { JSONObject(it.body?.string().orEmpty()).optString("error") }.getOrNull()
+                throw SocialException(
+                    why.orEmpty(),
+                    if (why == "done") "That code has already been used." else "That code has run out — show a new one."
+                )
+            }
+        }
+    }
+
     // ---- Trades ----
 
     suspend fun proposeTrade(to: String, want: List<TradeCard>, give: List<TradeCard>, message: String, replyTo: String?): String =
@@ -329,6 +363,8 @@ sealed interface AppLink {
     data class AddFriend(val username: String) : AppLink
     data class JoinSeat(val code: String, val seat: Int) : AppLink
     data class SharedLink(val token: String) : AppLink
+    /** A browser waiting to be signed in, showing this code (see approveWebSignIn). */
+    data class WebSignIn(val code: String) : AppLink
 
     companion object {
         /** Where the web app lived before manabind.com: codes and links made then still carry it. */
@@ -353,6 +389,7 @@ sealed interface AppLink {
                 parts.size == 2 && parts[0] == "add" && Regex("[a-zA-Z0-9_]{3,20}").matches(parts[1]) -> AddFriend(parts[1].lowercase())
                 parts.size == 3 && parts[0] == "join" && Regex("[0-9a-f]{16}").matches(parts[1]) -> parts[2].toIntOrNull()?.let { JoinSeat(parts[1], it) }
                 parts.size == 2 && parts[0] == "s" && Regex("[0-9a-f]{32}").matches(parts[1]) -> SharedLink(parts[1])
+                parts.size == 2 && parts[0] == "login" && Regex("[0-9a-f]{32}").matches(parts[1]) -> WebSignIn(parts[1])
                 else -> null
             }
         }

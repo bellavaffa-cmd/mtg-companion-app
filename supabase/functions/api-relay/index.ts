@@ -14,7 +14,8 @@
 //
 // Deployed with JWT verification on, so callers send the project's anon key as the bearer token.
 
-const ALLOWED_ORIGINS = [/^https:\/\/bellavaffa-cmd\.github\.io$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/]
+// manabind.com is the web app's home; the github.io address it moved from still redirects there.
+const ALLOWED_ORIGINS = [/^https:\/\/(www\.)?manabind\.com$/, /^https:\/\/bellavaffa-cmd\.github\.io$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/]
 
 const SPELLBOOK = 'https://backend.commanderspellbook.com'
 const NEWS_FEEDS = [

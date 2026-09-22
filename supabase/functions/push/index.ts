@@ -37,7 +37,7 @@ function config() {
   return {
     firebase: account ? (JSON.parse(account) as ServiceAccount) : null,
     vapid: publicKey && privateJwk
-      ? { publicKey, privateJwk: JSON.parse(privateJwk), subject: Deno.env.get('VAPID_SUBJECT') ?? 'https://bellavaffa-cmd.github.io/mtg-companion-web/' } as Vapid
+      ? { publicKey, privateJwk: JSON.parse(privateJwk), subject: Deno.env.get('VAPID_SUBJECT') ?? 'https://manabind.com/' } as Vapid
       : null,
   }
 }
