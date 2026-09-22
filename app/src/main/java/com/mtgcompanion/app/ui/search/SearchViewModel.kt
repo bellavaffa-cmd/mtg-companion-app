@@ -398,9 +398,11 @@ class SearchViewModel(
         viewModelScope.launch {
             when (target.kind) {
                 SourceKind.DECK -> {
-                    deckRepository.decksFlow.first().find { it.id == target.id }
-                        ?.let { duplicateWarning(it, card) }?.let { onWarning?.invoke(it) }
+                    val deck = deckRepository.decksFlow.first().find { it.id == target.id }
+                    deck?.let { duplicateWarning(it, card) }?.let { onWarning?.invoke(it) }
                     deckRepository.addCardToDeck(target.id, card)
+                    // A loose copy in the Unsorted pile is the one that went into the deck.
+                    collectionRepository.takeIntoDeck(deck, card.id, card.name)
                 }
                 SourceKind.BINDER -> collectionRepository.addCard(target.id, card)
             }

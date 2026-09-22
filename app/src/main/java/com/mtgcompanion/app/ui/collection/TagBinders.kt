@@ -244,7 +244,7 @@ private fun TagBinderTile(binder: TagBinder, modifier: Modifier, onClick: () -> 
 
 class TagBinderViewModel(
     val tagId: String,
-    collectionRepository: CollectionRepository,
+    private val collectionRepository: CollectionRepository,
     private val deckRepository: DeckRepository,
     private val cardRepository: CardRepository = CardRepository()
 ) : ViewModel() {
@@ -265,13 +265,20 @@ class TagBinderViewModel(
             val message = try {
                 // A deck entry needs the full card (type, commander-ness…), which a binder entry doesn't keep.
                 val full = if (fresh.isEmpty()) emptyList() else cardRepository.getCardsByIds(fresh.map { it.scryfallId })
+                var fromPile = 0
                 full.forEach { card ->
-                    if (considering) deckRepository.addToConsidering(deckId, card) else deckRepository.addCardToDeck(deckId, card)
+                    if (considering) deckRepository.addToConsidering(deckId, card)
+                    else {
+                        deckRepository.addCardToDeck(deckId, card)
+                        // A loose copy in the Unsorted pile is the one that went into the deck.
+                        fromPile += collectionRepository.takeIntoDeck(deck, card.id, card.name)
+                    }
                 }
                 val skipped = cards.size - full.size
                 (if (full.isEmpty()) "Nothing added" else "Added ${full.size} ${if (full.size == 1) "card" else "cards"}") +
                     " to " + (if (considering) "${deck.name}'s Considering list" else deck.name) +
-                    (if (skipped > 0) " · $skipped ${if (skipped == 1) "was" else "were"} already there" else "") + "."
+                    (if (skipped > 0) " · $skipped ${if (skipped == 1) "was" else "were"} already there" else "") +
+                    (if (fromPile > 0) " · $fromPile taken from Unsorted" else "") + "."
             } catch (e: Exception) {
                 "Couldn't reach Scryfall — try again when you're online."
             }

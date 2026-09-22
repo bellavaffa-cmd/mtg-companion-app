@@ -244,6 +244,23 @@ class CollectionRepository(private val context: Context) {
         else listOf(Collection(id = LEGACY_COLLECTION_ID, name = "My Collection", entries = legacy))
     }
 
+    /**
+     * [count] copies of a card ([scryfallId], [name]) have gone into [deck]: if it holds the user's
+     * own copies, they're the loose ones, and come out of the Unsorted pile (see takenFromUnsorted).
+     * Answers how many did. The scanner doesn't call this — its cards are new copies in hand — nor do
+     * moves and copies out of a binder, which say for themselves where the card is.
+     */
+    suspend fun takeIntoDeck(deck: Deck?, scryfallId: String, name: String, count: Int = 1): Int {
+        if (deck == null || !deck.holdsOwnCopies || count <= 0) return 0
+        var taken = 0
+        updateEntries(UNSORTED_COLLECTION_ID) { entries ->
+            val (left, n) = takenFromUnsorted(entries, scryfallId, name, count)
+            taken = n
+            left
+        }
+        return taken
+    }
+
     private suspend fun updateEntries(collectionId: String, transform: (List<CollectionEntry>) -> List<CollectionEntry>) {
         update { collections ->
             collections.map { if (it.id == collectionId) it.copy(entries = transform(it.entries)) else it }

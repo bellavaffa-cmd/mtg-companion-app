@@ -40,4 +40,41 @@ class UnsortedPileTest {
     fun anEmptyLibraryStillGetsItsPile() {
         assertEquals(1, withUnsortedPile(emptyList()).count { it.isUnsorted })
     }
+
+    private fun loose(id: String, name: String, quantity: Int, foil: Int = 0) = CollectionEntry(id, name, null, quantity = quantity, foilQuantity = foil)
+
+    @Test
+    fun aCardPutInADeckLeavesThePileThatPrintingFirstPlainBeforeFoil() {
+        val pile = listOf(loose("msc", "Sol Ring", 1, 1), loose("bolt", "Lightning Bolt", 2))
+        val (after, taken) = takenFromUnsorted(pile, "msc", "Sol Ring", 1)
+        assertEquals(1, taken)
+        assertEquals(listOf(Triple("msc", 0, 1), Triple("bolt", 2, 0)), after.map { Triple(it.scryfallId, it.quantity, it.foilQuantity) })
+        // The last copy gone, the entry goes too.
+        assertEquals(listOf("bolt"), takenFromUnsorted(after, "msc", "Sol Ring", 1).first.map { it.scryfallId })
+    }
+
+    @Test
+    fun anotherPrintingOfTheSameCardIsTakenWhenThatPrintingIsNotInThePile() {
+        val pile = listOf(loose("cmr", "Sol Ring", 1), loose("msc", "Sol Ring", 1), loose("dfc", "Delver of Secrets // Insectile Aberration", 1))
+        val (after, taken) = takenFromUnsorted(pile, "msc", "Sol Ring", 2)
+        assertEquals(2, taken)
+        assertEquals(listOf("dfc"), after.map { it.scryfallId })
+        // Either face's name is the card.
+        assertEquals(1, takenFromUnsorted(pile, "other", "Delver of Secrets", 1).second)
+    }
+
+    @Test
+    fun onlyWhatThePileHasIsTakenAndACardNotInItLeavesThePileAsItWas() {
+        val pile = listOf(loose("msc", "Sol Ring", 1))
+        assertEquals(1, takenFromUnsorted(pile, "msc", "Sol Ring", 3).second)
+        val (after, taken) = takenFromUnsorted(pile, "bolt", "Lightning Bolt", 1)
+        assertEquals(0, taken)
+        assertSame(pile, after)
+    }
+
+    @Test
+    fun onlyPhysicalDecksHoldTheUsersOwnCopies() {
+        fun deck(o: DeckOwnership) = Deck("d", "Deck", ownership = o.name)
+        assertEquals(listOf(true, false, false, false), DeckOwnership.entries.map { deck(it).holdsOwnCopies })
+    }
 }

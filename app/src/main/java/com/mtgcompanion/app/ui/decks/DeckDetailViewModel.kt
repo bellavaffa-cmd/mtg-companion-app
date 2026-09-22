@@ -291,7 +291,9 @@ class DeckDetailViewModel(
                 if (full == null) "Couldn't find ${card.name} on Scryfall."
                 else {
                     if (considering) repository.addToConsidering(deckId, full) else repository.addCardToDeck(deckId, full)
-                    "Added ${card.name} to " + if (considering) "Considering." else "the deck."
+                    // A loose copy in the Unsorted pile is the one that went into the deck.
+                    val fromPile = !considering && collectionRepository.takeIntoDeck(deck.value, full.id, full.name) > 0
+                    "Added ${card.name} to " + (if (considering) "Considering." else "the deck.") + if (fromPile) " Taken from Unsorted." else ""
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -542,7 +544,10 @@ class DeckDetailViewModel(
      */
     fun addCard(card: ScryfallCard, onWarning: ((String) -> Unit)? = null) {
         deck.value?.let { d -> duplicateWarning(d, card)?.let { onWarning?.invoke(it) } }
-        viewModelScope.launch { repository.addCardToDeck(deckId, card) }
+        viewModelScope.launch {
+            repository.addCardToDeck(deckId, card)
+            collectionRepository.takeIntoDeck(deck.value, card.id, card.name)
+        }
     }
 
     // ---- Cut candidates, considering, swaps ----
@@ -556,7 +561,11 @@ class DeckDetailViewModel(
     }
 
     fun addConsideredToDeck(scryfallId: String) {
-        viewModelScope.launch { repository.addConsideredToDeck(deckId, scryfallId) }
+        viewModelScope.launch {
+            val entry = deck.value?.considering?.find { it.scryfallId == scryfallId }
+            repository.addConsideredToDeck(deckId, scryfallId)
+            if (entry != null) collectionRepository.takeIntoDeck(deck.value, entry.scryfallId, entry.name, entry.quantity)
+        }
     }
 
     fun removeFromConsidering(scryfallId: String) {
@@ -564,7 +573,11 @@ class DeckDetailViewModel(
     }
 
     fun swap(outScryfallId: String, inScryfallId: String) {
-        viewModelScope.launch { repository.swap(deckId, outScryfallId, inScryfallId) }
+        viewModelScope.launch {
+            val incoming = deck.value?.considering?.find { it.scryfallId == inScryfallId }
+            repository.swap(deckId, outScryfallId, inScryfallId)
+            if (incoming != null) collectionRepository.takeIntoDeck(deck.value, incoming.scryfallId, incoming.name, incoming.quantity)
+        }
     }
 
     fun consider(card: ScryfallCard) {

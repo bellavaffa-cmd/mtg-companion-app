@@ -278,9 +278,12 @@ class CardDetailViewModel(
         viewModelScope.launch {
             // Checked before adding, off the deck's currently-loaded state — informational only,
             // the card is added either way (testing/sideboard scenarios are legitimate).
-            val warning = decks.value.find { it.id == deckId }?.let { duplicateWarning(it, card) }
+            val deck = decks.value.find { it.id == deckId }
+            val warning = deck?.let { duplicateWarning(it, card) }
             deckRepository.addCardToDeck(deckId, card)
-            _uiState.value = _uiState.value.copy(addedToDeckMessage = warning ?: "Added ${card.name} to deck.")
+            // A loose copy in the Unsorted pile is the one that went into the deck.
+            val fromPile = collectionRepository.takeIntoDeck(deck, card.id, card.name) > 0
+            _uiState.value = _uiState.value.copy(addedToDeckMessage = warning ?: ("Added ${card.name} to deck." + if (fromPile) " Taken from Unsorted." else ""))
         }
     }
 
@@ -297,6 +300,7 @@ class CardDetailViewModel(
         viewModelScope.launch {
             val deck = deckRepository.createDeck(name)
             deckRepository.addCardToDeck(deck.id, card)
+            collectionRepository.takeIntoDeck(deck, card.id, card.name)
             _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added ${card.name} to \"${deck.name}\".")
         }
     }

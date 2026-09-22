@@ -26,3 +26,36 @@ val Collection.isBinder: Boolean get() = !isUnsorted && !isWishlist
 /** The collections that are always there: the Wishlist, kept up for [decks], and the Unsorted pile. */
 fun withStandingCollections(collections: List<Collection>, decks: List<Deck>): List<Collection> =
     withUnsortedPile(withWishlist(collections, decks))
+
+/** The same card by name: equal once case is ignored, and either face of a double-faced card counts. */
+private fun sameCardByName(a: String, b: String): Boolean {
+    val fa = a.lowercase().split(" // ")
+    return b.lowercase().split(" // ").any { it in fa }
+}
+
+/**
+ * The Unsorted pile's [entries] once [count] copies of a card ([scryfallId], [name]) have gone into
+ * one of the user's physical decks — the loose copies are the ones that went: that printing's first,
+ * then other printings of the same card; plain before foil. Entries left with no copies go. Also how
+ * many were taken: fewer than [count] when the pile didn't have that many. Mirrors the web app's
+ * takenFromUnsorted in src/collection/unsorted.ts.
+ */
+fun takenFromUnsorted(entries: List<CollectionEntry>, scryfallId: String, name: String, count: Int): Pair<List<CollectionEntry>, Int> {
+    var left = count
+    val order = entries.filter { it.scryfallId == scryfallId } +
+        entries.filter { it.scryfallId != scryfallId && sameCardByName(it.name, name) }
+    val after = HashMap<CollectionEntry, CollectionEntry>()
+    for (entry in order) {
+        if (left <= 0) break
+        val plain = minOf(entry.quantity, left)
+        left -= plain
+        val foil = minOf(entry.foilQuantity, left)
+        left -= foil
+        after[entry] = entry.copy(quantity = entry.quantity - plain, foilQuantity = entry.foilQuantity - foil)
+    }
+    if (left == count) return entries to 0
+    return entries.map { after[it] ?: it }.filter { it.quantity + it.foilQuantity > 0 } to count - left
+}
+
+/** Whether a deck holds the user's own copies — only then does adding to it take them out of Unsorted. */
+val Deck.holdsOwnCopies: Boolean get() = DeckOwnership.fromName(ownership) == DeckOwnership.PHYSICAL

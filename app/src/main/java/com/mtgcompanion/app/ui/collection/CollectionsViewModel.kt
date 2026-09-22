@@ -193,9 +193,12 @@ class CollectionsViewModel(
     /** Adds one copy of each picked card to the deck [deckId] — cards already in it are left as they are. */
     fun addToDeck(ids: Set<String>, deckId: String) {
         viewModelScope.launch {
-            val inDeck = decks.value.firstOrNull { it.id == deckId }?.cards.orEmpty().map { it.scryfallId }.toSet()
+            val deck = decks.value.firstOrNull { it.id == deckId }
+            val inDeck = deck?.cards.orEmpty().map { it.scryfallId }.toSet()
             allCards.value.filter { it.scryfallId in ids && it.scryfallId !in inDeck }.forEach { c ->
                 deckRepository.addEntry(deckId, DeckCardEntry(c.scryfallId, c.name, c.imageUrl, quantity = 1, backImageUrl = c.backImageUrl, tags = c.tags))
+                // A loose copy in the Unsorted pile is the one that went into the deck.
+                repository.takeIntoDeck(deck, c.scryfallId, c.name)
             }
         }
     }
