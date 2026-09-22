@@ -50,7 +50,8 @@ begin
   end if;
   perform public.qr_login_sweep();
   -- Nothing here is worth much, but a runaway shouldn't be able to fill the table either.
-  select count(*) into v_waiting from public.qr_login where expires_at > now();
+  -- Alias the table: plain expires_at would mean this function's own answer column.
+  select count(*) into v_waiting from public.qr_login q where q.expires_at > now();
   if v_waiting > 500 then
     raise exception 'too_many_requests';
   end if;
