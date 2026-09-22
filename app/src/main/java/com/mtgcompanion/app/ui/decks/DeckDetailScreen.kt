@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.realCopiesOf
 import com.mtgcompanion.app.data.ProxyHeldElsewhere
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -509,7 +510,8 @@ fun DeckDetailScreen(
             DeleteDeckDialog(
                 deckName = currentDeck.name,
                 cardCount = currentDeck.cards.sumOf { it.quantity },
-                onConfirm = { confirmDelete = false; viewModel.deleteDeck(onBack) },
+                realCopies = realCopiesOf(currentDeck).sumOf { it.quantity },
+                onDelete = { keepCards -> confirmDelete = false; viewModel.deleteDeck(keepCards, onBack) },
                 onDismiss = { confirmDelete = false }
             )
         }
@@ -598,20 +600,54 @@ private fun importSummary(added: Int, failed: List<String>): String = buildStrin
     }
 }
 
-/** Deleting a deck throws away its whole card list and can't be undone, so make it deliberate. */
+/**
+ * Deleting a deck can't be undone, so make it deliberate. A physical deck holds real cards
+ * ([realCopies] of them, proxies aside): they can go back to the Unsorted pile rather than out of the
+ * collection with the deck, and keeping them is the first choice. A deck with no real cards has
+ * nothing to keep.
+ */
 @Composable
 private fun DeleteDeckDialog(
     deckName: String,
     cardCount: Int,
-    onConfirm: () -> Unit,
+    realCopies: Int,
+    onDelete: (keepCards: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ConfirmDeleteDialog(
-        title = "Delete deck?",
-        message = "\"$deckName\" and its $cardCount card${if (cardCount == 1) "" else "s"} will be " +
-            "permanently deleted. This can't be undone.",
-        onConfirm = onConfirm,
-        onDismiss = onDismiss
+    if (realCopies == 0) {
+        ConfirmDeleteDialog(
+            title = "Delete deck?",
+            message = "\"$deckName\" and its $cardCount card${if (cardCount == 1) "" else "s"} will be " +
+                "permanently deleted. This can't be undone.",
+            onConfirm = { onDelete(false) },
+            onDismiss = onDismiss
+        )
+        return
+    }
+    AlertDialog(
+        containerColor = Surface,
+        onDismissRequest = onDismiss,
+        title = { Text("Delete deck?", color = GoldLight) },
+        text = {
+            Text(
+                "\"$deckName\" holds $realCopies of your cards. Keep them and they go to Unsorted; " +
+                    "or delete them with the deck, out of your collection. Deleting the deck can't be undone.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextPrimary
+            )
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                Button(
+                    onClick = { onDelete(true) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+                ) { Text("Delete deck, keep cards", color = Bg) }
+                TextButton(onClick = { onDelete(false) }) {
+                    Text("Delete deck and cards", color = Color(0xFFD3402F))
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
+            }
+        }
     )
 }
 

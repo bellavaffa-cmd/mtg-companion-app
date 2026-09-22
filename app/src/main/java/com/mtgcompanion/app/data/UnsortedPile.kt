@@ -59,3 +59,14 @@ fun takenFromUnsorted(entries: List<CollectionEntry>, scryfallId: String, name: 
 
 /** Whether a deck holds the user's own copies — only then does adding to it take them out of Unsorted. */
 val Deck.holdsOwnCopies: Boolean get() = DeckOwnership.fromName(ownership) == DeckOwnership.PHYSICAL
+
+/**
+ * The real copies a deck holds, as Unsorted entries — where its cards go when the deck is deleted but
+ * the cards kept. Only a physical deck holds the user's own copies, and not its proxies (see
+ * proxyCopies); its commander is one of its cards. Mirrors the web app's realCopiesOf.
+ */
+fun realCopiesOf(deck: Deck): List<CollectionEntry> =
+    if (!deck.holdsOwnCopies) emptyList()
+    else deck.cards.map {
+        CollectionEntry(it.scryfallId, it.name, it.imageUrl, quantity = it.quantity - proxyCopies(deck, it), backImageUrl = it.backImageUrl, tags = it.tags)
+    }.filter { it.quantity > 0 }

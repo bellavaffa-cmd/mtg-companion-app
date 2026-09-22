@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.realCopiesOf
 import com.mtgcompanion.app.data.proxiesHeldElsewhere
 import com.mtgcompanion.app.data.ProxyHeldElsewhere
 import com.mtgcompanion.app.data.proxySwaps
@@ -737,8 +738,11 @@ class DeckDetailViewModel(
         }
     }
 
-    fun deleteDeck(onDeleted: () -> Unit) {
+    /** Deletes the deck; with [keepCards], its real copies go back to the Unsorted pile first (see realCopiesOf). */
+    fun deleteDeck(keepCards: Boolean, onDeleted: () -> Unit) {
         viewModelScope.launch {
+            val kept = if (keepCards) deck.value?.let { realCopiesOf(it) }.orEmpty() else emptyList()
+            if (kept.isNotEmpty()) collectionRepository.addUnsorted(kept)
             repository.deleteDeck(deckId)
             onDeleted()
         }

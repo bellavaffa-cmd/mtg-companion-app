@@ -77,4 +77,20 @@ class UnsortedPileTest {
         fun deck(o: DeckOwnership) = Deck("d", "Deck", ownership = o.name)
         assertEquals(listOf(true, false, false, false), DeckOwnership.entries.map { deck(it).holdsOwnCopies })
     }
+
+    private fun inDeck(id: String, name: String, quantity: Int, proxies: Int? = null) = DeckCardEntry(id, name, null, quantity = quantity, proxyQuantity = proxies)
+
+    @Test
+    fun aPhysicalDecksRealCopiesGoBackToThePileWhenItsDeletedWithItsCardsKept() {
+        val deck = Deck("d", "D", cards = listOf(inDeck("sol", "Sol Ring", 1), inDeck("bolt", "Lightning Bolt", 4, proxies = 1)), ownership = DeckOwnership.PHYSICAL.name)
+        // The proxy Bolt isn't a real copy and doesn't go.
+        assertEquals(listOf("sol" to 1, "bolt" to 3), realCopiesOf(deck).map { it.scryfallId to it.quantity })
+    }
+
+    @Test
+    fun aDeckThatHoldsNoRealCopiesGivesThePileNothing() {
+        for (o in listOf(DeckOwnership.PROXY, DeckOwnership.VIRTUAL, DeckOwnership.PROTOTYPE)) {
+            assertEquals(emptyList<CollectionEntry>(), realCopiesOf(Deck("d", "D", cards = listOf(inDeck("sol", "Sol Ring", 1)), ownership = o.name)))
+        }
+    }
 }
