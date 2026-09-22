@@ -56,3 +56,24 @@ fun spares(collections: List<Collection>, decks: List<Deck>, minCopies: Int = 1)
 /** What a spare is worth, for sorting the most valuable to the top. */
 fun spareValue(spare: Spare, prices: Map<String, Double>): Double =
     (prices[spare.entry.scryfallId] ?: 0.0) * spare.copies
+
+/** How many spares a trade starts with — enough to choose from, not a wall of cards. */
+const val OFFER_LIMIT = 20
+
+/**
+ * The spares as cards to offer in a trade, dearest first (by [prices], USD by Scryfall id, when
+ * known): the trade opens with these on the user's side, and they change the list there. Mirrors the
+ * web app's offerCards in src/social/TradeOffer.tsx.
+ */
+fun offerCards(spares: List<Spare>, prices: Map<String, Double> = emptyMap(), limit: Int = OFFER_LIMIT): List<com.mtgcompanion.app.data.social.TradeCard> =
+    (if (prices.isEmpty()) spares else spares.sortedByDescending { spareValue(it, prices) })
+        .take(limit)
+        .map {
+            com.mtgcompanion.app.data.social.TradeCard(
+                scryfallId = it.entry.scryfallId,
+                name = it.entry.name,
+                imageUrl = it.entry.imageUrl,
+                foil = it.copies == it.foils,
+                quantity = it.copies
+            )
+        }

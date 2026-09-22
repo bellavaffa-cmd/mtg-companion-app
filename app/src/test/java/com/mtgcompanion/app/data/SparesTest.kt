@@ -58,4 +58,18 @@ class SparesTest {
             spares(collections, emptyList()).sortedByDescending { spareValue(it, prices) }.map { it.entry.name }
         )
     }
+
+    @Test
+    fun sparesAreOfferedInATradeDearestFirstAndNoMoreThanTheLimit() {
+        val cheap = Spare(entry("Llanowar Elves", 3), listOf("Green"), copies = 3, foils = 0)
+        val dear = Spare(entry("Sol Ring", 1, 1), listOf("Artifacts"), copies = 1, foils = 1)
+        val prices = mapOf(cheap.entry.scryfallId to 0.25, dear.entry.scryfallId to 2.0)
+        val offer = offerCards(listOf(cheap, dear), prices)
+        assertEquals(listOf("Sol Ring" to 1, "Llanowar Elves" to 3), offer.map { it.name to it.quantity })
+        // Foil only when every copy is.
+        assertEquals(listOf(true, false), offer.map { it.foil })
+        // No prices: the order they came in. And no more than the limit.
+        assertEquals("Llanowar Elves", offerCards(listOf(cheap, dear)).first().name)
+        assertEquals(1, offerCards(listOf(cheap, dear), prices, limit = 1).size)
+    }
 }

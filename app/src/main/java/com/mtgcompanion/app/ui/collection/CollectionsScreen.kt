@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.collection
 
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material.icons.filled.Handshake
+import com.mtgcompanion.app.data.social.TradeCard
+import com.mtgcompanion.app.data.offerCards
 import com.mtgcompanion.app.data.isWishlist
 import com.mtgcompanion.app.data.RoleTags
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -117,7 +121,9 @@ fun CollectionsScreen(
     openShared: Boolean = false,
     onSharedOpened: () -> Unit = {},
     /** Opens a tag's automatic binder. */
-    onOpenTag: (String) -> Unit = {}
+    onOpenTag: (String) -> Unit = {},
+    /** Offers these spares to a friend in a trade (picking who comes next); null without an account. */
+    onOfferSpares: ((List<TradeCard>) -> Unit)? = null
 ) {
     val tagBinders by viewModel.tagBinders.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
@@ -238,6 +244,7 @@ fun CollectionsScreen(
                         spares = spares.size,
                         sparesOnly = sparesOnly,
                         onSparesOnly = { sparesOnly = it },
+                        onOfferSpares = onOfferSpares?.let { offer -> { offer(offerCards(spares, viewModel.prices.value)) } },
                         unsorted = unsorted,
                         onOpenUnsorted = { onCollectionClick(it) },
                         onImport = { viewModel.resetImport(); showImport = true },
@@ -375,6 +382,8 @@ private fun AllCardsTab(
     spares: Int,
     sparesOnly: Boolean,
     onSparesOnly: (Boolean) -> Unit,
+    /** Offers the spares in a trade (see offerCards); null when there's no account to trade from. */
+    onOfferSpares: (() -> Unit)?,
     unsorted: Collection?,
     onOpenUnsorted: (String) -> Unit,
     onImport: () -> Unit,
@@ -450,6 +459,16 @@ private fun AllCardsTab(
                         color = Gold,
                         modifier = Modifier.clickable { onSparesOnly(!sparesOnly) }.padding(vertical = 4.dp)
                     )
+                }
+                // Spares are what a trade is usually made of: offer them to a friend in one go.
+                if (sparesOnly && onOfferSpares != null) {
+                    item {
+                        OutlinedButton(onClick = onOfferSpares, shape = RoundedCornerShape(8.dp)) {
+                            Icon(Icons.Filled.Handshake, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Offer in a trade", color = Gold)
+                        }
+                    }
                 }
             }
             item {

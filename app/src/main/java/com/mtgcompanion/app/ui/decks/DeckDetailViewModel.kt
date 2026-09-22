@@ -534,7 +534,12 @@ class DeckDetailViewModel(
     }
 
     fun removeCard(scryfallId: String) {
-        viewModelScope.launch { repository.removeCardFromDeck(deckId, scryfallId) }
+        viewModelScope.launch {
+            val before = deck.value
+            repository.removeCardFromDeck(deckId, scryfallId)
+            // The deck's real copies of it are loose again: back to the Unsorted pile.
+            before?.cards?.find { it.scryfallId == scryfallId }?.let { collectionRepository.returnFromDeck(before, it) }
+        }
     }
 
     /**
@@ -558,7 +563,12 @@ class DeckDetailViewModel(
     }
 
     fun moveToConsidering(scryfallId: String) {
-        viewModelScope.launch { repository.moveToConsidering(deckId, scryfallId) }
+        viewModelScope.launch {
+            val before = deck.value
+            repository.moveToConsidering(deckId, scryfallId)
+            // Considering isn't the deck: its real copies are loose again.
+            before?.cards?.find { it.scryfallId == scryfallId }?.let { collectionRepository.returnFromDeck(before, it) }
+        }
     }
 
     fun addConsideredToDeck(scryfallId: String) {
@@ -575,9 +585,12 @@ class DeckDetailViewModel(
 
     fun swap(outScryfallId: String, inScryfallId: String) {
         viewModelScope.launch {
-            val incoming = deck.value?.considering?.find { it.scryfallId == inScryfallId }
+            val before = deck.value
+            val incoming = before?.considering?.find { it.scryfallId == inScryfallId }
+            val outgoing = before?.cards?.find { it.scryfallId == outScryfallId }
             repository.swap(deckId, outScryfallId, inScryfallId)
-            if (incoming != null) collectionRepository.takeIntoDeck(deck.value, incoming.scryfallId, incoming.name, incoming.quantity)
+            if (outgoing != null) collectionRepository.returnFromDeck(before, outgoing)
+            if (incoming != null) collectionRepository.takeIntoDeck(before, incoming.scryfallId, incoming.name, incoming.quantity)
         }
     }
 
@@ -633,7 +646,17 @@ class DeckDetailViewModel(
 
     /** Change a card's copy count in the deck (used by the enlarged-card quantity stepper). */
     fun setCardQuantity(scryfallId: String, quantity: Int) {
-        viewModelScope.launch { repository.setCardQuantity(deckId, scryfallId, quantity) }
+        viewModelScope.launch {
+            val before = deck.value
+            val entry = before?.cards?.find { it.scryfallId == scryfallId }
+            repository.setCardQuantity(deckId, scryfallId, quantity)
+            // One more copy in the deck is a loose one taken from the Unsorted pile; one fewer goes
+            // back to it (proxies aside — see realCopiesLeaving).
+            if (entry != null) {
+                if (quantity > entry.quantity) collectionRepository.takeIntoDeck(before, entry.scryfallId, entry.name, quantity - entry.quantity)
+                else collectionRepository.returnFromDeck(before, entry, quantity)
+            }
+        }
     }
 
     /** Swap a card to a different printing/art, keeping its quantity. */

@@ -70,3 +70,21 @@ fun realCopiesOf(deck: Deck): List<CollectionEntry> =
     else deck.cards.map {
         CollectionEntry(it.scryfallId, it.name, it.imageUrl, quantity = it.quantity - proxyCopies(deck, it), backImageUrl = it.backImageUrl, tags = it.tags)
     }.filter { it.quantity > 0 }
+
+/**
+ * How many real copies leave a deck when [entry]'s count goes down to [newQuantity] (0: taken out
+ * altogether) — the ones that go back to the Unsorted pile. Only a physical deck holds the user's own
+ * copies, and a proxy leaving is no card at all: copies come off the real ones first, the proxies
+ * staying while the deck still holds that many. Mirrors the web app's realCopiesLeaving.
+ */
+fun realCopiesLeaving(deck: Deck, entry: DeckCardEntry, newQuantity: Int): Int {
+    if (!deck.holdsOwnCopies || newQuantity >= entry.quantity) return 0
+    val before = entry.quantity - proxyCopies(deck, entry)
+    val left = newQuantity.coerceAtLeast(0)
+    val after = if (left == 0) 0 else left - proxyCopies(deck, entry.copy(quantity = left))
+    return (before - after).coerceAtLeast(0)
+}
+
+/** [count] copies of [entry] as an Unsorted entry — a deck's card going back to the pile. */
+fun pileEntryOf(entry: DeckCardEntry, count: Int) =
+    CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = count, backImageUrl = entry.backImageUrl, tags = entry.tags)

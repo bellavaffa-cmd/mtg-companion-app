@@ -261,6 +261,17 @@ class CollectionRepository(private val context: Context) {
         return taken
     }
 
+    /**
+     * [entry]'s count in [deck] went down to [newQuantity]: its real copies that left go back to the
+     * Unsorted pile (see realCopiesLeaving). Answers how many did.
+     */
+    suspend fun returnFromDeck(deck: Deck?, entry: DeckCardEntry, newQuantity: Int = 0): Int {
+        if (deck == null) return 0
+        val n = realCopiesLeaving(deck, entry, newQuantity)
+        if (n > 0) addUnsorted(listOf(pileEntryOf(entry, n)))
+        return n
+    }
+
     private suspend fun updateEntries(collectionId: String, transform: (List<CollectionEntry>) -> List<CollectionEntry>) {
         update { collections ->
             collections.map { if (it.id == collectionId) it.copy(entries = transform(it.entries)) else it }

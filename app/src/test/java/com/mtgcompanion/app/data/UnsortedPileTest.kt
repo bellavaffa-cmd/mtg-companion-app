@@ -93,4 +93,19 @@ class UnsortedPileTest {
             assertEquals(emptyList<CollectionEntry>(), realCopiesOf(Deck("d", "D", cards = listOf(inDeck("sol", "Sol Ring", 1)), ownership = o.name)))
         }
     }
+
+    @Test
+    fun aCardTakenOutOfAPhysicalDeckGoesBackToThePileItsProxiesDont() {
+        val bolt = inDeck("bolt", "Lightning Bolt", 4, proxies = 1)
+        val deck = Deck("d", "D", cards = listOf(bolt), ownership = DeckOwnership.PHYSICAL.name)
+        // Out altogether: its 3 real copies go back; the proxy doesn't.
+        assertEquals(3, realCopiesLeaving(deck, bolt, 0))
+        // One fewer: a real copy goes, the proxy stays.
+        assertEquals(1, realCopiesLeaving(deck, bolt, 3))
+        // Down to just the proxy: the other 3 were the real ones.
+        assertEquals(3, realCopiesLeaving(deck, bolt, 1))
+        // More copies, or a deck holding no real cards: nothing goes back.
+        assertEquals(0, realCopiesLeaving(deck, bolt, 5))
+        assertEquals(0, realCopiesLeaving(deck.copy(ownership = DeckOwnership.PROXY.name), bolt.copy(proxyQuantity = null), 0))
+    }
 }

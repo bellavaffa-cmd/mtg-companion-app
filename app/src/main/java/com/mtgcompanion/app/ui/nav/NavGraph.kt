@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.nav
 
+import com.mtgcompanion.app.ui.social.OfferSparesDialog
+import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.ui.collection.TagBinderScreen
 import com.mtgcompanion.app.ui.collection.ValueHistoryScreen
 import com.mtgcompanion.app.ui.collection.TagBinderViewModel
@@ -429,6 +431,8 @@ fun MtgNavGraph(
                     factory = CollectionsViewModel.Factory(collectionRepository, deckRepository, settingsRepository)
                 )
                 var sharingAll by remember { mutableStateOf(false) }
+                // Spares being offered in a trade, while the user picks who to.
+                var offering by remember { mutableStateOf<List<TradeCard>?>(null) }
                 // Friends' "See what friends share" asks for the Shared page.
                 var openShared by remember { mutableStateOf(socialRepository.openSharedTab) }
                 CollectionsScreen(
@@ -448,8 +452,23 @@ fun MtgNavGraph(
                     }),
                     openShared = openShared,
                     onSharedOpened = { openShared = false; socialRepository.openSharedTab = false },
-                    onOpenTag = { id -> navController.navigate(Routes.tagBinder(id)) }
+                    onOpenTag = { id -> navController.navigate(Routes.tagBinder(id)) },
+                    onOfferSpares = if (supabaseSync.auth.configured) ({ cards -> offering = cards }) else null
                 )
+                offering?.let { cards ->
+                    OfferSparesDialog(
+                        social = socialRepository,
+                        count = cards.size,
+                        onPick = { friendId ->
+                            offering = null
+                            // The trade opens with the spares already on the user's side.
+                            socialRepository.draft = SocialRepository.TradeDraft(to = friendId, give = cards)
+                            navController.navigate(Routes.tradeNew(friendId))
+                        },
+                        onAddFriend = { offering = null; navController.navigateToTab(Routes.FRIENDS) },
+                        onDismiss = { offering = null }
+                    )
+                }
                 if (sharingAll) {
                     ShareCollectionDialog(
                         social = socialRepository,
