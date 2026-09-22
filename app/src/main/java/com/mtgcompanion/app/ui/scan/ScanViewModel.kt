@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.scan
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CompletableDeferred
 import com.mtgcompanion.app.data.SightPick
 import com.mtgcompanion.app.data.smallPrintAgrees
 import com.mtgcompanion.app.data.looksLikeAnotherCard
@@ -78,6 +80,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * fraction of a second — enough to absorb a flicker without meaningfully delaying recognition of
  * a genuinely new card. */
 private const val BLANK_FRAMES_TO_RESET = 4
+
+/**
+ * How long Accurate scanning keeps reading the small print, on fresh frames, once its first go
+ * hasn't made it out — glare or blur on the bottom edge often clears a moment later. The card must
+ * still be in view; a card whose small print reads straight away isn't held up at all.
+ */
+private const val SMALL_PRINT_PATIENCE_MS = 1000L
 
 /** Frames in a row the title has to fail to read before the card is looked for by sight instead. */
 private const val SIGHT_AFTER_BLANK = 2
@@ -206,6 +215,10 @@ class ScanViewModel(
     // whole-frame checks in a row that found text only outside the guide — and whether that's
     // happened often enough that the guide is set aside and whole frames are read again.
     @Volatile private var guideBlankStreak = 0
+    /** A read whose lookup came back as something else: from then on, nothing in view (see accept). */
+    @Volatile private var rejectedRead: String? = null
+    /** Asked by a lookup for the camera's next frame (see nextFrame); handed over by onFrame. */
+    @Volatile private var frameWanted: CompletableDeferred<Pair<Bitmap, Int>?>? = null
     private var lastSightAt = 0L
     private var probeOutsideStreak = 0
     @Volatile private var guideOff = false
@@ -262,6 +275,11 @@ class ScanViewModel(
     /** Called for each analyzed camera frame; [onProcessed] must always run so the frame is released. */
     fun onFrame(image: InputImage, frame: (() -> Bitmap?)? = null, onProcessed: () -> Unit) {
         currentFrame = frame
+        // A lookup wants a fresh look: copied now, while the frame is still open.
+        frameWanted?.let { want ->
+            frameWanted = null
+            want.complete(frame?.let { runCatching { it() }.getOrNull() }?.let { it to image.rotationDegrees })
+        }
         if (!busy.compareAndSet(false, true)) {
             onProcessed()
             return
@@ -307,7 +325,10 @@ class ScanViewModel(
         outsideGuideStreak = if (all.isNotEmpty() && inGuide.isEmpty()) outsideGuideStreak + 1 else 0
         val ignoreGuide = forced || outsideGuideStreak >= GUIDE_GIVE_UP_FRAMES
         val lines = if (inGuide.isEmpty() && ignoreGuide) all else inGuide
-        val candidate = extractCardName(lines)
+        // A read already turned down is nothing in view: an empty table's grain can read the same
+        // word frame after frame, and counted as a title it would hide the card leaving — and a
+        // second copy of it coming back would never be added.
+        val candidate = extractCardName(lines)?.takeUnless { read -> !forced && rejectedRead?.let { looksLikeSameCard(read, it) } == true }
         if (cut != null) guideBlankStreak = if (candidate == null) guideBlankStreak + 1 else 0
         if (candidate == null) {
             // A title that won't read — busy borderless art, glare, a foreign-language card, a torn
@@ -468,10 +489,28 @@ class ScanViewModel(
         // Fast scanning skips the close read: the printing comes from the frame, or from the art.
         val readsSmallPrint = _uiState.value.scanMode.readsSmallPrint
         val strip = if (scan.fromFrame == null && readsSmallPrint) picture?.let { readSmallPrint(it, scan.guide, flat) } else null
-        val printing = scan.fromFrame ?: strip?.let { parseSetAndNumber(it) }
+        var printing = scan.fromFrame ?: strip?.let { parseSetAndNumber(it) }
         // When the number wouldn't read, the set code on its own still narrows the printings to
         // that set's few, for the look to choose between (see matchArt).
-        val setCode = if (printing != null) null else strip?.let { parseSetCode(it) } ?: scan.frameSet
+        var setCode = if (printing != null) null else strip?.let { parseSetCode(it) } ?: scan.frameSet
+        // Still not read: a few more goes on fresh frames, for as long as the card is in view.
+        if (printing == null && readsSmallPrint && scan.fromFrame == null && picture != null) {
+            val until = SystemClock.elapsedRealtime() + SMALL_PRINT_PATIENCE_MS
+            var tries = 0
+            while (printing == null && SystemClock.elapsedRealtime() < until && inFlight.stillInView(scan.token)) {
+                val (fresh, rotation) = nextFrame(until - SystemClock.elapsedRealtime()) ?: break
+                val upright = withContext(Dispatchers.Default) { uprightFrame(fresh, rotation) } ?: break
+                val guide = guideInImage(upright.width, upright.height, previewWidth, previewHeight, GUIDE_WIDTH, GUIDE_HEIGHT)
+                val again = withContext(Dispatchers.Default) { runCatching { FlatCard.find(upright, guide) }.getOrNull() }
+                    ?: break // the card has left the guide
+                val lines = readSmallPrint(upright, guide, again)
+                printing = lines?.let { parseSetAndNumber(it) }
+                if (setCode == null) setCode = lines?.let { parseSetCode(it) }
+                tries++
+            }
+            if (printing != null) setCode = null
+            Log.d("ScanTiming", "small print ${if (printing != null) "read on retry $tries" else "still unread after $tries more"}")
+        }
         // What it read, as well as how long it took: a quicker read is no use if it reads less.
         if (scan.fromFrame == null && picture != null && readsSmallPrint) timing("small print ${printing?.let { "read ${it.first} #${it.second}" } ?: setCode?.let { "read set $it only" } ?: "not read"}", started)
         else if (scan.fromFrame != null) Log.d("ScanTiming", "small print read in the frame itself: ${scan.fromFrame.first} #${scan.fromFrame.second}")
@@ -587,6 +626,17 @@ class ScanViewModel(
     }
 
     /**
+     * The camera's next frame, copied as it comes in (see onFrame), with how far to turn it upright —
+     * or null if none comes within [timeoutMs].
+     */
+    private suspend fun nextFrame(timeoutMs: Long): Pair<Bitmap, Int>? {
+        if (timeoutMs <= 0) return null
+        val want = CompletableDeferred<Pair<Bitmap, Int>?>()
+        frameWanted = want
+        return withTimeoutOrNull(timeoutMs) { want.await() }.also { if (frameWanted === want) frameWanted = null }
+    }
+
+    /**
      * A second look at the card's small print, blown up: the set code and collector number say
      * which printing is in your hand — the alternate art, the borderless one — where the name alone
      * only gets the usual printing. The lines it read, for parseSetAndNumber and parseSetCode; null
@@ -692,6 +742,7 @@ class ScanViewModel(
         // Nothing is added, and this reading isn't spent on another lookup; more of the card coming
         // into the frame reads differently, and that is looked up.
         steadyReads = 0
+        rejectedRead = candidate
         _uiState.value = _uiState.value.copy(
             status = if (confirmation == Confirmation.PARTIAL) {
                 "Only read \"$candidate\" — hold the whole card in the frame, its name in the gold strip."

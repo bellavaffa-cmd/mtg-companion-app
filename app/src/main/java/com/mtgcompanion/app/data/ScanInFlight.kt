@@ -30,6 +30,9 @@ class ScanInFlight {
     fun isOnItsWay(title: String, same: (String, String) -> Boolean): Boolean =
         confirmed?.let { same(title, it) } == true
 
+    /** Whether the card whose lookup started as [token] is still the one in view. */
+    fun stillInView(token: Long): Boolean = token == generation
+
     /** The card in view has gone: whatever comes next is a new card. */
     fun cardLeft() {
         generation++

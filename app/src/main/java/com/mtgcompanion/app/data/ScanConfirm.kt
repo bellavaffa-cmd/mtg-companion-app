@@ -44,6 +44,9 @@ private fun letters(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
  * printed large on a Universes Beyond card — "Kefka's Tower" over "Bolas's Citadel" — and is what
  * the camera reads, so a card answering to it has been read correctly.
  */
+/** Names this many letters or fewer (Fog, Opt, Hex, Bat-) have to be read exactly. */
+private const val SHORT_NAME = 4
+
 fun confirmRead(title: String, cardName: String, flavorName: String? = null): Confirmation {
     val names = listOfNotNull(cardName, flavorName)
     val answers = names.map { against(title, it) }
@@ -60,8 +63,9 @@ private fun against(title: String, cardName: String): Confirmation {
     val name = letters(cardName.substringBefore(" // "))
     if (read.isEmpty() || name.isEmpty()) return Confirmation.DIFFERENT
     if (read == name) return Confirmation.YES
-    // A letter or two misread across a full-length name is still that card.
-    if (kotlin.math.abs(read.length - name.length) <= 2 && distanceWithin(read, name, maxOf(1, name.length / 8))) {
+    // A letter or two misread across a full-length name is still that card. Not a short one, though:
+    // one letter off in three is a different word, and table grain read as "Baa" is not "Bat-".
+    if (name.length > SHORT_NAME && kotlin.math.abs(read.length - name.length) <= 2 && distanceWithin(read, name, maxOf(1, name.length / 8))) {
         return Confirmation.YES
     }
     // Anything less than the whole name is a card that wasn't all in the frame.

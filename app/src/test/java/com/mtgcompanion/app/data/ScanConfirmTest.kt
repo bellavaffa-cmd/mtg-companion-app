@@ -12,6 +12,10 @@ class ScanConfirmTest {
     @Test
     fun theWholeNameRead() {
         assertEquals(Confirmation.YES, confirmRead("Lightning Bolt", "Lightning Bolt"))
+        // A short name has to be read exactly: grain on an empty table read as "Baa" isn't "Bat-".
+        assertEquals(Confirmation.DIFFERENT, confirmRead("Baa", "Bat-"))
+        assertEquals(Confirmation.YES, confirmRead("Opt", "Opt"))
+        assertEquals(Confirmation.DIFFERENT, confirmRead("0pt", "Opt"))
         assertEquals(Confirmation.YES, confirmRead("lightning bolt", "Lightning Bolt"))
         // Punctuation and a misread letter or two across a full name still name that card.
         assertEquals(Confirmation.YES, confirmRead("Kenriths Transformation", "Kenrith's Transformation"))
