@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.data
 
+import com.mtgcompanion.app.data.supabase.noteDeleted
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -86,7 +87,7 @@ class DeckRepository(private val context: Context) {
     }
 
     suspend fun deleteDeck(deckId: String) {
-        update { decks -> decks.filterNot { it.id == deckId } }
+        update(deleting = deckId) { decks -> decks.filterNot { it.id == deckId } }
     }
 
     suspend fun addCardToDeck(deckId: String, card: ScryfallCard) {
@@ -273,21 +274,27 @@ class DeckRepository(private val context: Context) {
      * its own version history, and a new one would log a sync as if the user had edited the deck.
      */
     suspend fun applySync(transform: (List<Deck>) -> List<Deck>) {
-        update(recordVersions = false, transform)
+        update(recordVersions = false, transform = transform)
     }
 
     private suspend fun updateDeck(deckId: String, transform: (Deck) -> Deck) {
         update { decks -> decks.map { if (it.id == deckId) transform(it) else it } }
     }
 
-    private suspend fun update(recordVersions: Boolean = true, transform: (List<Deck>) -> List<Deck>) {
+    /** Which decks the user has deleted here, for the sync to tell a deletion from a lost library. */
+    val deletedFlow: Flow<Map<String, Long>> = context.decksDataStore.data.map { prefs ->
+        prefs[key]?.let { json -> runCatching { adapter.fromJson(json)?.deleted }.getOrNull() } ?: emptyMap()
+    }
+
+    private suspend fun update(recordVersions: Boolean = true, deleting: String? = null, transform: (List<Deck>) -> List<Deck>) {
         context.decksDataStore.edit { prefs ->
-            val current = prefs[key]?.let { runCatching { adapter.fromJson(it)?.decks }.getOrNull() } ?: emptyList()
+            val store = prefs[key]?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
+            val current = store?.decks ?: emptyList()
             val next = transform(current)
             val recorded = if (recordVersions) {
                 next.map { after -> withVersion(current.find { it.id == after.id }, after) }
             } else next
-            prefs[key] = adapter.toJson(DeckStore(recorded))
+            prefs[key] = adapter.toJson(DeckStore(recorded, noteDeleted(store?.deleted, deleting)))
         }
     }
 

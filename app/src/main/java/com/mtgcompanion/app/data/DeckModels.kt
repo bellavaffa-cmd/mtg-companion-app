@@ -140,4 +140,12 @@ data class Deck(
     val ownershipType: DeckOwnership get() = DeckOwnership.fromName(ownership)
 }
 
-data class DeckStore(val decks: List<Deck> = emptyList())
+data class DeckStore(
+    val decks: List<Deck> = emptyList(),
+    /**
+     * Decks the user deleted here and when, by id. Kept in this file rather than with the sync's
+     * bookkeeping on purpose: if this store is lost, these go with it, and the sync can then tell a
+     * deletion it was told about from a library that simply isn't there any more (SyncCore).
+     */
+    val deleted: Map<String, Long> = emptyMap()
+)

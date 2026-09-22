@@ -4,6 +4,26 @@ import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
 import com.squareup.moshi.JsonAdapter
 
+/**
+ * How many items of a kind must be synced before their all going missing at once counts as a lost
+ * library rather than a deletion (see SyncCore.lostKinds). Two: deleting your only deck should still
+ * reach your other devices.
+ */
+internal const val LOST_AT_LEAST = 2
+
+/** How long a deletion is remembered after the fact, in case it can't be pushed for a while. */
+private const val REMEMBER_DELETED_MS = 90L * 24 * 60 * 60 * 1000
+
+/**
+ * [was] with [deleting] added, old records dropped. Stored with the library itself (DeckStore /
+ * CollectionStore), so that losing the library loses these too — which is what lets the sync tell a
+ * deletion it was told about from a library that simply isn't there any more.
+ */
+fun noteDeleted(was: Map<String, Long>?, deleting: String?, now: Long = System.currentTimeMillis()): Map<String, Long> {
+    val kept = (was ?: emptyMap()).filterValues { now - it < REMEMBER_DELETED_MS }
+    return if (deleting == null) kept else kept + (deleting to now)
+}
+
 /** One row of public.library_items, as pulled from the server. */
 internal data class RemoteRow(
     val kind: String,
@@ -56,8 +76,18 @@ internal class SyncCore(
     /**
      * Notes what changed locally since the last agreement with the server, each change stamped with
      * when it was first noticed (0 = it was here before this device first synced).
+     *
+     * An item this device had agreed on and no longer holds is a deletion when [deleted] says the
+     * user deleted it, or when some of its kind is still here. Every deck, or every binder, gone at
+     * once with nothing to say why is a lost library (see [lostKinds]): those are forgotten and read
+     * back instead, so a device whose storage went fills up again rather than emptying the account.
      */
-    fun notePending(state: CloudSyncState, local: Map<String, String>, now: Long): CloudSyncState {
+    fun notePending(
+        state: CloudSyncState,
+        local: Map<String, String>,
+        now: Long,
+        deleted: Set<String> = emptySet()
+    ): CloudSyncState {
         val pending = state.pending.toMutableMap()
         local.forEach { (key, json) ->
             val meta = state.items[key]
@@ -67,11 +97,40 @@ internal class SyncCore(
                 pending.remove(key)
             }
         }
+        val lost = lostKinds(state, local, deleted)
+        val forget = LinkedHashSet<String>()
         state.items.forEach { (key, meta) ->
-            if (!meta.deleted && key !in local) pending.putIfAbsent(key, now)
+            if (meta.deleted || key in local) return@forEach
+            // A deletion the app told us about is always a deletion, however many go at once.
+            if (kindOf(key) in lost && key !in deleted) forget += key else pending.putIfAbsent(key, now)
         }
-        return if (pending == state.pending) state else state.copy(pending = pending)
+        if (forget.isEmpty()) return if (pending == state.pending) state else state.copy(pending = pending)
+        // Forgotten, not deleted: with no agreed version left for these, the next pull writes the
+        // server's copies to this device (SyncCore.pull, where meta == null and we hold nothing).
+        return state.copy(
+            items = state.items - forget,
+            pending = pending - forget,
+            refetch = (state.refetch + forget).distinct()
+        )
     }
+
+    /**
+     * Kinds whose every synced item has vanished from [local] between two passes: a library that's
+     * been lost — app data cleared, a backup half-restored, a browser's storage wiped — rather than
+     * deletions the user asked for. Deleting by hand pushes each item as it goes, so a whole kind
+     * going at once is not something a person did through the app.
+     *
+     * The cost of being wrong each way is what sets the rule: a deletion that doesn't propagate is
+     * an annoyance the user can repeat, while a wrongly-pushed one empties the account and takes the
+     * card lists with it — the server keeps no copy of a deleted item.
+     */
+    private fun lostKinds(state: CloudSyncState, local: Map<String, String>, deleted: Set<String>): Set<String> =
+        state.items.filterValues { !it.deleted }.keys
+            .groupBy { kindOf(it) }
+            .filterValues { keys -> keys.size >= LOST_AT_LEAST && keys.none { it in local || it in deleted } }
+            .keys
+
+    private fun kindOf(key: String) = key.substringBefore(':')
 
     /**
      * Rows to read back by key besides the cursor pull: ones a skipped push left behind, ones this
@@ -265,10 +324,20 @@ internal data class Rescue(val userId: String = "", val savedAt: Long = 0L, val 
 internal fun belongsElsewhere(state: CloudSyncState, accountUserId: String?): Boolean =
     state.userId != null && state.userId != accountUserId
 
-/** The edits in [local] that [state] shows as not yet on the server, or null if there are none. */
-internal fun SyncCore.captureRescue(state: CloudSyncState, local: Map<String, String>, userId: String, now: Long): Rescue? {
+/**
+  * The edits in [local] that [state] shows as not yet on the server, or null if there are none.
+  * [deleted] carries the deletions the user made but hasn't pushed: signing out takes the library
+  * with them, so this is the only thing that keeps them.
+  */
+internal fun SyncCore.captureRescue(
+    state: CloudSyncState,
+    local: Map<String, String>,
+    userId: String,
+    now: Long,
+    deleted: Set<String> = emptySet()
+): Rescue? {
     if (state.userId != userId) return null
-    val pending = notePending(state, local, now).pending
+    val pending = notePending(state, local, now, deleted).pending
     if (pending.isEmpty()) return null
     return Rescue(userId, now, pending.keys.associateWith { RescueItem(local[it], state.items[it]?.base) })
 }

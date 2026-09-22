@@ -51,6 +51,8 @@ data class Collection(
 
 data class CollectionStore(
     val collections: List<Collection> = emptyList(),
+    /** Binders the user deleted here and when, by id — see DeckStore.deleted. */
+    val deleted: Map<String, Long> = emptyMap(),
     // Legacy single-collection field, kept so a pre-multi-collection store migrates
     // into one default collection instead of being lost.
     val entries: List<CollectionEntry>? = null

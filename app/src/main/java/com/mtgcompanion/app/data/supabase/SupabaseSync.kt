@@ -224,7 +224,14 @@ class SupabaseSync(
         val state = loadState()
         val owner = state.userId
         val rescue = if (keepUnsynced && owner != null && owner != REMOVING) {
-            core.captureRescue(state, core.localJson(deckRepository.decksFlow.first(), collectionRepository.collectionsFlow.first()), owner, System.currentTimeMillis())
+            core.captureRescue(
+                state,
+                core.localJson(deckRepository.decksFlow.first(), collectionRepository.collectionsFlow.first()),
+                owner,
+                System.currentTimeMillis(),
+                deckRepository.deletedFlow.first().keys.mapTo(HashSet()) { "deck:$it" } +
+                    collectionRepository.deletedFlow.first().keys.map { "collection:$it" }
+            )
         } else null
         context.supabaseSyncStore.edit { prefs ->
             if (rescue != null) prefs[rescueKey] = rescueAdapter.toJson(rescue)
@@ -406,12 +413,16 @@ class SupabaseSync(
             val decks = deckRepository.decksFlow.first()
             val collections = collectionRepository.collectionsFlow.first()
             val local = core.localJson(decks, collections)
+            // What this device deleted on purpose, kept with the library it was deleted from, so a
+            // library that has simply gone missing can't be read as deletions (SyncCore.notePending).
+            val deleted = deckRepository.deletedFlow.first().keys.mapTo(HashSet()) { "deck:$it" } +
+                collectionRepository.deletedFlow.first().keys.map { "collection:$it" }
 
             // 1. Note what changed locally since the last agreement with the server. Kept before going
             //    near the network: otherwise an edit made offline is stamped with the time the device
             //    next reaches the server, and could overwrite a newer edit made elsewhere meanwhile.
             val now = System.currentTimeMillis()
-            val noted = core.notePending(state, local, now)
+            val noted = core.notePending(state, local, now, deleted)
             if (noted !== state) {
                 state = noted
                 saveState(state)

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.data
 
+import com.mtgcompanion.app.data.supabase.noteDeleted
 import com.mtgcompanion.app.data.withWishlistCardWantedAgain
 import com.mtgcompanion.app.data.withWantedCards
 import com.mtgcompanion.app.data.withoutWishlistCard
@@ -39,7 +40,7 @@ class CollectionRepository(private val context: Context) {
     /** Deletes a binder — never the Wishlist or the Unsorted pile, which are always there. */
     suspend fun deleteCollection(collectionId: String) {
         if (collectionId == WISHLIST_ID || collectionId == UNSORTED_COLLECTION_ID) return
-        update { collections -> collections.filterNot { it.id == collectionId } }
+        update(deleting = collectionId) { collections -> collections.filterNot { it.id == collectionId } }
     }
 
     /** Puts [cards] on the Wishlist (making it if needed), keeping the larger count of any already there. */
@@ -232,7 +233,7 @@ class CollectionRepository(private val context: Context) {
 
     /** Writes what a sync pulled, as a change to the binders as they are at that moment. */
     suspend fun applySync(transform: (List<Collection>) -> List<Collection>) {
-        update(transform)
+        update(transform = transform)
     }
 
     private fun readCollections(prefs: Preferences): List<Collection> {
@@ -278,10 +279,16 @@ class CollectionRepository(private val context: Context) {
         }
     }
 
-    private suspend fun update(transform: (List<Collection>) -> List<Collection>) {
+    /** Which binders the user has deleted here — see DeckRepository.deletedFlow. */
+    val deletedFlow: Flow<Map<String, Long>> = context.collectionDataStore.data.map { prefs ->
+        prefs[key]?.let { json -> runCatching { adapter.fromJson(json)?.deleted }.getOrNull() } ?: emptyMap()
+    }
+
+    private suspend fun update(deleting: String? = null, transform: (List<Collection>) -> List<Collection>) {
         context.collectionDataStore.edit { prefs ->
             val current = readCollections(prefs)
-            prefs[key] = adapter.toJson(CollectionStore(collections = transform(current)))
+            val was = prefs[key]?.let { runCatching { adapter.fromJson(it)?.deleted }.getOrNull() }
+            prefs[key] = adapter.toJson(CollectionStore(collections = transform(current), deleted = noteDeleted(was, deleting)))
         }
     }
 }

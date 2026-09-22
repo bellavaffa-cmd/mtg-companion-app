@@ -75,9 +75,25 @@ class SyncCoreTest(private val cas: Boolean) {
 
     private inner class Device {
         var decks: List<Deck> = emptyList()
+        /** What the user deleted here, as DeckRepository records it beside the decks themselves. */
+        var deleted: Map<String, Long> = emptyMap()
         var state = CloudSyncState(userId = "u")
         var skew = 0L
     }
+
+    /** The user deleting a deck in the app, which says so — as against it simply going missing. */
+    private fun removeDeck(name: String, id: String) {
+        val d = dev(name)
+        d.decks = d.decks.filter { it.id != id }
+        d.deleted = noteDeleted(d.deleted, id, now(name))
+    }
+
+    /** Decks gone with nothing to say why: storage cleared, a backup half restored. */
+    private fun loseDecks(name: String) {
+        dev(name).decks = emptyList()
+    }
+
+    private fun deletedKeys(d: Device) = d.deleted.keys.mapTo(HashSet()) { "deck:$it" }
 
     private lateinit var server: Server
     private val devices = HashMap<String, Device>()
@@ -119,7 +135,7 @@ class SyncCoreTest(private val cas: Boolean) {
 
     private fun recordEdits(name: String) {
         val d = dev(name)
-        d.state = core.notePending(d.state, core.localJson(d.decks, emptyList()), now(name))
+        d.state = core.notePending(d.state, core.localJson(d.decks, emptyList()), now(name), deletedKeys(d))
     }
 
     /** First half of a pass: pull, then write to the library, then keep the state (SupabaseSync's order). */
@@ -127,7 +143,7 @@ class SyncCoreTest(private val cas: Boolean) {
         val d = dev(name)
         val t = now(name)
         val local = core.localJson(d.decks, emptyList())
-        d.state = core.notePending(d.state, local, t)
+        d.state = core.notePending(d.state, local, t, deletedKeys(d))
         val rows = server.pull(d.state.cursor)
         val refetch = core.refetchKeys(d.state)
         val again = if (refetch.isEmpty()) emptyList() else server.fetch(refetch)
@@ -234,7 +250,7 @@ class SyncCoreTest(private val cas: Boolean) {
         settle("A", "B")
         assertEquals("x1,y1", show("A"))
         assertEquals("x1,y1", show("B"))
-        dev("B").decks = dev("B").decks.filter { it.id != "d1" }; settle("B", "A")
+        removeDeck("B", "d1"); settle("B", "A")
         assertEquals("(none)", show("A"))
         assertEquals("(deleted)", server())
     }
@@ -368,7 +384,7 @@ class SyncCoreTest(private val cas: Boolean) {
     /** A session ending on its own: kept edits captured, then the library and its bookkeeping removed. */
     private fun sessionEnds(name: String): Rescue? {
         val d = dev(name)
-        val rescue = core.captureRescue(d.state, core.localJson(d.decks, emptyList()), "u", now(name))
+        val rescue = core.captureRescue(d.state, core.localJson(d.decks, emptyList()), "u", now(name), deletedKeys(d))
         d.decks = emptyList()
         d.state = CloudSyncState(userId = "u")
         return rescue
@@ -398,7 +414,7 @@ class SyncCoreTest(private val cas: Boolean) {
     @Test
     fun `a deletion kept through a sign-out goes through, unless the deck changed elsewhere meanwhile`() {
         setDeck("A", "d1", "x" to 1); setDeck("A", "d2", "q" to 1); settle("A", "B")
-        dev("A").decks = emptyList()
+        removeDeck("A", "d1"); removeDeck("A", "d2")
         val rescue = sessionEnds("A")
         setDeck("B", "d2", "q" to 1, "r" to 1); pass("B") // d2 edited elsewhere; d1 untouched
         signBackIn("A", rescue)
@@ -406,6 +422,30 @@ class SyncCoreTest(private val cas: Boolean) {
         assertEquals("(none)", show("A", "d1"))
         assertEquals("(deleted)", server("d1"))
         assertEquals("q1,r1", show("A", "d2"))
+    }
+
+    @Test
+    fun `decks that all vanish at once fill back up instead of emptying the account`() {
+        setDeck("A", "d1", "x" to 1); setDeck("A", "d2", "y" to 2); setDeck("A", "d3", "z" to 3)
+        settle("A", "B")
+        // Gone from under the app, bookkeeping intact and nothing saying they were deleted.
+        loseDecks("A")
+        settle("A")
+        assertEquals("x1", server("d1"))
+        assertEquals("y2", server("d2"))
+        assertEquals("z3", server("d3"))
+        assertEquals("x1", show("A", "d1"))
+        assertEquals("z3", show("A", "d3"))
+        settle("B")
+        assertEquals("y2", show("B", "d2"))
+    }
+
+    @Test
+    fun `deleting the only deck there is still counts as a deletion`() {
+        setDeck("A", "d1", "x" to 1); settle("A", "B")
+        removeDeck("A", "d1"); settle("A", "B")
+        assertEquals("(deleted)", server("d1"))
+        assertEquals("(none)", show("B", "d1"))
     }
 
     @Test
