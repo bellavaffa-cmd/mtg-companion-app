@@ -125,6 +125,7 @@ fun CollectionDetailScreen(
     val prices by viewModel.prices.collectAsState()
     val cardTags by viewModel.cardTags.collectAsState()
     val knownUserTags by viewModel.knownUserTags.collectAsState()
+    val userTagsByCard by viewModel.userTagsByCard.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
@@ -394,7 +395,7 @@ fun CollectionDetailScreen(
                 tags = cardTags[entry.name].orEmpty().map(RoleTags::label),
                 onTagClick = { label -> zoomId = null; viewModel.onQueryChange(label) },
                 onFindSimilar = { zoomId = null; similarSearchFor = entry.name },
-                userTags = entry.userTags,
+                userTags = userTagsByCard[entry.scryfallId].orEmpty(),
                 knownUserTags = knownUserTags,
                 onUserTags = { next -> viewModel.setUserTags(entry.scryfallId, next) }
             )

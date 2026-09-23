@@ -60,6 +60,13 @@ data class CollectionStore(
     val collections: List<Collection> = emptyList(),
     /** Binders the user deleted here and when, by id — see DeckStore.deleted. */
     val deleted: Map<String, Long> = emptyMap(),
+    /**
+     * What each printing is tagged, by scryfallId — this store's own note, so a copy keeps its tags
+     * when it's moved or re-added and a fresh entry is made for it (see UserTags.kt). Local
+     * bookkeeping, rebuilt from the entries, which are what sync.
+     */
+    val userTags: Map<String, List<String>> = emptyMap(),
+
     // Legacy single-collection field, kept so a pre-multi-collection store migrates
     // into one default collection instead of being lost.
     val entries: List<CollectionEntry>? = null

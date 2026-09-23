@@ -154,5 +154,11 @@ data class DeckStore(
      * bookkeeping on purpose: if this store is lost, these go with it, and the sync can then tell a
      * deletion it was told about from a library that simply isn't there any more (SyncCore).
      */
-    val deleted: Map<String, Long> = emptyMap()
+    val deleted: Map<String, Long> = emptyMap(),
+    /**
+     * What each printing is tagged, by scryfallId — this store's own note, so a copy keeps its tags
+     * when it's moved or re-added and a fresh entry is made for it (see UserTags.kt). Local
+     * bookkeeping, rebuilt from the entries, which are what sync.
+     */
+    val userTags: Map<String, List<String>> = emptyMap()
 )

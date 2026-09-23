@@ -48,6 +48,37 @@ class UserTagsTest {
         assertEquals(listOf("proxy"), d.considering[0].userTags)
     }
 
+    // What the emulator caught: tagging a card in a binder, then moving it into a deck, lost the tag.
+    // A move removes the binder entry and makes a fresh deck entry, which knows nothing about the copy.
+
+    @Test
+    fun `a tagged copy moved from a binder into a deck keeps its tag`() {
+        val binders = listOf(binder(listOf(CollectionEntry(scryfallId = "bolt", name = "Lightning Bolt", imageUrl = null, quantity = 1, userTags = listOf("proxy")))))
+        val ledger = rememberedUserTags(emptyMap(), collections = binders)
+        assertEquals(mapOf("bolt" to listOf("proxy")), ledger)
+
+        // The move: out of the binder, into a deck as a brand-new entry with no tags of its own.
+        val decks = listOf(deck(listOf(card("bolt")))).withRememberedUserTags(ledger)
+        assertEquals(listOf("proxy"), decks[0].cards[0].userTags)
+    }
+
+    @Test
+    fun `a copy added again later is tagged as it was before`() {
+        val ledger = rememberedUserTags(emptyMap(), decks = listOf(deck(listOf(card("bolt", listOf("signed"))))))
+        // Removed from everywhere, then added back by a scan or a search.
+        val again = listOf(deck(listOf(card("bolt")))).withRememberedUserTags(ledger)
+        assertEquals(listOf("signed"), again[0].cards[0].userTags)
+    }
+
+    @Test
+    fun `taking a tag off is not undone by the copies that still carry it`() {
+        val had = rememberedUserTags(emptyMap(), decks = listOf(deck(listOf(card("bolt", listOf("proxy"))))))
+        val cleared = had.ledgerWith("bolt", emptyList())
+        val decks = listOf(deck(listOf(card("bolt")))).withRememberedUserTags(cleared)
+        assertEquals(emptyMap<String, List<String>>(), cleared)
+        assertEquals(emptyList<String>(), decks[0].cards[0].userTags)
+    }
+
     @Test
     fun `tags already used are offered again, the most used first`() {
         val d = deck(listOf(card("bolt", listOf("proxy", "signed")), card("x", listOf("proxy"))))

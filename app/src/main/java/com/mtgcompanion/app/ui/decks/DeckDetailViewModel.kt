@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.userTagsOf
 import com.mtgcompanion.app.data.allUserTags
 import com.mtgcompanion.app.data.holdsOwnCopies
 import com.mtgcompanion.app.data.realCopiesOf
@@ -646,6 +647,20 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.setPartnerCommander(deckId, card) }
     }
 
+
+
+    /**
+     * Every printing's user tags, by scryfallId, gathered from every deck and binder — a copy added
+     * to a deck after it was tagged in a binder still shows the tag, since a tag belongs to the copy.
+     */
+    val userTagsByCard: StateFlow<Map<String, List<String>>> =
+        combine(repository.decksFlow, collectionRepository.collectionsFlow) { decks, collections ->
+            (decks.flatMap { it.cards + it.considering + listOfNotNull(it.commander, it.partnerCommander) }
+                .map { it.scryfallId } + collections.flatMap { c -> c.entries.map { it.scryfallId } })
+                .distinct()
+                .associateWith { id -> userTagsOf(decks, collections, id) }
+                .filterValues { it.isNotEmpty() }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Tags the user has written on their own copies, for offering them again while typing. */
     val knownUserTags: StateFlow<List<String>> =

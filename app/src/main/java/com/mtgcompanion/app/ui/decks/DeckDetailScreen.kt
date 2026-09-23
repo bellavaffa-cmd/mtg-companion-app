@@ -198,6 +198,7 @@ fun DeckDetailScreen(
     val suggestions by viewModel.suggestions.collectAsState()
     val prices by viewModel.prices.collectAsState()
     val knownUserTags by viewModel.knownUserTags.collectAsState()
+    val userTagsByCard by viewModel.userTagsByCard.collectAsState()
     val layout = LocalLayoutSize.current
     // On a desktop-width window Stats sits in a panel beside the cards, so it isn't a tab there.
     val tabs = if (layout == LayoutSize.DESKTOP) DECK_TABS.filter { it != "Stats" } else DECK_TABS
@@ -407,7 +408,7 @@ fun DeckDetailScreen(
                         tags = cardTags[entry.name].orEmpty().map(RoleTags::label),
                         onFindSimilar = { zoom = null; similarSearchFor = entry.name },
                         onTagClick = searchTag,
-                        userTags = entry.userTags,
+                        userTags = userTagsByCard[entry.scryfallId].orEmpty(),
                         knownUserTags = knownUserTags,
                         onUserTags = { next -> viewModel.setUserTags(entry.scryfallId, next) }
                     )
@@ -426,7 +427,7 @@ fun DeckDetailScreen(
                         tags = cardTags[entry.name].orEmpty().map(RoleTags::label),
                         onFindSimilar = { zoom = null; similarSearchFor = entry.name },
                         onTagClick = searchTag,
-                        userTags = entry.userTags,
+                        userTags = userTagsByCard[entry.scryfallId].orEmpty(),
                         knownUserTags = knownUserTags,
                         onUserTags = { next -> viewModel.setUserTags(entry.scryfallId, next) }
                     )

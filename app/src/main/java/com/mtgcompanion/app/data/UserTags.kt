@@ -73,3 +73,48 @@ fun allUserTags(decks: List<Deck>, collections: List<Collection>): List<String> 
 
 private fun Deck.allEntries(): List<DeckCardEntry> =
     cards + considering + listOfNotNull(commander, partnerCommander)
+
+/**
+ * Tags, remembered by printing, so a copy keeps them wherever it goes.
+ *
+ * Entries are where tags live and what syncs, but an entry is made fresh each time a card is added
+ * or moved — from a binder into a deck, by the scanner, out of a precon — and a new entry knows
+ * nothing about the copy it continues. So each store also keeps a note of what each printing is
+ * tagged, and every write re-applies it (DeckRepository.update / CollectionRepository.update). One
+ * choke point rather than a rule every add has to remember.
+ *
+ * The note is local bookkeeping and isn't synced: it's rebuilt from the entries themselves, which
+ * are what sync, so a device that pulls a tagged deck down learns the tags from it.
+ */
+
+/** [was] with every tag found on [decks] and [collections] folded in. */
+fun rememberedUserTags(
+    was: Map<String, List<String>>,
+    decks: List<Deck> = emptyList(),
+    collections: List<Collection> = emptyList()
+): Map<String, List<String>> {
+    val out = LinkedHashMap(was)
+    fun note(id: String, tags: List<String>) {
+        if (tags.isEmpty()) return
+        out[id] = tidyUserTags(out[id].orEmpty() + tags)
+    }
+    for (deck in decks) {
+        for (e in deck.cards + deck.considering + listOfNotNull(deck.commander, deck.partnerCommander)) {
+            note(e.scryfallId, e.userTags)
+        }
+    }
+    for (c in collections) for (e in c.entries) note(e.scryfallId, e.userTags)
+    return out
+}
+
+/** [decks] with what [ledger] knows written onto every copy. */
+fun List<Deck>.withRememberedUserTags(ledger: Map<String, List<String>>): List<Deck> =
+    ledger.entries.fold(this) { decks, (id, tags) -> decks.map { it.withUserTags(id, tags) } }
+
+/** [collections] with what [ledger] knows written onto every copy. */
+fun List<Collection>.withRememberedUserTagsIn(ledger: Map<String, List<String>>): List<Collection> =
+    ledger.entries.fold(this) { cols, (id, tags) -> cols.map { it.withUserTags(id, tags) } }
+
+/** What a store should remember once [tags] are set on [scryfallId] — empty forgets it. */
+fun Map<String, List<String>>.ledgerWith(scryfallId: String, tags: List<String>): Map<String, List<String>> =
+    if (tags.isEmpty()) this - scryfallId else this + (scryfallId to tags)

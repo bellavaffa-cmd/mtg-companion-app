@@ -41,7 +41,7 @@ class CollectionRepository(private val context: Context) {
     /** The user's own tags on a copy they own — see DeckRepository.setUserTags. */
     suspend fun setUserTags(scryfallId: String, tags: List<String>) {
         val tidy = tidyUserTags(tags)
-        update { collections -> collections.map { it.withUserTags(scryfallId, tidy) } }
+        update(tagging = scryfallId to tidy) { collections -> collections.map { it.withUserTags(scryfallId, tidy) } }
     }
 
     suspend fun deleteCollection(collectionId: String) {
@@ -290,11 +290,25 @@ class CollectionRepository(private val context: Context) {
         prefs[key]?.let { json -> runCatching { adapter.fromJson(json)?.deleted }.getOrNull() } ?: emptyMap()
     }
 
-    private suspend fun update(deleting: String? = null, transform: (List<Collection>) -> List<Collection>) {
+    private suspend fun update(
+        deleting: String? = null,
+        tagging: Pair<String, List<String>>? = null,
+        transform: (List<Collection>) -> List<Collection>
+    ) {
         context.collectionDataStore.edit { prefs ->
             val current = readCollections(prefs)
-            val was = prefs[key]?.let { runCatching { adapter.fromJson(it)?.deleted }.getOrNull() }
-            prefs[key] = adapter.toJson(CollectionStore(collections = transform(current), deleted = noteDeleted(was, deleting)))
+            val store = prefs[key]?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
+            val next = transform(current)
+            // See DeckRepository.update: one place where a copy gets back the tags it already had.
+            val was = store?.userTags.orEmpty().let { if (tagging == null) it else it.ledgerWith(tagging.first, tagging.second) }
+            val ledger = rememberedUserTags(was, collections = next)
+            prefs[key] = adapter.toJson(
+                CollectionStore(
+                    collections = next.withRememberedUserTagsIn(ledger),
+                    deleted = noteDeleted(store?.deleted, deleting),
+                    userTags = ledger
+                )
+            )
         }
     }
 }

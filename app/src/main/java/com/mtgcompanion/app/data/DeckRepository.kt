@@ -93,7 +93,10 @@ class DeckRepository(private val context: Context) {
       */
     suspend fun setUserTags(scryfallId: String, tags: List<String>) {
         val tidy = tidyUserTags(tags)
-        update(recordVersions = false) { decks -> decks.map { it.withUserTags(scryfallId, tidy) } }
+        // The note is set first, so taking a tag off isn't read back off the copies and restored.
+        update(recordVersions = false, tagging = scryfallId to tidy) { decks ->
+            decks.map { it.withUserTags(scryfallId, tidy) }
+        }
     }
 
     suspend fun deleteDeck(deckId: String) {
@@ -296,7 +299,12 @@ class DeckRepository(private val context: Context) {
         prefs[key]?.let { json -> runCatching { adapter.fromJson(json)?.deleted }.getOrNull() } ?: emptyMap()
     }
 
-    private suspend fun update(recordVersions: Boolean = true, deleting: String? = null, transform: (List<Deck>) -> List<Deck>) {
+    private suspend fun update(
+        recordVersions: Boolean = true,
+        deleting: String? = null,
+        tagging: Pair<String, List<String>>? = null,
+        transform: (List<Deck>) -> List<Deck>
+    ) {
         context.decksDataStore.edit { prefs ->
             val store = prefs[key]?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
             val current = store?.decks ?: emptyList()
@@ -304,7 +312,13 @@ class DeckRepository(private val context: Context) {
             val recorded = if (recordVersions) {
                 next.map { after -> withVersion(current.find { it.id == after.id }, after) }
             } else next
-            prefs[key] = adapter.toJson(DeckStore(recorded, noteDeleted(store?.deleted, deleting)))
+            // Every write comes through here, so this is where a copy gets back the tags it already
+            // had — however it came to be written (moved, re-added, scanned, imported).
+            val was = store?.userTags.orEmpty().let { if (tagging == null) it else it.ledgerWith(tagging.first, tagging.second) }
+            val ledger = rememberedUserTags(was, decks = recorded)
+            prefs[key] = adapter.toJson(
+                DeckStore(recorded.withRememberedUserTags(ledger), noteDeleted(store?.deleted, deleting), ledger)
+            )
         }
     }
 
