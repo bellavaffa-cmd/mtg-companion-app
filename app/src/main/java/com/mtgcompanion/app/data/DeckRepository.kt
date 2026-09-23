@@ -86,6 +86,16 @@ class DeckRepository(private val context: Context) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(gameResults = it.gameResults.filterNot { r -> r.id == resultId }) else it } }
     }
 
+    /**
+      * The user's own tags on a copy they own. A tag belongs to the copy, so every deck holding that
+      * printing gets it — the binders are written separately (CollectionRepository.setUserTags).
+      * Not a deck edit worth keeping a version of.
+      */
+    suspend fun setUserTags(scryfallId: String, tags: List<String>) {
+        val tidy = tidyUserTags(tags)
+        update(recordVersions = false) { decks -> decks.map { it.withUserTags(scryfallId, tidy) } }
+    }
+
     suspend fun deleteDeck(deckId: String) {
         update(deleting = deckId) { decks -> decks.filterNot { it.id == deckId } }
     }

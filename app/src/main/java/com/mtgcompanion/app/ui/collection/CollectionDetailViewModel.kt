@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.allUserTags
 import com.mtgcompanion.app.data.WISHLIST_ID
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.CardListImporter
@@ -44,6 +45,21 @@ class CollectionDetailViewModel(
     private val settingsRepository: SettingsRepository,
     private val cardRepository: CardRepository = CardRepository()
 ) : ViewModel() {
+
+
+    /** Tags the user has written on their own copies, for offering them again while typing. */
+    val knownUserTags: StateFlow<List<String>> =
+        combine(deckRepository.decksFlow, repository.collectionsFlow) { decks, collections ->
+            allUserTags(decks, collections)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** The user's own tags on a copy they own — every deck and binder holding that printing. */
+    fun setUserTags(scryfallId: String, tags: List<String>) {
+        viewModelScope.launch {
+            repository.setUserTags(scryfallId, tags)
+            deckRepository.setUserTags(scryfallId, tags)
+        }
+    }
 
     /** List or grid, as set in Settings > Card Display. */
     val viewMode: StateFlow<CardViewMode> = settingsRepository.collectionViewMode

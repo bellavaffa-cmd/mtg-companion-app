@@ -71,6 +71,13 @@ data class DeckCardEntry(
     // zoom overlay can show tag chips without a network round-trip. Empty for entries added before
     // this field existed.
     val tags: List<String> = emptyList(),
+    /**
+     * The user's own words about this copy — "proxy", "signed", "lent to Sam". They belong to the
+     * copy rather than to the card, so they follow it from a binder into a deck and back, and every
+     * entry holding the same printing carries the same set. Not [tags], which Scryfall writes and
+     * the user can't change, and not [replaceable], which is only true inside one deck.
+     */
+    val userTags: List<String> = emptyList(),
     // A cut candidate: still in the deck (and in every stat) but flagged as the first thing to take
     // out for something better. Always false for entries on a deck's considering list.
     val replaceable: Boolean = false,

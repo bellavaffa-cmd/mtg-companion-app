@@ -38,6 +38,12 @@ class CollectionRepository(private val context: Context) {
     }
 
     /** Deletes a binder — never the Wishlist or the Unsorted pile, which are always there. */
+    /** The user's own tags on a copy they own — see DeckRepository.setUserTags. */
+    suspend fun setUserTags(scryfallId: String, tags: List<String>) {
+        val tidy = tidyUserTags(tags)
+        update { collections -> collections.map { it.withUserTags(scryfallId, tidy) } }
+    }
+
     suspend fun deleteCollection(collectionId: String) {
         if (collectionId == WISHLIST_ID || collectionId == UNSORTED_COLLECTION_ID) return
         update(deleting = collectionId) { collections -> collections.filterNot { it.id == collectionId } }

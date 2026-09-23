@@ -170,7 +170,16 @@ data class ZoomCard(
     val tags: List<String> = emptyList(),
     val onFindSimilar: (() -> Unit)? = null,
     /** Tapping one of [tags] (a search for it, say). Null for plain chips. */
-    val onTagClick: ((String) -> Unit)? = null
+    val onTagClick: ((String) -> Unit)? = null,
+    /**
+     * The user's own tags on this copy, and how to change them — given only for a card they own.
+     * A tag belongs to the copy rather than the card, so saving writes it on every deck and binder
+     * holding that printing (see DeckCardEntry.userTags).
+     */
+    val userTags: List<String> = emptyList(),
+    val onUserTags: ((List<String>) -> Unit)? = null,
+    /** Tags used on other cards, offered as one-tap additions. */
+    val knownUserTags: List<String> = emptyList()
 )
 
 /**
@@ -379,6 +388,9 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                     // Previewing an alternate printing doesn't change tags — same card, different art.
                     if (card.tags.isNotEmpty()) {
                         CardTagsRow(card.tags, modifier = Modifier.background(Surface).padding(horizontal = 24.dp, vertical = 8.dp), onClick = card.onTagClick)
+                    }
+                    card.onUserTags?.let { save ->
+                        UserTagsSection(card.userTags, card.knownUserTags, save, Modifier.background(Surface))
                     }
                     // While a printing is previewed, show its own price instead of the original's.
                     val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd

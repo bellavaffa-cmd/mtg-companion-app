@@ -10,6 +10,13 @@ data class CollectionEntry(
     val backImageUrl: String? = null,
     // Cached from ScryfallCard.tags — see DeckCardEntry.tags for why.
     val tags: List<String> = emptyList(),
+    /**
+     * The user's own words about this copy — "proxy", "signed", "lent to Sam". They belong to the
+     * copy rather than to the card, so they follow it from a binder into a deck and back, and every
+     * entry holding the same printing carries the same set. Not [tags], which Scryfall writes and
+     * the user can't change, and not [replaceable], which is only true inside one deck.
+     */
+    val userTags: List<String> = emptyList(),
     /** Wishlists: tell the user when this card's price (USD, non-foil) is at or under this (see PriceAlerts). */
     val priceAlert: Double? = null,
     /** In the Wishlist by itself: a deck is considering it and the user doesn't own it (see [withWishlist]). */

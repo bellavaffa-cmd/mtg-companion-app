@@ -117,6 +117,8 @@ object ItemMerge {
                 partnerAbility = pick(b.partnerAbility, m.partnerAbility, t.partnerAbility, minePreferred),
                 backImageUrl = pick(b.backImageUrl, m.backImageUrl, t.backImageUrl, minePreferred),
                 tags = pick(b.tags, m.tags, t.tags, minePreferred),
+                // Two devices tagging the same copy keep both tags, as a deck's own tags do.
+                userTags = mergeStringSet(b.userTags, m.userTags, t.userTags),
                 replaceable = pick(b.replaceable, m.replaceable, t.replaceable, minePreferred),
                 proxyQuantity = pick(b.proxyQuantity, m.proxyQuantity, t.proxyQuantity, minePreferred)
             )
@@ -167,6 +169,7 @@ object ItemMerge {
                     imageUrl = pick(b.imageUrl, m.imageUrl, t.imageUrl, minePreferred),
                     backImageUrl = pick(b.backImageUrl, m.backImageUrl, t.backImageUrl, minePreferred),
                     tags = pick(b.tags, m.tags, t.tags, minePreferred),
+                    userTags = mergeStringSet(b.userTags, m.userTags, t.userTags),
                     priceAlert = pick(b.priceAlert, m.priceAlert, t.priceAlert, minePreferred),
                     auto = pick(b.auto, m.auto, t.auto, minePreferred)
                 )

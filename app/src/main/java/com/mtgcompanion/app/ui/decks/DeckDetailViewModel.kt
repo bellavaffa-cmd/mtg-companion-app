@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.allUserTags
 import com.mtgcompanion.app.data.holdsOwnCopies
 import com.mtgcompanion.app.data.realCopiesOf
 import com.mtgcompanion.app.data.proxiesHeldElsewhere
@@ -643,6 +644,24 @@ class DeckDetailViewModel(
 
     fun setPartnerCommander(card: DeckCardEntry?) {
         viewModelScope.launch { repository.setPartnerCommander(deckId, card) }
+    }
+
+
+    /** Tags the user has written on their own copies, for offering them again while typing. */
+    val knownUserTags: StateFlow<List<String>> =
+        combine(repository.decksFlow, collectionRepository.collectionsFlow) { decks, collections ->
+            allUserTags(decks, collections)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The user's own tags on a copy they own. A tag belongs to the copy, so it goes on every deck
+     * and binder holding that printing.
+     */
+    fun setUserTags(scryfallId: String, tags: List<String>) {
+        viewModelScope.launch {
+            repository.setUserTags(scryfallId, tags)
+            collectionRepository.setUserTags(scryfallId, tags)
+        }
     }
 
     /** Change a card's copy count in the deck (used by the enlarged-card quantity stepper). */

@@ -197,6 +197,7 @@ fun DeckDetailScreen(
     val cardGroups by viewModel.cardGroups.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val prices by viewModel.prices.collectAsState()
+    val knownUserTags by viewModel.knownUserTags.collectAsState()
     val layout = LocalLayoutSize.current
     // On a desktop-width window Stats sits in a panel beside the cards, so it isn't a tab there.
     val tabs = if (layout == LayoutSize.DESKTOP) DECK_TABS.filter { it != "Stats" } else DECK_TABS
@@ -405,7 +406,10 @@ fun DeckDetailScreen(
                         backImageUrl = entry.backImageUrl,
                         tags = cardTags[entry.name].orEmpty().map(RoleTags::label),
                         onFindSimilar = { zoom = null; similarSearchFor = entry.name },
-                        onTagClick = searchTag
+                        onTagClick = searchTag,
+                        userTags = entry.userTags,
+                        knownUserTags = knownUserTags,
+                        onUserTags = { next -> viewModel.setUserTags(entry.scryfallId, next) }
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
@@ -421,7 +425,10 @@ fun DeckDetailScreen(
                         backImageUrl = entry.backImageUrl,
                         tags = cardTags[entry.name].orEmpty().map(RoleTags::label),
                         onFindSimilar = { zoom = null; similarSearchFor = entry.name },
-                        onTagClick = searchTag
+                        onTagClick = searchTag,
+                        userTags = entry.userTags,
+                        knownUserTags = knownUserTags,
+                        onUserTags = { next -> viewModel.setUserTags(entry.scryfallId, next) }
                     )
                 }
                 CardZoomDialog(zoomCards, considering.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
