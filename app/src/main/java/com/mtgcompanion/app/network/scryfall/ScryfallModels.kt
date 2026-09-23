@@ -70,7 +70,12 @@ data class ScryfallCard(
     val power: String? = null,
     val toughness: String? = null,
     /** Format -> legality ("legal", "not_legal", "banned", "restricted"). */
-    val legalities: Map<String, String>? = null
+    val legalities: Map<String, String>? = null,
+    /**
+     * Everything printed alongside this card: the tokens it makes, an emblem, the other half of a
+     * meld. Scryfall sends it on any card that has one — see DeckTokens.kt.
+     */
+    @Json(name = "all_parts") val allParts: List<ScryfallPart>? = null
 ) {
     val displayImageUrl: String?
         get() = imageUris?.normal ?: cardFaces?.firstOrNull()?.imageUris?.normal
@@ -164,6 +169,15 @@ data class ScryfallCard(
         )
     }
 }
+
+/** One of a card's [ScryfallCard.allParts]: what it is, and enough to look it up. */
+data class ScryfallPart(
+    val id: String,
+    /** 'token', 'meld_part', 'meld_result', 'combo_piece'. */
+    val component: String? = null,
+    val name: String,
+    @Json(name = "type_line") val typeLine: String? = null
+)
 
 data class ScryfallCardFace(
     val name: String? = null,

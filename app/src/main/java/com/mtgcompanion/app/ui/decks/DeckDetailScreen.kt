@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
+import androidx.compose.foundation.lazy.LazyRow
+import com.mtgcompanion.app.data.madeByLabel
 import com.mtgcompanion.app.data.holdsOwnCopies
 import com.mtgcompanion.app.data.realCopiesOf
 import com.mtgcompanion.app.data.ProxyHeldElsewhere
@@ -1364,6 +1366,7 @@ private fun StatsTab(
     var openVersion by remember { mutableStateOf<VersionSummary?>(null) }
     val proxies by viewModel.proxies.collectAsState()
     val proxiesElsewhere by viewModel.proxiesElsewhere.collectAsState()
+    val tokens by viewModel.tokens.collectAsState()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -1383,6 +1386,9 @@ private fun StatsTab(
             }
         }
         item { MatchRecordPanel(deck.gameResults, onLog = { showLogResult = true }, onRemove = { viewModel.removeGameResult(it) }) }
+        if (tokens.isNotEmpty()) {
+            item { TokensPanel(tokens) }
+        }
         item { VersionHistoryPanel(versionHistory, onOpen = { openVersion = it }) }
         item {
             Panel {
@@ -2372,5 +2378,79 @@ private fun ProxiesPanel(
                 }
             }
         }
+    }
+}
+
+
+/**
+ * What to put in the box besides the deck: the tokens its cards make, with the card that asks for
+ * each (see DeckTokens.kt). A token whose picture hasn't arrived still shows its name.
+ */
+@Composable
+private fun TokensPanel(tokens: List<TokenArt>) {
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            SectionLabel("Tokens to bring")
+            Text(
+                if (tokens.size == 1) "1 kind" else "${tokens.size} kinds",
+                style = MaterialTheme.typography.labelMedium,
+                color = TextMuted
+            )
+        }
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(top = 10.dp)
+        ) {
+            items(tokens, key = { it.token.name + (it.token.typeLine ?: "") }) { each ->
+                Column(modifier = Modifier.width(104.dp)) {
+                    Box {
+                        AsyncImage(
+                            model = each.imageUrl,
+                            contentDescription = each.token.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(0.72f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Surface3)
+                        )
+                        if (each.token.madeBy.size > 1) {
+                            Text(
+                                "×${each.token.madeBy.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Bg,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Gold)
+                                    .padding(horizontal = 6.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        each.token.name,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    Text(
+                        madeByLabel(each.token),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+        Text(
+            "Read off the cards themselves. A number is how many cards in the deck make that token — not how many you need.",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextMuted,
+            modifier = Modifier.padding(top = 10.dp)
+        )
     }
 }

@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.tokensNeeded
+import com.mtgcompanion.app.data.TokenNeeded
 import com.mtgcompanion.app.data.userTagsOf
 import com.mtgcompanion.app.data.allUserTags
 import com.mtgcompanion.app.data.holdsOwnCopies
@@ -84,6 +86,9 @@ import java.util.UUID
 
 /** A deck card paired with its type category, for the type-grouped Cards tab. */
 data class TypeGroup(val type: String, val cards: List<DeckCardEntry>)
+
+/** A token the deck needs, with its picture once that has been looked up. */
+data class TokenArt(val token: TokenNeeded, val imageUrl: String?)
 
 /** Everything derived from the deck's card data for the Stats and Analysis tabs. */
 data class DeckAnalysis(
@@ -418,6 +423,24 @@ class DeckDetailViewModel(
             .filterNot { view -> cardNameKeys(view.name).any { it in inDeck } }
             .take(12)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * The tokens this deck's cards make, each with a picture. Read off the cards themselves
+     * (DeckTokens.kt); the token cards are fetched once so the list can show their art.
+     */
+    val tokens: StateFlow<List<TokenArt>> = deck.mapLatest { d ->
+        if (d == null || d.cards.isEmpty()) return@mapLatest emptyList()
+        val byId = runCatching {
+            cardRepository.getCardsByIds((d.cards + listOfNotNull(d.commander, d.partnerCommander)).map { it.scryfallId })
+                .associateBy { it.id }
+        }.getOrElse { return@mapLatest emptyList() }
+        val needed = tokensNeeded(d, byId)
+        if (needed.isEmpty()) return@mapLatest emptyList()
+        // A token that hasn't arrived still shows its name, so a failed lookup isn't fatal.
+        val art = runCatching { cardRepository.getCardsByIds(needed.map { it.id }).associateBy { it.id } }
+            .getOrElse { emptyMap() }
+        needed.map { TokenArt(it, art[it.id]?.displayImageUrl) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private suspend fun buildAnalysis(d: Deck): DeckAnalysis {
         val byId = cardRepository.getCardsByIds(d.cards.map { it.scryfallId }).associateBy { it.id }
