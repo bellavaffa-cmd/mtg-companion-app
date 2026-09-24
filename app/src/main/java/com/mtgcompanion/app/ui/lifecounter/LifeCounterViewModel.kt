@@ -108,6 +108,37 @@ data class PlayerLife(
  * The one player left standing, once someone has actually been knocked out — a fresh game with
  * nobody defeated has no winner.
  */
+/** Whose turn it is next, and whether that completes a round (see [nextTurnFrom]). */
+data class NextTurn(val turnPlayerId: Int, val roundComplete: Boolean)
+
+/**
+ * Whose turn it is next, and whether that completes a round.
+ *
+ * Players who are out are passed over — the turn used to land on them and stick, because someone
+ * who has lost has no reason to be passing turns. A round is counted from whoever started: the
+ * number goes up when play comes back to them, or past them when they're out, rather than once per
+ * seat. The web app's src/lifecounter/game.ts makes the same decisions.
+ */
+fun nextTurnFrom(
+    players: List<PlayerLife>,
+    turnPlayerId: Int,
+    firstPlayerId: Int,
+    autoKill: Boolean
+): NextTurn? {
+    val n = players.size
+    if (n == 0) return null
+    val ids = players.map { it.id }
+    val cur = ids.indexOf(turnPlayerId).let { if (it == -1) 0 else it }
+    val start = ids.indexOf(firstPlayerId).coerceAtLeast(0)
+
+    // The next seat still in the game; if everyone is out, the turn doesn't move.
+    val next = (1..n).map { (cur + it) % n }.firstOrNull { !players[it].isDefeated(autoKill) } ?: return null
+
+    // Counted from the starting seat: coming back to it, or passing it, is a new round.
+    fun place(i: Int) = (i - start + n) % n
+    return NextTurn(ids[next], place(next) <= place(cur))
+}
+
 fun winnerIdOf(players: List<PlayerLife>, autoKill: Boolean): Int? {
     if (players.size < 2) return null
     val alive = players.filterNot { it.isDefeated(autoKill) }
@@ -198,6 +229,9 @@ class LifeCounterViewModel(
     val currentTurnPlayerId: StateFlow<Int> = _currentTurnPlayerId.asStateFlow()
     private val _turnNumber = MutableStateFlow(1)
     val turnNumber: StateFlow<Int> = _turnNumber.asStateFlow()
+
+    /** Who started, so a round can be measured from them rather than counted per seat. */
+    private val _firstPlayerId = MutableStateFlow(1)
 
     /** The Monarch and the Initiative are each held by at most one player at a time. */
     private val _monarchPlayerId = MutableStateFlow<Int?>(null)
@@ -418,6 +452,7 @@ class LifeCounterViewModel(
         }
         _gameNumber.value += 1
         _currentTurnPlayerId.value = 1
+        _firstPlayerId.value = 1
         _turnNumber.value = 1
         _monarchPlayerId.value = null
         _initiativePlayerId.value = null
@@ -601,11 +636,14 @@ class LifeCounterViewModel(
 
     /** Passing the turn also empties every mana pool and resets storm counts, which don't carry over. */
     fun nextTurn() = undoable("turn") {
-        val ids = _players.value.map { it.id }
-        if (ids.isEmpty()) return@undoable
-        val idx = ids.indexOf(_currentTurnPlayerId.value)
-        _currentTurnPlayerId.value = if (idx == -1 || idx == ids.lastIndex) ids.first() else ids[idx + 1]
-        _turnNumber.value += 1
+        val moved = nextTurnFrom(
+            _players.value,
+            _currentTurnPlayerId.value,
+            _firstPlayerId.value,
+            _settings.value.autoKill
+        ) ?: return@undoable
+        _currentTurnPlayerId.value = moved.turnPlayerId
+        if (moved.roundComplete) _turnNumber.value += 1
         val perTurn = PlayerCounter.entries.filter { it.resetsEachTurn }.toSet()
         _players.value = _players.value.map { it.copy(manaPool = emptyMap(), counters = it.counters - perTurn) }
         log(HistoryEvent.TurnStarted, _currentTurnPlayerId.value, null, null)
@@ -617,6 +655,7 @@ class LifeCounterViewModel(
     /** Starts the turn count over with [playerId] going first (the high-roll winner). */
     fun setFirstPlayer(playerId: Int) {
         _currentTurnPlayerId.value = playerId
+        _firstPlayerId.value = playerId
         _turnNumber.value = 1
         log(HistoryEvent.WonHighRoll, playerId, null, null)
     }

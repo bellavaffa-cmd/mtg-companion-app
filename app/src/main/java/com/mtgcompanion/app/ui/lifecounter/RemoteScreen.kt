@@ -278,7 +278,9 @@ private fun Remote(s: RemoteState, mine: RemoteSeat, big: Boolean, deck: Deck?, 
             HoldCircle("−", if (big) 96.dp else 72.dp, s.longPress) { change(-it) }
             if (!big) {
                 SmallCircle(Icons.AutoMirrored.Filled.Undo, "Undo my last change", enabled = mine.canUndo) { viewModel.send(RemoteActions.undo()) }
-                if (myTurn && mine.out == null) SmallCircle(Icons.Filled.Check, "End turn", gold = true) { viewModel.send(RemoteActions.endTurn()) }
+                // Still shown when you're out: dying on your own turn shouldn't strand it — the
+                // table would have to pass it for you. The turn never comes back (see nextTurnFrom).
+                if (myTurn) SmallCircle(Icons.Filled.Check, "End turn", gold = true) { viewModel.send(RemoteActions.endTurn()) }
             }
             HoldCircle("+", if (big) 96.dp else 72.dp, s.longPress) { change(it) }
         }
