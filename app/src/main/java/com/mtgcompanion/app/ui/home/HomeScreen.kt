@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.home
 
+import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.SwapHoriz
 import com.mtgcompanion.app.ui.common.rememberMoney
@@ -93,6 +94,8 @@ fun HomeScreen(
     onOpenScan: () -> Unit,
     onOpenRules: () -> Unit,
     onOpenLifeCounter: () -> Unit,
+    /** Back to the remote for a seat the user is still sitting in (see SeatMemory). */
+    onOpenRemote: (String, Int) -> Unit = { _, _ -> },
     onOpenSettings: () -> Unit,
     /** The collection's value over time. */
     onOpenValue: () -> Unit,
@@ -112,6 +115,7 @@ fun HomeScreen(
     val matchSummary by viewModel.matchSummary.collectAsState()
     val cardOfDay by viewModel.cardOfDay.collectAsState()
     val alert by viewModel.alert.collectAsState()
+    val remoteSeat by viewModel.remoteSeat.collectAsState()
     val news by viewModel.news.collectAsState()
     val context = LocalContext.current
     val colors = LocalAppColors.current
@@ -205,6 +209,32 @@ fun HomeScreen(
                 ) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = colors.textPrimary, modifier = Modifier.size(21.dp))
                 }
+            }
+        }
+
+        // Still sitting at someone's table: the QR that got them there is on that phone, so the
+        // way back has to be here.
+        remoteSeat?.let { seat ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .padding(horizontal = pad)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(colors.accent.copy(alpha = 0.14f))
+                    .clickable { onOpenRemote(seat.matchId, seat.seat) }
+                    .padding(14.dp)
+                    .riseIn(1)
+            ) {
+                Icon(Icons.Filled.EventSeat, contentDescription = null, tint = colors.accent, modifier = Modifier.size(20.dp))
+                Text(
+                    "You're in seat ${seat.seat} at a table — open your remote",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textPrimary,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = colors.textMuted, modifier = Modifier.size(20.dp))
             }
         }
 

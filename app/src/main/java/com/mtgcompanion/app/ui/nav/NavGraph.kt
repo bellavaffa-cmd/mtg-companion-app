@@ -375,6 +375,7 @@ fun MtgNavGraph(
                     onOpenScan = { navController.navigateToTab(Routes.SCAN) },
                     onOpenRules = { navController.navigateToTab(Routes.RULES) },
                     onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) },
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
                     onOpenSettings = { navController.navigateToTab(Routes.SETTINGS) },
                     onOpenValue = { navController.navigate(Routes.VALUE_HISTORY) },
                     onOpenDeck = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },

@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.data.SeatMemory
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -42,6 +44,7 @@ class RemoteViewModel(
     val seat: Int
 ) : ViewModel() {
     private val prefs = context.applicationContext.getSharedPreferences("life_counter_remote", Context.MODE_PRIVATE)
+    private val settings = SettingsRepository(context.applicationContext)
 
     private val _state = MutableStateFlow<RemoteState?>(null)
     val state: StateFlow<RemoteState?> = _state.asStateFlow()
@@ -202,6 +205,20 @@ class RemoteViewModel(
 
     fun leaveSeat() {
         social.leaveSeatInBackground(matchId, seat)
+        forgetSeat()
+    }
+
+    /**
+     * Stepping off this screen doesn't leave the seat, so remember it and let Home offer the way
+     * back — the QR that got you here is on someone else's phone (see SeatMemory).
+     */
+    fun rememberSeat() {
+        viewModelScope.launch { settings.setRemoteSeat(SeatMemory(matchId, seat, System.currentTimeMillis())) }
+    }
+
+    /** The seat isn't ours any more: the table ended, or someone else took it. */
+    fun forgetSeat() {
+        viewModelScope.launch { settings.setRemoteSeat(null) }
     }
 
     // ---- Game over ----

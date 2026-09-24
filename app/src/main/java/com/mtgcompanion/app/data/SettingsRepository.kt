@@ -58,6 +58,7 @@ class SettingsRepository(private val context: Context) {
     private val accentThemeKey = stringPreferencesKey("accent_theme")
     private val currencyKey = stringPreferencesKey("currency")
     private val lastOpenedDeckIdKey = stringPreferencesKey("last_opened_deck_id")
+    private val remoteSeatKey = stringPreferencesKey("remote_seat")
     private val cardOfDayDateKey = stringPreferencesKey("card_of_day_date")
     private val cardOfDayNameKey = stringPreferencesKey("card_of_day_name")
     private val cardOfDayImageUrlKey = stringPreferencesKey("card_of_day_image_url")
@@ -87,6 +88,23 @@ class SettingsRepository(private val context: Context) {
     val cardOfDayDate: Flow<String?> = context.dataStore.data.map { it[cardOfDayDateKey] }
     val cardOfDayName: Flow<String?> = context.dataStore.data.map { it[cardOfDayNameKey] }
     val cardOfDayImageUrl: Flow<String?> = context.dataStore.data.map { it[cardOfDayImageUrlKey] }
+
+    /**
+      * The seat you're sitting in at someone's life counter, as "matchId/seat", so the way back to
+      * your remote can be offered on Home.
+      *
+      * Taking a seat is a QR scan and the code is on someone else's phone, so leaving the remote to
+      * look a card up used to mean asking them to show it again. Leaving the screen doesn't leave
+      * the seat — only [setRemoteSeat] with null does, which the remote calls when you leave it, the
+      * table ends, or someone else takes it. A table older than [REMOTE_SEAT_STALE_MS] isn't offered.
+      */
+    val remoteSeat: Flow<SeatMemory?> = context.dataStore.data.map { SeatMemory.parse(it[remoteSeatKey]) }
+
+    suspend fun setRemoteSeat(seat: SeatMemory?) {
+        context.dataStore.edit {
+            if (seat == null) it.remove(remoteSeatKey) else it[remoteSeatKey] = seat.store()
+        }
+    }
 
     /** How careful the scanner is (see [ScanMode]); Accurate until changed. */
     val scanMode: Flow<ScanMode> = context.dataStore.data.map { ScanMode.fromName(it[scanModeKey]) }

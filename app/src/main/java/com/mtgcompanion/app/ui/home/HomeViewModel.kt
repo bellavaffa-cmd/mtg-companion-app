@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.home
 
+import com.mtgcompanion.app.data.SeatMemory
 import com.mtgcompanion.app.data.isBinder
 import com.mtgcompanion.app.data.proxySwaps
 import com.mtgcompanion.app.data.ProxySwap
@@ -57,6 +58,14 @@ class HomeViewModel(
     val decks: StateFlow<List<Deck>> = combine(deckRepository.decksFlow, settingsRepository.lastOpenedDeckId) { list, lastId ->
         list.sortedByDescending { it.id == lastId }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * The seat the user is sitting in at someone's life counter, while it's still theirs — Home
+     * offers the way back to that remote, since the QR that got them there is on another phone.
+     */
+    val remoteSeat: StateFlow<SeatMemory?> = settingsRepository.remoteSeat
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
 
     /** deckId -> commander colour identity, for the identity strips on Home's deck tiles. */
     val deckColors: StateFlow<Map<String, List<String>>> = deckRepository.decksFlow.mapLatest { list ->

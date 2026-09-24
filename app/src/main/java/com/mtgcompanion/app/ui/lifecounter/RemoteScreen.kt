@@ -143,6 +143,11 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
     BackHandler(enabled = sheet != null) { sheet = null }
 
     val mine = state?.players?.firstOrNull { it.seat == viewModel.seat }
+    // Remember the seat while it's ours, so Home can offer the way back to this remote.
+    val seatIsMine = mine != null && (mine.userId == null || mine.userId == viewModel.userId)
+    LaunchedEffect(seatIsMine) { if (seatIsMine) viewModel.rememberSeat() }
+    val seatIsTheirs = mine?.userId != null && mine.userId != viewModel.userId
+    LaunchedEffect(gone, seatIsTheirs) { if (gone || seatIsTheirs) viewModel.forgetSeat() }
     val silent = state != null && now - heardAt > SILENT_MS
 
     Box(Modifier.fillMaxSize().background(RmBg).windowInsetsPadding(WindowInsets.safeDrawing)) {
