@@ -331,6 +331,13 @@ class LifeCounterViewModel(
             kotlinx.coroutines.flow.combine(_players, _settings) { players, settings -> players to settings }.collect { (players, settings) ->
                 val alive = players.filterNot { it.isDefeated(settings.autoKill) }
                 if (_ready.value && players.size >= 2 && alive.size <= 1) recordGame(players, settings, alive.singleOrNull()?.id)
+                // Losing on your own turn used to leave the turn there: a player who is out has no
+                // End turn control, on the table or on their phone, so nobody could pass it on.
+                // The turn moves itself now, and stops once the game is over.
+                if (settings.turnTrackerEnabled && players.size >= 2 && alive.size > 1) {
+                    val active = players.firstOrNull { it.id == _currentTurnPlayerId.value }
+                    if (active != null && active.isDefeated(settings.autoKill)) nextTurn()
+                }
             }
         }
     }
