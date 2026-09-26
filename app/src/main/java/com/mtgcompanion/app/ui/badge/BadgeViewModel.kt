@@ -50,37 +50,9 @@ class BadgeViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     /** null while the deck's cards are still being read; empty when nothing in it makes a token. */
-    val tokens: StateFlow<List<BadgeToken>?> = deck.mapLatest { d ->
-        if (d == null) return@mapLatest null
-        if (d.cards.isEmpty()) return@mapLatest emptyList()
-        val byId = runCatching {
-            cardRepository.getCardsByIds(
-                (d.cards + listOfNotNull(d.commander, d.partnerCommander)).map { it.scryfallId }
-            ).associateBy { it.id }
-        }.getOrElse { return@mapLatest null }
-
-        val needed = tokensNeeded(d, byId)
-        if (needed.isEmpty()) return@mapLatest emptyList()
-
-        // A token whose card doesn't come back still makes a badge — name and type line are enough.
-        val cards = runCatching { cardRepository.getCardsByIds(needed.map { it.id }).associateBy { it.id } }
-            .getOrElse { emptyMap() }
-
-        needed.map { token ->
-            val card = cards[token.id]
-            val power = card?.power
-            val toughness = card?.toughness
-            BadgeToken(
-                id = token.id,
-                name = token.name,
-                typeLine = token.typeLine ?: card?.typeLine,
-                powerToughness = if (power != null && toughness != null) "$power/$toughness" else null,
-                artUrl = card?.displayImageUrl.toArtCropUrl(),
-                emblem = token.isEmblem,
-                madeBy = token.madeBy
-            )
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val tokens: StateFlow<List<BadgeToken>?> = deck
+        .mapLatest { badgeTokensFor(it, cardRepository) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     class Factory(
         private val deckId: String,
@@ -89,5 +61,46 @@ class BadgeViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             BadgeViewModel(deckId, repository) as T
+    }
+}
+
+/**
+ * The tokens in [deck], each with what a badge needs printed on it.
+ *
+ * Shared by the badge screen and the in-game sheet on the remote, which both need this and neither
+ * of which should be the one that owns it.
+ *
+ * Returns null while it can't say yet — no deck, or Scryfall didn't answer — and an empty list when
+ * the deck genuinely makes no tokens. The screens say different things for those two.
+ */
+suspend fun badgeTokensFor(deck: Deck?, cardRepository: CardRepository): List<BadgeToken>? {
+    if (deck == null) return null
+    if (deck.cards.isEmpty()) return emptyList()
+    val byId = runCatching {
+        cardRepository.getCardsByIds(
+            (deck.cards + listOfNotNull(deck.commander, deck.partnerCommander)).map { it.scryfallId }
+        ).associateBy { it.id }
+    }.getOrElse { return null }
+
+    val needed = tokensNeeded(deck, byId)
+    if (needed.isEmpty()) return emptyList()
+
+    // A token whose card doesn't come back still makes a badge — name and type line are enough.
+    val cards = runCatching { cardRepository.getCardsByIds(needed.map { it.id }).associateBy { it.id } }
+        .getOrElse { emptyMap() }
+
+    return needed.map { token ->
+        val card = cards[token.id]
+        val power = card?.power
+        val toughness = card?.toughness
+        BadgeToken(
+            id = token.id,
+            name = token.name,
+            typeLine = token.typeLine ?: card?.typeLine,
+            powerToughness = if (power != null && toughness != null) "$power/$toughness" else null,
+            artUrl = card?.displayImageUrl.toArtCropUrl(),
+            emblem = token.isEmblem,
+            madeBy = token.madeBy
+        )
     }
 }

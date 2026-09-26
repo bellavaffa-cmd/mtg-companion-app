@@ -121,8 +121,9 @@ fun BadgeScreen(viewModel: BadgeViewModel, onBack: () -> Unit) {
         art = (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
     }
 
-    var ink by remember { mutableStateOf(BadgeInk.NORMAL) }
-    var invert by remember { mutableStateOf(false) }
+    val look = remember(context) { BadgeLook(context) }
+    var ink by remember { mutableStateOf(look.ink) }
+    var invert by remember { mutableStateOf(look.invert) }
     val spec = selected?.let { TokenFaceSpec(it.name, it.typeLine, it.powerToughness, art, it.emblem, ink, invert) }
 
     // What the badge will show, dithered the same way, so nothing is a surprise after 30 seconds.
@@ -131,7 +132,7 @@ fun BadgeScreen(viewModel: BadgeViewModel, onBack: () -> Unit) {
         preview = spec?.let {
             withContext(Dispatchers.Default) {
                 val face = renderTokenFace(it, DEFAULT_BADGE.width, DEFAULT_BADGE.height)
-                previewForBadge(face, DEFAULT_BADGE).toImageBitmap()
+                previewForBadge(face, DEFAULT_BADGE).toBadgeImageBitmap()
             }
         }
     }
@@ -293,13 +294,13 @@ fun BadgeScreen(viewModel: BadgeViewModel, onBack: () -> Unit) {
                                     TokenChip(
                                         label = option.name.lowercase().replaceFirstChar { it.uppercase() },
                                         selected = ink == option,
-                                        onClick = { if (!writing) ink = option }
+                                        onClick = { if (!writing) { ink = option; look.ink = option } }
                                     )
                                 }
                                 TokenChip(
                                     label = "Invert",
                                     selected = invert,
-                                    onClick = { if (!writing) invert = !invert }
+                                    onClick = { if (!writing) { invert = !invert; look.invert = invert } }
                                 )
                             }
                         }
@@ -343,7 +344,7 @@ private fun WritePanel(
 
             else -> {
                 Text(
-                    status(event),
+                    badgeStatus(event),
                     style = MaterialTheme.typography.bodyMedium,
                     color = when (event) {
                         is BadgeEvent.Failed -> ErrorColor
@@ -383,7 +384,7 @@ private fun WritePanel(
     }
 }
 
-private fun status(event: BadgeEvent?): String = when (event) {
+internal fun badgeStatus(event: BadgeEvent?): String = when (event) {
     null -> "Hold the badge flat against the back of your phone when you're ready. It takes about half a minute."
     BadgeEvent.Waiting -> "Hold the badge against the back of your phone — and keep it there."
     is BadgeEvent.Found -> "Found it. Keep holding."
@@ -425,7 +426,7 @@ private fun TokenChip(label: String, selected: Boolean, onClick: () -> Unit) {
  * The tone generator wants a live audio stream and will throw if it can't get one — a lost chime is
  * no reason to lose the result, so a failure here is swallowed.
  */
-private class BadgeChime {
+internal class BadgeChime {
     fun done() = play(ToneGenerator.TONE_PROP_BEEP2, 320)
     fun failed() = play(ToneGenerator.TONE_SUP_ERROR, 500)
 
@@ -440,10 +441,10 @@ private class BadgeChime {
 }
 
 /** ARGB pixels straight into something Compose can draw. */
-private fun ArgbImage.toImageBitmap(): ImageBitmap =
+internal fun ArgbImage.toBadgeImageBitmap(): ImageBitmap =
     Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888).asImageBitmap()
 
-private fun Context.findActivity(): Activity? {
+internal fun Context.findActivity(): Activity? {
     var current: Context? = this
     while (current is ContextWrapper) {
         if (current is Activity) return current

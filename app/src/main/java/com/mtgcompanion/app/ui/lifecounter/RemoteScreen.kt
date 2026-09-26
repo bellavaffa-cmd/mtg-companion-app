@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.CloseFullscreen
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MobileOff
+import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Style
@@ -73,6 +74,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import android.content.pm.PackageManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -85,6 +88,7 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.social.GiphyPickerDialog
+import com.mtgcompanion.app.ui.badge.BadgeSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -106,7 +110,7 @@ private val RmGreen = Color(0xFF2BD98F)
 private const val SILENT_MS = 60_000L
 private const val FEEDBACK_HOLD_MS = 1_500L
 
-private enum class RemoteSheet { DAMAGE, COUNTERS, BACKGROUND, MORE, DECK, SHOW, NOTES }
+private enum class RemoteSheet { DAMAGE, COUNTERS, BACKGROUND, MORE, DECK, SHOW, NOTES, BADGE }
 
 /** "#rrggbb", or the short "#rgb" the table uses for ink (which Android's parser doesn't read). */
 private fun hexColor(hex: String): Color {
@@ -131,6 +135,8 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
     val deck = decks.firstOrNull { it.id == deckId }
     var sheet by remember { mutableStateOf<RemoteSheet?>(null) }
     var big by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val hasNfc = remember(context) { context.packageManager.hasSystemFeature(PackageManager.FEATURE_NFC) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(5_000); now = System.currentTimeMillis() } }
 
@@ -227,10 +233,19 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
                     Option("Show a card on the table", "Everyone sees it big until they tap it away", icon = Icons.Filled.Visibility) { sheet = RemoteSheet.SHOW }
                 }
                 Option("Notes", "Only you see these", icon = Icons.Filled.Lock) { sheet = RemoteSheet.NOTES }
+                // Tokens turn up mid-game, and leaving the table to write one loses your seat's screen.
+                if (hasNfc) {
+                    Option("Put a token on a badge", deck?.name ?: "Pick the deck you're playing first", icon = Icons.Filled.Nfc) {
+                        sheet = RemoteSheet.BADGE
+                    }
+                }
                 Option("Leave this seat", "Your name comes off the table", icon = Icons.AutoMirrored.Filled.Logout) {
                     viewModel.leaveSeat()
                     onBack()
                 }
+            }
+            RemoteSheet.BADGE -> RmSheetBox("Token badge", { sheet = null }) {
+                BadgeSheet(deck = deck, ink = RmText, muted = RmMuted, accent = RmGold)
             }
             RemoteSheet.SHOW -> ShowCardSheet(viewModel, onClose = { sheet = null })
             RemoteSheet.NOTES -> RmSheetBox("Notes", { sheet = null }) {
