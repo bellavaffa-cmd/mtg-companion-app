@@ -56,10 +56,10 @@ import kotlinx.coroutines.withContext
 /**
  * Putting a token on a badge without getting up from the table.
  *
- * The same job as [BadgeScreen], stripped to what you want mid-game: the deck you said you're
- * playing already picked the token list, so this is choose one and hold the badge on. How it looks
- * is whatever was last chosen on the badge screen ([BadgeLook]) — nobody wants to be weighing ink
- * levels while three other people wait for a turn.
+ * The same job as [BadgeScreen], minus the chrome: the deck you said you're playing already picked
+ * the token list, so this is choose one and hold the badge on. Ink and invert are here too, and
+ * shared with the badge screen through [BadgeLook], so a change made at the table is still there
+ * next time either one is opened.
  *
  * Drawn in the remote's own dark palette rather than the app's panels, because it opens on top of
  * the table and shouldn't look like a different app.
@@ -94,12 +94,14 @@ fun BadgeSheet(
         art = (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
     }
 
+    var inkLevel by remember { mutableStateOf(look.ink) }
+    var invert by remember { mutableStateOf(look.invert) }
     val spec = selected?.let {
-        TokenFaceSpec(it.name, it.typeLine, it.powerToughness, art, it.emblem, look.ink, look.invert)
+        TokenFaceSpec(it.name, it.typeLine, it.powerToughness, art, it.emblem, inkLevel, invert)
     }
 
     var preview by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(spec?.name, spec?.powerToughness, art) {
+    LaunchedEffect(spec?.name, spec?.powerToughness, art, inkLevel, invert) {
         preview = spec?.let {
             withContext(Dispatchers.Default) {
                 previewForBadge(renderTokenFace(it, DEFAULT_BADGE.width, DEFAULT_BADGE.height), DEFAULT_BADGE)
@@ -141,22 +143,31 @@ fun BadgeSheet(
         else -> {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 items(tokens!!, key = { it.id }) { token ->
-                    val on = token.id == selected?.id
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(if (on) accent else Color.White.copy(alpha = 0.10f))
-                            .clickable(enabled = !writing) { selectedId = token.id }
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
-                    ) {
-                        Text(
-                            token.name,
-                            color = if (on) Color.Black else ink,
-                            fontSize = 13.sp,
-                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                    SheetChip(
+                        label = token.name,
+                        selected = token.id == selected?.id,
+                        enabled = !writing,
+                        ink = ink,
+                        accent = accent
+                    ) { selectedId = token.id }
+                }
+            }
+
+            // Shared with the badge screen, so whichever one you change it in, the other follows.
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                items(BadgeInk.entries, key = { it.name }) { option ->
+                    SheetChip(
+                        label = option.name.lowercase().replaceFirstChar { it.uppercase() },
+                        selected = inkLevel == option,
+                        enabled = !writing,
+                        ink = ink,
+                        accent = accent
+                    ) { inkLevel = option; look.ink = option }
+                }
+                item {
+                    SheetChip(label = "Invert", selected = invert, enabled = !writing, ink = ink, accent = accent) {
+                        invert = !invert
+                        look.invert = invert
                     }
                 }
             }
@@ -215,5 +226,33 @@ fun BadgeSheet(
                 )
             }
         }
+    }
+}
+
+/** One pill in the sheet: the remote's look, not the app's. */
+@Composable
+private fun SheetChip(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    ink: Color,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) accent else Color.White.copy(alpha = 0.10f))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    ) {
+        Text(
+            label,
+            color = if (selected) Color.Black else ink,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
