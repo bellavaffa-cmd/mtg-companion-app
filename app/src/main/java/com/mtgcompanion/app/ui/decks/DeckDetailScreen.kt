@@ -191,7 +191,9 @@ fun DeckDetailScreen(
     /** "Who has it?" for the cards the user doesn't own (signed in only). */
     onWhoHasIt: ((names: List<String>) -> Unit)? = null,
     /** Opens another of the user's decks — where a proxy's real copy is. */
-    onOpenDeck: ((String) -> Unit)? = null
+    onOpenDeck: ((String) -> Unit)? = null,
+    /** Puts one of this deck's tokens onto an NFC e-paper badge. */
+    onOpenBadge: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val deck by viewModel.deck.collectAsState()
@@ -366,7 +368,7 @@ fun DeckDetailScreen(
                         onSwapIn = { swapIn = it },
                         onRemove = { viewModel.removeFromConsidering(it.scryfallId) }
                     )
-                    "Stats" -> StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck)
+                    "Stats" -> StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck, onOpenBadge = onOpenBadge)
                     "Suggestions" -> AnalysisTab(
                         analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel,
                         onConsiderName = { name -> viewModel.considerByName(name, toast) },
@@ -381,7 +383,7 @@ fun DeckDetailScreen(
         if (layout == LayoutSize.DESKTOP) {
             // Stats beside the cards, the way the web app's deck page shows them.
             Box(Modifier.width(360.dp).fillMaxHeight()) {
-                StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck)
+                StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck, onOpenBadge = onOpenBadge)
             }
         }
         }
@@ -1350,7 +1352,8 @@ private fun StatsTab(
     deck: Deck,
     viewModel: DeckDetailViewModel,
     onTag: (String) -> Unit,
-    onOpenDeck: ((String) -> Unit)? = null
+    onOpenDeck: ((String) -> Unit)? = null,
+    onOpenBadge: (() -> Unit)? = null
 ) {
     if (analysis.loading) {
         LoadingBox()
@@ -1387,7 +1390,7 @@ private fun StatsTab(
         }
         item { MatchRecordPanel(deck.gameResults, onLog = { showLogResult = true }, onRemove = { viewModel.removeGameResult(it) }) }
         if (tokens.isNotEmpty()) {
-            item { TokensPanel(tokens) }
+            item { TokensPanel(tokens, onOpenBadge) }
         }
         item { VersionHistoryPanel(versionHistory, onOpen = { openVersion = it }) }
         item {
@@ -2387,15 +2390,26 @@ private fun ProxiesPanel(
  * each (see DeckTokens.kt). A token whose picture hasn't arrived still shows its name.
  */
 @Composable
-private fun TokensPanel(tokens: List<TokenArt>) {
+private fun TokensPanel(tokens: List<TokenArt>, onOpenBadge: (() -> Unit)? = null) {
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             SectionLabel("Tokens to bring")
-            Text(
-                if (tokens.size == 1) "1 kind" else "${tokens.size} kinds",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextMuted
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    if (tokens.size == 1) "1 kind" else "${tokens.size} kinds",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextMuted
+                )
+                if (onOpenBadge != null) {
+                    // An NFC e-paper badge can stand in for the cardboard — see ui/badge.
+                    Text(
+                        "Put on badge",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Gold,
+                        modifier = Modifier.clickable(onClick = onOpenBadge)
+                    )
+                }
+            }
         }
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),

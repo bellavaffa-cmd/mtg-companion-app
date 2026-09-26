@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Install the downloaded APK for in-app (OTA) updates. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Writing a token onto an NFC e-paper badge (ui/badge). Not required: the rest of the app
+         doesn't care, and plenty of phones have no NFC at all. -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
@@ -16,7 +20,7 @@
         android:allowBackup="true"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="${appLabel}"
         android:theme="@style/Theme.MtgCompanionApp">
 
         <!-- Firebase is set up in MtgCompanionApplication from BuildConfig, not from resources. -->
@@ -38,7 +42,7 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
-            android:label="@string/app_name"
+            android:label="${appLabel}"
             android:launchMode="singleTask"
             android:theme="@style/Theme.MtgCompanionApp.Splash">
             <intent-filter>

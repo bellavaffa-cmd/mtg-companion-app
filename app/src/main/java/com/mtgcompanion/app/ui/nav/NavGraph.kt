@@ -169,6 +169,8 @@ import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 import com.mtgcompanion.app.update.UpdateInfo
 import com.mtgcompanion.app.update.UpdateManager
+import com.mtgcompanion.app.ui.badge.BadgeScreen
+import com.mtgcompanion.app.ui.badge.BadgeViewModel
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -211,6 +213,9 @@ private object Routes {
     fun tagBinder(tagId: String) = "tag_binder/$tagId"
     fun detail(cardName: String) = "detail/" + URLEncoder.encode(cardName, StandardCharsets.UTF_8.name())
     fun deckDetail(deckId: String) = "deck/$deckId"
+    /** Putting one of a deck's tokens onto an NFC e-paper badge. */
+    const val TOKEN_BADGE = "token_badge/{deckId}"
+    fun tokenBadge(deckId: String) = "token_badge/$deckId"
     fun collectionDetail(collectionId: String) = "collection/$collectionId"
 }
 
@@ -552,7 +557,8 @@ fun MtgNavGraph(
                     onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
                     onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null,
                     onWhoHasIt = if (supabaseSync.auth.configured) ({ names -> whoHas = names }) else null,
-                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) }
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
+                    onOpenBadge = { navController.navigate(Routes.tokenBadge(deckId)) }
                 )
                 whoHas?.let { names ->
                     WhoHasItDialog(
@@ -611,6 +617,15 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() },
                     onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
                 )
+            }
+
+            destination(
+                route = Routes.TOKEN_BADGE,
+                arguments = listOf(navArgument("deckId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val deckId = backStackEntry.arguments?.getString("deckId").orEmpty()
+                val viewModel: BadgeViewModel = viewModel(factory = BadgeViewModel.Factory(deckId, deckRepository))
+                BadgeScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
 
             destination(Routes.RULES) {
