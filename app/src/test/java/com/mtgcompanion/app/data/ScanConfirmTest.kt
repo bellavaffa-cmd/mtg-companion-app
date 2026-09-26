@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 /**
@@ -65,5 +66,25 @@ class ScanConfirmTest {
         assertEquals(false, ScanMode.FAST.readsSmallPrint)
         assertEquals(false, ScanMode.FAST.matchesArt)
         assertEquals(ScanMode.FAST, ScanMode.fromName("FAST"))
+    }
+
+    @Test
+    fun `two cards read under the same printing are remembered apart`() {
+        // Keyed on the printing alone, the second of these was served the first from the cache —
+        // a different card, added as certain, with the title never consulted.
+        val one = scanCacheKey("cryotheory adept", "fra", "27")
+        val other = scanCacheKey("surveillance phantasm", "fra", "27")
+        assertNotEquals(one, other)
+    }
+
+    @Test
+    fun `the same card read twice under the same printing is remembered once`() {
+        assertEquals(scanCacheKey("cryotheory adept", "fra", "27"), scanCacheKey("cryotheory adept", "fra", "27"))
+    }
+
+    @Test
+    fun `a card whose printing was never read is remembered by its title`() {
+        assertEquals("cryotheory adept", scanCacheKey("cryotheory adept", null, null))
+        assertEquals("cryotheory adept", scanCacheKey("cryotheory adept", "fra", null))
     }
 }

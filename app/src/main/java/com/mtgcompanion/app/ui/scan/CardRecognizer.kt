@@ -56,5 +56,31 @@ class CardRecognizer(modelFile: File, indexFile: File) {
         )
     }
 
+    /**
+     * Runs the model once on nothing in particular, so the first real card doesn't pay for it.
+     *
+     * ONNX builds its execution plan and allocates its arenas on the first run, which measured
+     * **14.4 seconds** on the phone against 0.2 s for every lookup after it. A scan that hangs that
+     * long doesn't just feel broken: the camera keeps going, the card in front of it changes, and
+     * the answer lands against whichever card is there when it finally returns.
+     */
+    fun warmUp() {
+        val size = index.inputSize
+        // Every batch size a real card can produce, because the plan is built per shape: warming
+        // one input and then handing it six was worth nothing, and the first card still paid 14 s.
+        // A flattened card is two pictures per outline, and FlatCard keeps up to three outlines.
+        for (count in intArrayOf(2, 4, 6)) {
+            val started = android.os.SystemClock.elapsedRealtime()
+            runCatching {
+                OnnxTensor.createTensor(
+                    env,
+                    FloatBuffer.allocate(count * 3 * size * size),
+                    longArrayOf(count.toLong(), 3, size.toLong(), size.toLong())
+                ).use { input -> session.run(mapOf(session.inputNames.first() to input)).close() }
+            }
+            android.util.Log.d("ScanTiming", "warmed the model for $count pictures: ${android.os.SystemClock.elapsedRealtime() - started} ms")
+        }
+    }
+
     fun close() = session.close()
 }

@@ -90,3 +90,15 @@ private fun distanceWithin(a: String, b: String, limit: Int): Boolean {
     }
     return previous[b.length] <= limit
 }
+
+/**
+ * How a looked-up card is remembered for the rest of a scanning session.
+ *
+ * The title is part of the key, not just the printing. Keyed on set and collector number alone, a
+ * misread number hands back whichever card was scanned under that number earlier — a different card
+ * entirely, and the title never gets a say. That really happened: a scan of Surveillance Phantasm
+ * came back as Cryotheory Adept, marked certain, in 33 ms, because both resolved to the same
+ * "fra:27" and the second one was a cache hit.
+ */
+fun scanCacheKey(normalizedTitle: String, set: String?, number: String?): String =
+    if (set == null || number == null) normalizedTitle else "$normalizedTitle|$set:$number"

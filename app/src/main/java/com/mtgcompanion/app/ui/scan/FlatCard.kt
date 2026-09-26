@@ -93,6 +93,18 @@ class FlatCard private constructor(
         return runCatching { Bitmap.createBitmap(strip, stripW, stripH, Bitmap.Config.ARGB_8888) }.getOrNull()
     }
 
+    /**
+     * The card as the model sees it: the likeliest outline flattened out whole.
+     *
+     * Only for looking at — [ScanCapture] saves it beside the frame it came from, because when a
+     * scan picks the wrong printing the first question is always whether the card was found properly
+     * or whether the outline caught the table instead, and that can't be answered from the verdict.
+     */
+    fun lookBitmap(): Bitmap? {
+        val px = flatten(px, width, height, quads.first(), LOOK_W, LOOK_H)
+        return runCatching { Bitmap.createBitmap(px, LOOK_W, LOOK_H, Bitmap.Config.ARGB_8888) }.getOrNull()
+    }
+
     companion object {
         /** How wide the picture is shrunk to for finding the edges: plenty to place them, and quick. */
         private const val SEARCH_W = 240

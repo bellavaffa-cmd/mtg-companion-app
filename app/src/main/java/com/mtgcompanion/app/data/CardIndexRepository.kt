@@ -117,6 +117,9 @@ class CardIndexRepository(context: Context) {
 
     private fun load() {
         val loaded = runCatching { CardRecognizer(modelFile, indexFile) }.getOrNull()
+        // The first run builds the model's plan and costs ~14 s on a phone; done here, off the
+        // scanning path, so no card ever waits for it.
+        loaded?.warmUp()
         recognizer?.close()
         recognizer = loaded
         _status.update {
