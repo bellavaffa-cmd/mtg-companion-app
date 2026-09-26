@@ -20,6 +20,8 @@ data class BadgeToken(
     val typeLine: String?,
     /** "1/1" for a creature token, null for an emblem or a Treasure. */
     val powerToughness: String?,
+    /** What the token actually does. A Pest that doesn't say it drains you is not a Pest. */
+    val oracleText: String?,
     val artUrl: String?,
     val emblem: Boolean,
     /** The cards asking for it, so the list reads the same as the deck's own Tokens panel. */
@@ -90,6 +92,7 @@ suspend fun badgeTokensFor(deck: Deck?, cardRepository: CardRepository): List<Ba
             name = token.name,
             typeLine = token.typeLine ?: card?.typeLine,
             powerToughness = if (power != null && toughness != null) "$power/$toughness" else null,
+            oracleText = card?.displayOracleText?.trim()?.takeIf { it.isNotEmpty() },
             artUrl = card?.displayImageUrl.toArtCropUrl(),
             emblem = token.isEmblem,
             madeBy = token.madeBy

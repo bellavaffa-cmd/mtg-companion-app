@@ -45,6 +45,8 @@ data class TokenFaceSpec(
     val typeLine: String?,
     /** "1/1", or null for anything that isn't a creature. */
     val powerToughness: String?,
+    /** What it does. Without this a Pest is just a picture of a rat. */
+    val oracleText: String? = null,
     /** Art crop, already decoded. A token with no picture yet still makes a usable badge. */
     val art: Bitmap?,
     /** Emblems and the like get a red band, so they're not mistaken for a creature at a glance. */
@@ -74,7 +76,49 @@ fun renderTokenFace(spec: TokenFaceSpec, width: Int, height: Int): ArgbImage {
 
     val margin = (width * 0.033f).coerceAtLeast(4f)
     val ptSize = height * 0.135f
-    val artHeight = height * 0.60f
+    val ink = if (spec.invert) WHITE else BLACK
+    val textWidth = (width - margin * 2).toInt()
+
+    // Lay the writing out first and give the art whatever is left.
+    //
+    // A fixed split can't work once rules text is on here: "Flying" and "Whenever this creature
+    // attacks, create a 1/1 white Soldier creature token with vigilance" want very different amounts
+    // of room, and a token that doesn't say what it does is a picture of an animal. So the text is
+    // measured, the art takes the rest, and the art is only squeezed within limits — below about a
+    // third of the badge it stops being recognisable across a table, which is its whole job.
+    val namePaint = TextPaint().apply {
+        isAntiAlias = true
+        color = ink
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    val nameLayout = fitText(spec.name, namePaint, textWidth, maxLines = 2, from = height * 0.068f, to = height * 0.034f)
+
+    val type = spec.typeLine?.substringAfter("Token ")?.trim().orEmpty()
+    val typePaint = TextPaint().apply {
+        isAntiAlias = true
+        color = if (spec.emblem) RED else ink
+        typeface = Typeface.DEFAULT
+    }
+    val typeLayout = if (type.isEmpty()) null
+    else fitText(type, typePaint, textWidth, maxLines = 2, from = height * 0.034f, to = height * 0.022f)
+
+    // Scryfall separates abilities with newlines; keep the breaks but not the padding around them.
+    val rules = spec.oracleText?.replace(Regex("""[ \t]*\n[ \t]*"""), "\n")?.trim().orEmpty()
+    val rulesPaint = TextPaint().apply {
+        isAntiAlias = true
+        color = ink
+        typeface = Typeface.DEFAULT
+    }
+    // Power and toughness sits in the bottom corner, so the rules stop short of its column.
+    val rulesWidth = if (spec.powerToughness != null) (textWidth - ptSize * 1.35f).toInt() else textWidth
+    val rulesLayout = if (rules.isEmpty()) null
+    else fitText(rules, rulesPaint, rulesWidth.coerceAtLeast(40), maxLines = 5, from = height * 0.032f, to = height * 0.020f)
+
+    val gap = height * 0.014f
+    // What the writing actually occupies, and what it occupies with breathing room either side.
+    val writing = nameLayout.height.toFloat() + (typeLayout?.let { it.height + gap } ?: 0f) +
+        (rulesLayout?.let { it.height + gap } ?: 0f)
+    val artHeight = (height - (writing + gap * 3f)).coerceIn(height * 0.30f, height * 0.72f)
 
     // Art, cropped to fill rather than letterboxed: a band of white above a token reads as a mistake.
     val artRect = RectF(0f, 0f, width.toFloat(), artHeight)
@@ -82,7 +126,6 @@ fun renderTokenFace(spec: TokenFaceSpec, width: Int, height: Int): ArgbImage {
 
     // Under the art: either a rule so a pale picture doesn't bleed into the name, or — reversed —
     // a solid band, which separates the two by itself and needs no rule.
-    val ink = if (spec.invert) WHITE else BLACK
     val paper = if (spec.invert) BLACK else WHITE
     val band = Paint().apply { color = paper; style = Paint.Style.FILL }
     if (spec.invert) {
@@ -91,34 +134,19 @@ fun renderTokenFace(spec: TokenFaceSpec, width: Int, height: Int): ArgbImage {
         canvas.drawRect(0f, artHeight, width.toFloat(), artHeight + height * 0.007f, Paint().apply { color = BLACK })
     }
 
-    val textTop = artHeight + height * 0.03f
-    val textWidth = (width - margin * 2).toInt()
-    // The power and toughness sits in the bottom corner, so the text above stops short of it.
-    val textBottom = height - margin - if (spec.powerToughness != null) ptSize else 0f
+    // Centred in the band rather than sitting at the top of it. "Flying" is two words and the art
+    // can only grow so far, so without this a short token ends in a stripe of blank white paper.
+    var y = artHeight + ((height - artHeight - writing) / 2f).coerceAtLeast(gap)
+    canvas.withTranslation(margin, y) { nameLayout.draw(canvas) }
+    y += nameLayout.height + gap
 
-    // Name: as large as three lines of it will allow, because a two-word token shouldn't be tiny.
-    val namePaint = TextPaint().apply {
-        isAntiAlias = true
-        color = ink
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    typeLayout?.let {
+        canvas.withTranslation(margin, y) { it.draw(canvas) }
+        y += it.height + gap
     }
-    val nameLayout = fitText(spec.name, namePaint, textWidth, maxLines = 3, from = height * 0.075f, to = height * 0.035f)
-    canvas.withTranslation(margin, textTop) { nameLayout.draw(canvas) }
 
-    // Type line under it, smaller, and never more than two lines.
-    var y = textTop + nameLayout.height + height * 0.018f
-    val type = spec.typeLine?.substringAfter("Token ")?.trim().orEmpty()
-    if (type.isNotEmpty()) {
-        val typePaint = TextPaint().apply {
-            isAntiAlias = true
-            color = if (spec.emblem) RED else ink
-            typeface = Typeface.DEFAULT
-        }
-        val typeLayout = fitText(type, typePaint, textWidth, maxLines = 2, from = height * 0.037f, to = height * 0.024f)
-        if (y + typeLayout.height <= textBottom) {
-            canvas.withTranslation(margin, y) { typeLayout.draw(canvas) }
-            y += typeLayout.height
-        }
+    rulesLayout?.let {
+        canvas.withTranslation(margin, y) { it.draw(canvas) }
     }
 
     // Power and toughness, reversed out of a black block so it carries across a table.

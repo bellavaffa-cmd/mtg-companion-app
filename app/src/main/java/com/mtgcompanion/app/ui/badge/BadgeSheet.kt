@@ -230,7 +230,7 @@ fun BadgeSheet(
                 art = (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
             }
             val face = current?.let {
-                TokenFaceSpec(it.name, it.typeLine, it.powerToughness, art, it.emblem, inkLevel, invert)
+                TokenFaceSpec(it.name, it.typeLine, it.powerToughness, it.oracleText, art, it.emblem, inkLevel, invert)
             }
 
             Box(
@@ -287,7 +287,7 @@ private fun TokenPreview(
             val request = ImageRequest.Builder(context).data(url).allowHardware(false).build()
             (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
         }
-        val spec = TokenFaceSpec(token.name, token.typeLine, token.powerToughness, art, token.emblem, inkLevel, invert)
+        val spec = TokenFaceSpec(token.name, token.typeLine, token.powerToughness, token.oracleText, art, token.emblem, inkLevel, invert)
         val image = withContext(Dispatchers.Default) {
             previewForBadge(renderTokenFace(spec, DEFAULT_BADGE.width, DEFAULT_BADGE.height), DEFAULT_BADGE)
                 .toBadgeImageBitmap()
