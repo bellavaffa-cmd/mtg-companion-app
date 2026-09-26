@@ -1,9 +1,7 @@
 package com.mtgcompanion.app.ui.scan
 
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.filled.Bolt
 import com.mtgcompanion.app.data.ScanMode
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.grid.items
@@ -37,6 +35,8 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import kotlinx.coroutines.delay
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -120,6 +120,11 @@ import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldDim
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.Surface
+import com.mtgcompanion.app.ui.theme.Surface2
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
@@ -189,6 +194,20 @@ fun ScanScreen(
     // A separate still-capture use case from the continuous analysis stream — "identify by art"
     // wants one real, full-quality photo, not a YUV analysis frame.
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    /** Asks the camera to focus on the guide again; set once the camera is bound. */
+    var refocus by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    // Focus drifts off a card held in a bright, featureless box, and a soft frame is the one thing
+    // the card index cannot survive. Asking again every few seconds costs nothing visible.
+    LaunchedEffect(refocus) {
+        val ask = refocus ?: return@LaunchedEffect
+        while (true) {
+            ask()
+            delay(3_000)
+        }
+    }
 
     // A brief "got it" flash on the framing guide + a haptic buzz on every successful add,
     // alongside the existing shutter sound — successToken only changes on a real success (not on
@@ -249,8 +268,15 @@ fun ScanScreen(
                     }
                     val analysis = ImageAnalysis.Builder()
                         // ~1080p: enough detail to read the tiny set code + collector number at the
-                        // card's bottom edge (for exact-edition detection), while KEEP_ONLY_LATEST and
-                        // the ViewModel's stability/dedupe gating keep the workload in check.
+                        // card's bottom edge, while KEEP_ONLY_LATEST and the ViewModel's gating keep
+                        // the workload in check.
+                        //
+                        // This was briefly raised to 1440p, to give the card index more pixels to
+                        // work from. Measured on the phone, that took a sight lookup from ~200 ms to
+                        // ~14 s — seventy times worse for 1.8x the pixels, so not the model's own
+                        // cost but the churn of copying and flattening frames that size. A lookup
+                        // that slow doesn't merely feel broken: the camera carries on, the card in
+                        // front of it changes, and the answer arrives against the wrong one.
                         .setResolutionSelector(
                             ResolutionSelector.Builder()
                                 .setResolutionStrategy(
@@ -311,6 +337,23 @@ fun ScanScreen(
                         capture
                     )
                     imageCapture = capture
+                    // Focus on the middle of the guide, which is where the card is — a white box at
+                    // arm's length gives continuous autofocus almost nothing to lock onto, and a soft
+                    // frame is the one thing the card index cannot survive. Re-asked for periodically
+                    // rather than once: the card moves, and focus drifts back off it.
+                    refocus = {
+                        runCatching {
+                            val point = previewView.meteringPointFactory
+                                .createPoint(previewView.width / 2f, previewView.height / 2f)
+                            camera?.cameraControl?.startFocusAndMetering(
+                                FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+                                    // Left to settle rather than cancelling back to continuous drift.
+                                    .disableAutoCancel()
+                                    .build()
+                            )
+                        }
+                    }
+                    refocus?.invoke()
                 }, ContextCompat.getMainExecutor(ctx))
                 previewView
             }
@@ -355,57 +398,71 @@ fun ScanScreen(
                 .padding(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ScrimIconButton(onClick = leave, icon = Icons.Filled.ArrowBack, desc = "Back")
-                Spacer(Modifier.width(8.dp))
-                ScanModePill(
-                    mode = state.scanMode,
-                    onToggle = {
-                        viewModel.setScanMode(if (state.scanMode == ScanMode.FAST) ScanMode.ACCURATE else ScanMode.FAST)
-                    }
-                )
+                ScrimIconButton(onClick = leave, icon = Icons.AutoMirrored.Filled.ArrowBack, desc = "Back")
                 Box(modifier = Modifier.weight(1f))
-                if (camera?.cameraInfo?.hasFlashUnit() == true) {
-                    ScrimIconButton(
-                        onClick = {
-                            torchOn = !torchOn
-                            camera?.cameraControl?.enableTorch(torchOn)
-                        },
-                        icon = if (torchOn) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
-                        desc = if (torchOn) "Turn off flashlight" else "Turn on flashlight",
-                        tint = if (torchOn) Gold else TextMuted
-                    )
-                }
-                ScrimIconButton(
-                    onClick = { viewModel.captureNow() },
-                    icon = Icons.Filled.PhotoCamera,
-                    desc = "Scan now"
-                )
-                ScrimIconButton(
-                    onClick = { showManualAdd = true },
-                    icon = Icons.Filled.Keyboard,
-                    desc = "Type a card name"
-                )
-                ScrimIconButton(
-                    onClick = {
-                        imageCapture?.takePicture(
-                            cameraExecutor,
-                            object : ImageCapture.OnImageCapturedCallback() {
-                                override fun onCaptureSuccess(image: ImageProxy) {
-                                    val bitmap = imageProxyToBitmap(image)
-                                    image.close()
-                                    if (bitmap != null) viewModel.matchByArt(bitmap)
-                                }
-
-                                override fun onError(exception: androidx.camera.core.ImageCaptureException) {
-                                    // Swallowed — matchByArt's own "couldn't match" status covers the
-                                    // user-facing failure case; a capture error is rare and transient.
-                                }
+                // Everything else lives behind one button. The camera wants the screen, not a row
+                // of icons over it, and all of these are things you reach for occasionally.
+                Box {
+                    ScrimIconButton(onClick = { menuOpen = true }, icon = Icons.Filled.MoreVert, desc = "Scanner options")
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = { menuOpen = false },
+                        containerColor = Surface
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(if (state.scanMode == ScanMode.FAST) "Fast scanning" else "Accurate scanning", color = TextPrimary) },
+                            leadingIcon = { Icon(Icons.Filled.Verified, null, tint = Gold) },
+                            trailingIcon = { Text(if (state.scanMode == ScanMode.FAST) "switch to accurate" else "switch to fast", style = MaterialTheme.typography.labelSmall, color = TextMuted) },
+                            onClick = {
+                                viewModel.setScanMode(if (state.scanMode == ScanMode.FAST) ScanMode.ACCURATE else ScanMode.FAST)
+                                menuOpen = false
                             }
                         )
-                    },
-                    icon = Icons.Filled.ImageSearch,
-                    desc = "Identify by art"
-                )
+                        if (camera?.cameraInfo?.hasFlashUnit() == true) {
+                            DropdownMenuItem(
+                                text = { Text(if (torchOn) "Turn off the light" else "Turn on the light", color = TextPrimary) },
+                                leadingIcon = { Icon(if (torchOn) Icons.Filled.FlashOn else Icons.Filled.FlashOff, null, tint = if (torchOn) Gold else TextMuted) },
+                                onClick = {
+                                    torchOn = !torchOn
+                                    camera?.cameraControl?.enableTorch(torchOn)
+                                    menuOpen = false
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Scan now", color = TextPrimary) },
+                            leadingIcon = { Icon(Icons.Filled.PhotoCamera, null, tint = TextMuted) },
+                            onClick = { viewModel.captureNow(); menuOpen = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Identify by art", color = TextPrimary) },
+                            leadingIcon = { Icon(Icons.Filled.ImageSearch, null, tint = TextMuted) },
+                            onClick = {
+                                menuOpen = false
+                                imageCapture?.takePicture(
+                                    cameraExecutor,
+                                    object : ImageCapture.OnImageCapturedCallback() {
+                                        override fun onCaptureSuccess(image: ImageProxy) {
+                                            val bitmap = imageProxyToBitmap(image)
+                                            image.close()
+                                            if (bitmap != null) viewModel.matchByArt(bitmap)
+                                        }
+
+                                        override fun onError(exception: androidx.camera.core.ImageCaptureException) {
+                                            // Swallowed — matchByArt's own "couldn't match" status covers
+                                            // the user-facing failure; a capture error is rare and transient.
+                                        }
+                                    }
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Type a card name", color = TextPrimary) },
+                            leadingIcon = { Icon(Icons.Filled.Keyboard, null, tint = TextMuted) },
+                            onClick = { showManualAdd = true; menuOpen = false }
+                        )
+                    }
+                }
                 if (BuildConfig.DEBUG) {
                     ScrimIconButton(
                         onClick = {
@@ -727,32 +784,6 @@ private fun ScrimIconButton(
     }
 }
 
-/**
- * Fast or Accurate scanning, a tap to switch. Fast takes a card sooner and leaves its printing a
- * best guess — no close read of the small print, no art match (see ScanMode).
- */
-@Composable
-private fun ScanModePill(mode: ScanMode, onToggle: () -> Unit) {
-    val fast = mode == ScanMode.FAST
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(Bg.copy(alpha = 0.6f))
-            .clickable(onClickLabel = if (fast) "Switch to accurate scanning" else "Switch to fast scanning", onClick = onToggle)
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Icon(
-            if (fast) Icons.Filled.Bolt else Icons.Filled.Verified,
-            contentDescription = null,
-            tint = Gold,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(mode.label, style = MaterialTheme.typography.labelLarge, color = GoldLight)
-    }
-}
-
 @Composable
 private fun ScannedListPanel(
     cards: List<ScanRow>,
@@ -899,6 +930,28 @@ private fun ScannedCardRow(
                         color = if (justNow) Gold else TextMuted
                     )
                 }
+                // Which printing it is and what it's worth, right where the scan lands — the whole
+                // point of reading the set code is wasted if you have to open the card to see it.
+                // The set's name gives way before its number does: "Avatar: The Last Airbender" can
+                // be shortened and still read, but the number is the half that says which printing
+                // this is, so it keeps its room.
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        card.setName ?: card.set?.uppercase() ?: "Unknown set",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    card.collectorNumber?.let {
+                        Text("#$it", style = MaterialTheme.typography.labelMedium, color = TextMuted, maxLines = 1)
+                    }
+                    card.prices?.usd?.let { usd ->
+                        Text("·", style = MaterialTheme.typography.labelMedium, color = TextDim)
+                        Text("$$usd", style = MaterialTheme.typography.labelMedium, color = GoldLight, maxLines = 1)
+                    }
+                }
                 if (!scanned.exact) {
                     // The set code couldn't be read, so this is the card's usual printing.
                     Text(
@@ -907,6 +960,24 @@ private fun ScannedCardRow(
                         color = Gold,
                         modifier = Modifier.clickable(onClick = onPickArt)
                     )
+                }
+                // What the card does, in a word or two, worked out from its rules text.
+                val tags = card.tags.take(3)
+                if (tags.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                        tags.forEach { tag ->
+                            Text(
+                                tag,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Surface2)
+                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
             // One more copy of this card: another row, as if it went past the camera again.
