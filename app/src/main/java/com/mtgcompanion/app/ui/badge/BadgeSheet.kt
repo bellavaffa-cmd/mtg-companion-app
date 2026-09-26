@@ -8,8 +8,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -17,6 +19,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -25,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,7 +45,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.imageLoader
@@ -53,13 +62,21 @@ import com.mtgcompanion.app.data.nfc.previewForBadge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** How wide the badge shows over a game. Its height follows the panel's own shape. */
+private val SHEET_PREVIEW_WIDTH = 168.dp
+
 /**
  * Putting a token on a badge without getting up from the table.
  *
  * The same job as [BadgeScreen], minus the chrome: the deck you said you're playing already picked
- * the token list, so this is choose one and hold the badge on. Ink and invert are here too, and
- * shared with the badge screen through [BadgeLook], so a change made at the table is still there
- * next time either one is opened.
+ * the token list, so this is swipe to the token you want and hold the badge on. Ink and invert are
+ * here too, and shared with the badge screen through [BadgeLook], so a change made at the table is
+ * still there next time either one is opened.
+ *
+ * The badge is shown at a size worth looking at rather than as a thumbnail, because the whole point
+ * of a preview on a three-colour panel is seeing what the dithering did before committing half a
+ * minute to it. Swiping moves between tokens, which is why there's no list of names: the picture is
+ * the thing you're choosing between, and it already has the name printed on it.
  *
  * Drawn in the remote's own dark palette rather than the app's panels, because it opens on top of
  * the table and shouldn't look like a different app.
@@ -69,7 +86,11 @@ fun BadgeSheet(
     deck: Deck?,
     ink: Color,
     muted: Color,
-    accent: Color
+    accent: Color,
+    /** Open on this token — the one that was tapped — rather than on the first. */
+    initialTokenId: String? = null,
+    /** How wide to draw the badge. A screen can afford more than a sheet over a table. */
+    previewWidth: Dp = SHEET_PREVIEW_WIDTH
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -82,33 +103,8 @@ fun BadgeSheet(
     var tokens by remember(deck?.id) { mutableStateOf<List<BadgeToken>?>(null) }
     LaunchedEffect(deck?.id) { tokens = badgeTokensFor(deck, cards) }
 
-    var selectedId by remember(deck?.id) { mutableStateOf<String?>(null) }
-    val selected = tokens?.firstOrNull { it.id == selectedId } ?: tokens?.firstOrNull()
-    LaunchedEffect(tokens) { if (selectedId == null) selectedId = tokens?.firstOrNull()?.id }
-
-    var art by remember(selected?.artUrl) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(selected?.artUrl) {
-        art = null
-        val url = selected?.artUrl ?: return@LaunchedEffect
-        val request = ImageRequest.Builder(context).data(url).allowHardware(false).build()
-        art = (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
-    }
-
     var inkLevel by remember { mutableStateOf(look.ink) }
     var invert by remember { mutableStateOf(look.invert) }
-    val spec = selected?.let {
-        TokenFaceSpec(it.name, it.typeLine, it.powerToughness, art, it.emblem, inkLevel, invert)
-    }
-
-    var preview by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(spec?.name, spec?.powerToughness, art, inkLevel, invert) {
-        preview = spec?.let {
-            withContext(Dispatchers.Default) {
-                previewForBadge(renderTokenFace(it, DEFAULT_BADGE.width, DEFAULT_BADGE.height), DEFAULT_BADGE)
-                    .toBadgeImageBitmap()
-            }
-        }
-    }
 
     var event by remember { mutableStateOf<BadgeEvent?>(null) }
     var writing by remember { mutableStateOf(false) }
@@ -141,20 +137,63 @@ fun BadgeSheet(
         }
         tokens!!.isEmpty() -> Text("Nothing in ${deck.name} makes a token.", color = muted, fontSize = 13.sp)
         else -> {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                items(tokens!!, key = { it.id }) { token ->
-                    SheetChip(
-                        label = token.name,
-                        selected = token.id == selected?.id,
-                        enabled = !writing,
-                        ink = ink,
-                        accent = accent
-                    ) { selectedId = token.id }
+            val list = tokens!!
+            val start = list.indexOfFirst { it.id == initialTokenId }.coerceAtLeast(0)
+            val pager = rememberPagerState(initialPage = start, pageCount = { list.size })
+            val current = list.getOrNull(pager.currentPage)
+
+            // One rendered badge per token, thrown away whenever the look changes so the cache can't
+            // outgrow the one setting actually in use.
+            val rendered = remember(inkLevel, invert) { mutableStateMapOf<String, ImageBitmap>() }
+
+            // A page is exactly as wide as a badge, and the padding either side is whatever's left.
+            // Sizing the page to the container instead leaves the badge centred in a page wider than
+            // itself, and then the neighbour only peeks by the few points the padding exceeds that
+            // slack by — which looks like a rendering fault rather than an invitation to swipe.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val side = ((maxWidth - previewWidth) / 2).coerceAtLeast(0.dp)
+                HorizontalPager(
+                    state = pager,
+                    userScrollEnabled = !writing,
+                    pageSize = PageSize.Fixed(previewWidth),
+                    pageSpacing = 12.dp,
+                    contentPadding = PaddingValues(horizontal = side),
+                    modifier = Modifier.fillMaxWidth()
+                ) { page ->
+                    TokenPreview(
+                        token = list[page],
+                        inkLevel = inkLevel,
+                        invert = invert,
+                        rendered = rendered,
+                        accent = accent,
+                        width = previewWidth
+                    )
                 }
             }
 
-            // Shared with the badge screen, so whichever one you change it in, the other follows.
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            Text(
+                current?.name.orEmpty(),
+                color = ink,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                if (list.size == 1) "The only token in this deck" else "${pager.currentPage + 1} of ${list.size} — swipe for the others",
+                color = muted,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Under the badge, so changing them is a change to the thing you're looking at.
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) {
                 items(BadgeInk.entries, key = { it.name }) { option ->
                     SheetChip(
                         label = option.name.lowercase().replaceFirstChar { it.uppercase() },
@@ -172,34 +211,28 @@ fun BadgeSheet(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
-                Box(
-                    Modifier
-                        .width(86.dp)
-                        .aspectRatio(DEFAULT_BADGE.width / DEFAULT_BADGE.height.toFloat())
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.White.copy(alpha = 0.08f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    preview?.let {
-                        Image(bitmap = it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
-                    } ?: CircularProgressIndicator(color = accent, modifier = Modifier.size(20.dp))
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(badgeStatus(event), color = ink, fontSize = 13.sp)
-                    val sending = (event as? BadgeEvent.Working)?.progress as? BadgeProgress.Sending
-                    if (sending != null) {
-                        LinearProgressIndicator(
-                            progress = { sending.done / sending.total.toFloat() },
-                            color = accent,
-                            trackColor = Color.White.copy(alpha = 0.15f),
-                            modifier = Modifier.fillMaxWidth().height(5.dp)
-                        )
-                    }
-                }
+            Text(badgeStatus(event), color = ink, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
+            val sending = (event as? BadgeEvent.Working)?.progress as? BadgeProgress.Sending
+            if (sending != null) {
+                LinearProgressIndicator(
+                    progress = { sending.done / sending.total.toFloat() },
+                    color = accent,
+                    trackColor = Color.White.copy(alpha = 0.15f),
+                    modifier = Modifier.fillMaxWidth().height(5.dp)
+                )
             }
 
-            val face = spec
+            var art by remember(current?.artUrl) { mutableStateOf<Bitmap?>(null) }
+            LaunchedEffect(current?.artUrl) {
+                art = null
+                val url = current?.artUrl ?: return@LaunchedEffect
+                val request = ImageRequest.Builder(context).data(url).allowHardware(false).build()
+                art = (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
+            }
+            val face = current?.let {
+                TokenFaceSpec(it.name, it.typeLine, it.powerToughness, art, it.emblem, inkLevel, invert)
+            }
+
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -226,6 +259,54 @@ fun BadgeSheet(
                 )
             }
         }
+    }
+}
+
+/**
+ * One token as the badge will show it.
+ *
+ * Each page renders its own, because the dithering is the point of looking — and keeps it in
+ * [rendered] so swiping back to a token you've already seen is instant rather than another pass
+ * over a hundred thousand pixels.
+ */
+@Composable
+private fun TokenPreview(
+    token: BadgeToken,
+    inkLevel: BadgeInk,
+    invert: Boolean,
+    rendered: MutableMap<String, ImageBitmap>,
+    accent: Color,
+    width: Dp
+) {
+    val context = LocalContext.current
+    var badge by remember(token.id, inkLevel, invert) { mutableStateOf(rendered[token.id]) }
+
+    LaunchedEffect(token.id, inkLevel, invert) {
+        if (badge != null) return@LaunchedEffect
+        val art = token.artUrl?.let { url ->
+            val request = ImageRequest.Builder(context).data(url).allowHardware(false).build()
+            (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
+        }
+        val spec = TokenFaceSpec(token.name, token.typeLine, token.powerToughness, art, token.emblem, inkLevel, invert)
+        val image = withContext(Dispatchers.Default) {
+            previewForBadge(renderTokenFace(spec, DEFAULT_BADGE.width, DEFAULT_BADGE.height), DEFAULT_BADGE)
+                .toBadgeImageBitmap()
+        }
+        rendered[token.id] = image
+        badge = image
+    }
+
+    Box(
+        Modifier
+            .width(width)
+            .aspectRatio(DEFAULT_BADGE.width / DEFAULT_BADGE.height.toFloat())
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.White.copy(alpha = 0.08f)),
+        contentAlignment = Alignment.Center
+    ) {
+        badge?.let {
+            Image(bitmap = it, contentDescription = token.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+        } ?: CircularProgressIndicator(color = accent, modifier = Modifier.size(22.dp))
     }
 }
 

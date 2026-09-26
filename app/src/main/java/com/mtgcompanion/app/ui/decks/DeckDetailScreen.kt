@@ -177,6 +177,7 @@ import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
+import com.mtgcompanion.app.ui.badge.BadgeSheetDialog
 
 /** Tab order. The Considering tab sits right beside Cards, since the two are worked together. */
 private val DECK_TABS = listOf("Cards", "Considering", "Stats", "Suggestions", "Legality")
@@ -1370,6 +1371,11 @@ private fun StatsTab(
     val proxies by viewModel.proxies.collectAsState()
     val proxiesElsewhere by viewModel.proxiesElsewhere.collectAsState()
     val tokens by viewModel.tokens.collectAsState()
+    // Tapping a token opens the same sheet the remote uses, on that token.
+    var badgeToken by remember { mutableStateOf<String?>(null) }
+    badgeToken?.let { id ->
+        BadgeSheetDialog(deck = deck, initialTokenId = id, onDismiss = { badgeToken = null })
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -1390,7 +1396,7 @@ private fun StatsTab(
         }
         item { MatchRecordPanel(deck.gameResults, onLog = { showLogResult = true }, onRemove = { viewModel.removeGameResult(it) }) }
         if (tokens.isNotEmpty()) {
-            item { TokensPanel(tokens, onOpenBadge) }
+            item { TokensPanel(tokens, onOpenBadge, onTokenClick = { badgeToken = it }) }
         }
         item { VersionHistoryPanel(versionHistory, onOpen = { openVersion = it }) }
         item {
@@ -2390,7 +2396,7 @@ private fun ProxiesPanel(
  * each (see DeckTokens.kt). A token whose picture hasn't arrived still shows its name.
  */
 @Composable
-private fun TokensPanel(tokens: List<TokenArt>, onOpenBadge: (() -> Unit)? = null) {
+private fun TokensPanel(tokens: List<TokenArt>, onOpenBadge: (() -> Unit)? = null, onTokenClick: ((String) -> Unit)? = null) {
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             SectionLabel("Tokens to bring")
@@ -2416,7 +2422,11 @@ private fun TokensPanel(tokens: List<TokenArt>, onOpenBadge: (() -> Unit)? = nul
             modifier = Modifier.padding(top = 10.dp)
         ) {
             items(tokens, key = { it.token.name + (it.token.typeLine ?: "") }) { each ->
-                Column(modifier = Modifier.width(104.dp)) {
+                Column(
+                    modifier = Modifier
+                        .width(104.dp)
+                        .then(if (onTokenClick != null) Modifier.clickable { onTokenClick(each.token.id) } else Modifier)
+                ) {
                     Box {
                         AsyncImage(
                             model = each.imageUrl,

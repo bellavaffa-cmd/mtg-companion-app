@@ -8,11 +8,9 @@ import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.tokensNeeded
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 
 /** One token, with everything the badge needs printed on it. */
@@ -29,30 +27,24 @@ data class BadgeToken(
 )
 
 /**
- * The tokens in a deck, ready to put on an e-paper badge.
+ * The deck the badge screen is working from.
  *
- * Same list as the deck screen's Tokens panel (DeckTokens.kt decides what counts), fetched again
- * here because a badge needs more off the token card than a thumbnail does — the art crop rather
- * than the framed picture, and the power and toughness to print underneath.
+ * Thin on purpose: the tokens themselves are built by [badgeTokensFor], because all three places
+ * that write a badge need them and a screen's view model is the wrong owner for something two
+ * sheets also use.
  */
-@OptIn(ExperimentalCoroutinesApi::class)
 class BadgeViewModel(
     deckId: String,
-    repository: DeckRepository,
-    private val cardRepository: CardRepository = CardRepository()
+    repository: DeckRepository
 ) : ViewModel() {
 
-    private val deck: StateFlow<Deck?> = repository.deckFlow(deckId)
+    /** The sheet builds its own token list from this. */
+    val deck: StateFlow<Deck?> = repository.deckFlow(deckId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val deckName: StateFlow<String> = deck
         .map { it?.name.orEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
-
-    /** null while the deck's cards are still being read; empty when nothing in it makes a token. */
-    val tokens: StateFlow<List<BadgeToken>?> = deck
-        .mapLatest { badgeTokensFor(it, cardRepository) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     class Factory(
         private val deckId: String,
