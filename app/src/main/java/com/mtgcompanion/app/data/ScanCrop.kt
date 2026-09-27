@@ -27,9 +27,27 @@ data class ScanBox(val left: Int, val top: Int, val right: Int, val bottom: Int)
     }
 }
 
-/** The framing guide's share of the preview — drawn by ScanScreen, read by the scanner. */
-const val GUIDE_WIDTH = 0.8f
-const val GUIDE_HEIGHT = 0.55f
+/**
+ * The framing guide's share of the preview — drawn by ScanScreen, read by the scanner.
+ *
+ * These decide how many pixels the small print gets, which is the whole reason the set code does or
+ * doesn't read. The card is fitted to the guide by [cardShaped], so the guide's smaller side bounds
+ * it. At 0.8 x 0.55, a 1080x1920 frame shown in a 1080x2316 preview put the card at about 716x1001
+ * — the set line's letters being about [SMALL_PRINT_SHARE] of a card's height, that left them 15 px
+ * tall, under the reader's floor of roughly 16. Which is why the set code read on under 2% of scans
+ * rather than never: it was always a near miss.
+ *
+ * The width is the scarce side and it is scarcer than the frame suggests. The preview is taller than
+ * the picture's shape, so the sides are cropped away and only about 895 of the 1080 columns are ever
+ * visible; the guide is a share of *that*. A full-width guide would give the letters 18.8 px and
+ * that is the ceiling at this resolution — 0.96 takes 18.0 of it and keeps a margin to hold the card
+ * against. Going further means more sensor pixels, not a bigger guide.
+ *
+ * The height only has to stay out of the way: below about 0.63 it becomes the binding side again and
+ * widening the guide buys nothing at all.
+ */
+const val GUIDE_WIDTH = 0.96f
+const val GUIDE_HEIGHT = 0.66f
 
 /** How much bigger than the drawn guide the reader looks, so a card held a little large still reads. */
 const val GUIDE_SLACK = 0.2f
@@ -111,7 +129,7 @@ fun smallPrintScale(cardHeight: Int): Float {
 }
 
 /** The small print's letters as a share of the card's height. */
-private const val SMALL_PRINT_SHARE = 0.015f
+const val SMALL_PRINT_SHARE = 0.015f
 
 /** How tall the reader wants the small print's letters, in pixels. */
 private const val SMALL_PRINT_TEXT_PX = 32f

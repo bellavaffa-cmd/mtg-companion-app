@@ -5,6 +5,7 @@ import com.mtgcompanion.app.data.CardQuad
 import com.mtgcompanion.app.data.GRID_H
 import com.mtgcompanion.app.data.GRID_W
 import com.mtgcompanion.app.data.PRINTING_INSET
+import com.mtgcompanion.app.data.SMALL_PRINT_SHARE
 import com.mtgcompanion.app.data.ScanBox
 import com.mtgcompanion.app.data.cardShaped
 import com.mtgcompanion.app.data.findCards
@@ -127,7 +128,6 @@ class FlatCard private constructor(
 
         private const val STRIP_TOP = 0.88f
         private const val STRIP_BOTTOM = 0.985f
-        private const val SMALL_PRINT_SHARE = 0.015f
         private const val SMALL_PRINT_LETTER_PX = 32f
 
         /**

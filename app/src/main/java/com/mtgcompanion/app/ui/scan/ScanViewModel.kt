@@ -3,8 +3,8 @@ package com.mtgcompanion.app.ui.scan
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CompletableDeferred
 import com.mtgcompanion.app.data.SightPick
-import com.mtgcompanion.app.data.smallPrintAgrees
-import com.mtgcompanion.app.data.sharpness
+import com.mtgcompanion.app.data.smallPrintAgrees
+import com.mtgcompanion.app.data.sharpness
 import com.mtgcompanion.app.data.looksLikeAnotherCard
 import com.mtgcompanion.app.data.choosePrinting
 import com.mtgcompanion.app.data.cardBySight
@@ -34,6 +34,7 @@ import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
 import com.mtgcompanion.app.data.grouped
 import com.mtgcompanion.app.data.ScanGroup
 import com.mtgcompanion.app.data.GUIDE_WIDTH
+import com.mtgcompanion.app.data.SMALL_PRINT_SHARE
 import com.mtgcompanion.app.data.GUIDE_GIVE_UP_FRAMES
 import com.mtgcompanion.app.data.GUIDE_HEIGHT
 import com.mtgcompanion.app.data.guideInImage
@@ -517,6 +518,16 @@ class ScanViewModel(
         var started = SystemClock.elapsedRealtime()
         val flat = picture?.let { withContext(Dispatchers.Default) { runCatching { FlatCard.find(it, guide) }.getOrNull() } }
         if (picture != null) timing("card edges ${if (flat != null) "found" else "not found"}", started)
+        // How big the card actually landed, and what that leaves the set line's letters. Whether the
+        // small print can be read at all is decided here and nowhere else — the strip is cut from
+        // the flattened card, so its placement is exact and only the pixels underneath are in doubt.
+        // Recorded rather than reasoned about, because it depends on the preview's shape per phone.
+        flat?.quads?.firstOrNull()?.let { q ->
+            val letterPx = q.height * SMALL_PRINT_SHARE
+            capture.fact(scan.captureId, "cardPx", q.height.toInt())
+            capture.fact(scan.captureId, "letterPx", String.format("%.1f", letterPx))
+            Log.d("ScanTiming", "card ${q.width.toInt()}x${q.height.toInt()} px, set line about ${"%.1f".format(letterPx)} px tall")
+        }
 
         started = SystemClock.elapsedRealtime()
         // Fast scanning skips the close read: the printing comes from the frame, or from the art.

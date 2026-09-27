@@ -113,4 +113,44 @@ class ScanCropTest {
         assertEquals(1f, smallPrintScale(5000), 0f)
         assertEquals(3f, smallPrintScale(0), 0f)
     }
+
+    /**
+     * How tall the set line's letters land on the phone this was measured on. The small print's
+     * crop is exact — it is cut from the flattened card, not the guide — so whether the set code
+     * reads at all comes down to this number, and the reader's floor is about 16 px.
+     */
+    @Test
+    fun theSetLineGetsEnoughPixelsToRead() {
+        // An S23 Ultra: a 1080x1920 frame from the analyser, shown in a 1080x2316 preview.
+        val guide = guideInImage(1080, 1920, 1080, 2316, GUIDE_WIDTH, GUIDE_HEIGHT)!!
+        val card = guide.cardShaped()
+        val letterPx = (card.bottom - card.top) * SMALL_PRINT_SHARE
+        // At the old 0.8 x 0.55 the card came out 1001 px tall and the letters 15.0 px, under the
+        // floor; the read either just worked or, far more often, didn't. 18.8 px is all this
+        // resolution can ever give (a full-width guide), so this asks for most of what there is.
+        assertTrue("letters are only $letterPx px tall", letterPx >= 17.8f)
+    }
+
+    /**
+     * The guide may not grow past what the reader can still search. It looks at the guide grown by
+     * GUIDE_SLACK, so a guide that big already fills the frame leaves no room for a card held a
+     * little large — and a card whose edges run off the frame loses them altogether.
+     */
+    @Test
+    fun theSearchAreaStillFitsInsideTheFrame() {
+        val guide = guideInImage(1080, 1920, 1080, 2316, GUIDE_WIDTH, GUIDE_HEIGHT)!!
+        val searched = guide.cardShaped().grownBy(GUIDE_SLACK)
+        assertTrue("search box ${searched.right - searched.left} wide, frame only 1080", searched.right - searched.left <= 1080)
+        assertTrue("search box ${searched.bottom - searched.top} tall, frame only 1920", searched.bottom - searched.top <= 1920)
+    }
+
+    /** Widening the guide only helps while the width is what bounds the card. */
+    @Test
+    fun theWidthIsWhatBoundsTheCard() {
+        val guide = guideInImage(1080, 1920, 1080, 2316, GUIDE_WIDTH, GUIDE_HEIGHT)!!
+        val card = guide.cardShaped()
+        val slack = (guide.right - guide.left) - (card.right - card.left)
+        assertTrue("the card should fill the guide's width, but is $slack px narrower", slack <= 2)
+    }
+
 }
