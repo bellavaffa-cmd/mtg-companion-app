@@ -119,16 +119,32 @@ class ScanCropTest {
      * crop is exact — it is cut from the flattened card, not the guide — so whether the set code
      * reads at all comes down to this number, and the reader's floor is about 16 px.
      */
+    /** The set line's letters, for a card filling the guide in a frame this size. */
+    private fun letterHeight(frameWidth: Int, frameHeight: Int): Float {
+        val guide = guideInImage(frameWidth, frameHeight, 1080, 2227, GUIDE_WIDTH, GUIDE_HEIGHT)!!
+        return (guide.cardShaped().let { it.bottom - it.top }) * SMALL_PRINT_SHARE
+    }
+
     @Test
     fun theSetLineGetsEnoughPixelsToRead() {
-        // An S23 Ultra: a 1080x1920 frame from the analyser, shown in a 1080x2316 preview.
-        val guide = guideInImage(1080, 1920, 1080, 2316, GUIDE_WIDTH, GUIDE_HEIGHT)!!
-        val card = guide.cardShaped()
-        val letterPx = (card.bottom - card.top) * SMALL_PRINT_SHARE
-        // At the old 0.8 x 0.55 the card came out 1001 px tall and the letters 15.0 px, under the
-        // floor; the read either just worked or, far more often, didn't. 18.8 px is all this
-        // resolution can ever give (a full-width guide), so this asks for most of what there is.
+        // An S23 Ultra: the preview is 1080x2227 once the system bars are out of it, and the
+        // analyser must be giving 16:9 for this to hold — see the ResolutionSelector in ScanScreen.
+        val letterPx = letterHeight(1080, 1920)
         assertTrue("letters are only $letterPx px tall", letterPx >= 17.8f)
+    }
+
+    /**
+     * Why the analyser is pinned to 16:9. Asking for 1920x1080 without an aspect-ratio strategy
+     * gets 4:3 — the selector defaults to it — and 1080x1440 was what the phone actually handed
+     * over. Measured, not assumed: the captured frames worked back to exactly that.
+     *
+     * At 4:3 even a card filling the guide leaves the letters under the reader's floor, so the set
+     * code cannot read however well the card is framed. This is the whole reason it never did.
+     */
+    @Test
+    fun fourThirdsCannotReachTheReadersFloor() {
+        assertTrue("4:3 would give ${letterHeight(1080, 1440)} px", letterHeight(1080, 1440) < 16f)
+        assertTrue("16:9 should clear it", letterHeight(1080, 1920) >= 16f)
     }
 
     /**
@@ -138,16 +154,40 @@ class ScanCropTest {
      */
     @Test
     fun theSearchAreaStillFitsInsideTheFrame() {
-        val guide = guideInImage(1080, 1920, 1080, 2316, GUIDE_WIDTH, GUIDE_HEIGHT)!!
+        val guide = guideInImage(1080, 1920, 1080, 2227, GUIDE_WIDTH, GUIDE_HEIGHT)!!
         val searched = guide.cardShaped().grownBy(GUIDE_SLACK)
         assertTrue("search box ${searched.right - searched.left} wide, frame only 1080", searched.right - searched.left <= 1080)
         assertTrue("search box ${searched.bottom - searched.top} tall, frame only 1920", searched.bottom - searched.top <= 1920)
     }
 
+    /**
+     * The zoom has to stay on the main lens. Past [LENS_SWITCH_ZOOM] the phone hands over to a
+     * telephoto that cannot focus nearer than 40 cm, and a card held to be scanned would never come
+     * into focus at all — a far worse failure than the small one being fixed.
+     */
+    @Test
+    fun theZoomStaysOnTheLensThatCanFocusOnACard() {
+        assertTrue("$SCAN_ZOOM would risk the telephoto", SCAN_ZOOM < LENS_SWITCH_ZOOM)
+        assertTrue("zooming out would make things worse", SCAN_ZOOM > 1f)
+    }
+
+    /**
+     * The whole chain, against what was actually measured on the phone: a card held comfortably
+     * filled 55% of the guide, and at 4:3 with no zoom that left the letters at 7.8 px. The guide,
+     * the aspect ratio and the zoom each fix part of it and only together clear the reader's floor.
+     */
+    @Test
+    fun theMeasuredFramingClearsTheFloorOnceZoomed() {
+        val filled = 0.55f
+        assertEquals("the measured starting point", 7.8f, letterHeight(1080, 1440) * filled, 0.4f)
+        val zoomed = letterHeight(1080, 1920) * filled * SCAN_ZOOM
+        assertTrue("zoomed and 16:9 gives only $zoomed px", zoomed >= 16f)
+    }
+
     /** Widening the guide only helps while the width is what bounds the card. */
     @Test
     fun theWidthIsWhatBoundsTheCard() {
-        val guide = guideInImage(1080, 1920, 1080, 2316, GUIDE_WIDTH, GUIDE_HEIGHT)!!
+        val guide = guideInImage(1080, 1920, 1080, 2227, GUIDE_WIDTH, GUIDE_HEIGHT)!!
         val card = guide.cardShaped()
         val slack = (guide.right - guide.left) - (card.right - card.left)
         assertTrue("the card should fill the guide's width, but is $slack px narrower", slack <= 2)

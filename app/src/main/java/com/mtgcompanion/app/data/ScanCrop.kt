@@ -53,6 +53,30 @@ const val GUIDE_HEIGHT = 0.66f
 const val GUIDE_SLACK = 0.2f
 
 /**
+ * How far the camera is zoomed in while scanning.
+ *
+ * The guide can only divide up the pixels the frame already has; the zoom decides how many of them
+ * land on the card. Measured, a card held comfortably filled about 55% of the guide, which left the
+ * set line's letters at well under half the size the reader needs. Holding the card closer is not
+ * the answer — the main lens cannot focus nearer than 10 cm, and the nearer it gets the likelier it
+ * blurs. Zooming moves the card's size in the frame without moving the card.
+ *
+ * This is not the empty magnification it sounds like: the frame is a small downsample of a much
+ * larger sensor, so zooming crops the sensor's own readout before that downsample and puts real
+ * sensor pixels on the card rather than interpolated ones.
+ *
+ * 1.8x takes that 55% to roughly a filled guide. It must stay below [LENS_SWITCH_ZOOM].
+ */
+const val SCAN_ZOOM = 1.8f
+
+/**
+ * Where the phone stops cropping the main lens and switches to a telephoto one. The telephotos
+ * cannot focus closer than 40 cm (the 10x, not until 80 cm), so a card held to be scanned would
+ * simply never come into focus. Zoom must stay underneath this.
+ */
+const val LENS_SWITCH_ZOOM = 2.9f
+
+/**
  * Frames in a row with text read but none of it inside the guide before the guide is set aside.
  * Some phone's reader may measure its picture differently from what's worked out here; scanning
  * nothing at all would be worse than reading the whole frame as the app used to.

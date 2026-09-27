@@ -14,6 +14,9 @@ import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
 import com.mtgcompanion.app.data.GUIDE_WIDTH
+import android.util.Log
+import com.mtgcompanion.app.data.SCAN_ZOOM
+import com.mtgcompanion.app.data.LENS_SWITCH_ZOOM
 import com.mtgcompanion.app.data.GUIDE_HEIGHT
 import androidx.compose.ui.layout.onSizeChanged
 import com.mtgcompanion.app.data.scannedTwiceOver
@@ -37,6 +40,7 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import kotlinx.coroutines.delay
 import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -277,8 +281,16 @@ fun ScanScreen(
                         // cost but the churn of copying and flattening frames that size. A lookup
                         // that slow doesn't merely feel broken: the camera carries on, the card in
                         // front of it changes, and the answer arrives against the wrong one.
+                        //
+                        // The aspect ratio has to be asked for as well, and this is not a detail:
+                        // without it the selector defaults to 4:3 and quietly hands back 1080x1440,
+                        // whatever size is requested. Measured on the phone, that put the card at
+                        // 1440 px of frame and the set line's letters at 14 px even with the guide
+                        // filled — under the reader's floor, so the set code could never read. At
+                        // 16:9 the same framing gives 1920 px of frame and about 18 px of letter.
                         .setResolutionSelector(
                             ResolutionSelector.Builder()
+                                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
                                 .setResolutionStrategy(
                                     ResolutionStrategy(
                                         Size(1920, 1080),
@@ -337,6 +349,18 @@ fun ScanScreen(
                         capture
                     )
                     imageCapture = capture
+                    // Zoomed in so the card fills the frame from where it is comfortable to hold it
+                    // (see SCAN_ZOOM). Kept under the ratio where the phone switches to a telephoto
+                    // lens, which could not focus this close, and clamped to whatever this phone
+                    // actually offers — a device with no zoom to give simply stays where it is.
+                    runCatching {
+                        val zoom = camera?.cameraInfo?.zoomState?.value
+                        val ratio = SCAN_ZOOM
+                            .coerceAtMost(LENS_SWITCH_ZOOM)
+                            .coerceIn(zoom?.minZoomRatio ?: 1f, zoom?.maxZoomRatio ?: 1f)
+                        camera?.cameraControl?.setZoomRatio(ratio)
+                        Log.d("ScanTiming", "zoom $ratio x (phone offers ${zoom?.minZoomRatio}..${zoom?.maxZoomRatio})")
+                    }
                     // Focus on the middle of the guide, which is where the card is — a white box at
                     // arm's length gives continuous autofocus almost nothing to lock onto, and a soft
                     // frame is the one thing the card index cannot survive. Re-asked for periodically
