@@ -125,6 +125,22 @@ private const val TOAST_MS = 4_000L
 private fun badges(s: RemoteState, seat: Int) =
     (if (s.monarch == seat) " 👑" else "") + (if (s.initiative == seat) " 🚩" else "")
 
+/**
+ * Two short pulses — the web remote's navigator.vibrate([60, 40, 60]). A real vibration, unlike touch
+ * feedback, which is faint and silent altogether when the phone's touch vibration is off. False when
+ * the phone can't vibrate, so the caller can fall back.
+ */
+private fun buzzTwice(context: android.content.Context): Boolean {
+    val vibrator = if (android.os.Build.VERSION.SDK_INT >= 31) {
+        context.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(android.os.Vibrator::class.java)
+    }
+    if (vibrator == null || !vibrator.hasVibrator()) return false
+    return runCatching { vibrator.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0, 60, 40, 60), -1)) }.isSuccess
+}
+
 /** "#rrggbb", or the short "#rgb" the table uses for ink (which Android's parser doesn't read). */
 private fun hexColor(hex: String): Color {
     val full = if (Regex("#[0-9a-fA-F]{3}").matches(hex)) "#" + hex.drop(1).map { "$it$it" }.joinToString("") else hex
@@ -165,9 +181,11 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
     val buzz by viewModel.buzz.collectAsState()
     LaunchedEffect(buzz) {
         if (buzz == 0) return@LaunchedEffect
-        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-        delay(100)
-        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        if (!buzzTwice(context)) {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            delay(100)
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
     }
     val toast by viewModel.toast.collectAsState()
     LaunchedEffect(toast?.id) {

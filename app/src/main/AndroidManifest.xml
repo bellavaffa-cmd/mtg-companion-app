@@ -11,6 +11,9 @@
     <!-- Writing a token onto an NFC e-paper badge (ui/badge). Not required: the rest of the app
          doesn't care, and plenty of phones have no NFC at all. -->
     <uses-permission android:name="android.permission.NFC" />
+    <!-- The remote's buzz when the turn comes round (ui/lifecounter/RemoteScreen): a real vibration,
+         which still reaches a phone face down on the table with touch feedback turned off. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
