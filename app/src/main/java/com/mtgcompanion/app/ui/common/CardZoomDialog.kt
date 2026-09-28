@@ -82,6 +82,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -216,6 +217,9 @@ fun CardZoomDialog(cards: List<ZoomCard>, initialIndex: Int, onDismiss: () -> Un
 /** Scryfall card images are 488 x 680. */
 private const val CARD_ASPECT = 488f / 680f
 
+/** The card's Scryfall id, from one of its image addresses: …/front/a/b/<id>.jpg. */
+private val SCRYFALL_IMAGE_ID = Regex("""/(?:front|back)/[0-9a-f]/[0-9a-f]/([0-9a-f-]{36})\.""")
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boolean) {
@@ -236,6 +240,7 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
     // Where the thumbnail was last seen, in case it leaves the screen mid-flight.
     val lastFrom = remember { arrayOfNulls<Rect>(1) }
     val context = LocalContext.current
+    val cardRepository = remember { CardRepository() }
 
     // One effect for the whole life of the overlay: dismissing mid-flight turns the opening animation
     // around instead of cancelling it, so the card always shrinks back rather than vanishing.
@@ -314,7 +319,23 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                 var previewed by remember(card) { mutableStateOf<ScryfallCard?>(null) }
                 // Which face is showing, for a transform/modal-DFC/flip card. Resets per card too.
                 var flipped by remember(card) { mutableStateOf(false) }
-                val model = previewed?.displayImageUrl ?: (if (flipped) card.backImageUrl else card.imageUrl)
+                // A saved card can be missing its back face — added by an older version, or through a
+                // trade, which only carries the front. A two-part name is the hint that there might be
+                // one; Scryfall settles it. Split, adventure and prepare cards come back with none.
+                val lookupName = card.cardName?.takeIf { card.backImageUrl == null && " // " in it }
+                val lookedUpBack by produceState<String?>(null, lookupName, card.imageUrl) {
+                    if (lookupName == null) return@produceState
+                    value = try {
+                        val id = card.imageUrl?.let { SCRYFALL_IMAGE_ID.find(it)?.groupValues?.get(1) }
+                        val found = id?.let { cardRepository.getCardsByIds(listOf(it)).firstOrNull() }
+                            ?: cardRepository.getByExactName(lookupName)
+                        found.backImageUrl
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                val backImageUrl = card.backImageUrl ?: lookedUpBack
+                val model = previewed?.displayImageUrl ?: (if (flipped) backImageUrl else card.imageUrl)
                 shownModels[page] = model
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(
@@ -357,7 +378,7 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                                     .foilShine()
                             )
                         }
-                        if (card.backImageUrl != null) {
+                        if (backImageUrl != null) {
                             val flipHaptic = LocalHapticFeedback.current
                             IconButton(
                                 onClick = {
