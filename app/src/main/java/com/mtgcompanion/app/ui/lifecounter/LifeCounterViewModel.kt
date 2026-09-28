@@ -178,6 +178,11 @@ sealed interface HistoryEvent {
     data object TurnStarted : HistoryEvent
     data object WonHighRoll : HistoryEvent
     data class BecameDayOrNight(val state: DayNight) : HistoryEvent
+    /** From a remote's "Commander cast": [HistoryEntry.from]/[HistoryEntry.to] are the tax. */
+    data object CommanderCast : HistoryEvent
+    /** A die or coin the table rolled for a remote; [sides] 2 is a coin. */
+    data class Rolled(val sides: Int, val result: String) : HistoryEvent
+    data object Conceded : HistoryEvent
 }
 
 /**
@@ -290,6 +295,14 @@ class LifeCounterViewModel(
     private val _shownCard = MutableStateFlow<RemoteShownCard?>(null)
     /** A card a player is showing the table from their remote, until someone taps it away. */
     val shownCard: StateFlow<RemoteShownCard?> = _shownCard.asStateFlow()
+
+    private val _hold = MutableStateFlow<Int?>(null)
+    /** The seat that asked everyone to hold on, from their remote: shown until they let go or the turn passes. */
+    val hold: StateFlow<Int?> = _hold.asStateFlow()
+
+    private val _announce = MutableStateFlow<RemoteAnnounce?>(null)
+    /** The latest roll, emote or pointing from a remote; the table and the remotes show it for a few seconds. */
+    val announce: StateFlow<RemoteAnnounce?> = _announce.asStateFlow()
 
     private val _match = MutableStateFlow<Match?>(null)
     /** The table players join by QR code, once the host has shown one. */
@@ -469,6 +482,8 @@ class LifeCounterViewModel(
         undoStack.clear()
         bumpUndo()
         _shownCard.value = null
+        _hold.value = null
+        _announce.value = null
         gameId = UUID.randomUUID().toString()
         startedAt = System.currentTimeMillis()
     }
@@ -562,6 +577,21 @@ class LifeCounterViewModel(
     }
 
     /**
+     * "Commander cast" from a player's remote: the same tax as the tile's, counted in casts — each
+     * one adds 2 — so the tile and the phone never disagree. Remotes only know the one commander.
+     */
+    fun adjustCommanderCasts(playerId: Int, delta: Int) = undoable("tax:$playerId:0") {
+        val player = player(playerId) ?: return@undoable
+        val current = player.commanderTax.getOrElse(0) { 0 }
+        val updated = (current + 2 * delta).coerceAtLeast(0)
+        if (updated == current) return@undoable
+        updatePlayer(playerId) {
+            it.copy(commanderTax = it.commanderTax.toMutableList().also { tax -> tax[0] = updated })
+        }
+        log(HistoryEvent.CommanderCast, playerId, current, updated)
+    }
+
+    /**
      * Turning a partner off drops everything tracked for that second commander — the damage it
      * dealt to every other player and its own tax — rather than leaving a hidden tally that could
      * still count as lethal. The life those hits cost stays lost: it was real damage.
@@ -585,6 +615,14 @@ class LifeCounterViewModel(
         if (player(playerId)?.killed != false) return@undoable
         updatePlayer(playerId) { it.copy(killed = true) }
         log(HistoryEvent.Killed, playerId, null, null)
+    }
+
+    /** A player giving up from their phone: out, just like Kill (and undone the same way), but logged as their call. */
+    fun concede(playerId: Int) = undoable("out:$playerId") {
+        if (player(playerId)?.killed != false) return@undoable
+        updatePlayer(playerId) { it.copy(killed = true) }
+        log(HistoryEvent.Conceded, playerId, null, null)
+        if (_hold.value == playerId) _hold.value = null
     }
 
     /**
@@ -639,6 +677,16 @@ class LifeCounterViewModel(
         _dayNight.value = null
     }
 
+    /** Straight to day or night (from a remote), starting to track it if it wasn't. */
+    fun setDayNight(state: DayNight) {
+        if (_dayNight.value == state) return
+        _dayNight.value = state
+        log(HistoryEvent.BecameDayOrNight(state), null, null, null)
+    }
+
+    /** The table's own way to take down a "hold on" nobody let go of. */
+    fun clearHold() { _hold.value = null }
+
     // ---- Turn tracker ----
 
     /** Passing the turn also empties every mana pool and resets storm counts, which don't carry over. */
@@ -651,6 +699,8 @@ class LifeCounterViewModel(
         ) ?: return@undoable
         _currentTurnPlayerId.value = moved.turnPlayerId
         if (moved.roundComplete) _turnNumber.value += 1
+        // A "hold on" is about the turn that's ending.
+        _hold.value = null
         val perTurn = PlayerCounter.entries.filter { it.resetsEachTurn }.toSet()
         _players.value = _players.value.map { it.copy(manaPool = emptyMap(), counters = it.counters - perTurn) }
         log(HistoryEvent.TurnStarted, _currentTurnPlayerId.value, null, null)
@@ -1001,7 +1051,10 @@ class LifeCounterViewModel(
         }
         // Any change to the game goes out to the remotes (a burst of taps, once).
         viewModelScope.launch {
-            merge(_players, _currentTurnPlayerId, _turnNumber, _settings, _shownCard, _undoVersion, _history).collect {
+            merge(
+                _players, _currentTurnPlayerId, _turnNumber, _settings, _shownCard, _undoVersion, _history,
+                _monarchPlayerId, _initiativePlayerId, _dayNight, _hold, _announce, _gameMode
+            ).collect {
                 if (_match.value == null) return@collect
                 publishJob?.cancel()
                 publishJob = launch {
@@ -1045,13 +1098,26 @@ class LifeCounterViewModel(
                     userId = p.linked?.userId,
                     avatarPath = p.linked?.avatarPath,
                     canUndo = canUndoFor(p.id),
-                    partner = p.hasPartner
+                    partner = p.hasPartner,
+                    commanderCasts = p.commanderTax.getOrElse(0) { 0 } / 2
                 )
             },
             shownCard = _shownCard.value,
-            over = if (over) RemoteOver(alive.singleOrNull()?.id, _turnNumber.value, ((lastAt - startedAt) / 60_000).toInt().coerceAtLeast(1)) else null
+            over = if (over) RemoteOver(alive.singleOrNull()?.id, _turnNumber.value, ((lastAt - startedAt) / 60_000).toInt().coerceAtLeast(1)) else null,
+            monarch = _monarchPlayerId.value,
+            initiative = _initiativePlayerId.value,
+            dayNight = _dayNight.value?.name,
+            hold = _hold.value,
+            plane = _gameMode.value.takeIf { it.mode == GameModeKind.PLANECHASE }?.let { mode ->
+                mode.currentPlane?.let { RemotePlane(it.name, it.displayImageUrl, mode.planeDeck.size) }
+            },
+            announce = _announce.value
         )
     }
+
+    /** A fresh announcement from [seat]; setting [_announce] to it puts it up on the table and every remote. */
+    private fun newAnnounce(seat: Int, kind: String) =
+        RemoteAnnounce(UUID.randomUUID().toString(), seat, kind, System.currentTimeMillis())
 
     private suspend fun publish(force: Boolean) {
         val social = social ?: return
@@ -1084,6 +1150,8 @@ class LifeCounterViewModel(
         }
         fun delta(limit: Int): Int? = action.optInt("delta", 0).takeIf { it != 0 && kotlin.math.abs(it) <= limit }
         fun seated(key: String): Int? = action.optInt(key, -1).takeIf { id -> id != seat && _players.value.any { it.id == id } }
+        // A real true/false only: a missing or garbled one mustn't read as "give it up".
+        fun flag(key: String): Boolean? = action.opt(key) as? Boolean
         val before = remoteState().toJson().toString()
         actingSeat = seat
         try {
@@ -1127,6 +1195,42 @@ class LifeCounterViewModel(
                     if (name.isNotEmpty() && allowedRemoteImage(url, scryfallOnly = true)) _shownCard.value = RemoteShownCard(name, url, seat)
                 }
                 "hideCard" -> if (_shownCard.value?.seat == seat) _shownCard.value = null
+                "monarch" -> flag("take")?.let { setMonarch(claimedBy(_monarchPlayerId.value, seat, it)) }
+                "initiative" -> flag("take")?.let { setInitiative(claimedBy(_initiativePlayerId.value, seat, it)) }
+                "dayNight" -> if (action.has("value")) {
+                    when (val value = if (action.isNull("value")) null else action.optString("value")) {
+                        null -> stopDayNight()
+                        "DAY" -> setDayNight(DayNight.DAY)
+                        "NIGHT" -> setDayNight(DayNight.NIGHT)
+                    }
+                }
+                // The table rolls rather than the phone, so nobody has to take anyone's word for it.
+                "roll" -> remoteRoll(seat, action.optInt("sides", 0), Random, UUID.randomUUID().toString(), System.currentTimeMillis())?.let { a ->
+                    _announce.value = a
+                    log(HistoryEvent.Rolled(a.sides ?: 2, a.value.orEmpty()), seat, null, null)
+                }
+                "planar" -> {
+                    val what = action.optString("what")
+                    val mode = _gameMode.value
+                    val allowed = planarAllowed(
+                        planechase = mode.mode == GameModeKind.PLANECHASE, hasPlane = mode.currentPlane != null,
+                        turnTracker = _settings.value.turnTrackerEnabled, turnSeat = _currentTurnPlayerId.value, seat = seat
+                    )
+                    val face = when {
+                        !allowed -> null
+                        what == "roll" -> rollPlanarDie()
+                        what == "planeswalk" -> PlanarDieFace.PLANESWALK.also { planeswalk() }
+                        else -> null
+                    }
+                    face?.let { _announce.value = newAnnounce(seat, "planar").copy(value = it.name) }
+                }
+                "commanderCast" -> action.optInt("delta", 0).takeIf { it == 1 || it == -1 }?.let { adjustCommanderCasts(seat, it) }
+                "hold" -> flag("on")?.let { _hold.value = claimedBy(_hold.value, seat, it) }
+                "emote" -> action.optString("emote").takeIf { it in REMOTE_EMOTES }?.let {
+                    _announce.value = newAnnounce(seat, "emote").copy(emote = it)
+                }
+                "target" -> seated("to")?.let { _announce.value = newAnnounce(seat, "target").copy(to = it) }
+                "concede" -> concede(seat)
             }
         } finally {
             actingSeat = null

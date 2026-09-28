@@ -42,7 +42,9 @@ data class RemoteSeat(
     /** Whether this seat has a change of its own it could undo. */
     val canUndo: Boolean,
     /** Plays two commanders (a partner), so damage from each is kept apart. */
-    val partner: Boolean
+    val partner: Boolean,
+    /** Times this seat has cast its commander; the tax is twice that. 0 from a table that doesn't say. */
+    val commanderCasts: Int = 0
 ) {
     fun damageFrom(from: Int, slot: Int): Int = commanderDamage.firstOrNull { it.from == from && it.slot == slot }?.amount ?: 0
 }
@@ -50,6 +52,49 @@ data class RemoteSeat(
 data class RemoteTurn(val seat: Int, val number: Int)
 data class RemoteShownCard(val name: String, val imageUrl: String, val seat: Int)
 data class RemoteOver(val winner: Int?, val turns: Int, val minutes: Int)
+/** The Planechase plane the table is on, and how many planes are left in its deck. */
+data class RemotePlane(val name: String, val imageUrl: String?, val left: Int)
+
+/**
+ * Something that just happened, for everyone to see for a few seconds: a roll, a coin, the planar
+ * die, an emote, or a player pointing at another. Only the latest is sent; [id] is how the table
+ * and the remotes tell a new one from the one they've already shown.
+ */
+data class RemoteAnnounce(
+    val id: String,
+    val seat: Int,
+    /** "roll", "coin", "planar", "emote" or "target". */
+    val kind: String,
+    /** When it happened (epoch ms). */
+    val at: Long,
+    /** A roll's die. */
+    val sides: Int? = null,
+    /** What came up: a roll's number, "Heads"/"Tails", or the planar die's face. */
+    val value: String? = null,
+    /** An emote's id (see [REMOTE_EMOTES]). */
+    val emote: String? = null,
+    /** The seat a target points at. */
+    val to: Int? = null
+) {
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("seat", seat).put("kind", kind).put("at", at).also { o ->
+        sides?.let { o.put("sides", it) }
+        value?.let { o.put("value", it) }
+        emote?.let { o.put("emote", it) }
+        to?.let { o.put("to", it) }
+    }
+
+    companion object {
+        fun parse(o: JSONObject): RemoteAnnounce? = runCatching {
+            RemoteAnnounce(
+                id = o.getString("id"), seat = o.getInt("seat"), kind = o.getString("kind"), at = o.optLong("at"),
+                sides = if (o.has("sides") && !o.isNull("sides")) o.optInt("sides") else null,
+                value = if (o.isNull("value")) null else o.optString("value"),
+                emote = if (o.isNull("emote")) null else o.optString("emote"),
+                to = if (o.has("to") && !o.isNull("to")) o.optInt("to") else null
+            )
+        }.getOrNull()
+    }
+}
 
 data class RemoteState(
     val v: Int,
@@ -62,7 +107,16 @@ data class RemoteState(
     val longPress: Int,
     val players: List<RemoteSeat>,
     val shownCard: RemoteShownCard?,
-    val over: RemoteOver?
+    val over: RemoteOver?,
+    // Everything below came later: a table from before leaves it out, and it reads as nothing.
+    val monarch: Int? = null,
+    val initiative: Int? = null,
+    /** "DAY" or "NIGHT"; null while the table isn't tracking it. */
+    val dayNight: String? = null,
+    /** The seat that asked everyone to hold on, until they let go or the turn passes. */
+    val hold: Int? = null,
+    val plane: RemotePlane? = null,
+    val announce: RemoteAnnounce? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("v", v).put("gameId", gameId).put("remotes", remotes)
@@ -78,9 +132,14 @@ data class RemoteState(
                 .put("commander", p.commander ?: JSONObject.NULL)
                 .put("userId", p.userId ?: JSONObject.NULL).put("avatarPath", p.avatarPath ?: JSONObject.NULL)
                 .put("canUndo", p.canUndo).put("partner", p.partner)
+                .put("commanderCasts", p.commanderCasts)
         }))
         .put("shownCard", shownCard?.let { JSONObject().put("name", it.name).put("imageUrl", it.imageUrl).put("seat", it.seat) } ?: JSONObject.NULL)
         .put("over", over?.let { JSONObject().put("winner", it.winner ?: JSONObject.NULL).put("turns", it.turns).put("minutes", it.minutes) } ?: JSONObject.NULL)
+        .put("monarch", monarch ?: JSONObject.NULL).put("initiative", initiative ?: JSONObject.NULL)
+        .put("dayNight", dayNight ?: JSONObject.NULL).put("hold", hold ?: JSONObject.NULL)
+        .put("plane", plane?.let { JSONObject().put("name", it.name).put("imageUrl", it.imageUrl ?: JSONObject.NULL).put("left", it.left) } ?: JSONObject.NULL)
+        .put("announce", announce?.toJson() ?: JSONObject.NULL)
 
     companion object {
         /** Null for anything that isn't a game this version understands. */
@@ -98,16 +157,23 @@ data class RemoteState(
                         seat = p.getInt("seat"), name = p.optString("name"), color = p.optString("color", "#888888"), ink = p.optString("ink", "#000"),
                         life = p.getInt("life"), out = p.str("out"), poison = p.optInt("poison"), counters = counters, commanderDamage = damage,
                         background = p.str("background"), deck = p.str("deck"), commander = p.str("commander"), userId = p.str("userId"), avatarPath = p.str("avatarPath"),
-                        canUndo = p.optBoolean("canUndo"), partner = p.optBoolean("partner")
+                        canUndo = p.optBoolean("canUndo"), partner = p.optBoolean("partner"),
+                        commanderCasts = p.optInt("commanderCasts", 0).coerceAtLeast(0)
                     )
                 }
             }
+            fun JSONObject.seat(key: String): Int? = if (isNull(key)) null else optInt(key, -1).takeIf { it >= 0 }
             RemoteState(
                 v = o.getInt("v"), gameId = o.optString("gameId"), remotes = o.optBoolean("remotes", true),
                 turn = o.optJSONObject("turn")?.let { RemoteTurn(it.getInt("seat"), it.getInt("number")) },
                 startedAt = o.optLong("startedAt"), longPress = o.optInt("longPress", 10), players = players,
                 shownCard = o.optJSONObject("shownCard")?.let { RemoteShownCard(it.getString("name"), it.getString("imageUrl"), it.getInt("seat")) },
-                over = o.optJSONObject("over")?.let { RemoteOver(if (it.isNull("winner")) null else it.optInt("winner"), it.optInt("turns"), it.optInt("minutes")) }
+                over = o.optJSONObject("over")?.let { RemoteOver(if (it.isNull("winner")) null else it.optInt("winner"), it.optInt("turns"), it.optInt("minutes")) },
+                monarch = o.seat("monarch"), initiative = o.seat("initiative"),
+                dayNight = o.str("dayNight")?.takeIf { it == "DAY" || it == "NIGHT" },
+                hold = o.seat("hold"),
+                plane = o.optJSONObject("plane")?.let { RemotePlane(it.optString("name"), it.str("imageUrl"), it.optInt("left")) },
+                announce = o.optJSONObject("announce")?.let { RemoteAnnounce.parse(it) }
             )
         }.getOrNull()
     }
@@ -129,6 +195,77 @@ object RemoteActions {
         .put("deck", deck ?: JSONObject.NULL).put("commander", commander ?: JSONObject.NULL)
     fun showCard(name: String, imageUrl: String) = JSONObject().put("type", "showCard").put("name", name).put("imageUrl", imageUrl)
     fun hideCard() = JSONObject().put("type", "hideCard")
+    /** Take the monarch ([take]), or give it up — only the holder can. */
+    fun monarch(take: Boolean) = JSONObject().put("type", "monarch").put("take", take)
+    fun initiative(take: Boolean) = JSONObject().put("type", "initiative").put("take", take)
+    /** "DAY", "NIGHT", or null to stop tracking it. */
+    fun dayNight(value: String?) = JSONObject().put("type", "dayNight").put("value", value ?: JSONObject.NULL)
+    /** The table rolls, so nobody has to trust a phone: [sides] 2 is a coin. */
+    fun roll(sides: Int) = JSONObject().put("type", "roll").put("sides", sides)
+    /** [what]: "roll" (the planar die) or "planeswalk". */
+    fun planar(what: String) = JSONObject().put("type", "planar").put("what", what)
+    fun commanderCast(delta: Int) = JSONObject().put("type", "commanderCast").put("delta", delta)
+    fun hold(on: Boolean) = JSONObject().put("type", "hold").put("on", on)
+    fun emote(emote: String) = JSONObject().put("type", "emote").put("emote", emote)
+    fun target(to: Int) = JSONObject().put("type", "target").put("to", to)
+    fun concede() = JSONObject().put("type", "concede")
+}
+
+/** The dice a remote can ask the table to roll; 2 is a coin. */
+val REMOTE_DICE = listOf(4, 6, 8, 10, 12, 20)
+
+/** Emotes by wire id, with what to show. Anything else a remote sends is ignored. */
+val REMOTE_EMOTES = linkedMapOf(
+    "gg" to "🤝 GG",
+    "thinking" to "🤔 Thinking…",
+    "wait" to "⏳ One sec",
+    "laugh" to "😂",
+    "wow" to "😮",
+    "sorry" to "🙏 Sorry"
+)
+
+/**
+ * Who holds something only one seat can (the monarch, the initiative, a hold-on) after [seat] asks
+ * to [take] it or let it go. Letting go of something you don't hold changes nothing.
+ */
+fun claimedBy(holder: Int?, seat: Int, take: Boolean): Int? = when {
+    take -> seat
+    holder == seat -> null
+    else -> holder
+}
+
+/**
+ * A roll the table makes for a remote: a coin for [sides] 2, a die for the others it has. Null for
+ * a die it doesn't have.
+ */
+fun remoteRoll(seat: Int, sides: Int, random: kotlin.random.Random, id: String, at: Long): RemoteAnnounce? = when (sides) {
+    2 -> RemoteAnnounce(id, seat, "coin", at, value = if (random.nextBoolean()) "Heads" else "Tails")
+    in REMOTE_DICE -> RemoteAnnounce(id, seat, "roll", at, sides = sides, value = random.nextInt(1, sides + 1).toString())
+    else -> null
+}
+
+/**
+ * Whether [seat] may roll the planar die or planeswalk: only in a Planechase game that has a plane
+ * up, and — when the table tracks turns — only on their own turn, as the rules have it.
+ */
+fun planarAllowed(planechase: Boolean, hasPlane: Boolean, turnTracker: Boolean, turnSeat: Int, seat: Int): Boolean =
+    planechase && hasPlane && (!turnTracker || turnSeat == seat)
+
+/** What an announcement says, e.g. "Ana rolled a d20: 14". [nameOf] gives a seat's name. */
+fun announceText(a: RemoteAnnounce, nameOf: (Int) -> String): String {
+    val who = nameOf(a.seat)
+    return when (a.kind) {
+        "roll" -> "$who rolled a d${a.sides}: ${a.value}"
+        "coin" -> "$who flipped a coin: ${a.value}"
+        "planar" -> when (a.value) {
+            "PLANESWALK" -> "$who planeswalks"
+            "CHAOS" -> "$who rolled Chaos"
+            else -> "$who rolled a blank"
+        }
+        "emote" -> "$who: ${REMOTE_EMOTES[a.emote] ?: ""}"
+        "target" -> a.to?.let { "$who points at ${nameOf(it)}" } ?: who
+        else -> who
+    }
 }
 
 /** Pictures a remote may put behind its tile or show on the table: Scryfall, Giphy, profile pictures. */

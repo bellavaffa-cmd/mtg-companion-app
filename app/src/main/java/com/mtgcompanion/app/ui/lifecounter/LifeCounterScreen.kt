@@ -127,6 +127,21 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
     val seatError by viewModel.seatError.collectAsState()
     val canUndo by viewModel.canUndo.collectAsState()
     val shownCard by viewModel.shownCard.collectAsState()
+    val hold by viewModel.hold.collectAsState()
+    val announce by viewModel.announce.collectAsState()
+
+    // The latest announcement from a remote, for a few seconds — and not again when the screen
+    // comes back to one that's already been and gone.
+    var showingAnnounce by remember { mutableStateOf<RemoteAnnounce?>(null) }
+    LaunchedEffect(announce?.id) {
+        val a = announce ?: run { showingAnnounce = null; return@LaunchedEffect }
+        val age = System.currentTimeMillis() - a.at
+        if (age >= ANNOUNCE_MILLIS) return@LaunchedEffect
+        showingAnnounce = a
+        delay(ANNOUNCE_MILLIS - age)
+        if (showingAnnounce?.id == a.id) showingAnnounce = null
+    }
+    fun nameOf(seat: Int) = players.firstOrNull { it.id == seat }?.displayName ?: "Player $seat"
 
     // Once a table is open, keep up with who sits where: often while a seat's code is showing, now
     // and then otherwise, and never while the app isn't in front.
@@ -238,6 +253,7 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                                 turnNumber = turnNumber,
                                 onEndTurn = viewModel::nextTurn,
                                 roll = highRoll?.let { r -> r.rolls[player.id]?.let { TileRoll(it, winner = r.winnerId == player.id) } },
+                                pointedAtBy = showingAnnounce?.takeIf { it.kind == "target" && it.to == player.id }?.let { nameOf(it.seat) },
                                 isMonarch = player.id == monarchPlayerId,
                                 hasInitiative = player.id == initiativePlayerId,
                                 defeatMessage = reason?.let { defeatMessageFor(player, it, settings, gameNumber, messageTick) },
@@ -273,6 +289,22 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                         onToggle = viewModel::toggleDayNight,
                         onStop = viewModel::stopDayNight,
                         modifier = Modifier.align(Alignment.Center).offset(y = (-64).dp)
+                    )
+                }
+
+                hold?.let { seat ->
+                    HoldBanner(
+                        name = nameOf(seat),
+                        onClear = viewModel::clearHold,
+                        modifier = Modifier.align(Alignment.Center).offset(y = 64.dp)
+                    )
+                }
+                showingAnnounce?.takeIf { it.kind != "target" }?.let { a ->
+                    AnnounceToast(
+                        announce = a,
+                        nameOf = ::nameOf,
+                        onDismiss = { showingAnnounce = null },
+                        modifier = Modifier.align(Alignment.Center).offset(y = if (hold != null) 150.dp else 90.dp)
                     )
                 }
 
@@ -1119,6 +1151,8 @@ private fun TipSample(demo: TipDemo) {
 }
 
 private const val EXIT_CONFIRM_MILLIS = 2_000L
+/** How long a roll, emote or pointing from a remote stays up. */
+private const val ANNOUNCE_MILLIS = 4_000L
 
 /** A card a player is showing everyone from their remote. Tap anywhere to put it away. */
 @Composable

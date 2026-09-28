@@ -1,7 +1,14 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -207,6 +214,64 @@ internal fun TableGamesOverlay(games: List<TableGame>, onDelete: (String) -> Uni
                     }
                 }
             }
+        }
+    }
+}
+
+// ---- From players' remotes: "hold on", and the latest roll or emote ----
+
+/** A player asked everyone to hold on (priority). Stays until they let go, the turn passes, or the table taps it away. */
+@Composable
+internal fun HoldBanner(name: String, onClear: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .popIn()
+            .clip(RoundedCornerShape(50))
+            .background(TableColors.CriticalRed)
+            .border(BorderStroke(2.dp, Color.White), RoundedCornerShape(50))
+            .clickable(onClick = onClear)
+            .padding(start = 16.dp, end = 10.dp, top = 6.dp, bottom = 6.dp)
+    ) {
+        Text("✋", fontSize = 22.sp)
+        TableLabel("$name says hold on", 28.sp, maxLines = 1, modifier = Modifier.padding(start = 8.dp, end = 8.dp))
+        Icon(Icons.Filled.Close, contentDescription = "Clear the hold", tint = Color.White, modifier = Modifier.size(18.dp))
+    }
+}
+
+/**
+ * A roll, a coin, the planar die or an emote from someone's remote, for a few seconds in the middle
+ * of the table: who, and what came up, big. Pointing at a player shows on their tile instead.
+ */
+@Composable
+internal fun AnnounceToast(announce: RemoteAnnounce, nameOf: (Int) -> String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    val who = nameOf(announce.seat)
+    val (small, big) = when (announce.kind) {
+        "roll" -> "$who rolled a d${announce.sides}" to announce.value.orEmpty()
+        "coin" -> "$who flipped a coin" to announce.value.orEmpty()
+        "planar" -> when (announce.value) {
+            "PLANESWALK" -> who to "Planeswalk"
+            "CHAOS" -> "$who rolled the planar die" to "Chaos"
+            else -> "$who rolled the planar die" to "Blank"
+        }
+        "emote" -> who to (REMOTE_EMOTES[announce.emote] ?: "")
+        else -> announceText(announce, nameOf) to ""
+    }
+    key(announce.id) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = modifier
+                .popIn()
+                .clip(RoundedCornerShape(24.dp))
+                .background(TableColors.SurfaceRaised)
+                .border(BorderStroke(2.dp, TableColors.Line), RoundedCornerShape(24.dp))
+                .clickable(onClick = onDismiss)
+                .padding(horizontal = 26.dp, vertical = 14.dp)
+        ) {
+            TableLabel(small, 22.sp, color = TableColors.TextMuted, maxLines = 1)
+            // Emoji aren't in the table's typeface, so an emote is set in the phone's own.
+            if (announce.kind == "emote") Text(big, fontSize = 40.sp, color = Color.White)
+            else if (big.isNotEmpty()) TableLabel(big, if (announce.kind == "roll") 96.sp else 56.sp, color = TableColors.Yellow, maxLines = 1)
         }
     }
 }

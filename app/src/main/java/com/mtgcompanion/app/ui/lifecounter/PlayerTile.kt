@@ -172,7 +172,9 @@ fun PlayerTile(
     turnNumber: Int = 0,
     onEndTurn: (() -> Unit)? = null,
     // This player's high roll, while one is showing.
-    roll: TileRoll? = null
+    roll: TileRoll? = null,
+    // Who is pointing at this player from their remote, for the few seconds it shows.
+    pointedAtBy: String? = null
 ) {
     val seat = seatColor(player.colorIndex)
     val hasImage = player.backgroundImageUri != null
@@ -385,6 +387,25 @@ fun PlayerTile(
 
             if (isActiveTurn) {
                 Box(Modifier.fillMaxSize().border(BorderStroke(5.dp, TableColors.Gold), TileShape))
+            }
+
+            // Pointed at from someone's remote: a ring, and who it's from. The name stays while it fades out.
+            var lastPointer by remember { mutableStateOf(pointedAtBy) }
+            SideEffect { if (pointedAtBy != null) lastPointer = pointedAtBy }
+            AnimatedVisibility(visible = pointedAtBy != null, enter = fadeIn(tween(TableMotion.FAST)), exit = fadeOut(tween(TableMotion.FAST))) {
+                Box(Modifier.fillMaxSize().border(BorderStroke(6.dp, TableColors.Accent), TileShape)) {
+                    TableLabel(
+                        "${pointedAtBy ?: lastPointer} points at you",
+                        22.sp,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 48.dp, start = 16.dp, end = 16.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(TableColors.Accent)
+                            .padding(horizontal = 14.dp, vertical = 4.dp)
+                    )
+                }
             }
             if (isActiveTurn && onEndTurn != null) {
                 AnimatedVisibility(visible = reveal == Reveal.NONE && alive, enter = fadeIn(tween(TableMotion.FAST)), exit = fadeOut(tween(150))) {

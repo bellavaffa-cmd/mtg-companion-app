@@ -50,6 +50,12 @@ import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.PanTool
+import androidx.compose.material.icons.filled.TrackChanges
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -110,7 +116,14 @@ private val RmGreen = Color(0xFF2BD98F)
 private const val SILENT_MS = 60_000L
 private const val FEEDBACK_HOLD_MS = 1_500L
 
-private enum class RemoteSheet { DAMAGE, COUNTERS, BACKGROUND, MORE, DECK, SHOW, NOTES, BADGE }
+private enum class RemoteSheet { DAMAGE, COUNTERS, BACKGROUND, MORE, DECK, SHOW, NOTES, BADGE, TABLE, TARGET, TOKENS, CONCEDE }
+
+/** How long a roll or emote from the table stays up. */
+private const val TOAST_MS = 4_000L
+
+/** The crown and the flag, after the name of whoever holds the monarch and the initiative. */
+private fun badges(s: RemoteState, seat: Int) =
+    (if (s.monarch == seat) " 👑" else "") + (if (s.initiative == seat) " 🚩" else "")
 
 /** "#rrggbb", or the short "#rgb" the table uses for ink (which Android's parser doesn't read). */
 private fun hexColor(hex: String): Color {
@@ -147,6 +160,21 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
         onDispose { view.keepScreenOn = false }
     }
     BackHandler(enabled = sheet != null) { sheet = null }
+
+    // Your turn: a double buzz, so you notice with the phone face down on the table.
+    val buzz by viewModel.buzz.collectAsState()
+    LaunchedEffect(buzz) {
+        if (buzz == 0) return@LaunchedEffect
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        delay(100)
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    }
+    val toast by viewModel.toast.collectAsState()
+    LaunchedEffect(toast?.id) {
+        val id = toast?.id ?: return@LaunchedEffect
+        delay(TOAST_MS)
+        viewModel.clearToast(id)
+    }
 
     val mine = state?.players?.firstOrNull { it.seat == viewModel.seat }
     // Remember the seat while it's ours, so Home can offer the way back to this remote.
@@ -232,12 +260,18 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
                 if (s?.remotes == true && mine != null) {
                     Option("Show a card on the table", "Everyone sees it big until they tap it away", icon = Icons.Filled.Visibility) { sheet = RemoteSheet.SHOW }
                 }
+                Option("Tokens", deck?.let { "The ones ${it.name} makes" } ?: "Pick the deck you're playing first", icon = Icons.Filled.Layers) {
+                    if (deck == null) sheet = RemoteSheet.DECK else { viewModel.loadTokens(); sheet = RemoteSheet.TOKENS }
+                }
                 Option("Notes", "Only you see these", icon = Icons.Filled.Lock) { sheet = RemoteSheet.NOTES }
                 // Tokens turn up mid-game, and leaving the table to write one loses your seat's screen.
                 if (hasNfc) {
                     Option("Put a token on a badge", deck?.name ?: "Pick the deck you're playing first", icon = Icons.Filled.Nfc) {
                         sheet = RemoteSheet.BADGE
                     }
+                }
+                if (s?.remotes == true && mine != null && mine.out == null && s.over == null) {
+                    Option("Concede", "Leave this game as a loss", icon = Icons.Filled.Flag) { sheet = RemoteSheet.CONCEDE }
                 }
                 Option("Leave this seat", "Your name comes off the table", icon = Icons.AutoMirrored.Filled.Logout) {
                     viewModel.leaveSeat()
@@ -248,6 +282,24 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
                 BadgeSheet(deck = deck, ink = RmText, muted = RmMuted, accent = RmGold)
             }
             RemoteSheet.SHOW -> ShowCardSheet(viewModel, onClose = { sheet = null })
+            RemoteSheet.TABLE -> if (s != null && mine != null) TableSheet(viewModel, s, mine, onClose = { sheet = null })
+            RemoteSheet.TARGET -> if (s != null && mine != null) RmSheetBox("Point at a player", { sheet = null }) {
+                Text("Their tile lights up on the table, with your name.", color = RmMuted, fontSize = 13.sp)
+                s.players.filter { it.seat != mine.seat }.forEach { o ->
+                    Option(o.name + badges(s, o.seat), if (o.out != null) "Out of the game" else "${o.life} life", swatchColor = hexColor(o.color), swatchUrl = o.background) {
+                        viewModel.send(RemoteActions.target(o.seat))
+                        sheet = null
+                    }
+                }
+            }
+            RemoteSheet.TOKENS -> TokensSheet(viewModel, deck, onClose = { sheet = null })
+            RemoteSheet.CONCEDE -> RmSheetBox("Concede this game?", { sheet = null }) {
+                Text("You're out of this game. The table can undo it if it was a mistake.", color = RmMuted, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    RmButton("Keep playing", outlined = true, modifier = Modifier.weight(1f)) { sheet = null }
+                    RmButton("Concede", modifier = Modifier.weight(1f)) { viewModel.send(RemoteActions.concede()); sheet = null }
+                }
+            }
             RemoteSheet.NOTES -> RmSheetBox("Notes", { sheet = null }) {
                 var text by remember { mutableStateOf(viewModel.notes) }
                 Text("Only you see these, on this phone.", color = RmMuted, fontSize = 13.sp)
@@ -260,6 +312,27 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
                 )
             }
             null -> Unit
+        }
+
+        // A roll, an emote or someone pointing, from the table: a few seconds across the top.
+        val t = toast
+        if (t != null && s != null) {
+            val nameOf = { seat: Int -> s.players.firstOrNull { it.seat == seat }?.name ?: "Seat $seat" }
+            val text = if (t.kind == "target" && t.to == viewModel.seat) "${nameOf(t.seat)} points at you" else announceText(t, nameOf)
+            Text(
+                text,
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 56.dp, start = 16.dp, end = 16.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(RmRaised)
+                    .border(1.dp, RmGold, RoundedCornerShape(50))
+                    .clickable { viewModel.clearToast(t.id) }
+                    .padding(horizontal = 18.dp, vertical = 10.dp)
+            )
         }
     }
 }
@@ -316,7 +389,7 @@ private fun Remote(s: RemoteState, mine: RemoteSeat, big: Boolean, deck: Deck?, 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SeatCard(mine, Modifier.fillMaxWidth().then(if (myTurn) Modifier.border(5.dp, RmYellow, RoundedCornerShape(24.dp)) else Modifier)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(16.dp).alpha(if (mine.out != null) 0.6f else 1f)) {
-                Text(mine.name + (deck?.let { " · ${it.name}" } ?: ""), color = ink(mine), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(mine.name + badges(s, mine.seat) + (deck?.let { " · ${it.name}" } ?: ""), color = ink(mine), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${mine.life}", style = TextStyle(fontFamily = BebasNeue, fontSize = 130.sp, color = ink(mine)))
                 Text(
                     tallyText ?: if (mine.out != null) "Out of the game" else if (myTurn) "Your turn" else "",
@@ -338,6 +411,23 @@ private fun Remote(s: RemoteState, mine: RemoteSeat, big: Boolean, deck: Deck?, 
                 Chip("Hide", null) { viewModel.send(RemoteActions.hideCard()) }
             }
         }
+        s.hold?.takeIf { it != mine.seat }?.let { holder ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(RmAlertBg).padding(12.dp)) {
+                Icon(Icons.Filled.PanTool, contentDescription = null, tint = RmAlertText, modifier = Modifier.size(20.dp))
+                Text("${s.players.firstOrNull { it.seat == holder }?.name ?: "Someone"} says hold on", color = RmAlertText, fontSize = 15.sp)
+            }
+        }
+        // Asking for a moment, pointing at someone, and what the table rolls for you.
+        val holding = s.hold == mine.seat
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            BarButton(if (holding) "Let go" else "Hold on", Icons.Filled.PanTool, Modifier.weight(1f), active = holding) { viewModel.send(RemoteActions.hold(!holding)) }
+            BarButton("Point at…", Icons.Filled.TrackChanges, Modifier.weight(1f)) { onSheet(RemoteSheet.TARGET) }
+            BarButton("Table", Icons.Filled.Casino, Modifier.weight(1f)) { onSheet(RemoteSheet.TABLE) }
+        }
+        Stepper("Commander cast · tax ${mine.commanderCasts * 2}", mine.commanderCasts) { viewModel.send(RemoteActions.commanderCast(it)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            REMOTE_EMOTES.forEach { (id, label) -> Chip(label, null) { viewModel.send(RemoteActions.emote(id)) } }
+        }
         Label("Everyone")
         val others = s.players.filter { it.seat != mine.seat }
         others.chunked(3).forEach { row ->
@@ -345,7 +435,7 @@ private fun Remote(s: RemoteState, mine: RemoteSeat, big: Boolean, deck: Deck?, 
                 row.forEach { o ->
                     SeatCard(o, Modifier.weight(1f).then(if (s.turn?.seat == o.seat) Modifier.border(3.dp, RmYellow, RoundedCornerShape(14.dp)) else Modifier), corner = 14.dp) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 6.dp).alpha(if (o.out != null) 0.5f else 1f)) {
-                            Text(o.name, color = ink(o), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(o.name + badges(s, o.seat), color = ink(o), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("${o.life}", style = TextStyle(fontFamily = BebasNeue, fontSize = 38.sp, color = ink(o)))
                             if (o.poison > 0) Text("☠ ${o.poison}", color = ink(o), fontSize = 12.sp)
                         }
@@ -436,14 +526,14 @@ private fun Chip(text: String?, icon: ImageVector?, onClick: () -> Unit) {
 }
 
 @Composable
-private fun BarButton(label: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
+private fun BarButton(label: String, icon: ImageVector, modifier: Modifier, active: Boolean = false, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
-        modifier = modifier.clip(RoundedCornerShape(14.dp)).background(RmSurface).clickable(onClick = onClick).padding(vertical = 10.dp)
+        modifier = modifier.clip(RoundedCornerShape(14.dp)).background(if (active) RmGold else RmSurface).clickable(onClick = onClick).padding(vertical = 10.dp)
     ) {
-        Icon(icon, contentDescription = null, tint = RmGold, modifier = Modifier.size(24.dp))
-        Text(label, color = RmText, fontSize = 13.sp)
+        Icon(icon, contentDescription = null, tint = if (active) Color(0xFF1C1405) else RmGold, modifier = Modifier.size(24.dp))
+        Text(label, color = if (active) Color(0xFF1C1405) else RmText, fontSize = 13.sp)
     }
 }
 
@@ -608,17 +698,40 @@ private fun BackgroundSheet(viewModel: RemoteViewModel, mine: RemoteSeat, deck: 
     }
 }
 
-/** Search a card by name and show it big on the table. */
+/**
+ * Search a card by name and show it big on the table. Picking one first shows it here with its
+ * official rulings — the argument it's being shown to settle is often answered there.
+ */
 @Composable
 private fun ShowCardSheet(viewModel: RemoteViewModel, onClose: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var names by remember { mutableStateOf<List<String>>(emptyList()) }
     val busy by viewModel.busy.collectAsState()
+    val preview by viewModel.preview.collectAsState()
     LaunchedEffect(query) {
         delay(250)
         names = runCatching { viewModel.cardNames(query) }.getOrDefault(emptyList())
     }
-    RmSheetBox("Show a card on the table", onClose) {
+    val close = { viewModel.closePreview(); onClose() }
+    preview?.let { p ->
+        BackHandler(onBack = viewModel::closePreview)
+        RmSheetBox(p.card.name, close) {
+            p.card.displayImageUrl?.let {
+                AsyncImage(model = it, contentDescription = p.card.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).clip(RoundedCornerShape(12.dp)))
+            }
+            RmButton("Show on the table", modifier = Modifier.fillMaxWidth()) { viewModel.showCard(p.card); onClose() }
+            RmButton("Pick another card", outlined = true, modifier = Modifier.fillMaxWidth(), onClick = viewModel::closePreview)
+            Label(if (p.rulings.isEmpty()) "No official rulings" else "Rulings")
+            p.rulings.forEach { r ->
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF1F2027)).padding(10.dp)) {
+                    Text(r.comment, color = RmText, fontSize = 14.sp)
+                    r.publishedAt?.let { Text(it, color = RmMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+                }
+            }
+        }
+        return
+    }
+    RmSheetBox("Show a card on the table", close) {
         BasicTextField(
             value = query,
             onValueChange = { query = it },
@@ -634,7 +747,90 @@ private fun ShowCardSheet(viewModel: RemoteViewModel, onClose: () -> Unit) {
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF1F2027)).padding(12.dp)
         )
         names.forEach { n ->
-            Option(n, null, enabled = !busy) { viewModel.showCard(n); onClose() }
+            Option(n, null, enabled = !busy) { viewModel.previewCard(n) }
+        }
+        if (busy) CircularProgressIndicator(color = RmGold, modifier = Modifier.size(22.dp).align(Alignment.CenterHorizontally))
+    }
+}
+
+/**
+ * What belongs to the whole table: the monarch, the initiative, day and night, dice the table rolls
+ * for you (so nobody has to take your word for it), and the Planechase plane when there is one.
+ */
+@Composable
+private fun TableSheet(viewModel: RemoteViewModel, s: RemoteState, mine: RemoteSeat, onClose: () -> Unit) {
+    fun holder(seat: Int?) = when (seat) {
+        null -> "Nobody has it"
+        mine.seat -> "You have it"
+        else -> "${s.players.firstOrNull { it.seat == seat }?.name ?: "Seat $seat"} has it"
+    }
+    RmSheetBox("Table", onClose) {
+        Label("👑 Monarch · ${holder(s.monarch)}")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            RmButton("Take the monarch", modifier = Modifier.weight(1f).alpha(if (s.monarch == mine.seat) 0.4f else 1f)) { viewModel.send(RemoteActions.monarch(true)) }
+            RmButton("Give it up", outlined = true, modifier = Modifier.weight(1f).alpha(if (s.monarch == mine.seat) 1f else 0.4f)) { if (s.monarch == mine.seat) viewModel.send(RemoteActions.monarch(false)) }
+        }
+        Label("🚩 Initiative · ${holder(s.initiative)}")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            RmButton("Take the initiative", modifier = Modifier.weight(1f).alpha(if (s.initiative == mine.seat) 0.4f else 1f)) { viewModel.send(RemoteActions.initiative(true)) }
+            RmButton("Give it up", outlined = true, modifier = Modifier.weight(1f).alpha(if (s.initiative == mine.seat) 1f else 0.4f)) { if (s.initiative == mine.seat) viewModel.send(RemoteActions.initiative(false)) }
+        }
+        Label("Day / night")
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf("DAY" to "☀ Day", "NIGHT" to "☾ Night", null to "Off").forEach { (value, label) ->
+                Box(Modifier.weight(1f)) { Option(label, null, selected = s.dayNight == value) { viewModel.send(RemoteActions.dayNight(value)) } }
+            }
+        }
+        Label("Dice · the table rolls, everyone sees it")
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            REMOTE_DICE.forEach { sides -> Chip("d$sides", null) { viewModel.send(RemoteActions.roll(sides)); onClose() } }
+            Chip("Coin", null) { viewModel.send(RemoteActions.roll(2)); onClose() }
+        }
+        s.plane?.let { plane ->
+            val myTurn = s.turn == null || s.turn.seat == mine.seat
+            Label("Planechase · ${plane.left} ${if (plane.left == 1) "plane" else "planes"} left")
+            plane.imageUrl?.let {
+                AsyncImage(model = it, contentDescription = plane.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp).clip(RoundedCornerShape(12.dp)))
+            }
+            Text(plane.name, color = Color.White, fontWeight = FontWeight.SemiBold)
+            if (!myTurn) Text("On your turn, you can roll the planar die or planeswalk from here.", color = RmMuted, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().alpha(if (myTurn) 1f else 0.4f)) {
+                RmButton("Roll the planar die", modifier = Modifier.weight(1f)) { if (myTurn) { viewModel.send(RemoteActions.planar("roll")); onClose() } }
+                RmButton("Planeswalk", outlined = true, modifier = Modifier.weight(1f)) { if (myTurn) { viewModel.send(RemoteActions.planar("planeswalk")); onClose() } }
+            }
+        }
+    }
+}
+
+/**
+ * The tokens the deck makes, each with how many are out. The count lives on this phone for the
+ * game; every change also moves the Tokens counter on the table, so everyone sees the total.
+ */
+@Composable
+private fun TokensSheet(viewModel: RemoteViewModel, deck: Deck?, onClose: () -> Unit) {
+    val tokens by viewModel.tokens.collectAsState()
+    val loading by viewModel.tokensLoading.collectAsState()
+    val counts by viewModel.tokenCounts.collectAsState()
+    RmSheetBox("Tokens", onClose) {
+        val list = tokens
+        when {
+            deck == null -> Text("Pick the deck you're playing first.", color = RmMuted)
+            loading -> CircularProgressIndicator(color = RmGold, modifier = Modifier.size(22.dp).align(Alignment.CenterHorizontally))
+            list == null -> Text("Couldn't look up ${deck.name}'s tokens — check your connection.", color = RmMuted)
+            list.isEmpty() -> Text("${deck.name} doesn't make any tokens.", color = RmMuted)
+            else -> {
+                Text("Kept on this phone for this game. The table's Tokens count follows.", color = RmMuted, fontSize = 13.sp)
+                list.forEach { token ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(width = 48.dp, height = 34.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF34323E))) {
+                            token.artUrl?.let { AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize()) }
+                        }
+                        Box(Modifier.weight(1f)) {
+                            Stepper(token.name + (token.powerToughness?.let { " $it" } ?: ""), counts[token.id] ?: 0) { viewModel.changeToken(token.id, it) }
+                        }
+                    }
+                }
+            }
         }
     }
 }
