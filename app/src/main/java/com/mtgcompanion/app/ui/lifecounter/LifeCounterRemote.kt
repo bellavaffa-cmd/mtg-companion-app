@@ -44,7 +44,9 @@ data class RemoteSeat(
     /** Plays two commanders (a partner), so damage from each is kept apart. */
     val partner: Boolean,
     /** Times this seat has cast its commander; the tax is twice that. 0 from a table that doesn't say. */
-    val commanderCasts: Int = 0
+    val commanderCasts: Int = 0,
+    /** The same for its partner, when [partner]. */
+    val partnerCasts: Int = 0
 ) {
     fun damageFrom(from: Int, slot: Int): Int = commanderDamage.firstOrNull { it.from == from && it.slot == slot }?.amount ?: 0
 }
@@ -132,7 +134,7 @@ data class RemoteState(
                 .put("commander", p.commander ?: JSONObject.NULL)
                 .put("userId", p.userId ?: JSONObject.NULL).put("avatarPath", p.avatarPath ?: JSONObject.NULL)
                 .put("canUndo", p.canUndo).put("partner", p.partner)
-                .put("commanderCasts", p.commanderCasts)
+                .put("commanderCasts", p.commanderCasts).put("partnerCasts", p.partnerCasts)
         }))
         .put("shownCard", shownCard?.let { JSONObject().put("name", it.name).put("imageUrl", it.imageUrl).put("seat", it.seat) } ?: JSONObject.NULL)
         .put("over", over?.let { JSONObject().put("winner", it.winner ?: JSONObject.NULL).put("turns", it.turns).put("minutes", it.minutes) } ?: JSONObject.NULL)
@@ -158,7 +160,8 @@ data class RemoteState(
                         life = p.getInt("life"), out = p.str("out"), poison = p.optInt("poison"), counters = counters, commanderDamage = damage,
                         background = p.str("background"), deck = p.str("deck"), commander = p.str("commander"), userId = p.str("userId"), avatarPath = p.str("avatarPath"),
                         canUndo = p.optBoolean("canUndo"), partner = p.optBoolean("partner"),
-                        commanderCasts = p.optInt("commanderCasts", 0).coerceAtLeast(0)
+                        commanderCasts = p.optInt("commanderCasts", 0).coerceAtLeast(0),
+                        partnerCasts = p.optInt("partnerCasts", 0).coerceAtLeast(0)
                     )
                 }
             }
@@ -191,8 +194,9 @@ object RemoteActions {
     fun dealtDamage(to: Int, slot: Int, delta: Int) = JSONObject().put("type", "dealtDamage").put("to", to).put("slot", slot).put("delta", delta)
     fun endTurn() = JSONObject().put("type", "endTurn")
     fun undo() = JSONObject().put("type", "undo")
-    fun background(url: String?, deck: String?, commander: String?) = JSONObject().put("type", "background").put("url", url ?: JSONObject.NULL)
-        .put("deck", deck ?: JSONObject.NULL).put("commander", commander ?: JSONObject.NULL)
+    /** [partner]: the deck has two commanders, so the table keeps them apart. */
+    fun background(url: String?, deck: String?, commander: String?, partner: Boolean = false) = JSONObject().put("type", "background").put("url", url ?: JSONObject.NULL)
+        .put("deck", deck ?: JSONObject.NULL).put("commander", commander ?: JSONObject.NULL).put("partner", partner)
     fun showCard(name: String, imageUrl: String) = JSONObject().put("type", "showCard").put("name", name).put("imageUrl", imageUrl)
     fun hideCard() = JSONObject().put("type", "hideCard")
     /** Take the monarch ([take]), or give it up — only the holder can. */
@@ -204,7 +208,8 @@ object RemoteActions {
     fun roll(sides: Int) = JSONObject().put("type", "roll").put("sides", sides)
     /** [what]: "roll" (the planar die) or "planeswalk". */
     fun planar(what: String) = JSONObject().put("type", "planar").put("what", what)
-    fun commanderCast(delta: Int) = JSONObject().put("type", "commanderCast").put("delta", delta)
+    /** [slot] 1: the partner. */
+    fun commanderCast(delta: Int, slot: Int = 0) = JSONObject().put("type", "commanderCast").put("delta", delta).put("slot", slot)
     fun hold(on: Boolean) = JSONObject().put("type", "hold").put("on", on)
     fun emote(emote: String) = JSONObject().put("type", "emote").put("emote", emote)
     fun target(to: Int) = JSONObject().put("type", "target").put("to", to)

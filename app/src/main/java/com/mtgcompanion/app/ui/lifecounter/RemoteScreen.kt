@@ -442,7 +442,10 @@ private fun Remote(s: RemoteState, mine: RemoteSeat, big: Boolean, deck: Deck?, 
             BarButton("Point at…", Icons.Filled.TrackChanges, Modifier.weight(1f)) { onSheet(RemoteSheet.TARGET) }
             BarButton("Table", Icons.Filled.Casino, Modifier.weight(1f)) { onSheet(RemoteSheet.TABLE) }
         }
-        Stepper("Commander cast · tax ${mine.commanderCasts * 2}", mine.commanderCasts) { viewModel.send(RemoteActions.commanderCast(it)) }
+        Stepper("${if (mine.partner) "Commander" else "Commander cast"} · tax ${mine.commanderCasts * 2}", mine.commanderCasts) { viewModel.send(RemoteActions.commanderCast(it)) }
+        if (mine.partner) {
+            Stepper("Partner · tax ${mine.partnerCasts * 2}", mine.partnerCasts) { viewModel.send(RemoteActions.commanderCast(it, slot = 1)) }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             REMOTE_EMOTES.forEach { (id, label) -> Chip(label, null) { viewModel.send(RemoteActions.emote(id)) } }
         }

@@ -578,17 +578,21 @@ class LifeCounterViewModel(
 
     /**
      * "Commander cast" from a player's remote: the same tax as the tile's, counted in casts — each
-     * one adds 2 — so the tile and the phone never disagree. Remotes only know the one commander.
+     * one adds 2 — so the tile and the phone never disagree. [slot] 1 is the partner's, only while
+     * the player plays partners.
      */
-    fun adjustCommanderCasts(playerId: Int, delta: Int) = undoable("tax:$playerId:0") {
+    fun adjustCommanderCasts(playerId: Int, delta: Int, slot: Int = 0) = undoable("tax:$playerId:$slot") {
         val player = player(playerId) ?: return@undoable
-        val current = player.commanderTax.getOrElse(0) { 0 }
+        if (slot == 1 && !player.hasPartner) return@undoable
+        val current = player.commanderTax.getOrElse(slot) { 0 }
         val updated = (current + 2 * delta).coerceAtLeast(0)
         if (updated == current) return@undoable
         updatePlayer(playerId) {
-            it.copy(commanderTax = it.commanderTax.toMutableList().also { tax -> tax[0] = updated })
+            val tax = MutableList(2) { i -> it.commanderTax.getOrElse(i) { 0 } }
+            tax[slot] = updated
+            it.copy(commanderTax = tax)
         }
-        log(HistoryEvent.CommanderCast, playerId, current, updated)
+        log(if (slot == 1) HistoryEvent.CommanderTax(1) else HistoryEvent.CommanderCast, playerId, current, updated)
     }
 
     /**
@@ -597,6 +601,7 @@ class LifeCounterViewModel(
      * still count as lethal. The life those hits cost stays lost: it was real damage.
      */
     fun setHasPartner(playerId: Int, enabled: Boolean) {
+        if (player(playerId)?.hasPartner == enabled) return
         if (enabled) {
             updatePlayer(playerId) { it.copy(hasPartner = true) }
             return
@@ -1099,7 +1104,8 @@ class LifeCounterViewModel(
                     avatarPath = p.linked?.avatarPath,
                     canUndo = canUndoFor(p.id),
                     partner = p.hasPartner,
-                    commanderCasts = p.commanderTax.getOrElse(0) { 0 } / 2
+                    commanderCasts = p.commanderTax.getOrElse(0) { 0 } / 2,
+                    partnerCasts = if (p.hasPartner) p.commanderTax.getOrElse(1) { 0 } / 2 else 0
                 )
             },
             shownCard = _shownCard.value,
@@ -1187,6 +1193,9 @@ class LifeCounterViewModel(
                         val commander = if (action.has("commander")) (if (action.isNull("commander")) null else action.optString("commander").take(150))
                         else if (deck == player.deck) player.commander else null
                         updatePlayer(seat) { it.copy(backgroundImageUri = url, deck = deck, commander = commander) }
+                        // A partner deck turns partners on for its player, any other deck off; an
+                        // older remote doesn't say, and leaves it as the table has it.
+                        if (action.has("partner") && !action.isNull("partner")) setHasPartner(seat, action.optBoolean("partner"))
                     }
                 }
                 "showCard" -> {
@@ -1224,7 +1233,10 @@ class LifeCounterViewModel(
                     }
                     face?.let { _announce.value = newAnnounce(seat, "planar").copy(value = it.name) }
                 }
-                "commanderCast" -> action.optInt("delta", 0).takeIf { it == 1 || it == -1 }?.let { adjustCommanderCasts(seat, it) }
+                "commanderCast" -> {
+                    val slot = action.optInt("slot", 0)
+                    action.optInt("delta", 0).takeIf { (it == 1 || it == -1) && (slot == 0 || slot == 1) }?.let { adjustCommanderCasts(seat, it, slot) }
+                }
                 "hold" -> flag("on")?.let { _hold.value = claimedBy(_hold.value, seat, it) }
                 "emote" -> action.optString("emote").takeIf { it in REMOTE_EMOTES }?.let {
                     _announce.value = newAnnounce(seat, "emote").copy(emote = it)

@@ -176,7 +176,7 @@ class RemoteViewModel(
             if (mine.background == null && mine.deck == null && prefs.contains(KEY_BACKGROUND)) {
                 val deck = deck()
                 val url = urlFor(_background.value, deck, _customUrl.value)
-                if (url != null || deck != null) send(RemoteActions.background(url, deck?.name, commanderOf(deck)))
+                if (url != null || deck != null) send(RemoteActions.background(url, deck?.name, commanderOf(deck), partner = deck?.partnerCommander != null))
             }
         }
         s.over?.let { logResult(s, it) }
@@ -188,7 +188,8 @@ class RemoteViewModel(
         _deckId.value = deckId
         prefs.edit().putString(KEY_BACKGROUND, kind.name).putString(KEY_CUSTOM, custom).putString(KEY_DECK, deckId).apply()
         val deck = decks.value.firstOrNull { it.id == deckId }
-        send(RemoteActions.background(urlFor(kind, deck, custom), deck?.name, commanderOf(deck)))
+        // A partner deck has the table keep its two commanders apart.
+        send(RemoteActions.background(urlFor(kind, deck, custom), deck?.name, commanderOf(deck), partner = deck?.partnerCommander != null))
     }
 
     fun chooseDeck(deck: Deck?) {

@@ -41,6 +41,27 @@ class RemoteWireTest {
     }
 
     @Test
+    fun aPartnerDeckSaysSoAndItsCastsGoToTheSecondCommander() {
+        assertEquals(true, RemoteActions.background(null, "Partners", "Tymna & Thrasios", partner = true).getBoolean("partner"))
+        assertEquals(false, RemoteActions.background(null, "Goblins", "Krenko, Mob Boss").getBoolean("partner"))
+        assertEquals(1, RemoteActions.commanderCast(1, slot = 1).getInt("slot"))
+        assertEquals(0, RemoteActions.commanderCast(-1).getInt("slot"))
+    }
+
+    @Test
+    fun partnerCastsRoundTripAndDefaultToNone() {
+        val seat = RemoteSeat(
+            seat = 1, name = "A", color = "#ffffff", ink = "#000", life = 40, out = null, poison = 0, counters = emptyMap(),
+            commanderDamage = emptyList(), background = null, deck = null, commander = null, userId = null, avatarPath = null,
+            canUndo = false, partner = true, commanderCasts = 2, partnerCasts = 1
+        )
+        val state = RemoteState(v = REMOTE_VERSION, gameId = "g", remotes = true, turn = null, startedAt = 0, longPress = 10, players = listOf(seat), shownCard = null, over = null)
+        assertEquals(1, RemoteState.parse(state.toJson())!!.players[0].partnerCasts)
+        val older = state.toJson().also { it.getJSONArray("players").getJSONObject(0).remove("partnerCasts") }
+        assertEquals(0, RemoteState.parse(older)!!.players[0].partnerCasts)
+    }
+
+    @Test
     fun theBackgroundActionCarriesTheCommander() {
         val a = RemoteActions.background(null, "Goblins", "Krenko, Mob Boss")
         assertEquals("Krenko, Mob Boss", a.getString("commander"))
@@ -119,7 +140,7 @@ class RemoteWireTest {
         assertEquals(json("""{"type":"dayNight","value":null}"""), json(RemoteActions.dayNight(null)))
         assertEquals(json("""{"type":"roll","sides":20}"""), json(RemoteActions.roll(20)))
         assertEquals(json("""{"type":"planar","what":"planeswalk"}"""), json(RemoteActions.planar("planeswalk")))
-        assertEquals(json("""{"type":"commanderCast","delta":-1}"""), json(RemoteActions.commanderCast(-1)))
+        assertEquals(json("""{"type":"commanderCast","delta":-1,"slot":0}"""), json(RemoteActions.commanderCast(-1)))
         assertEquals(json("""{"type":"hold","on":true}"""), json(RemoteActions.hold(true)))
         assertEquals(json("""{"type":"emote","emote":"wow"}"""), json(RemoteActions.emote("wow")))
         assertEquals(json("""{"type":"target","to":3}"""), json(RemoteActions.target(3)))
