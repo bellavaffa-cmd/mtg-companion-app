@@ -14,9 +14,10 @@ interface EdhrecApi {
 /**
  * Mirrors EDHREC's own slug algorithm: lowercase, strip punctuation, spaces to hyphens.
  * Verified against live endpoints, e.g. "Yuriko, the Tiger's Shadow" -> "yuriko-the-tigers-shadow".
+ * A two-faced card's page is named for its front face alone — the full "A // B" name finds nothing.
  */
 fun edhrecSlug(cardName: String): String {
-    val cleaned = cardName.lowercase()
+    val cleaned = cardName.substringBefore(" // ").lowercase()
         .replace(Regex("[^a-z0-9\\s-]"), "")
         .trim()
         .replace(Regex("\\s+"), "-")
