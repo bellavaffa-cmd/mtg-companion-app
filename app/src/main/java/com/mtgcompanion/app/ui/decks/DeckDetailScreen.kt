@@ -1262,7 +1262,8 @@ private fun CardsTab(
             OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::setCardQuery,
-                placeholder = { Text("Name, tag, or a card to add", color = TextDim) },
+                // One line only: a placeholder that wraps makes the whole field twice as tall.
+                placeholder = { Text("Find or add a card", color = TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted) },
                 trailingIcon = {
