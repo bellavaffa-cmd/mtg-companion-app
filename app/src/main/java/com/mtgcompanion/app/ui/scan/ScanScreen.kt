@@ -51,6 +51,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -723,7 +725,8 @@ private fun CollectionPickerDialog(
         containerColor = Surface,
         title = { Text("Add to binder", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
         text = {
-            Column {
+            // Scrolls: with more binders than fit, the ones below (and the new-binder box) were out of reach.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 collections.forEach { collection ->
                     Text(
                         collection.name,
@@ -1043,7 +1046,8 @@ private fun DeckPickerDialog(
         containerColor = Surface,
         title = { Text("Add to deck", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
         text = {
-            Column {
+            // Scrolls: with more decks than fit, the ones below (and the new-deck box) were out of reach.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 decks.forEach { deck ->
                     Text(
                         deck.name,

@@ -56,6 +56,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -475,7 +476,8 @@ private fun CollectionPickerDialog(
         containerColor = Surface,
         title = { Text("Add to binder", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
         text = {
-            Column {
+            // Scrolls: with more binders than fit, the ones below (and the new-binder box) were out of reach.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 collections.forEach { collection ->
                     Text(
                         collection.name,
@@ -898,7 +900,8 @@ private fun DeckPickerDialog(
         containerColor = Surface,
         title = { Text("Add to deck", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
         text = {
-            Column {
+            // Scrolls: with more decks than fit, the ones below (and the new-deck box) were out of reach.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (decks.isNotEmpty()) {
                     Text(
                         "Tap a deck to add the card, or CONSIDER to put it on that deck's Considering list.",
