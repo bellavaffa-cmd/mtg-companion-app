@@ -232,7 +232,8 @@ fun SearchResultsScreen(
                 viewModel.addToTarget(card, target) { warning -> Toast.makeText(context, warning, Toast.LENGTH_LONG).show() }
                 addTarget = null
             },
-            onDismiss = { addTarget = null }
+            onDismiss = { addTarget = null },
+            title = "Add ${card.name} to"
         )
     }
 

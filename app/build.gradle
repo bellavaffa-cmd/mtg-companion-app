@@ -114,6 +114,18 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
         }
+        // What's handed out to try before a release: the release build under a name of its own, so
+        // it installs beside the real app rather than over it and is told apart at a glance. Built
+        // with `gradlew assembleBeta` and published as a GitHub pre-release, which the in-app
+        // updater and manabind.com never offer (they only read the latest full release). Called
+        // beta because a build type's name can't start with "test".
+        beta {
+            initWith release
+            applicationIdSuffix '.tester'
+            versionNameSuffix '-tester'
+            manifestPlaceholders = [appLabel: 'Manabind Tester']
+            matchingFallbacks = ['release']
+        }
     }
 
     compileOptions {

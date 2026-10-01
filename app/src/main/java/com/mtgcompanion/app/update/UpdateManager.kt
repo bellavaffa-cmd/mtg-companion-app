@@ -54,6 +54,12 @@ class UpdateManager(
 
     /** Check GitHub for a newer release. [silent] suppresses the "up to date" / error status text. */
     fun checkForUpdate(silent: Boolean = true) {
+        // A tester build is a different app from the released one: "updating" it would install the
+        // real app beside it and leave the tester as it was. New tester builds are installed by hand.
+        if (BuildConfig.BUILD_TYPE == "beta") {
+            _state.value = _state.value.copy(checking = false, message = if (silent) null else "This is a tester build (${BuildConfig.VERSION_NAME}). Install new tester builds from GitHub.")
+            return
+        }
         scope.launch {
             _state.value = _state.value.copy(checking = true, message = null)
             _state.value = try {
