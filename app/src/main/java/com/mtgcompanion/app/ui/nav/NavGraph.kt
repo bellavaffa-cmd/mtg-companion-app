@@ -841,7 +841,7 @@ private fun UpdateDialog(
         text = {
             Column {
                 Text(
-                    "Version ${info.versionName} is available. Download and install it now?",
+                    "${info.headline} is available. Download and install it now?",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextPrimary
                 )

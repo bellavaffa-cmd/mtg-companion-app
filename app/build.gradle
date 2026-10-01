@@ -35,6 +35,9 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+// The tester build's number, from -PtesterBuild; 0 for every other build.
+def testerBuild = (project.findProperty('testerBuild') ?: '0').toString().toInteger()
+
 android {
     namespace 'com.mtgcompanion.app'
     compileSdk 34
@@ -48,6 +51,9 @@ android {
         // versionCode scheme: major*10000 + minor*100 + patch (e.g. 1.8.0 -> 10800). Bump both per release.
         versionCode 30514
         versionName '3.5.14'
+        // Which tester build this is (see the beta build type): `gradlew assembleBeta -PtesterBuild=3`.
+        // The tester app updates itself to any tester-N pre-release with a higher number.
+        buildConfigField 'int', 'TESTER_BUILD', "${testerBuild}"
 
         // Bounds which ABIs exist in this project at all, which the `splits` block below then
         // divides into one APK each. It has to stay: the universal APK packages every ABI the
@@ -122,7 +128,7 @@ android {
         beta {
             initWith release
             applicationIdSuffix '.tester'
-            versionNameSuffix '-tester'
+            versionNameSuffix "-tester${testerBuild}"
             manifestPlaceholders = [appLabel: 'Manabind Tester']
             matchingFallbacks = ['release']
         }

@@ -551,7 +551,7 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
     val available = state.available
     if (available != null) {
         Text(
-            "Version ${available.versionName} is available.",
+            "${available.headline} is available.",
             style = MaterialTheme.typography.bodySmall,
             color = GoldLight
         )

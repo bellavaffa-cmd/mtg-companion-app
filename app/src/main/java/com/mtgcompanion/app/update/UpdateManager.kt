@@ -18,11 +18,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 
-data class UpdateInfo(val versionName: String, val downloadUrl: String, val notes: String)
+data class UpdateInfo(val versionName: String, val downloadUrl: String, val notes: String) {
+    /** What's on offer, to start a sentence with: "Version 3.5.14", or "Tester build 2" in the tester app. */
+    val headline: String
+        get() = if (versionName.startsWith("tester build")) versionName.replaceFirstChar { it.uppercase() } else "Version $versionName"
+}
 
 data class UpdateUiState(
     val checking: Boolean = false,
@@ -54,23 +59,22 @@ class UpdateManager(
 
     /** Check GitHub for a newer release. [silent] suppresses the "up to date" / error status text. */
     fun checkForUpdate(silent: Boolean = true) {
-        // A tester build is a different app from the released one: "updating" it would install the
-        // real app beside it and leave the tester as it was. New tester builds are installed by hand.
-        if (BuildConfig.BUILD_TYPE == "beta") {
-            _state.value = _state.value.copy(checking = false, message = if (silent) null else "This is a tester build (${BuildConfig.VERSION_NAME}). Install new tester builds from GitHub.")
-            return
-        }
         scope.launch {
             _state.value = _state.value.copy(checking = true, message = null)
             _state.value = try {
-                val info = withContext(Dispatchers.IO) { fetchLatest() }
-                if (info != null && isNewer(info.versionName, BuildConfig.VERSION_NAME)) {
+                // A tester build is a different app from the released one, so it follows its own
+                // line of builds (GitHub pre-releases tagged tester-N) rather than the releases —
+                // "updating" it to a release would install the real app beside it instead.
+                val info = withContext(Dispatchers.IO) { if (IS_TESTER) fetchNewerTester() else fetchLatest() }
+                if (info != null && (IS_TESTER || isNewer(info.versionName, BuildConfig.VERSION_NAME))) {
                     _state.value.copy(checking = false, available = info, dismissed = false, message = null)
                 } else {
                     _state.value.copy(
                         checking = false,
                         available = null,
-                        message = if (silent) null else "You're on the latest version (${BuildConfig.VERSION_NAME})."
+                        message = if (silent) null
+                        else if (IS_TESTER) "You're on the latest tester build (${BuildConfig.TESTER_BUILD})."
+                        else "You're on the latest version (${BuildConfig.VERSION_NAME})."
                     )
                 }
             } catch (e: Exception) {
@@ -107,16 +111,36 @@ class UpdateManager(
             if (!resp.isSuccessful) throw IOException("GitHub API returned ${resp.code}")
             val json = JSONObject(resp.body?.string().orEmpty())
             val tag = json.optString("tag_name").ifBlank { return null }
-            val assets = json.optJSONArray("assets") ?: return null
-            // A release carries several APKs since 1.69.0 — one per ABI, plus a universal one.
-            val apks = (0 until assets.length())
-                .map { assets.getJSONObject(it) }
-                .filter { it.optString("name").endsWith(".apk", ignoreCase = true) }
-                .associate { it.optString("name") to it.optString("browser_download_url") }
-            val chosen = pickApkForThisDevice(apks.keys.toList()) ?: return null
-            val apkUrl = apks[chosen]?.ifBlank { null } ?: return null
-            return UpdateInfo(tag.removePrefix("v"), apkUrl, json.optString("body"))
+            return updateFrom(json, tag.removePrefix("v"))
         }
+    }
+
+    /**
+     * The newest tester build above this one, or null. "Latest" on GitHub never names a
+     * pre-release, so this reads the list of releases and picks the tester builds out of it.
+     */
+    private fun fetchNewerTester(): UpdateInfo? {
+        val req = Request.Builder().url("https://api.github.com/repos/$REPO/releases?per_page=30").build()
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("GitHub API returned ${resp.code}")
+            val releases = JSONArray(resp.body?.string().orEmpty())
+            val byTag = (0 until releases.length()).map { releases.getJSONObject(it) }.associateBy { it.optString("tag_name") }
+            val newest = newestTesterBuild(byTag.keys.toList(), BuildConfig.TESTER_BUILD) ?: return null
+            return updateFrom(byTag.getValue("$TESTER_TAG$newest"), "tester build $newest")
+        }
+    }
+
+    /** The APK for this phone out of one release's files, as the update to offer; null without one. */
+    private fun updateFrom(release: JSONObject, versionName: String): UpdateInfo? {
+        val assets = release.optJSONArray("assets") ?: return null
+        // A release carries several APKs since 1.69.0 — one per ABI, plus a universal one.
+        val apks = (0 until assets.length())
+            .map { assets.getJSONObject(it) }
+            .filter { it.optString("name").endsWith(".apk", ignoreCase = true) }
+            .associate { it.optString("name") to it.optString("browser_download_url") }
+        val chosen = pickApkForThisDevice(apks.keys.toList()) ?: return null
+        val apkUrl = apks[chosen]?.ifBlank { null } ?: return null
+        return UpdateInfo(versionName, apkUrl, release.optString("body"))
     }
 
     /** Streams the APK to disk in chunks, reporting [UpdateUiState.downloadProgress] as it goes. */
@@ -181,6 +205,18 @@ class UpdateManager(
 
     companion object {
         private const val REPO = "bellavaffa-cmd/mtg-companion-app"
+
+        /** The tester app (the beta build type): tried before a release, and updated on its own line. */
+        val IS_TESTER = BuildConfig.BUILD_TYPE == "beta"
+
+        /** Tester builds are GitHub pre-releases tagged tester-1, tester-2, … */
+        const val TESTER_TAG = "tester-"
+
+        /** The highest tester build number among [tags] above [current], or null when there's none. */
+        fun newestTesterBuild(tags: List<String>, current: Int): Int? =
+            tags.mapNotNull { tag -> tag.takeIf { it.startsWith(TESTER_TAG) }?.removePrefix(TESTER_TAG)?.toIntOrNull() }
+                .filter { it > current }
+                .maxOrNull()
 
         /**
          * Picks which of a release's APK assets this device should download.
