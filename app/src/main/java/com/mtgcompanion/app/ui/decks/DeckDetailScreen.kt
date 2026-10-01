@@ -75,6 +75,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -87,6 +88,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
@@ -1235,13 +1237,32 @@ private fun CardsTab(
         )
     }
 
+    // Cards the deck doesn't have that match the search, offered under the deck's own matches.
+    val addResults by viewModel.addResults.collectAsState()
+    val context = LocalContext.current
+    val owned = deck.cards.map { it.name }.toSet()
+    val addable = if (trimmed.length < 3) emptyList() else addResults.filter { it.name !in owned }
+    val addSection: LazyListScope.() -> Unit = {
+        if (addable.isNotEmpty()) {
+            item(key = "add-header") {
+                Text("Add to this deck", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp, bottom = 2.dp, start = 2.dp))
+            }
+            items(addable, key = { "add-" + it.id }) { card ->
+                AddToDeckRow(card) {
+                    viewModel.addCard(card) { warning -> Toast.makeText(context, warning, Toast.LENGTH_LONG).show() }
+                    Toast.makeText(context, "Added ${card.name}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        if (deck.cards.isNotEmpty() || deck.commander != null) {
+        run {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 12.dp, top = 16.dp)) {
             OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::setCardQuery,
-                placeholder = { Text("Name or tag, e.g. ramp", color = TextDim) },
+                placeholder = { Text("Name, tag, or a card to add", color = TextDim) },
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted) },
                 trailingIcon = {
@@ -1311,17 +1332,18 @@ private fun CardsTab(
             if (deck.cards.isEmpty()) {
                 item {
                     Text(
-                        "No cards yet. Add cards to this deck from a card's detail page.",
+                        "No cards yet. Type a card's name above to add it.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+                addSection()
                 return@LazyColumn
             }
             if (groups.isEmpty()) {
                 item {
                     Text(
                         when {
-                            trimmed.isNotBlank() -> "No cards match \"$trimmed\"."
+                            trimmed.isNotBlank() -> "No cards in this deck match \"$trimmed\"."
                             filter == CardFilter.CUT -> "No cut candidates. Long-press a card and choose Mark as cut candidate."
                             filter == CardFilter.COMBO -> "No combo pieces detected in this deck."
                             else -> "No cards."
@@ -1330,6 +1352,7 @@ private fun CardsTab(
                         color = TextMuted
                     )
                 }
+                addSection()
                 return@LazyColumn
             }
 
@@ -1371,7 +1394,37 @@ private fun CardsTab(
                     }
                 }
             }
+            addSection()
         }
+        }
+    }
+}
+
+/** A card the deck doesn't have, found by the deck's search: its picture, name, type, and a + to add it. */
+@Composable
+private fun AddToDeckRow(card: ScryfallCard, onAdd: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Surface)
+            .padding(start = 8.dp, top = 6.dp, bottom = 6.dp)
+    ) {
+        AsyncImage(
+            model = card.displayImageUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.width(40.dp).aspectRatio(0.72f).clip(RoundedCornerShape(4.dp))
+        )
+        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(card.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            card.typeLine?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        IconButton(onClick = onAdd) {
+            Icon(Icons.Filled.AddCircle, contentDescription = "Add ${card.name} to this deck", tint = Gold)
         }
     }
 }

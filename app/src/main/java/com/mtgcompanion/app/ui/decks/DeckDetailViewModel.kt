@@ -266,6 +266,24 @@ class DeckDetailViewModel(
     val cardQuery: StateFlow<String> = _cardQuery.asStateFlow()
     fun setCardQuery(query: String) { _cardQuery.value = query }
 
+    /**
+     * Cards by name from all of Magic for what's typed in the deck's search, so a card the deck
+     * doesn't have can be added without leaving for Search. Empty until three letters are typed;
+     * waits for a pause in typing before asking Scryfall.
+     */
+    val addResults: StateFlow<List<ScryfallCard>> = _cardQuery.mapLatest { typed ->
+        val q = typed.trim()
+        if (q.length < 3) return@mapLatest emptyList()
+        delay(400)
+        try {
+            cardRepository.search(q).cards.take(12)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     init {
         // Every card's tags as soon as the deck opens — the search and the zoom use them, not only
         // Stats. The commanders' too: their colours decide which owned cards [ownedGaps] offers.

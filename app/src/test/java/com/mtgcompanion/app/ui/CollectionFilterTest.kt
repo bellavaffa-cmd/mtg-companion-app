@@ -7,14 +7,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CollectionFilterTest {
-    private val elf = CardFacts(setOf('G'), "Creature — Elf Druid", "common")
-    private val charm = CardFacts(setOf('W', 'U'), "Instant", "uncommon")
+    private val elf = CardFacts(setOf('G'), "Legendary Creature — Elf Druid", "common", "{T}: Add {G}.")
+    private val charm = CardFacts(setOf('W', 'U'), "Instant", "uncommon", "Choose one — Draw a card; or gain 3 life.")
     private val ring = CardFacts(emptySet(), "Artifact", "rare")
 
     @Test
     fun `no filter passes everything, even a card with no data`() {
         assertTrue(CollectionFilter().matches(null))
         assertTrue(CollectionFilter().matches(elf))
+        assertFalse(CollectionFilter(type = "  ").active)
     }
 
     @Test
@@ -31,17 +32,29 @@ class CollectionFilterTest {
     }
 
     @Test
-    fun `any chosen type or rarity is enough`() {
-        assertTrue(CollectionFilter(types = setOf("Creature", "Land")).matches(elf))
-        assertFalse(CollectionFilter(types = setOf("Land")).matches(elf))
+    fun `type needs every word, in any order and case`() {
+        assertTrue(CollectionFilter(type = "creature legendary").matches(elf))
+        assertTrue(CollectionFilter(type = "elf").matches(elf))
+        assertFalse(CollectionFilter(type = "legendary artifact").matches(elf))
+    }
+
+    @Test
+    fun `text is matched as a phrase`() {
+        assertTrue(CollectionFilter(text = "draw a card ").matches(charm))
+        assertFalse(CollectionFilter(text = "card draw").matches(charm))
+        assertFalse(CollectionFilter(text = "draw").matches(ring))
+    }
+
+    @Test
+    fun `any chosen rarity is enough`() {
         assertTrue(CollectionFilter(rarities = setOf("rare", "mythic")).matches(ring))
         assertFalse(CollectionFilter(rarities = setOf("mythic")).matches(ring))
     }
 
     @Test
     fun `filters combine`() {
-        val filter = CollectionFilter(colors = setOf('G'), types = setOf("Creature"), rarities = setOf("common"))
+        val filter = CollectionFilter(type = "creature", colors = setOf('G'), rarities = setOf("common"))
         assertTrue(filter.matches(elf))
-        assertFalse(filter.copy(rarities = setOf("rare")).matches(elf))
+        assertFalse(filter.copy(text = "flying").matches(elf))
     }
 }

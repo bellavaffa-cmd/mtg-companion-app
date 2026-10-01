@@ -220,7 +220,7 @@ fun SearchScreen(
 
                 // Named and ordered as on the web app's filter panel.
                 FilterField("Type", filters.typeLine, "e.g. legendary creature") { viewModel.onFiltersChange(filters.copy(typeLine = it)) }
-                FilterField("Rules text", filters.oracle, "e.g. draw a card") { viewModel.onFiltersChange(filters.copy(oracle = it)) }
+                FilterField("Text", filters.oracle, "e.g. draw a card") { viewModel.onFiltersChange(filters.copy(oracle = it)) }
 
                 Column {
                     FilterLabel("Colors (at least)")

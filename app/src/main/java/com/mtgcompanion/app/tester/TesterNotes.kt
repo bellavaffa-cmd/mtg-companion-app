@@ -9,18 +9,18 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "zoom-same-height",
-        "Enlarged cards are all the same size",
-        "From your note. In Search results, enlarge a card and swipe through several. The card should stay the same size whether or not it has other printings; one without says \"No other printings\" where the strip would be."
+        "collection-type-text",
+        "Filter All cards by type and text",
+        "From your note. Collection > All cards > filter icon. Type takes words from the type line (\"legendary creature\", \"angel\"); Text takes a phrase from the card's text (\"draw a card\"). Both work with colors, rarity and the search field."
     ),
     TesterNote(
-        "search-filter-wording",
-        "Search filters are worded like the web app",
-        "Open Search. The fields now read Type, Rules text, Colors (at least), Fits commander colors, Rarity, Finish, Price, Power, Toughness, Sets, Artist — the same names and order as manabind.com."
+        "text-label",
+        "\"Rules text\" is now just \"Text\"",
+        "Search's filter and the Collection filter both say Text."
     ),
     TesterNote(
-        "deck-legal-chip",
-        "Legal / Not legal beside the bracket",
-        "Open a deck. Next to \"Bracket N\" there's a Legal chip, or a red Not legal one; the Legality tab says why."
+        "deck-search-adds",
+        "Add new cards from a deck's search box",
+        "Open a deck and type at least three letters of a card that isn't in it. Under the deck's own matches there's \"Add to this deck\" with cards from all of Magic; tap + to add one."
     ),
 )

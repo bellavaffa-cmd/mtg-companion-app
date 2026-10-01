@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,7 +28,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.common.ManaSymbol
+import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
+import com.mtgcompanion.app.ui.theme.TextDim
+import com.mtgcompanion.app.ui.theme.TextPrimary
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldDim
 import com.mtgcompanion.app.ui.theme.OnGold
@@ -38,42 +43,48 @@ data class CardFacts(
     /** Color identity as WUBRG letters; empty for a colorless card. */
     val colors: Set<Char>,
     val typeLine: String,
-    val rarity: String
+    val rarity: String,
+    /** The card's rules text, every face of it. */
+    val text: String = ""
 ) {
     companion object {
         fun of(card: ScryfallCard) = CardFacts(
             colors = (card.colorIdentity ?: card.colors).orEmpty().mapNotNull { it.firstOrNull()?.uppercaseChar() }.toSet(),
             typeLine = card.typeLine.orEmpty(),
-            rarity = card.rarity.orEmpty().lowercase()
+            rarity = card.rarity.orEmpty().lowercase(),
+            text = card.displayOracleText.orEmpty()
         )
     }
 }
 
-/** The All cards filter: Search's color, type and rarity filters, over the cards you own. */
+/** The All cards filter: Search's type, text, color and rarity filters, over the cards you own. */
 data class CollectionFilter(
+    /** Words that must all be in the type line, e.g. "legendary creature". */
+    val type: String = "",
+    /** A phrase that must be in the rules text, e.g. "draw a card". */
+    val text: String = "",
     val colors: Set<Char> = emptySet(),
-    val types: Set<String> = emptySet(),
     val rarities: Set<String> = emptySet()
 ) {
-    val active: Boolean get() = colors.isNotEmpty() || types.isNotEmpty() || rarities.isNotEmpty()
-    val count: Int get() = colors.size + types.size + rarities.size
+    val active: Boolean get() = type.isNotBlank() || text.isNotBlank() || colors.isNotEmpty() || rarities.isNotEmpty()
+    val count: Int get() = (if (type.isNotBlank()) 1 else 0) + (if (text.isNotBlank()) 1 else 0) + colors.size + rarities.size
 
     /**
-     * A card passes when it has every chosen color, is any of the chosen types and any of the chosen
-     * rarities. A card whose data hasn't loaded ([facts] null) can't be judged, so it's left out
-     * while a filter is on.
+     * A card passes when its type line has every word typed, its rules text has the phrase typed,
+     * it has every chosen color and is any of the chosen rarities. A card whose data hasn't loaded
+     * ([facts] null) can't be judged, so it's left out while a filter is on.
      */
     fun matches(facts: CardFacts?): Boolean {
         if (!active) return true
         if (facts == null) return false
+        if (type.split(' ').any { it.isNotBlank() && !facts.typeLine.contains(it, ignoreCase = true) }) return false
+        if (text.isNotBlank() && !facts.text.contains(text.trim(), ignoreCase = true)) return false
         if (!facts.colors.containsAll(colors)) return false
-        if (types.isNotEmpty() && types.none { facts.typeLine.contains(it, ignoreCase = true) }) return false
         if (rarities.isNotEmpty() && facts.rarity !in rarities) return false
         return true
     }
 }
 
-val COLLECTION_FILTER_TYPES = listOf("Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land")
 val COLLECTION_FILTER_RARITIES = listOf("common", "uncommon", "rare", "mythic")
 
 private fun <T> Set<T>.toggle(item: T): Set<T> = if (item in this) this - item else this + item
@@ -90,17 +101,18 @@ fun CollectionFilterPanel(filter: CollectionFilter, onChange: (CollectionFilter)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
             .padding(12.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Colors", style = MaterialTheme.typography.labelMedium, color = GoldDim, modifier = Modifier.weight(1f))
-            if (filter.active) {
-                Text(
-                    "Clear",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Gold,
-                    modifier = Modifier.clickable { onChange(CollectionFilter()) }.padding(4.dp)
-                )
-            }
+        if (filter.active) {
+            Text(
+                "Clear filters",
+                style = MaterialTheme.typography.labelMedium,
+                color = Gold,
+                modifier = Modifier.clickable { onChange(CollectionFilter()) }.padding(vertical = 4.dp)
+            )
         }
+        // Named as in Search.
+        FilterText("Type", filter.type, "e.g. legendary creature") { onChange(filter.copy(type = it)) }
+        FilterText("Text", filter.text, "e.g. draw a card") { onChange(filter.copy(text = it)) }
+        Text("Colors (at least)", style = MaterialTheme.typography.labelMedium, color = GoldDim)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             "WUBRG".forEach { color ->
                 val isSelected = color in filter.colors
@@ -117,11 +129,31 @@ fun CollectionFilterPanel(filter: CollectionFilter, onChange: (CollectionFilter)
                 }
             }
         }
-        Text("Type", style = MaterialTheme.typography.labelMedium, color = GoldDim)
-        FilterChips(COLLECTION_FILTER_TYPES, filter.types) { onChange(filter.copy(types = filter.types.toggle(it))) }
         Text("Rarity", style = MaterialTheme.typography.labelMedium, color = GoldDim)
         FilterChips(COLLECTION_FILTER_RARITIES, filter.rarities) { onChange(filter.copy(rarities = filter.rarities.toggle(it))) }
     }
+}
+
+@Composable
+private fun FilterText(label: String, value: String, placeholder: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, color = TextMuted) },
+        placeholder = { Text(placeholder, color = TextDim, style = MaterialTheme.typography.bodySmall) },
+        singleLine = true,
+        shape = RoundedCornerShape(8.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Gold,
+            unfocusedBorderColor = BorderColor,
+            focusedTextColor = TextPrimary,
+            unfocusedTextColor = TextPrimary,
+            cursorColor = Gold,
+            focusedContainerColor = Bg,
+            unfocusedContainerColor = Bg
+        ),
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable
