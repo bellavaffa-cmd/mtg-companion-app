@@ -468,6 +468,9 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
     }
 }
 
+/** A row of 64dp-wide printing thumbnails (0.72 aspect) and its 12dp padding above and below. */
+private val PRINTINGS_STRIP_HEIGHT = 113.dp
+
 /** The largest card-shaped rect centred in this one — thumbnails in list rows are art crops. */
 private fun Rect.fitCard(): Rect {
     val w = minOf(width, height * CARD_ASPECT)
@@ -575,12 +578,19 @@ private fun AlternatePrintingsStrip(
     }
 
     val current = prints
+    // The strip keeps its height while loading and when there's nothing to choose between, so the
+    // card above is the same size whether or not it has other printings.
     if (current == null) {
         Box(
-            modifier = Modifier.fillMaxWidth().background(Surface).padding(16.dp),
+            modifier = Modifier.fillMaxWidth().height(PRINTINGS_STRIP_HEIGHT).background(Surface),
             contentAlignment = Alignment.Center
         ) { CircularProgressIndicator(color = Gold, modifier = Modifier.size(20.dp)) }
-    } else if (current.size > 1) {
+    } else if (current.size <= 1) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(PRINTINGS_STRIP_HEIGHT).background(Surface),
+            contentAlignment = Alignment.Center
+        ) { Text("No other printings", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
+    } else {
         Column(modifier = Modifier.fillMaxWidth().background(Surface)) {
             Row(
                 modifier = Modifier

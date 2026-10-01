@@ -2273,6 +2273,19 @@ private fun DeckHero(
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(app.accentGlow).padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
+                    // Whether the deck is legal for its game mode; the Legality tab says why not.
+                    analysis.legality?.takeIf { !analysis.loading }?.let { report ->
+                        val illegal = Color(0xFFD3402F)
+                        Text(
+                            if (report.legal) "Legal" else "Not legal",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (report.legal) app.accent else illegal,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (report.legal) app.accentGlow else illegal.copy(alpha = 0.18f))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
                 }
                 if (identity.isNotEmpty()) IdentityStrip(identity, modifier = Modifier.width(110.dp).padding(top = 4.dp))
             }

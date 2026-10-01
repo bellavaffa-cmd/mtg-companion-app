@@ -218,12 +218,12 @@ fun SearchScreen(
                     onSortDirectionChange = viewModel::onSortDirectionChange
                 )
 
-                FilterField("Type line", filters.typeLine, "e.g. legendary creature") { viewModel.onFiltersChange(filters.copy(typeLine = it)) }
-                FilterField("Oracle text", filters.oracle, "e.g. draw a card") { viewModel.onFiltersChange(filters.copy(oracle = it)) }
-                FilterField("Sets", filters.sets, "set codes, e.g. MH3, LTR") { viewModel.onFiltersChange(filters.copy(sets = it)) }
+                // Named and ordered as on the web app's filter panel.
+                FilterField("Type", filters.typeLine, "e.g. legendary creature") { viewModel.onFiltersChange(filters.copy(typeLine = it)) }
+                FilterField("Rules text", filters.oracle, "e.g. draw a card") { viewModel.onFiltersChange(filters.copy(oracle = it)) }
 
                 Column {
-                    FilterLabel("Colors")
+                    FilterLabel("Colors (at least)")
                     ManaColorPicker(
                         selected = filters.colors,
                         onToggle = { color -> viewModel.onFiltersChange(filters.copy(colors = filters.colors.toggle(color))) }
@@ -231,7 +231,7 @@ fun SearchScreen(
                 }
 
                 Column {
-                    FilterLabel("Commander (color identity)")
+                    FilterLabel("Fits commander colors")
                     ManaColorPicker(
                         selected = filters.colorIdentity,
                         onToggle = { color -> viewModel.onFiltersChange(filters.copy(colorIdentity = filters.colorIdentity.toggle(color))) }
@@ -242,6 +242,17 @@ fun SearchScreen(
                     selected = filters.rarities,
                     onToggle = { viewModel.onFiltersChange(filters.copy(rarities = filters.rarities.toggle(it))) }
                 )
+
+                Column {
+                    FilterLabel("Finish")
+                    Row(modifier = Modifier.padding(top = 8.dp)) {
+                        ChipRow(
+                            options = listOf("nonfoil", "foil", "etched"),
+                            selected = filters.finishes,
+                            onToggle = { viewModel.onFiltersChange(filters.copy(finishes = filters.finishes.toggle(it))) }
+                        )
+                    }
+                }
 
                 Column {
                     FilterLabel("Price (${rememberMoney().currency.code})")
@@ -267,17 +278,7 @@ fun SearchScreen(
                     }
                 }
 
-                Column {
-                    FilterLabel("Finishes")
-                    Row(modifier = Modifier.padding(top = 8.dp)) {
-                        ChipRow(
-                            options = listOf("nonfoil", "foil", "etched"),
-                            selected = filters.finishes,
-                            onToggle = { viewModel.onFiltersChange(filters.copy(finishes = filters.finishes.toggle(it))) }
-                        )
-                    }
-                }
-
+                FilterField("Sets", filters.sets, "Set codes, e.g. mh3, ltr") { viewModel.onFiltersChange(filters.copy(sets = it)) }
                 FilterField("Artist", filters.artist, "e.g. Rebecca Guay") { viewModel.onFiltersChange(filters.copy(artist = it)) }
 
                 Spacer(Modifier.size(12.dp))
@@ -591,7 +592,7 @@ private fun ChipRow(options: List<String>, selected: Set<String>, onToggle: (Str
             FilterChip(
                 selected = option in selected,
                 onClick = { onToggle(option) },
-                label = { Text(option.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
+                label = { Text(if (option == "nonfoil") "Non-foil" else option.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Unspecified)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Gold,
                     selectedLabelColor = OnGold,
