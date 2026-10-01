@@ -136,7 +136,10 @@ fun IdentityStrip(colors: List<String>, modifier: Modifier = Modifier, thickness
     }
 }
 
-/** Colour-identity pips drawn locally (no network), letters in the numbers face. */
+/**
+ * Colour-identity pips: the real mana symbols, each over a lettered pip drawn locally — which is what
+ * shows until the symbol has loaded, and all that shows with no connection.
+ */
 @Composable
 fun ManaPips(colors: List<String>, modifier: Modifier = Modifier, size: Dp = 16.dp) {
     Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = modifier) {
@@ -154,6 +157,7 @@ fun ManaPips(colors: List<String>, modifier: Modifier = Modifier, size: Dp = 16.
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 1.dp)
                 )
+                ManaSymbol(code, size = size)
             }
         }
     }
