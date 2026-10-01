@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.tester.TesterLog
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.SeatMemory
 import android.content.Context
@@ -96,6 +97,7 @@ class RemoteViewModel(
             onEvent = { event, payload ->
                 if (event != "state") return@watch
                 val next = payload.optJSONObject("state")?.let { RemoteState.parse(it) } ?: return@watch
+                TesterLog.add("remote", "Phone got the game from the table")
                 viewModelScope.launch {
                     _state.value = next
                     _heardAt.value = System.currentTimeMillis()
@@ -126,6 +128,7 @@ class RemoteViewModel(
         _error.value = null
         viewModelScope.launch {
             try {
+                TesterLog.add("remote", "Phone asked for \"${action.optString("type")}\"")
                 social.api.sendMatchAction(matchId, action)
             } catch (e: SocialException) {
                 if (e.code == "not_seated") _gone.value = true else _error.value = e.message

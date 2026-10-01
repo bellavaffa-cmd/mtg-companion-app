@@ -22,6 +22,11 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.mtgcompanion.app.data.social.PushNotifications
+import android.view.MotionEvent
+import androidx.compose.foundation.layout.Box
+import com.mtgcompanion.app.tester.Tester
+import com.mtgcompanion.app.tester.TesterLog
+import com.mtgcompanion.app.tester.TesterOverlay
 import com.mtgcompanion.app.ui.nav.MtgNavGraph
 import com.mtgcompanion.app.ui.theme.MtgCompanionTheme
 
@@ -53,6 +58,8 @@ class MainActivity : ComponentActivity() {
                     controller.isAppearanceLightNavigationBars = isLight
                 }
                 Surface(modifier = Modifier.fillMaxSize()) {
+                    // The tester app's banner and bug button sit over every screen; nothing in the real app.
+                    Box(Modifier.fillMaxSize()) {
                     MtgNavGraph(
                         settingsRepository = app.settingsRepository,
                         collectionRepository = app.collectionRepository,
@@ -67,6 +74,8 @@ class MainActivity : ComponentActivity() {
                         socialRepository = app.socialRepository,
                         pendingOpen = app.pendingOpen
                     )
+                    TesterOverlay(this@MainActivity)
+                    }
                 }
             }
         }
@@ -104,6 +113,17 @@ class MainActivity : ComponentActivity() {
             }
             Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
         }
+    }
+
+    /** The tester app notes where each tap landed, as a share of the screen, in its activity trail. */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (Tester.on && event.actionMasked == MotionEvent.ACTION_UP && Tester.flags.logTaps) {
+            val view = window.decorView
+            if (view.width > 0 && view.height > 0) {
+                TesterLog.add("tap", "${(event.x * 100 / view.width).toInt()}% across, ${(event.y * 100 / view.height).toInt()}% down on ${Tester.screen}")
+            }
+        }
+        return super.dispatchTouchEvent(event)
     }
 
     // Coming back to the app is when another device's edits are most likely waiting.

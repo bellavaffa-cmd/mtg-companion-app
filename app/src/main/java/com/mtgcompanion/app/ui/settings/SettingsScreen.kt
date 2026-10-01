@@ -113,7 +113,9 @@ fun SettingsScreen(
     cardIndexRepository: CardIndexRepository,
     settingsRepository: SettingsRepository,
     onBack: () -> Unit,
-    onOpenFriends: (() -> Unit)? = null
+    onOpenFriends: (() -> Unit)? = null,
+    /** Only in the tester app: opens its tools. */
+    onOpenTesterTools: (() -> Unit)? = null
 ) {
     Scaffold(
         containerColor = Bg,
@@ -173,6 +175,13 @@ fun SettingsScreen(
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
 
             SettingsCategory("App Updates") { AppUpdatesSection(updateManager) }
+
+            if (onOpenTesterTools != null) {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
+                OutlinedButton(onClick = onOpenTesterTools, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Text("Tester tools", color = TextPrimary)
+                }
+            }
         }
         }
     }

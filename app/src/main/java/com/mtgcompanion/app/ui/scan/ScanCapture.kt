@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.tester.Tester
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
@@ -34,8 +35,11 @@ import java.util.concurrent.Executors
  */
 class ScanCapture(context: Context) {
 
-    /** Off outside debug builds, so no release ever writes a picture of someone's table to disk. */
-    val enabled: Boolean = BuildConfig.DEBUG
+    /**
+     * Off in the released app, so it never writes a picture of someone's table to disk. On in debug
+     * builds and in the tester app, where a scan reported as wrong sends the frame it was given.
+     */
+    val enabled: Boolean = BuildConfig.DEBUG || Tester.on
 
     private val dir = File(context.applicationContext.getExternalFilesDir(null), "scan-capture")
 

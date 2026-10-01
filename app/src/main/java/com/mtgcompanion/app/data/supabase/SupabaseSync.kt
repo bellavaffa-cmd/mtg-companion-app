@@ -37,6 +37,9 @@ import java.io.IOException
 
 private val Context.supabaseSyncStore by preferencesDataStore(name = "supabase_sync")
 
+/** How [SupabaseSync.switchAccount] went: changes that wouldn't sync (nothing switched), or the sign-in put aside. */
+data class SwitchResult(val unsynced: Int, val parked: ParkedSession?)
+
 data class CloudSyncStatus(
     val syncing: Boolean = false,
     val lastSyncedAt: Long = 0L,
@@ -349,6 +352,38 @@ class SupabaseSync(
             removeLocalLibrary(keepUnsynced = false)
         }
         return 0
+    }
+
+    /**
+     * The tester app's switch between two accounts: syncs this one, puts its sign-in aside (returned,
+     * for switching back) and takes up [to] — or signs out locally when [to] is null, for a second
+     * account to be signed in to by hand. The library on the phone goes with the account it belongs
+     * to and the other's is pulled, exactly as on signing out and in.
+     *
+     * Nothing happens while this account has changes that wouldn't sync: [SwitchResult.unsynced] says
+     * how many, and the switch can be tried again.
+     */
+    internal suspend fun switchAccount(to: ParkedSession?): SwitchResult {
+        if (auth.account.value != null) {
+            runSync()
+            if (unsyncedCount() > 0) runSync()
+            val unsynced = unsyncedCount()
+            if (unsynced > 0) return SwitchResult(unsynced, null)
+        }
+        val parked = mutex.withLock {
+            val current = auth.parkedSession()
+            auth.swapSession(to)
+            removeLocalLibrary(keepUnsynced = false)
+            current
+        }
+        if (to != null) {
+            runSync()
+            // The account changing also clears the library (removeLibraryOnSignOut), and may do it
+            // after that pass: a second one puts back whatever it took.
+            delay(1_500)
+            runSync()
+        }
+        return SwitchResult(0, parked)
     }
 
     /** Local changes not on the server yet, found the way a sync pass finds them. */

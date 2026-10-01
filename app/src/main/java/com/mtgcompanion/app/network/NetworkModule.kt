@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.network
 
+import com.mtgcompanion.app.tester.Tester
+import com.mtgcompanion.app.tester.TesterNetInterceptor
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -74,6 +76,8 @@ object NetworkModule {
         .addInterceptor(ScryfallPacer.retryAfterLockout)
         // …and real requests to its API are spaced out (cached answers don't wait).
         .addNetworkInterceptor(ScryfallPacer.pace)
+        // The tester app notes each request in its activity trail.
+        .apply { if (Tester.on) addInterceptor(TesterNetInterceptor()) }
 
     /**
      * API client with an on-disk HTTP cache so card data fetched while online is still available

@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.tester.ScanOutcome
+import com.mtgcompanion.app.tester.Tester
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CompletableDeferred
 import com.mtgcompanion.app.data.SightPick
@@ -607,6 +609,23 @@ class ScanViewModel(
             val card = added
             if (card == null) capture.finish(scan.captureId, "not added")
             else capture.finish(scan.captureId, "added", card.name, card.set, card.collectorNumber, sightWasCertain)
+            // The tester app's scanner readout: what was read, what it became, and how long it took.
+            if (Tester.on) Tester.scanDone(
+                ScanOutcome(
+                    captureId = scan.captureId,
+                    titleRead = scan.candidate,
+                    name = card?.name, set = card?.set, number = card?.collectorNumber,
+                    certain = card != null && sightWasCertain == true,
+                    how = when {
+                        scan.fromFrame != null -> "printing read in the frame"
+                        printing != null -> "printing read off the small print"
+                        scan.seenBySight -> "known by sight"
+                        setCode != null -> "set code only"
+                        else -> "name only"
+                    },
+                    tookMs = SystemClock.elapsedRealtime() - scan.queuedAt
+                )
+            )
             // Remembered as the card in view only if it hasn't left since it was confirmed; if it
             // has, the next card in is a new one — even another copy of this card.
             if (inFlight.finished(scan.token, scan.normalized)) added?.let { lastAddedCard = it }

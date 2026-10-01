@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.tester.TesterLog
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.social.Match
@@ -1134,6 +1135,7 @@ class LifeCounterViewModel(
         lastSent = text
         try {
             social.api.publishMatchState(m.id, state)
+            TesterLog.add("remote", "Table sent the game to the phones")
         } catch (e: Exception) {
             lastSent = null // try again with the next change
         }
@@ -1150,6 +1152,7 @@ class LifeCounterViewModel(
         val player = player(seat) ?: return
         if (player.linked?.userId != userId) return
         val type = action.optString("type")
+        TesterLog.add("remote", "Table got \"$type\" from seat $seat")
         if (type == "hello" || !_settings.value.remotesEnabled) {
             publish(force = true)
             return

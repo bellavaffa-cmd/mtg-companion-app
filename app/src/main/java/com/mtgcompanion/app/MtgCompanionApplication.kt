@@ -1,5 +1,6 @@
 package com.mtgcompanion.app
 
+import com.mtgcompanion.app.tester.Tester
 import com.mtgcompanion.app.data.withStandingCollections
 import com.mtgcompanion.app.data.ScanPile
 import com.mtgcompanion.app.data.ComboCache
@@ -71,6 +72,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         NetworkModule.init(this)
         // Start cloud sync (restores the session and syncs if signed in).
         supabaseSync
+        // The tester app's crash catcher, activity trail and reports. Does nothing in the real app.
+        Tester.init(this)
         // Notifications follow the account: a device signed in gets them, a device signed out doesn't.
         PushNotifications.init(this)
         // Wishlist price alerts, checked a few times a day.

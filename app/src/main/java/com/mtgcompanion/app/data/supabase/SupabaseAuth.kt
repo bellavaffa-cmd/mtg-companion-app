@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.data.supabase
 
+import com.mtgcompanion.app.tester.Tester
+import com.mtgcompanion.app.tester.TesterNetInterceptor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +32,9 @@ private val Context.supabaseAuthStore by preferencesDataStore(name = "supabase_a
 
 /** The signed-in account, or null. */
 data class SupabaseAccount(val userId: String, val email: String)
+
+/** A sign-in put aside while another account is in use (see [SupabaseAuth.parkedSession]). */
+data class ParkedSession(val userId: String, val email: String, val refreshToken: String)
 
 /**
  * A problem the user can act on ("Wrong email or password"), kept separate from bugs. [httpCode],
@@ -86,6 +91,8 @@ class SupabaseAuth(private val context: Context) {
     internal val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        // The tester app notes each request in its activity trail.
+        .apply { if (Tester.on) addInterceptor(TesterNetInterceptor()) }
         .build()
 
     private val accessKey = stringPreferencesKey("access_token")
@@ -268,6 +275,36 @@ class SupabaseAuth(private val context: Context) {
             }
         }
         endSession(reason = null)
+    }
+
+    /**
+     * This sign-in as it's stored, to put aside and come back to — the tester app's second account.
+     * Null when signed out. Only a session that's then left alone stays good: the refresh token here
+     * is replaced every time it's used, so a copy of one still in use goes stale within the hour.
+     */
+    internal suspend fun parkedSession(): ParkedSession? = refreshMutex.withLock {
+        val prefs = context.supabaseAuthStore.data.first()
+        val id = prefs[userIdKey] ?: return null
+        val refresh = prefs[refreshKey] ?: return null
+        ParkedSession(id, prefs[emailKey].orEmpty(), refresh)
+    }
+
+    /**
+     * Leaves the current sign-in without telling the server (so it can be come back to), and takes up
+     * [to] instead — or nothing, when [to] is null. The access token is fetched afresh on first use.
+     */
+    internal suspend fun swapSession(to: ParkedSession?) = refreshMutex.withLock {
+        context.supabaseAuthStore.edit { prefs ->
+            prefs.clear()
+            if (to != null) {
+                prefs[refreshKey] = to.refreshToken
+                prefs[expiresKey] = 0L
+                prefs[userIdKey] = to.userId
+                prefs[emailKey] = to.email
+            }
+        }
+        _signedOutNotice.value = null
+        _account.value = to?.let { SupabaseAccount(it.userId, it.email) }
     }
 
     /** A valid access token, refreshing it first if it's about to expire; null when signed out. */

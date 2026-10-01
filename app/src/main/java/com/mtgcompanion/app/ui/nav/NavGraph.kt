@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.nav
 
+import com.mtgcompanion.app.tester.Tester
+import com.mtgcompanion.app.tester.TesterToolsScreen
 import com.mtgcompanion.app.ui.social.OfferSparesDialog
 import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.ui.collection.TagBinderScreen
@@ -183,6 +185,8 @@ private object Routes {
     const val DECKS = "decks"
     const val PRECONS = "precons"
     const val SETTINGS = "settings"
+    /** The tester app's own tools; never reached in the real app. */
+    const val TESTER = "tester"
     const val SCAN = "scan"
     const val RULES = "rules"
     const val LIFE_COUNTER = "life_counter"
@@ -267,6 +271,18 @@ fun MtgNavGraph(
     // Check GitHub for a newer release once on launch; the dialog below shows if one is found.
     val updateState by updateManager.state.collectAsState()
     LaunchedEffect(Unit) { updateManager.checkForUpdate() }
+
+    // The tester app keeps track of the screen in front, and opens its tools when the bug button is held.
+    if (Tester.on) {
+        LaunchedEffect(currentRoute) { Tester.onScreen(currentRoute) }
+        val openTesterTools by Tester.openTools.collectAsState()
+        LaunchedEffect(openTesterTools) {
+            if (openTesterTools) {
+                Tester.toolsShown()
+                navController.navigate(Routes.TESTER) { launchSingleTop = true }
+            }
+        }
+    }
 
     // Enlarged cards draw above everything here, bars included, so they can grow out of their thumbnails.
     CardZoomHost(onOpenRulings = { name ->
@@ -647,8 +663,19 @@ fun MtgNavGraph(
                     cardIndexRepository = cardIndexRepository,
                     settingsRepository = settingsRepository,
                     onBack = { navController.popBackStack() },
-                    onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) }
+                    onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) },
+                    onOpenTesterTools = if (Tester.on) { { navController.navigate(Routes.TESTER) { launchSingleTop = true } } } else null
                 )
+            }
+
+            if (Tester.on) {
+                destination(Routes.TESTER) {
+                    TesterToolsScreen(
+                        supabaseSync = supabaseSync,
+                        onBack = { navController.popBackStack() },
+                        onOpenSettings = { navController.navigateToTab(Routes.SETTINGS) }
+                    )
+                }
             }
 
             val signIn = { navController.navigateToTab(Routes.SETTINGS) }
