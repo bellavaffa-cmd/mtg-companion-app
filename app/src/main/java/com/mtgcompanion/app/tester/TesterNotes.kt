@@ -9,13 +9,43 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "picker-scrolls",
-        "The deck list scrolls when adding a card",
-        "From your report: with 10 decks only 7 showed and the list wouldn't scroll. Search for a card, open its menu, choose Add to binder/deck, then A deck. All your decks should be there, and the list should scroll."
+        "zoom-plus-visible",
+        "The + is back on the enlarged card",
+        "From your report: the + was pushed off the screen. Tap a card in a deck or binder to enlarge it. Value, total and the − qty + stepper are on one line, the action icons on the line below."
     ),
     TesterNote(
-        "binder-or-deck",
-        "Binder or deck is asked first",
-        "Still to confirm from the last build. Add from Search, and Move or Copy from inside a deck or a binder: it should ask \"A binder\" or \"A deck\", then list only those."
+        "zoom-tags-button",
+        "Your tags are one line on the enlarged card",
+        "Enlarge a card you own. \"Add your own tags\" is now a single row; tapping it opens the tag editor in a pop-up."
+    ),
+    TesterNote(
+        "zoom-sources-collapsed",
+        "\"In your decks and binders\" starts closed",
+        "Enlarge a card from Collection > All cards. It shows \"In N decks and M binders\" with Show; tap it to see the list."
+    ),
+    TesterNote(
+        "zoom-stays-open",
+        "Adding from an enlarged card keeps it open",
+        "In Search results, enlarge a card and add it to a binder or deck. The card should stay enlarged so you can swipe to the next one."
+    ),
+    TesterNote(
+        "deck-grid-toggle",
+        "List / grid button inside a deck",
+        "Open a deck's Cards tab. The button beside the search field switches between list and grid."
+    ),
+    TesterNote(
+        "deck-grid-stepper",
+        "Change quantity in a deck's grid view",
+        "In a deck's grid view each card has − qty + under it. Taking the last copy away asks before removing the card."
+    ),
+    TesterNote(
+        "grid-three",
+        "Grids start at 3 cards across",
+        "Only applies if you never changed Settings > Card Display > columns: grids show 3 across instead of 4."
+    ),
+    TesterNote(
+        "collection-filter",
+        "Filter All cards by color, type and rarity",
+        "Collection > All cards: tap the filter icon in the search field. Pick colors (a card must have every color picked), types and rarities. It works together with the search text and Spares."
     ),
 )

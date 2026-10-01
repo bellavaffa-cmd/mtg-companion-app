@@ -81,6 +81,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
@@ -1217,8 +1219,25 @@ private fun CardsTab(
         listOf(TypeGroup("Commander", ordered)) + otherGroups
     } else otherGroups
 
+    // Taking the last copy out removes the card, which is easy to do by accident on a small − button:
+    // it's asked about first. The card being asked about, while the question is up.
+    var removing by remember { mutableStateOf<DeckCardEntry?>(null) }
+    val fewer: (DeckCardEntry) -> Unit = { card ->
+        if (card.quantity <= 1) removing = card else viewModel.setCardQuantity(card.scryfallId, card.quantity - 1)
+    }
+    removing?.let { card ->
+        ConfirmDeleteDialog(
+            title = "Remove ${card.name}?",
+            message = "That was the last copy in this deck. Removing it takes the card out of the deck.",
+            confirmLabel = "Remove",
+            onConfirm = { viewModel.setCardQuantity(card.scryfallId, 0); removing = null },
+            onDismiss = { removing = null }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         if (deck.cards.isNotEmpty() || deck.commander != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 12.dp, top = 16.dp)) {
             OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::setCardQuery,
@@ -1242,10 +1261,18 @@ private fun CardsTab(
                     focusedContainerColor = Surface,
                     unfocusedContainerColor = Surface
                 ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 20.dp, top = 16.dp)
+                modifier = Modifier.weight(1f)
             )
+            // List or grid, here where the cards are rather than only in Settings.
+            val grid = viewMode == CardViewMode.GRID
+            IconButton(onClick = { viewModel.setViewMode(if (grid) CardViewMode.LIST else CardViewMode.GRID) }) {
+                Icon(
+                    if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView,
+                    contentDescription = if (grid) "Show as a list" else "Show as a grid",
+                    tint = Gold
+                )
+            }
+            }
             // A search that found cards by their tag says which, since tags only show in the zoom.
             if (trimmed.isNotEmpty()) {
                 val shownCount = groups.sumOf { it.cards.size }
@@ -1321,7 +1348,9 @@ private fun CardsTab(
                             onClick = { onZoomCard(card.scryfallId) },
                             actions = cardActions(card),
                             comboPiece = isComboPiece(card),
-                            nearMiss = isNearMiss(card)
+                            nearMiss = isNearMiss(card),
+                            onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
+                            onDecrement = { fewer(card) }
                         )
                     }
                 } else {
@@ -1335,7 +1364,7 @@ private fun CardsTab(
                                 viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
                             },
                             onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
-                            onDecrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity - 1) },
+                            onDecrement = { fewer(card) },
                             comboPiece = isComboPiece(card),
                             nearMiss = isNearMiss(card)
                         )
@@ -2014,13 +2043,18 @@ private fun DeckCardTile(
     onClick: () -> Unit,
     actions: List<CardMenuAction>,
     comboPiece: Boolean = false,
-    nearMiss: Boolean = false
+    nearMiss: Boolean = false,
+    /** With these, the tile carries its own − and +, so copies change without opening the card. */
+    onIncrement: (() -> Unit)? = null,
+    onDecrement: (() -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
+    val hasStepper = onIncrement != null && onDecrement != null
     Box {
         Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth().pressScale(interactionSource).combinedClickable(
                 interactionSource = interactionSource,
                 indication = androidx.compose.foundation.LocalIndication.current,
@@ -2035,7 +2069,8 @@ private fun DeckCardTile(
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.zoomSource(card.imageUrl).fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
                 )
-                Text(
+                // The count sits on the art only when there's no stepper below saying it.
+                if (!hasStepper) Text(
                     "×${card.quantity}",
                     style = MaterialTheme.typography.labelMedium,
                     color = GoldLight,
@@ -2069,9 +2104,12 @@ private fun DeckCardTile(
                 color = TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
             )
-            DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.padding(top = 2.dp))
+            DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.fillMaxWidth().padding(top = 2.dp))
+            if (onIncrement != null && onDecrement != null) {
+                Box(Modifier.padding(top = 4.dp)) { QuantityStepper(card.quantity, onDecrement = onDecrement, onIncrement = onIncrement) }
+            }
         }
         CardActionMenu(
             expanded = menuExpanded,

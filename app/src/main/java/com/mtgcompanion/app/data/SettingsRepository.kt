@@ -21,9 +21,12 @@ enum class CardViewMode {
     }
 }
 
-/** Valid range for the shared grid column count, and its default. */
+/**
+ * Valid range for the shared grid column count, and its default. Three across until someone asks
+ * for more: at four, a phone's cards were too small to read.
+ */
 val GRID_COLUMNS_RANGE = 3..10
-const val GRID_COLUMNS_DEFAULT = 4
+const val GRID_COLUMNS_DEFAULT = 3
 
 /** Overall light/dark luminance of the app's theme. SYSTEM follows the device's own dark-mode setting. */
 enum class AppBrightness {

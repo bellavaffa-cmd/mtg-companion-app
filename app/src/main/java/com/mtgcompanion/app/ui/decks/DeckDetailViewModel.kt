@@ -164,6 +164,11 @@ class DeckDetailViewModel(
     val viewMode: StateFlow<CardViewMode> = settingsRepository.deckViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
 
+    /** The deck's own list/grid button: the same setting as Settings, Card Display. */
+    fun setViewMode(mode: CardViewMode) {
+        viewModelScope.launch { settingsRepository.setDeckViewMode(mode) }
+    }
+
     /** List or grid for the REC (suggestions) tab. */
     val recViewMode: StateFlow<CardViewMode> = settingsRepository.recViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)

@@ -332,8 +332,8 @@ fun CardDetailScreen(
                                 imageUrl = similar.displayImageUrl,
                                 cardName = similar.name,
                                 priceUsd = similar.prices?.usd?.toDoubleOrNull(),
-                                onAdd = { similarZoomId = null; chooseDestinationFor = similar },
-                                onSelectPrinting = { chosen -> similarZoomId = null; chooseDestinationFor = chosen },
+                                onAdd = { chooseDestinationFor = similar },
+                                onSelectPrinting = { chosen -> chooseDestinationFor = chosen },
                                 onViewDetails = { similarZoomId = null; onViewDetails(similar.name) },
                                 sources = cardSources[similar.id].orEmpty(),
                                 backImageUrl = similar.backImageUrl,
@@ -356,11 +356,11 @@ fun CardDetailScreen(
                                 quantity = owned[view.name.lowercase()] ?: 0,
                                 // Only offer to add once we know which Scryfall printing it is.
                                 onAdd = resolved?.let { card ->
-                                    { zoomKey = null; chooseDestinationFor = card }
+                                    { chooseDestinationFor = card }
                                 },
                                 // Picking a printing here goes straight into the binder-or-deck
                                 // choice, so choosing art and saving it is one motion, not two.
-                                onSelectPrinting = { chosen -> zoomKey = null; chooseDestinationFor = chosen },
+                                onSelectPrinting = { chosen -> chooseDestinationFor = chosen },
                                 onViewDetails = { zoomKey = null; onViewDetails(view.name) },
                                 sources = resolved?.id?.let { cardSources[it] }.orEmpty(),
                                 backImageUrl = resolved?.backImageUrl,

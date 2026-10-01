@@ -244,10 +244,11 @@ fun SearchResultsScreen(
                     imageUrl = card.displayImageUrl,
                     cardName = card.name,
                     priceUsd = card.prices?.usd?.toDoubleOrNull(),
-                    onAdd = { zoomIndex = null; addTarget = card },
+                    // The card stays up while it is added: the picker opens over it, and there may be more to do here.
+                    onAdd = { addTarget = card },
                     // Picking a printing here goes straight into the normal add flow, so choosing
                     // art and saving it to a binder/deck is one motion instead of two pickers.
-                    onSelectPrinting = { chosen -> zoomIndex = null; addTarget = chosen },
+                    onSelectPrinting = { chosen -> addTarget = chosen },
                     onViewDetails = { zoomIndex = null; onCardClick(card) },
                     sources = cardSources[card.id].orEmpty(),
                     backImageUrl = card.backImageUrl,

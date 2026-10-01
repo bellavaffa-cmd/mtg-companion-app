@@ -137,6 +137,12 @@ class CollectionsViewModel(
         fetchPrices(cardRepository, entries.map { it.scryfallId })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    /** scryfallId -> colors, type and rarity of each owned card, for the All cards filter. */
+    val cardFacts: StateFlow<Map<String, CardFacts>> = allCards.mapLatest { entries ->
+        if (entries.isEmpty()) emptyMap()
+        else cardRepository.getCardsByIds(entries.map { it.scryfallId }).associate { it.id to CardFacts.of(it) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     /**
      * An All Cards entry is one exact printing shared by every binder/deck listed in its
      * [AllCardEntry.sources], so re-arting it means updating that printing everywhere it's held,

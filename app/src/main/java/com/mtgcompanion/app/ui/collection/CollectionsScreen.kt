@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
@@ -156,14 +157,18 @@ fun CollectionsScreen(
     // All cards' search: it filters the list, and Select all takes what it shows.
     var query by remember { mutableStateOf("") }
     // A card's name or one of its tags.
-    val filtered = remember(allCards, query, tagVersion, sparesOnly, spares) {
+    // Color, type and rarity, as in Search — narrowing the same list the search field does.
+    var cardFilter by remember { mutableStateOf(CollectionFilter()) }
+    val cardFacts by viewModel.cardFacts.collectAsState()
+    val filtered = remember(allCards, query, tagVersion, sparesOnly, spares, cardFilter, cardFacts) {
         val spareIds = spares.map { it.entry.scryfallId }.toSet()
         // "proxy" reads as a tag of its own, so a search finds the cards standing in for real ones.
-        val matching = if (query.isBlank()) allCards
+        val named = if (query.isBlank()) allCards
         else allCards.filter { card ->
             val tags = RoleTags.tagsOf(card.name).orEmpty() + if (card.proxies > 0) listOf("proxy") else emptyList()
             RoleTags.matches(card.name, tags, query)
         }
+        val matching = if (cardFilter.active) named.filter { cardFilter.matches(cardFacts[it.scryfallId]) } else named
         if (sparesOnly) matching.filter { it.scryfallId in spareIds } else matching
     }
     // Cards picked on All cards by pressing and holding (scryfall ids), and the action open for
@@ -251,6 +256,8 @@ fun CollectionsScreen(
                         allCards = allCards,
                         query = query,
                         onQueryChange = { query = it },
+                        cardFilter = cardFilter,
+                        onCardFilterChange = { cardFilter = it },
                         filtered = filtered,
                         selecting = selecting,
                         pickedIds = pickedIds,
@@ -391,6 +398,8 @@ private fun AllCardsTab(
     // Search filters the visible card list only; the dashboard still reflects the whole collection.
     query: String,
     onQueryChange: (String) -> Unit,
+    cardFilter: CollectionFilter,
+    onCardFilterChange: (CollectionFilter) -> Unit,
     filtered: List<AllCardEntry>,
     selecting: Boolean,
     pickedIds: Set<String>,
@@ -406,6 +415,7 @@ private fun AllCardsTab(
     var zoomId by remember { mutableStateOf<String?>(null) }
     // Name of the card whose "find similar" overlay is open, if any.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
+    var filterOpen by remember { mutableStateOf(false) }
     val gridCols = adaptiveGridColumns(gridColumns)
     val listCols = adaptiveListColumns()
 
@@ -447,8 +457,20 @@ private fun AllCardsTab(
                         focusedContainerColor = Surface,
                         unfocusedContainerColor = Surface
                     ),
+                    trailingIcon = {
+                        IconButton(onClick = { filterOpen = !filterOpen }) {
+                            Icon(
+                                Icons.Filled.FilterList,
+                                contentDescription = if (cardFilter.active) "Filters, ${cardFilter.count} on" else "Filters",
+                                tint = if (cardFilter.active || filterOpen) Gold else TextMuted
+                            )
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+            if (filterOpen) {
+                item { CollectionFilterPanel(cardFilter, onCardFilterChange) }
             }
             if (spares > 0) {
                 item {
@@ -472,7 +494,7 @@ private fun AllCardsTab(
                 }
             }
             item {
-                val label = if (query.isBlank()) {
+                val label = if (query.isBlank() && !cardFilter.active) {
                     "${allCards.sumOf { it.total }} cards · ${allCards.size} unique (across all binders & decks)"
                 } else {
                     "${filtered.size} of ${allCards.size} unique match"
@@ -481,7 +503,7 @@ private fun AllCardsTab(
             }
             if (filtered.isEmpty()) {
                 item {
-                    Text("No cards match \"$query\".", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    Text(if (cardFilter.active) "No cards match these filters." else "No cards match \"$query\".", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 }
             } else {
                 if (viewMode == CardViewMode.GRID) {

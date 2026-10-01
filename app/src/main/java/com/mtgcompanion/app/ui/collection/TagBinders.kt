@@ -420,7 +420,7 @@ fun TagBinderScreen(viewModel: TagBinderViewModel, onBack: () -> Unit, onOpenTag
                     zoomKey = null
                     RoleTags.byLabel(label)?.let { if (it.id != viewModel.tagId) onOpenTag(it.id) }
                 },
-                onAdd = { zoomKey = null; adding = listOf(card) }
+                onAdd = { adding = listOf(card) }
             )
         }
         CardZoomDialog(zoomCards, shown.indexOfFirst { it.key == key }.coerceAtLeast(0)) { zoomKey = null }

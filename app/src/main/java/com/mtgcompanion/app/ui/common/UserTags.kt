@@ -18,6 +18,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.style.TextOverflow
+import com.mtgcompanion.app.ui.theme.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +47,48 @@ import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 
 /**
+ * The user's tags on a copy, as one line in the enlarged card: what they are (or that there are
+ * none), opening the editor over the card when tapped. The editor's text box and its hints took a
+ * third of the card's details when they sat there the whole time.
+ */
+@Composable
+fun UserTagsButton(
+    tags: List<String>,
+    known: List<String>,
+    onChange: (List<String>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var editing by remember { mutableStateOf(false) }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { editing = true }
+            .padding(horizontal = 24.dp, vertical = 10.dp)
+    ) {
+        Icon(Icons.Filled.Sell, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
+        Text(
+            if (tags.isEmpty()) "Add your own tags" else tags.joinToString(", "),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (tags.isEmpty()) TextMuted else TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 10.dp)
+        )
+        Text(if (tags.isEmpty()) "Add" else "Edit", style = MaterialTheme.typography.labelMedium, color = Gold)
+    }
+    if (editing) {
+        AlertDialog(
+            onDismissRequest = { editing = false },
+            containerColor = Surface,
+            // The editor carries its own heading and side padding; the dialog adds enough of its own.
+            text = { UserTagsSection(tags, known, onChange, inDialog = true) },
+            confirmButton = { TextButton(onClick = { editing = false }) { Text("Done", color = Gold) } }
+        )
+    }
+}
+
+/**
  * The user's own tags on the copy they own: chips with a cross, and a box to add one. [known] are
  * tags used on other cards, offered as one-tap additions so a second card doesn't mean typing again.
  *
@@ -53,7 +100,9 @@ fun UserTagsSection(
     tags: List<String>,
     known: List<String>,
     onChange: (List<String>) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Inside a dialog, which pads its own sides. */
+    inDialog: Boolean = false
 ) {
     var typed by remember { mutableStateOf("") }
     val add: (String) -> Unit = { raw ->
@@ -64,7 +113,7 @@ fun UserTagsSection(
     val has = tags.map { it.trim().lowercase() }.toSet()
     val offer = known.filterNot { it.trim().lowercase() in has }.take(6)
 
-    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp)) {
+    Column(modifier.fillMaxWidth().padding(horizontal = if (inDialog) 0.dp else 24.dp, vertical = if (inDialog) 0.dp else 10.dp)) {
         Text("Your tags", style = MaterialTheme.typography.titleSmall, color = TextPrimary)
         Text(
             "Yours to write — \"proxy\", \"signed\", \"lent to Sam\". They follow this copy into any deck or binder.",

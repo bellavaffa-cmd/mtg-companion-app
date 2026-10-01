@@ -411,7 +411,7 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                         CardTagsRow(card.tags, modifier = Modifier.background(Surface).padding(horizontal = 24.dp, vertical = 8.dp), onClick = card.onTagClick)
                     }
                     card.onUserTags?.let { save ->
-                        UserTagsSection(card.userTags, card.knownUserTags, save, Modifier.background(Surface))
+                        UserTagsButton(card.userTags, card.knownUserTags, save, Modifier.background(Surface))
                     }
                     // While a printing is previewed, show its own price instead of the original's.
                     val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd
@@ -478,11 +478,16 @@ private fun Rect.fitCard(): Rect {
 @Composable
 private fun CardInfoBar(card: ZoomCard, priceUsd: Double?, onRulings: (() -> Unit)?) {
     val haptic = LocalHapticFeedback.current
-    Row(
+    // Two rows. On one, the prices, four actions and the quantity stepper didn't fit a phone's
+    // width, and what fell off the end was the count and its + — so a second copy couldn't be added.
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Surface)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .padding(horizontal = 24.dp, vertical = 12.dp)
+    ) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -496,7 +501,24 @@ private fun CardInfoBar(card: ZoomCard, priceUsd: Double?, onRulings: (() -> Uni
                 InfoStat("Total", money.format(priceUsd * card.quantity))
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            card.quantity?.let { qty ->
+                if (card.onIncrement != null || card.onDecrement != null) {
+                    IconButton(onClick = { card.onDecrement?.invoke() }) {
+                        Icon(Icons.Filled.Remove, contentDescription = "Decrease quantity", tint = Gold)
+                    }
+                    Text("$qty", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                    IconButton(onClick = { card.onIncrement?.invoke() }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Increase quantity", tint = Gold)
+                    }
+                } else {
+                    InfoStat("Qty", "$qty")
+                }
+            }
+        }
+    }
+    if (card.onViewDetails != null || card.onAdd != null || card.onMove != null || onRulings != null || card.onFindSimilar != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
             card.onViewDetails?.let { viewDetails ->
                 IconButton(onClick = viewDetails) {
                     Icon(Icons.Filled.Info, contentDescription = "View details", tint = Gold)
@@ -522,20 +544,8 @@ private fun CardInfoBar(card: ZoomCard, priceUsd: Double?, onRulings: (() -> Uni
                     Icon(Icons.Filled.Search, contentDescription = "Find similar cards", tint = Gold)
                 }
             }
-            card.quantity?.let { qty ->
-                if (card.onIncrement != null || card.onDecrement != null) {
-                    IconButton(onClick = { card.onDecrement?.invoke() }) {
-                        Icon(Icons.Filled.Remove, contentDescription = "Decrease quantity", tint = Gold)
-                    }
-                    Text("$qty", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                    IconButton(onClick = { card.onIncrement?.invoke() }) {
-                        Icon(Icons.Filled.Add, contentDescription = "Increase quantity", tint = Gold)
-                    }
-                } else {
-                    InfoStat("Qty", "$qty")
-                }
-            }
         }
+    }
     }
 }
 
@@ -629,8 +639,15 @@ private fun AlternatePrintingsStrip(
     }
 }
 
+/**
+ * Where else the card is: a count, with the decks and binders themselves a tap away. Listed outright
+ * they pushed everything else off the screen for a card that's in a dozen decks.
+ */
 @Composable
 private fun SourcesSection(sources: List<CardSource>) {
+    var open by remember(sources.map { it.id }) { mutableStateOf(false) }
+    val decks = sources.count { it.kind == SourceKind.DECK }
+    val binders = sources.size - decks
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -639,13 +656,22 @@ private fun SourcesSection(sources: List<CardSource>) {
             .padding(bottom = 20.dp)
     ) {
         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(BorderColor))
-        Text(
-            "In ${sources.size} ${if (sources.size == 1) "place" else "places"}",
-            style = MaterialTheme.typography.labelMedium,
-            color = TextMuted,
-            modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
-        )
-        sources.forEach { source ->
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().clickable { open = !open }.padding(top = 12.dp, bottom = 6.dp)
+        ) {
+            Text(
+                "In " + listOfNotNull(
+                    decks.takeIf { it > 0 }?.let { "$it ${if (it == 1) "deck" else "decks"}" },
+                    binders.takeIf { it > 0 }?.let { "$it ${if (it == 1) "binder" else "binders"}" }
+                ).joinToString(" and "),
+                style = MaterialTheme.typography.labelLarge,
+                color = TextPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            Text(if (open) "Hide" else "Show", style = MaterialTheme.typography.labelMedium, color = Gold)
+        }
+        if (open) sources.forEach { source ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
