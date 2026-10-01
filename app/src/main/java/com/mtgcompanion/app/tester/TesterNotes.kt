@@ -9,28 +9,13 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "picker-scrolls",
+        "The deck list scrolls when adding a card",
+        "From your report: with 10 decks only 7 showed and the list wouldn't scroll. Search for a card, open its menu, choose Add to binder/deck, then A deck. All your decks should be there, and the list should scroll."
+    ),
+    TesterNote(
         "binder-or-deck",
         "Binder or deck is asked first",
-        "Search for a card, open its menu and choose Add to binder/deck. Also try Move and Copy from inside a deck or a binder. It should ask \"A binder\" or \"A deck\", then list only those."
-    ),
-    TesterNote(
-        "report",
-        "Report a problem from anywhere",
-        "Shake the phone, or tap the bug button at the edge of the screen. It takes a picture of the screen and sends your note with what the app was doing."
-    ),
-    TesterNote(
-        "tools",
-        "Tester tools",
-        "Hold the bug button, or open Settings and choose Tester tools: the activity log, sync details, switches, a second account to test with, and Suggest an idea."
-    ),
-    TesterNote(
-        "scan-debug",
-        "Scanner readout",
-        "Turn on \"Scanner readout\" in Tester tools, then scan a card. A strip shows what it read and how long it took, with a button for a scan that came out wrong."
-    ),
-    TesterNote(
-        "update",
-        "Tester builds update themselves",
-        "When a newer tester build is published, this app offers it when it opens. Settings, App Updates checks by hand."
+        "Still to confirm from the last build. Add from Search, and Move or Copy from inside a deck or a binder: it should ask \"A binder\" or \"A deck\", then list only those."
     ),
 )

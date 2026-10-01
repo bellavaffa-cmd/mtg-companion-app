@@ -118,7 +118,9 @@ fun MoveTargetDialog(
                     color = TextMuted
                 )
             } else {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState()).heightIn(max = 360.dp)) {
+                // The height is capped first and the scrolling goes inside it. The other way round the
+                // list is cut off at the cap with nothing to scroll, and the decks past it can't be reached.
+                Column(modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                     if (kind != null) {
                         Text(
                             if (kind == SourceKind.DECK) "Decks" else "Binders",
