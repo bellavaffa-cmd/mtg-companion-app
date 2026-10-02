@@ -9,8 +9,8 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "deck-search-thin",
-        "The deck's search box is one line tall again",
-        "From your note. Open a deck: the search box reads \"Find or add a card\" on a single line, the same height as before. It still searches by name or tag and offers new cards to add."
+        "built-in-cloud",
+        "This build was made by GitHub, not the PC",
+        "Nothing in the app changed. If you're reading this, the update installed over build 8, which means GitHub built and signed it with the right key. Open a deck and sign-in still works as before."
     ),
 )
