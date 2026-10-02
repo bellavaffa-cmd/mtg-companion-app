@@ -1,0 +1,131 @@
+name: Release
+
+# Builds and publishes the signed APKs when a tag is pushed, so a release needs no particular
+# computer — only the tag:
+#
+#   tester-N   the Manabind Tester app (the `beta` build type), published as a pre-release that only
+#              the tester app's own updater offers. N is the tester build number.
+#   vX.Y.Z     the real app, published as the latest full release. app/build.gradle's versionName
+#              must already say X.Y.Z. Its notes come from release-notes/vX.Y.Z.md when that file
+#              exists.
+#
+# The signing key and the gitignored config files come from repository secrets, each one a whole
+# file (scripts/set-ci-secrets.ps1 uploads them from a machine that has them):
+#   KEYSTORE_BASE64       the release keystore, base64
+#   KEYSTORE_PROPERTIES   keystore.properties
+#   SUPABASE_PROPERTIES   supabase.properties
+#   GOOGLE_SERVICES_JSON  google-services.json
+on:
+  push:
+    tags:
+      - 'tester-[0-9]*'
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      # Every release so far is signed by this key; an update signed by another can't install.
+      CERT_SHA256_PREFIX: c3626947
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore signing key and config
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
+          SUPABASE_PROPERTIES: ${{ secrets.SUPABASE_PROPERTIES }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          for name in KEYSTORE_BASE64 KEYSTORE_PROPERTIES SUPABASE_PROPERTIES GOOGLE_SERVICES_JSON; do
+            if [ -z "${!name}" ]; then echo "::error::Secret $name is not set (see scripts/set-ci-secrets.ps1)"; exit 1; fi
+          done
+          printf '%s\n' "$KEYSTORE_PROPERTIES" > keystore.properties
+          printf '%s\n' "$SUPABASE_PROPERTIES" > supabase.properties
+          printf '%s\n' "$GOOGLE_SERVICES_JSON" > google-services.json
+          # The keystore goes wherever keystore.properties says it is.
+          store_file=$(grep -E '^storeFile' keystore.properties | head -n 1 | cut -d= -f2- | tr -d '\r' | xargs)
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$store_file"
+
+      - name: Work out what to build
+        id: plan
+        run: |
+          if [[ "$TAG" == tester-* ]]; then
+            echo "kind=tester" >> "$GITHUB_OUTPUT"
+            echo "build=${TAG#tester-}" >> "$GITHUB_OUTPUT"
+          else
+            version=$(grep -E "^\s*versionName '" app/build.gradle | head -n 1 | sed -E "s/.*'(.*)'.*/\1/")
+            if [ "v$version" != "$TAG" ]; then
+              echo "::error::Tag $TAG but app/build.gradle says versionName $version"; exit 1
+            fi
+            echo "kind=release" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Build the tester app
+        if: steps.plan.outputs.kind == 'tester'
+        run: |
+          ./gradlew assembleBeta -PtesterBuild=${{ steps.plan.outputs.build }}
+          mkdir out
+          src=app/build/outputs/apk/beta
+          cp $src/app-arm64-v8a-beta.apk   out/manabind-tester-arm64-v8a.apk
+          cp $src/app-armeabi-v7a-beta.apk out/manabind-tester-armeabi-v7a.apk
+          cp $src/app-universal-beta.apk   out/manabind-tester-universal.apk
+
+      - name: Build the real app
+        if: steps.plan.outputs.kind == 'release'
+        run: |
+          ./gradlew assembleRelease
+          mkdir out
+          src=app/build/outputs/apk/release
+          # The in-app updater matches a trailing -<abi>.apk, and manabind.com links the arm64 name.
+          cp $src/app-arm64-v8a-release.apk   out/app-release-arm64-v8a.apk
+          cp $src/app-armeabi-v7a-release.apk out/app-release-armeabi-v7a.apk
+          cp $src/app-x86_64-release.apk      out/app-release-x86_64.apk
+          cp $src/app-universal-release.apk   out/app-universal-release.apk
+
+      - name: Check the signature
+        run: |
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner
+          for apk in out/*.apk; do
+            sha=$("$apksigner" verify --print-certs "$apk" | grep -m 1 'SHA-256' | awk '{print $NF}')
+            echo "$apk $sha"
+            if [[ "$sha" != ${CERT_SHA256_PREFIX}* ]]; then
+              echo "::error::$apk is not signed with the release key"; exit 1
+            fi
+          done
+
+      # gh uploads every file to a draft and only then publishes, so an updater never sees a release
+      # with its APKs still missing.
+      - name: Publish the tester pre-release
+        if: steps.plan.outputs.kind == 'tester'
+        run: |
+          gh release create "$TAG" out/*.apk --prerelease --latest=false \
+            --title "Manabind Tester build ${{ steps.plan.outputs.build }}" \
+            --notes "Tester build ${{ steps.plan.outputs.build }}. Installs alongside the real app; the tester app updates itself to this."
+
+      - name: Publish the release
+        if: steps.plan.outputs.kind == 'release'
+        run: |
+          if [ -f "release-notes/$TAG.md" ]; then
+            gh release create "$TAG" out/*.apk --latest --title "$TAG" --notes-file "release-notes/$TAG.md"
+          else
+            gh release create "$TAG" out/*.apk --latest --title "$TAG" --generate-notes
+          fi
