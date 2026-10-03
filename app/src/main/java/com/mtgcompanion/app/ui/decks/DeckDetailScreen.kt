@@ -664,7 +664,7 @@ fun DeckDetailScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
                         ) { Text("Keep cards", color = Bg) }
                         TextButton(onClick = { viewModel.setOwnership(target, keepCards = false); leavingPhysical = null }) {
-                            Text("Remove the cards", color = Color(0xFFD3402F))
+                            Text("Remove the cards", color = LocalAppColors.current.error)
                         }
                         TextButton(onClick = { leavingPhysical = null }) { Text("Cancel", color = TextMuted) }
                     }
@@ -825,7 +825,7 @@ private fun DeleteDeckDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
                 ) { Text("Delete deck, keep cards", color = Bg) }
                 TextButton(onClick = { onDelete(false) }) {
-                    Text("Delete deck and cards", color = Color(0xFFD3402F))
+                    Text("Delete deck and cards", color = LocalAppColors.current.error)
                 }
                 TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
             }
@@ -2733,7 +2733,7 @@ private fun DeckHero(
                     }
                     // Whether the deck is legal for its game mode; the badge at the top of Stats says why not.
                     analysis.legality?.takeIf { !analysis.loading }?.let { report ->
-                        val illegal = Color(0xFFD3402F)
+                        val illegal = app.error
                         Text(
                             if (report.legal) "Legal" else "Not legal",
                             style = MaterialTheme.typography.labelSmall,

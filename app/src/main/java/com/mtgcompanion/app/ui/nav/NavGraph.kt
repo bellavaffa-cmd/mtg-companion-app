@@ -1020,7 +1020,7 @@ private fun UpdateDialog(
                     }
                 } else if (message != null) {
                     Spacer(Modifier.height(14.dp))
-                    Text(message, style = MaterialTheme.typography.bodySmall, color = Color(0xFFD3402F))
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = LocalAppColors.current.error)
                 }
             }
         },

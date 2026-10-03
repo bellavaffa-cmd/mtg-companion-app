@@ -183,7 +183,7 @@ fun TradeValue(get: List<TradeCard>, give: List<TradeCard>) {
         Row { Text("You get", color = colors.textPrimary, modifier = Modifier.weight(1f)); Text(usd(mine), color = colors.textPrimary) }
         Row { Text("You give", color = colors.textPrimary, modifier = Modifier.weight(1f)); Text(usd(theirs), color = colors.textPrimary) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
-            Icon(if (fair) Icons.Filled.Balance else Icons.Filled.Warning, contentDescription = null, tint = if (fair) Color(0xFF5DCAA5) else colors.accent, modifier = Modifier.size(18.dp))
+            Icon(if (fair) Icons.Filled.Balance else Icons.Filled.Warning, contentDescription = null, tint = if (fair) colors.success else colors.accent, modifier = Modifier.size(18.dp))
             Text(
                 when {
                     fair && kotlin.math.abs(diff) < 0.005 -> "Even — a fair trade"

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.theme.CutColor
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.data.DeckRole
@@ -110,9 +111,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Cut candidates are flagged in this color everywhere they appear. */
-internal val CutColor = Color(0xFFFF8A4C)
-private val ShortColor = Color(0xFFE56B5D)
+// Cut candidates are flagged in the theme's cut colour (CutColor) everywhere they appear.
 
 // ---- Cards tab: filter + badges ----
 
@@ -330,11 +329,9 @@ internal fun ComboPieceWarningDialog(cardName: String, combos: List<Variant>, on
 
 // ---- Stats tab: roles, mana advice, versions ----
 
-private val LossColor = Color(0xFFD3402F)
-
-private fun resultColor(result: String, win: Color, other: Color): Color = when (result) {
+private fun resultColor(result: String, win: Color, other: Color, loss: Color): Color = when (result) {
     "WIN" -> win
-    "LOSS" -> LossColor
+    "LOSS" -> loss
     else -> other
 }
 
@@ -383,7 +380,7 @@ internal fun MatchRecordPanel(results: List<GameResult>, onLog: () -> Unit, onRe
             stats.recent.forEach { r ->
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(22.dp).clip(RoundedCornerShape(6.dp)).background(resultColor(r, Gold, Surface3))
+                    modifier = Modifier.size(22.dp).clip(RoundedCornerShape(6.dp)).background(resultColor(r, Gold, Surface3, LocalAppColors.current.error))
                 ) {
                     Text(r.take(1), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (r == "DRAW") TextMuted else Bg)
                 }
@@ -405,7 +402,7 @@ internal fun MatchRecordPanel(results: List<GameResult>, onLog: () -> Unit, onRe
         Column(modifier = Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             (if (showAll) newest else newest.take(5)).forEach { game ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Text(game.result, style = MaterialTheme.typography.labelMedium, color = resultColor(game.result, Gold, TextMuted), modifier = Modifier.width(40.dp))
+                    Text(game.result, style = MaterialTheme.typography.labelMedium, color = resultColor(game.result, Gold, TextMuted, LocalAppColors.current.error), modifier = Modifier.width(40.dp))
                     Text(
                         listOfNotNull(
                             game.opponent?.let { "vs $it" },
@@ -506,7 +503,7 @@ private fun MatchupList(title: String, rows: List<Matchup>) {
                     style = NumberStyle(17),
                     color = when {
                         m.wins > m.losses -> Gold
-                        m.wins < m.losses -> LossColor
+                        m.wins < m.losses -> LocalAppColors.current.error
                         else -> TextMuted
                     }
                 )
@@ -598,7 +595,7 @@ internal fun RolesPanel(
             report.counts.forEach { count ->
                 var expanded by remember(count.role) { mutableStateOf(false) }
                 val color = when (count.status) {
-                    RoleStatus.SHORT -> ShortColor
+                    RoleStatus.SHORT -> LocalAppColors.current.error
                     RoleStatus.ON_TARGET -> Gold
                     RoleStatus.OVER -> GoldLight
                     RoleStatus.NO_TARGET -> Gold
@@ -629,7 +626,7 @@ internal fun RolesPanel(
                         }
                     }
                     when (count.status) {
-                        RoleStatus.SHORT -> Text("${count.min!! - count.count} short of the usual minimum", style = MaterialTheme.typography.labelMedium, color = ShortColor, modifier = Modifier.padding(top = 2.dp))
+                        RoleStatus.SHORT -> Text("${count.min!! - count.count} short of the usual minimum", style = MaterialTheme.typography.labelMedium, color = LocalAppColors.current.error, modifier = Modifier.padding(top = 2.dp))
                         RoleStatus.OVER -> Text("Above the usual range", style = MaterialTheme.typography.labelMedium, color = TextMuted, modifier = Modifier.padding(top = 2.dp))
                         else -> Unit
                     }
@@ -786,7 +783,7 @@ internal fun VersionDetailDialog(summary: VersionSummary, onDismiss: () -> Unit)
                         summary.added.forEach { (name, qty) -> Text("+$qty  $name", style = MaterialTheme.typography.bodySmall, color = TextPrimary) }
                     }
                     if (summary.removed.isNotEmpty()) {
-                        Text("Removed", style = MaterialTheme.typography.labelMedium, color = ShortColor, modifier = Modifier.padding(top = 10.dp))
+                        Text("Removed", style = MaterialTheme.typography.labelMedium, color = LocalAppColors.current.error, modifier = Modifier.padding(top = 10.dp))
                         summary.removed.forEach { (name, qty) -> Text("−$qty  $name", style = MaterialTheme.typography.bodySmall, color = TextPrimary) }
                     }
                     if (summary.added.isEmpty() && summary.removed.isEmpty()) {

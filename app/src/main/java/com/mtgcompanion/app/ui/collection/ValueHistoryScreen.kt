@@ -123,7 +123,7 @@ fun ValueHistoryScreen(onBack: () -> Unit) {
                 color = when {
                     picked != null || change == null -> colors.textMuted
                     change.usd > 0 -> colors.accent
-                    change.usd < 0 -> Color(0xFFD3402F)
+                    change.usd < 0 -> colors.error
                     else -> colors.textMuted
                 },
                 modifier = Modifier.padding(top = 2.dp)
@@ -194,7 +194,7 @@ private fun MoversSection(money: Money) {
         return
     }
     if (movers.up.isNotEmpty()) MoverList("Up", movers.up, money, colors.accent)
-    if (movers.down.isNotEmpty()) MoverList("Down", movers.down, money, Color(0xFFD3402F))
+    if (movers.down.isNotEmpty()) MoverList("Down", movers.down, money, colors.error)
 }
 
 @Composable

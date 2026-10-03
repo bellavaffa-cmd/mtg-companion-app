@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.common
 
+import com.mtgcompanion.app.ui.theme.LocalAppColors
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,7 +32,7 @@ fun ConfirmDeleteDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD3402F), contentColor = Bg)
+                colors = ButtonDefaults.buttonColors(containerColor = LocalAppColors.current.error, contentColor = Bg)
             ) { Text(confirmLabel, color = Bg) }
         },
         dismissButton = {
