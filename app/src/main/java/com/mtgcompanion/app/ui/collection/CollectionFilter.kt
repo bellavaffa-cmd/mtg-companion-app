@@ -45,14 +45,19 @@ data class CardFacts(
     val typeLine: String,
     val rarity: String,
     /** The card's rules text, every face of it. */
-    val text: String = ""
+    val text: String = "",
+    /** The printing's set: its code ("mh3") and name — for set completion and the breakdown. */
+    val set: String = "",
+    val setName: String = ""
 ) {
     companion object {
         fun of(card: ScryfallCard) = CardFacts(
             colors = (card.colorIdentity ?: card.colors).orEmpty().mapNotNull { it.firstOrNull()?.uppercaseChar() }.toSet(),
             typeLine = card.typeLine.orEmpty(),
             rarity = card.rarity.orEmpty().lowercase(),
-            text = card.displayOracleText.orEmpty()
+            text = card.displayOracleText.orEmpty(),
+            set = card.set.orEmpty().lowercase(),
+            setName = card.setName.orEmpty()
         )
     }
 }

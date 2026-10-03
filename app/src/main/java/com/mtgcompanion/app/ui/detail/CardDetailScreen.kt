@@ -8,6 +8,7 @@ import com.mtgcompanion.app.ui.common.addToMessage
 import com.mtgcompanion.app.ui.common.asTarget
 import com.mtgcompanion.app.network.scryfall.canBeFoil
 import com.mtgcompanion.app.ui.common.openUrl
+import com.mtgcompanion.app.ui.common.PriceHistoryPanel
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.zoomSource
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -230,6 +231,8 @@ fun CardDetailScreen(
                     fullSpanItem { PricesSection(state, onOpenTcgplayer = {
                         card.purchaseUris?.tcgplayer?.let { openUrl(context, it) }
                     }) }
+                    // This printing's price as this phone has noted it, day by day (see CardPriceHistory).
+                    fullSpanItem { GoldPanel { PriceHistoryPanel(card.id) } }
 
                 }
                 val browseSections: androidx.compose.foundation.lazy.grid.LazyGridScope.() -> Unit = {

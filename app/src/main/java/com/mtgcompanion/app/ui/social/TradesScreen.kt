@@ -70,6 +70,7 @@ import com.mtgcompanion.app.data.social.ShareKind
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.data.social.Trade
 import com.mtgcompanion.app.data.social.TradeCard
+import com.mtgcompanion.app.ui.common.CopyBadge
 import com.mtgcompanion.app.data.social.TradeStatus
 import com.mtgcompanion.app.data.social.awaitingMyUpdate
 import com.mtgcompanion.app.data.social.cardTotal
@@ -275,6 +276,8 @@ fun TradeCardList(cards: List<TradeCard>, empty: String, onRemove: ((TradeCard) 
                 AsyncImage(model = c.imageUrl.toArtCropUrl(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(width = 40.dp, height = 30.dp).clip(RoundedCornerShape(8.dp)).background(colors.surface2))
                 Text("${c.quantity}×", style = MaterialTheme.typography.titleSmall)
                 Text(c.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                // The condition the giver gave their copies, when they said.
+                c.condition?.let { CopyBadge(it) }
                 if (c.foil) Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = colors.accent, modifier = Modifier.size(14.dp))
                     Text("Foil", style = MaterialTheme.typography.labelMedium, color = colors.accent)

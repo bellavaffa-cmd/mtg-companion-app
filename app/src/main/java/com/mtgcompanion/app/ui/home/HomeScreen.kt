@@ -1,6 +1,9 @@
 package com.mtgcompanion.app.ui.home
 
 import androidx.compose.material.icons.filled.EventSeat
+import androidx.compose.material.icons.filled.NotificationsActive
+import com.mtgcompanion.app.data.AlertDirection
+import com.mtgcompanion.app.data.AlertHit
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.SwapHoriz
 import com.mtgcompanion.app.ui.common.rememberMoney
@@ -117,6 +120,7 @@ fun HomeScreen(
     val matchSummary by viewModel.matchSummary.collectAsState()
     val cardOfDay by viewModel.cardOfDay.collectAsState()
     val alert by viewModel.alert.collectAsState()
+    val priceAlertHits by viewModel.priceAlertHits.collectAsState()
     val remoteSeat by viewModel.remoteSeat.collectAsState()
     val news by viewModel.news.collectAsState()
     val context = LocalContext.current
@@ -256,6 +260,10 @@ fun HomeScreen(
                 Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = colors.warning, modifier = Modifier.size(20.dp))
                 Text(message, style = MaterialTheme.typography.bodySmall, color = colors.textPrimary)
             }
+        }
+
+        if (priceAlertHits.isNotEmpty()) {
+            PriceAlertBanner(priceAlertHits, onViewCard, Modifier.padding(horizontal = pad).riseIn(1))
         }
 
         if (layout == LayoutSize.DESKTOP) {
@@ -637,6 +645,59 @@ private fun NewsList(items: List<NewsItem>, modifier: Modifier = Modifier, onOpe
             if (index < shown.size - 1) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(app.border))
             }
+        }
+    }
+}
+
+/**
+ * The price alerts that have gone off, both kinds: wishlist cards now at or under the price set
+ * ("buy it") and owned cards now at or over it ("sell or trade it"). A card opens its page.
+ */
+@Composable
+private fun PriceAlertBanner(hits: List<AlertHit>, onViewCard: (String) -> Unit, modifier: Modifier = Modifier) {
+    val colors = LocalAppColors.current
+    val money = rememberMoney()
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.accent.copy(alpha = 0.14f))
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = colors.accent, modifier = Modifier.size(20.dp))
+            Text(
+                if (hits.size == 1) "A price alert went off" else "${hits.size} price alerts went off",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.textPrimary
+            )
+        }
+        hits.sortedBy { it.watch.direction }.take(6).forEach { hit ->
+            val below = hit.watch.direction == AlertDirection.BELOW
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onViewCard(hit.watch.entry.name) }.padding(vertical = 4.dp)
+            ) {
+                Text(
+                    hit.watch.entry.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    money.format(hit.price) + if (below) " · under ${money.format(hit.watch.target)} (wishlist)" else " · over ${money.format(hit.watch.target)} (owned)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (below) colors.success else colors.accent,
+                    maxLines = 1
+                )
+            }
+        }
+        if (hits.size > 6) {
+            Text("and ${hits.size - 6} more", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
         }
     }
 }

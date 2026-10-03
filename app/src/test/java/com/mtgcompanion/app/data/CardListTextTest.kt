@@ -125,9 +125,10 @@ class CardListTextTest {
     @Test
     fun `Moxfield and Deckbox CSV - a set name in Edition is ignored, a code is used`() {
         val moxfield = "Count,Tradelist Count,Name,Edition,Condition,Language,Foil,Tags,Last Modified,Collector Number\r\n3,0,Counterspell,mh2,Near Mint,English,foil,,2024-01-01,267\r\n"
-        assertEquals(listOf(ListLine(3, "Counterspell", "mh2", "267", foil = true)), parseCardList(moxfield).lines)
+        // Their Condition and Language columns come along too (see CopyDetailsTest).
+        assertEquals(listOf(ListLine(3, "Counterspell", "mh2", "267", foil = true, condition = "NM", language = "en")), parseCardList(moxfield).lines)
         val deckbox = "Count,Tradelist Count,Name,Edition,Card Number,Condition,Language,Foil\n1,0,Lightning Bolt,Magic 2010,146,Near Mint,English,"
-        assertEquals(listOf(ListLine(1, "Lightning Bolt", null, "146")), parseCardList(deckbox).lines)
+        assertEquals(listOf(ListLine(1, "Lightning Bolt", null, "146", condition = "NM", language = "en")), parseCardList(deckbox).lines)
     }
 
     @Test

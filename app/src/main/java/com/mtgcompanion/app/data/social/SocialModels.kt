@@ -87,7 +87,12 @@ data class TradeCard(
     val imageUrl: String? = null,
     val foil: Boolean = false,
     val quantity: Int = 1,
-    val collectionId: String? = null
+    val collectionId: String? = null,
+    /**
+     * The giver's copies' condition ("NM", "LP"… — CollectionEntry.condition), when they've said, so
+     * the other side knows what they'd get. JSON key "condition", left out when null.
+     */
+    val condition: String? = null
 ) {
     /** The same card, finish and binder are one line. */
     val key: String get() = "${collectionId.orEmpty()}:$scryfallId:${if (foil) "f" else "n"}"
@@ -165,7 +170,8 @@ internal fun parseTradeCards(a: JSONArray?): List<TradeCard> = if (a == null) em
         imageUrl = o.str("imageUrl"),
         foil = o.optBoolean("foil"),
         quantity = o.optInt("quantity", 1),
-        collectionId = o.str("collectionId")
+        collectionId = o.str("collectionId"),
+        condition = o.str("condition")
     )
 }
 
@@ -178,6 +184,7 @@ internal fun tradeCardsJson(cards: List<TradeCard>): JSONArray = JSONArray().app
             put("foil", c.foil)
             put("quantity", c.quantity)
             c.collectionId?.let { put("collectionId", it) }
+            c.condition?.let { put("condition", it) }
         })
     }
 }

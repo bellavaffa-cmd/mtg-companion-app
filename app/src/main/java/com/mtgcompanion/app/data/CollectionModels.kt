@@ -20,8 +20,26 @@ data class CollectionEntry(
     /** Wishlists: tell the user when this card's price (USD, non-foil) is at or under this (see PriceAlerts). */
     val priceAlert: Double? = null,
     /** In the Wishlist by itself: a deck is considering it and the user doesn't own it (see [withWishlist]). */
-    val auto: Boolean = false
+    val auto: Boolean = false,
+    /**
+     * Owned binders: tell the user when this card's price rises to this or more (US dollars; see
+     * PriceAlertRules.kt). Checked against the non-foil price, or the foil price when every copy in
+     * the entry is foil. The "above" twin of [priceAlert], which is the wishlist's "at or below".
+     */
+    val priceAlertAbove: Double? = null,
+    /** The copies' condition: one of [CARD_CONDITIONS] ("NM", "LP", "MP", "HP", "DMG"); null = not said. */
+    val condition: String? = null,
+    /** The language the copies are printed in, as Scryfall codes it ([CARD_LANGUAGES]: "en", "ja"…); null = not said. */
+    val language: String? = null
 )
+
+// The entry as JSON — locally, in sync and in shared binders — is these fields by name. Keys added
+// for collecting, which the web app reads and writes the same way (all optional, left out when null):
+//   "priceAlert":      number, USD — wishlists: notify when the price is at or below it
+//   "priceAlertAbove": number, USD — owned binders: notify when the price is at or above it
+//   "condition":       "NM" | "LP" | "MP" | "HP" | "DMG" — for every copy in the entry
+//   "language":        "en" | "ja" | "de" | "fr" | "it" | "es" | "pt" | "ru" | "ko" | "zhs" | "zht"
+// Copies of one printing in different conditions aren't split into entries: the entry says one.
 
 /** OWNED binders are the physical collection; WISHLIST binders track cards not owned yet. */
 enum class CollectionType {

@@ -7,6 +7,8 @@ import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.ui.collection.TagBinderScreen
 import com.mtgcompanion.app.ui.collection.ValueHistoryScreen
 import com.mtgcompanion.app.ui.collection.TagBinderViewModel
+import com.mtgcompanion.app.ui.collection.SetCardsScreen
+import com.mtgcompanion.app.ui.collection.SetCardsViewModel
 import com.mtgcompanion.app.ui.common.SyncPullResult
 import com.mtgcompanion.app.ui.common.PullToSyncBox
 import com.mtgcompanion.app.ui.common.CardZoomHost
@@ -225,6 +227,9 @@ private object Routes {
     /** A tag's automatic binder: every owned card with that tag. */
     const val TAG_BINDER = "tag_binder/{tagId}"
     fun tagBinder(tagId: String) = "tag_binder/$tagId"
+    /** One set's cards, owned and missing — from the Collection's Sets page. */
+    const val SET_CARDS = "set_cards/{code}"
+    fun setCards(code: String) = "set_cards/" + URLEncoder.encode(code, StandardCharsets.UTF_8.name())
     fun detail(cardName: String) = "detail/" + URLEncoder.encode(cardName, StandardCharsets.UTF_8.name())
     fun deckDetail(deckId: String, tab: String? = null) =
         "deck/$deckId" + (tab?.let { "?tab=" + URLEncoder.encode(it, StandardCharsets.UTF_8.name()) } ?: "")
@@ -326,7 +331,7 @@ fun MtgNavGraph(
                 Routes.HOME, Routes.VALUE_HISTORY -> NavDestination.HOME
                 Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
-                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER -> NavDestination.COLLECTION
+                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.SETTINGS -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
@@ -467,6 +472,16 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(Routes.SET_CARDS, arguments = listOf(navArgument("code") { type = NavType.StringType })) { entry ->
+                val code = entry.arguments?.getString("code")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val viewModel: SetCardsViewModel = viewModel(key = "set-$code", factory = SetCardsViewModel.Factory(code, collectionRepository, deckRepository))
+                SetCardsScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
+                )
+            }
+
             destination(Routes.COLLECTION) {
                 val viewModel: CollectionsViewModel = viewModel(
                     factory = CollectionsViewModel.Factory(collectionRepository, deckRepository, settingsRepository)
@@ -494,7 +509,8 @@ fun MtgNavGraph(
                     openShared = openShared,
                     onSharedOpened = { openShared = false; socialRepository.openSharedTab = false },
                     onOpenTag = { id -> navController.navigate(Routes.tagBinder(id)) },
-                    onOfferSpares = if (supabaseSync.auth.configured) ({ cards -> offering = cards }) else null
+                    onOfferSpares = if (supabaseSync.auth.configured) ({ cards -> offering = cards }) else null,
+                    onOpenSet = { code -> navController.navigate(Routes.setCards(code)) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(

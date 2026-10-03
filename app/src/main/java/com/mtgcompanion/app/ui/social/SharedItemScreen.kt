@@ -352,7 +352,7 @@ fun LazyListScope.binderPicker(collectionId: String, entries: List<CollectionEnt
         item(key = "pick-$collectionId-${e.scryfallId}") {
             val colors = LocalAppColors.current
             fun count(foil: Boolean) = picked.firstOrNull { it.key == TradeCard(e.scryfallId, e.name, foil = foil, collectionId = collectionId).key }?.quantity ?: 0
-            fun set(foil: Boolean, n: Int) = onChange(picked.withQuantity(TradeCard(e.scryfallId, e.name, e.imageUrl, foil, 0, collectionId), n))
+            fun set(foil: Boolean, n: Int) = onChange(picked.withQuantity(TradeCard(e.scryfallId, e.name, e.imageUrl, foil, 0, collectionId, condition = e.condition), n))
             val on = count(false) + count(true) > 0
             Row(
                 verticalAlignment = Alignment.CenterVertically,

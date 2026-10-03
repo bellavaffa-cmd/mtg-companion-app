@@ -180,4 +180,36 @@ class ItemMergeTest {
         )
         assertEquals(emptyList<CollectionEntry>(), emptied.entries)
     }
+
+    @Test
+    fun `a binder card's condition, language and rise alert follow whoever changed them`() {
+        fun entry(condition: String? = null, language: String? = null, above: Double? = null) =
+            CollectionEntry(scryfallId = "a", name = "a", imageUrl = null, quantity = 1, condition = condition, language = language, priceAlertAbove = above)
+        fun binder(e: CollectionEntry) = Collection(id = "c1", name = "Binder", entries = listOf(e), createdAt = 1)
+
+        // One device set the condition, the other the language and an alert: all three kept.
+        val merged = ItemMerge.mergeCollections(
+            base = binder(entry()),
+            mine = binder(entry(condition = "LP")),
+            theirs = binder(entry(language = "ja", above = 40.0)),
+            minePreferred = false
+        ).entries.single()
+        assertEquals(Triple("LP", "ja", 40.0), Triple(merged.condition, merged.language, merged.priceAlertAbove))
+
+        // Both changed the condition: the more recent edit wins; clearing it is a change too.
+        val both = ItemMerge.mergeCollections(
+            base = binder(entry(condition = "NM")),
+            mine = binder(entry(condition = "HP")),
+            theirs = binder(entry(condition = "MP")),
+            minePreferred = true
+        ).entries.single()
+        assertEquals("HP", both.condition)
+        val cleared = ItemMerge.mergeCollections(
+            base = binder(entry(condition = "NM", language = "de")),
+            mine = binder(entry(condition = "NM", language = "de")),
+            theirs = binder(entry(condition = null, language = "de")),
+            minePreferred = true
+        ).entries.single()
+        assertEquals(null to "de", cleared.condition to cleared.language)
+    }
 }

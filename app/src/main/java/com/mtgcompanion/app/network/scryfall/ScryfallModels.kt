@@ -251,3 +251,20 @@ data class BulkDataEntry(
     @Json(name = "updated_at") val updatedAt: String? = null,
     val size: Long? = null
 )
+
+/** GET /sets — every set, newest first. */
+data class ScryfallSetList(val data: List<ScryfallSet> = emptyList())
+
+/**
+ * One set. [cardCount]: how many printings it has. [iconSvgUri]: its symbol, an SVG. Nullable where
+ * Scryfall may leave a field out, so one odd set can't fail the whole list (see [BulkDataEntry]).
+ */
+data class ScryfallSet(
+    val code: String? = null,
+    val name: String? = null,
+    @Json(name = "card_count") val cardCount: Int? = null,
+    @Json(name = "released_at") val releasedAt: String? = null,
+    @Json(name = "icon_svg_uri") val iconSvgUri: String? = null,
+    @Json(name = "set_type") val setType: String? = null,
+    val digital: Boolean? = null
+)
