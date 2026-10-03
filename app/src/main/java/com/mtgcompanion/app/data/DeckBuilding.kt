@@ -229,6 +229,18 @@ fun cardNameKeys(name: String): Set<String> {
     return setOf(full, full.substringBefore(" // ").trim())
 }
 
+/**
+ * Name keys ([cardNameKeys]) of every card with a copy in the user's own binders (the Unsorted pile
+ * included, wishlists not) — for "Only cards I own" on a deck's suggestions.
+ */
+fun ownedNameKeys(collections: List<Collection>): Set<String> =
+    collections.filter { it.kind != CollectionType.WISHLIST }
+        .flatMap { c -> c.entries.filter { it.quantity + it.foilQuantity > 0 }.flatMap { cardNameKeys(it.name) } }
+        .toSet()
+
+/** Whether a card called [name] is among [ownedKeys] (see [ownedNameKeys]). */
+fun isOwnedName(name: String, ownedKeys: Set<String>): Boolean = cardNameKeys(name).any { it in ownedKeys }
+
 /** A combo a deck is one card short of, and the card(s) it's missing. */
 data class NearMissCombo(val combo: Variant, val missing: List<String>)
 
