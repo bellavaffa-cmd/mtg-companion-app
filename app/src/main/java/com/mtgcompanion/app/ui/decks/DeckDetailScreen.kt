@@ -298,7 +298,7 @@ fun DeckDetailScreen(
                             onClick = { menuOpen = false; showSettings = true }
                         )
                         DropdownMenuItem(
-                            text = { Text("Import decklist", color = TextPrimary) },
+                            text = { Text("Import list", color = TextPrimary) },
                             onClick = { menuOpen = false; showImport = true }
                         )
                         if (onShare != null) {
@@ -308,7 +308,7 @@ fun DeckDetailScreen(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text("Export decklist", color = TextPrimary) },
+                            text = { Text("Export list", color = TextPrimary) },
                             onClick = { menuOpen = false; showExport = true }
                         )
                         DropdownMenuItem(
@@ -520,9 +520,9 @@ fun DeckDetailScreen(
 
         removeCardTarget?.let { entry ->
             ConfirmDeleteDialog(
-                title = "Remove card?",
+                title = "Remove from deck?",
                 message = "Remove ${entry.name} (${entry.quantity} cop${if (entry.quantity == 1) "y" else "ies"}) from this deck?",
-                confirmLabel = "Remove",
+                confirmLabel = "Remove from deck",
                 onConfirm = { viewModel.removeCard(entry.scryfallId); removeCardTarget = null },
                 onDismiss = { removeCardTarget = null }
             )
@@ -705,6 +705,7 @@ private fun DeleteDeckDialog(
             title = "Delete deck?",
             message = "\"$deckName\" and its $cardCount card${if (cardCount == 1) "" else "s"} will be " +
                 "permanently deleted. This can't be undone.",
+            confirmLabel = "Delete deck",
             onConfirm = { onDelete(false) },
             onDismiss = onDismiss
         )
@@ -751,7 +752,7 @@ private fun ImportResultDialog(state: ImportState, onDismiss: () -> Unit) {
         containerColor = Surface,
         onDismissRequest = { if (summary != null) onDismiss() },
         title = {
-            Text(if (summary == null) "Importing decklist…" else "Import complete", color = GoldLight)
+            Text(if (summary == null) "Importing list…" else "Import complete", color = GoldLight)
         },
         text = {
             Column(
@@ -832,7 +833,7 @@ private fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
     AlertDialog(
         containerColor = Surface,
         onDismissRequest = onDismiss,
-        title = { Text("Import decklist", color = GoldLight) },
+        title = { Text("Import list", color = GoldLight) },
         text = {
             Column {
                 Text(
@@ -890,7 +891,7 @@ private fun ExportDialog(deck: Deck, viewModel: DeckDetailViewModel, onDismiss: 
     AlertDialog(
         containerColor = Surface,
         onDismissRequest = onDismiss,
-        title = { Text("Export decklist", color = GoldLight) },
+        title = { Text("Export list", color = GoldLight) },
         text = {
             Column {
                 Text(
@@ -1267,7 +1268,7 @@ private fun CardsTab(
         ConfirmDeleteDialog(
             title = "Remove ${card.name}?",
             message = "That was the last copy in this deck. Removing it takes the card out of the deck.",
-            confirmLabel = "Remove",
+            confirmLabel = "Remove from deck",
             onConfirm = { viewModel.setCardQuantity(card.scryfallId, 0); removing = null },
             onDismiss = { removing = null }
         )

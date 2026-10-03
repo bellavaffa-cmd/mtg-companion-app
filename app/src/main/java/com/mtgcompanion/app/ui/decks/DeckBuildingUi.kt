@@ -208,7 +208,7 @@ internal fun ConsideringTab(
         if (deck.considering.isEmpty()) {
             item {
                 Text(
-                    "Nothing here yet. Add cards from a card's page (Add to deck → Consider), from the REC tab, or move a card out of the deck from its long-press menu.",
+                    "Nothing here yet. Add cards from a card's page (Add to deck → Considering), from the REC tab, or move a card out of the deck from its long-press menu.",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
                 )

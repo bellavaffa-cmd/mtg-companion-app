@@ -194,8 +194,8 @@ fun CollectionsScreen(
             if (selecting) SelectionActionBar(
                 listOf(
                     SelectionAction("Add to…", Icons.AutoMirrored.Filled.DriveFileMove) { bulk = "add" },
-                    SelectionAction("Export", Icons.Filled.IosShare) { bulk = "export" },
-                    SelectionAction("Remove", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
+                    SelectionAction("Export list", Icons.Filled.IosShare) { bulk = "export" },
+                    SelectionAction("Remove from binders", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
                 )
             )
         },
@@ -215,7 +215,7 @@ fun CollectionsScreen(
                         }
                     }
                     IconButton(onClick = { viewModel.resetImport(); showImport = true }) {
-                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Import cards from another app", tint = TextPrimary)
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Import list", tint = TextPrimary)
                     }
                     if (pagerState.currentPage == 1) {
                         IconButton(onClick = { showCreateDialog = true }) {
@@ -229,7 +229,7 @@ fun CollectionsScreen(
     ) { padding ->
         if (showImport) {
             ImportCardsDialog(
-                title = "Import cards",
+                title = "Import list",
                 askName = true,
                 progress = importProgress,
                 onImport = viewModel::importBinder,
@@ -316,9 +316,9 @@ fun CollectionsScreen(
         "remove" -> {
             val copies = viewModel.copiesInBinders(pickedIds)
             ConfirmDeleteDialog(
-                title = if (picked.size == 1) "Remove from collection?" else "Remove ${picked.size} cards from collection?",
+                title = if (picked.size == 1) "Remove from binders?" else "Remove ${picked.size} cards from binders?",
                 message = "Removes $pickedLabel ($copies cop${if (copies == 1) "y" else "ies"}) from all your binders. Copies in decks and wishlists stay.",
-                confirmLabel = "Remove",
+                confirmLabel = "Remove from binders",
                 onConfirm = { viewModel.removeFromCollection(pickedIds); done() },
                 onDismiss = { bulk = null }
             )
@@ -384,6 +384,7 @@ private fun CollectionsTab(
             title = "Delete binder?",
             message = "\"${collection.name}\" and its $total card${if (total == 1) "" else "s"} will be " +
                 "permanently deleted. This can't be undone.",
+            confirmLabel = "Delete binder",
             onConfirm = { onDelete(collection.id); confirmDelete = null },
             onDismiss = { confirmDelete = null }
         )

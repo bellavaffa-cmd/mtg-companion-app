@@ -220,7 +220,7 @@ fun ImportCardsDialog(
  * printing" adds "(CMR) 472" so the same art comes back. Copy it, share it, or save a .txt file.
  */
 @Composable
-fun ExportCollectionDialog(binderName: String, buildText: suspend (exact: Boolean) -> String, title: String = "Export binder", onDismiss: () -> Unit) {
+fun ExportCollectionDialog(binderName: String, buildText: suspend (exact: Boolean) -> String, title: String = "Export list", onDismiss: () -> Unit) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current

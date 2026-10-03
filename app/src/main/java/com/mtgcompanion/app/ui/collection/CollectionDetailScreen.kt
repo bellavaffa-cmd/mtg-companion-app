@@ -176,8 +176,8 @@ fun CollectionDetailScreen(
                 listOf(
                     SelectionAction("Move to…", Icons.AutoMirrored.Filled.DriveFileMove) { bulk = "move" },
                     SelectionAction("Copy to…", Icons.Filled.ContentCopy) { bulk = "copy" },
-                    SelectionAction("Export", Icons.Filled.IosShare) { bulk = "export" },
-                    SelectionAction("Remove", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
+                    SelectionAction("Export list", Icons.Filled.IosShare) { bulk = "export" },
+                    SelectionAction("Remove from binder", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
                 )
             )
         },
@@ -206,8 +206,8 @@ fun CollectionDetailScreen(
                             Icon(Icons.Filled.MoreVert, contentDescription = "Binder actions", tint = TextPrimary)
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.background(Surface2)) {
-                            DropdownMenuItem(text = { Text("Import cards", color = TextPrimary) }, onClick = { menuOpen = false; viewModel.resetImport(); listDialog = "import" })
-                            DropdownMenuItem(text = { Text("Export as text", color = TextPrimary) }, onClick = { menuOpen = false; listDialog = "export" })
+                            DropdownMenuItem(text = { Text("Import list", color = TextPrimary) }, onClick = { menuOpen = false; viewModel.resetImport(); listDialog = "import" })
+                            DropdownMenuItem(text = { Text("Export list", color = TextPrimary) }, onClick = { menuOpen = false; listDialog = "export" })
                             // The Wishlist is a shopping list: buy the lot in one basket.
                             if (collection?.isWishlist == true && collection?.entries?.isNotEmpty() == true) DropdownMenuItem(
                                 text = { Text("Buy these cards", color = TextPrimary) },
@@ -455,9 +455,9 @@ fun CollectionDetailScreen(
     removeTarget?.let { entry ->
         val qty = entry.quantity + entry.foilQuantity
         ConfirmDeleteDialog(
-            title = "Remove card?",
+            title = "Remove from binder?",
             message = "Remove ${entry.name} ($qty cop${if (qty == 1) "y" else "ies"}) from this binder?",
-            confirmLabel = "Remove",
+            confirmLabel = "Remove from binder",
             onConfirm = { viewModel.remove(entry); removeTarget = null },
             onDismiss = { removeTarget = null }
         )
@@ -478,6 +478,7 @@ fun CollectionDetailScreen(
         ConfirmDeleteDialog(
             title = "Delete binder?",
             message = "\"$name\" and its $total card${if (total == 1) "" else "s"} will be permanently deleted. This can't be undone.",
+            confirmLabel = "Delete binder",
             onConfirm = { confirmDeleteBinder = false; viewModel.deleteCollection(onBack) },
             onDismiss = { confirmDeleteBinder = false }
         )
@@ -510,9 +511,9 @@ fun CollectionDetailScreen(
         "remove" -> {
             val copies = picked.sumOf { it.quantity + it.foilQuantity }
             ConfirmDeleteDialog(
-                title = if (picked.size == 1) "Remove card?" else "Remove ${picked.size} cards?",
+                title = if (picked.size == 1) "Remove from binder?" else "Remove ${picked.size} cards from binder?",
                 message = "Remove $pickedLabel ($copies cop${if (copies == 1) "y" else "ies"}) from this binder?",
-                confirmLabel = "Remove",
+                confirmLabel = "Remove from binder",
                 onConfirm = { viewModel.removeEntries(pickedIds); done() },
                 onDismiss = { bulk = null }
             )
