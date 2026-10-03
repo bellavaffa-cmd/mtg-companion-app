@@ -5,7 +5,7 @@ import kotlin.random.Random
 // Solo playtesting ("goldfishing") a deck: shuffle, draw seven, mulligan the London way, then play
 // turns — draw, put cards onto the battlefield, tap and untap them, send them to the graveyard, make
 // the deck's tokens. Plain state and actions, so the rules are tested here rather than on a screen;
-// every shuffle takes a Random, so a test can seed it. Nothing is saved: closing the playtest ends it.
+// every shuffle takes a Random, so a test can seed it. OPENING_HAND (seven) is HandOdds.kt's. Nothing is saved: closing the playtest ends it.
 
 /** One physical card in the game. [id] tells copies of the same card apart. */
 data class PlayCard(
@@ -43,9 +43,6 @@ data class PlaytestState(
     val choosingHand: Boolean get() = turn == 0
     val canKeep: Boolean get() = choosingHand && toBottom == 0
 }
-
-/** Opening hand size. */
-const val OPENING_HAND = 7
 
 /**
  * Every card of [deck]'s main deck as a game card — less one copy of each commander, which starts in
