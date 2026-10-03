@@ -71,6 +71,8 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -105,6 +107,7 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldLight
+import com.mtgcompanion.app.ui.theme.OnGold
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
@@ -180,8 +183,13 @@ data class ZoomCard(
     val userTags: List<String> = emptyList(),
     val onUserTags: ((List<String>) -> Unit)? = null,
     /** Tags used on other cards, offered as one-tap additions. */
-    val knownUserTags: List<String> = emptyList()
+    val knownUserTags: List<String> = emptyList(),
+    /** One full-width button under the card, for a screen whose whole point is picking it ("Build with …"). */
+    val primaryAction: ZoomAction? = null
 )
+
+/** A labelled button in the enlarged-card overlay — see [ZoomCard.primaryAction]. */
+data class ZoomAction(val label: String, val onClick: () -> Unit)
 
 /**
  * Enlarges a card over everything else. Opens on [initialIndex] within [cards] and lets the user
@@ -426,6 +434,15 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                     }
                     if (card.sources.isNotEmpty()) {
                         SourcesSection(card.sources)
+                    }
+                    card.primaryAction?.let { action ->
+                        Box(Modifier.fillMaxWidth().background(Surface).padding(horizontal = 24.dp, vertical = 12.dp)) {
+                            Button(
+                                onClick = action.onClick,
+                                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = OnGold),
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(action.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        }
                     }
                 }
             }

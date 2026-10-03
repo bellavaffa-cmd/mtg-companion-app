@@ -6,13 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
-import com.mtgcompanion.app.data.GameMode
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DecksViewModel(
@@ -36,10 +34,6 @@ class DecksViewModel(
             deck.id to (colors + partnerColors).distinct()
         }.toMap()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
-
-    fun createDeck(name: String, gameMode: GameMode, onCreated: (Deck) -> Unit) {
-        viewModelScope.launch { onCreated(repository.createDeck(name, gameMode)) }
-    }
 
     class Factory(private val repository: DeckRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

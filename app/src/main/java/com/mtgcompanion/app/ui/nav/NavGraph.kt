@@ -145,6 +145,8 @@ import com.mtgcompanion.app.ui.decks.DeckDetailViewModel
 import com.mtgcompanion.app.ui.decks.DecksScreen
 import com.mtgcompanion.app.ui.decks.DecksViewModel
 import com.mtgcompanion.app.ui.decks.PreconsScreen
+import com.mtgcompanion.app.ui.decks.NewDeckScreen
+import com.mtgcompanion.app.ui.decks.NewDeckViewModel
 import com.mtgcompanion.app.ui.decks.PreconsViewModel
 import com.mtgcompanion.app.ui.detail.CardDetailScreen
 import com.mtgcompanion.app.ui.detail.CardDetailViewModel
@@ -189,6 +191,8 @@ private object Routes {
     const val COLLECTION = "collection"
     const val DECKS = "decks"
     const val PRECONS = "precons"
+    /** A deck from scratch: format, commander, name. */
+    const val NEW_DECK = "new_deck"
     const val SETTINGS = "settings"
     /** The tester app's own tools; never reached in the real app. */
     const val TESTER = "tester"
@@ -215,13 +219,15 @@ private object Routes {
     fun shared(owner: String, kind: String, itemId: String) = "shared/$owner/$kind/" + URLEncoder.encode(itemId, StandardCharsets.UTF_8.name())
     fun sharedLink(token: String) = "shared_link/$token"
     const val DETAIL = "detail/{cardName}"
-    const val DECK_DETAIL = "deck/{deckId}"
+    /** [tab]: the tab to open on ("Suggestions"), when not the first. */
+    const val DECK_DETAIL = "deck/{deckId}?tab={tab}"
     const val COLLECTION_DETAIL = "collection/{collectionId}"
     /** A tag's automatic binder: every owned card with that tag. */
     const val TAG_BINDER = "tag_binder/{tagId}"
     fun tagBinder(tagId: String) = "tag_binder/$tagId"
     fun detail(cardName: String) = "detail/" + URLEncoder.encode(cardName, StandardCharsets.UTF_8.name())
-    fun deckDetail(deckId: String) = "deck/$deckId"
+    fun deckDetail(deckId: String, tab: String? = null) =
+        "deck/$deckId" + (tab?.let { "?tab=" + URLEncoder.encode(it, StandardCharsets.UTF_8.name()) } ?: "")
     /** Putting one of a deck's tokens onto an NFC e-paper badge. */
     const val TOKEN_BADGE = "token_badge/{deckId}"
     fun tokenBadge(deckId: String) = "token_badge/$deckId"
@@ -319,7 +325,7 @@ fun MtgNavGraph(
             val destination = when (currentRoute) {
                 Routes.HOME, Routes.VALUE_HISTORY -> NavDestination.HOME
                 Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
-                Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS -> NavDestination.DECKS
+                Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.SETTINGS -> NavDestination.SETTINGS
@@ -405,6 +411,7 @@ fun MtgNavGraph(
                     onOpenSearch = { navController.navigateToTab(Routes.SEARCH) },
                     onOpenCollection = { navController.navigateToTab(Routes.COLLECTION) },
                     onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
+                    onNewDeck = { navController.navigate(Routes.NEW_DECK) { launchSingleTop = true } },
                     onOpenScan = { navController.navigateToTab(Routes.SCAN) },
                     onOpenRules = { navController.navigateToTab(Routes.RULES) },
                     onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) },
@@ -549,7 +556,21 @@ fun MtgNavGraph(
                 DecksScreen(
                     viewModel = viewModel,
                     onDeckClick = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
-                    onBrowsePrecons = { navController.navigate(Routes.PRECONS) }
+                    onBrowsePrecons = { navController.navigate(Routes.PRECONS) },
+                    onNewDeck = { navController.navigate(Routes.NEW_DECK) { launchSingleTop = true } }
+                )
+            }
+
+            destination(Routes.NEW_DECK) {
+                val viewModel: NewDeckViewModel = viewModel(factory = NewDeckViewModel.Factory(deckRepository))
+                NewDeckScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onCreated = { deckId, tab ->
+                        navController.navigate(Routes.deckDetail(deckId, tab)) {
+                            popUpTo(Routes.NEW_DECK) { inclusive = true }
+                        }
+                    }
                 )
             }
 
@@ -568,9 +589,13 @@ fun MtgNavGraph(
 
             destination(
                 route = Routes.DECK_DETAIL,
-                arguments = listOf(navArgument("deckId") { type = NavType.StringType })
+                arguments = listOf(
+                    navArgument("deckId") { type = NavType.StringType },
+                    navArgument("tab") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
             ) { backStackEntry ->
                 val deckId = backStackEntry.arguments?.getString("deckId").orEmpty()
+                val initialTab = backStackEntry.arguments?.getString("tab")
                 val viewModel: DeckDetailViewModel = viewModel(
                     factory = DeckDetailViewModel.Factory(deckId, deckRepository, collectionRepository, settingsRepository)
                 )
@@ -586,7 +611,8 @@ fun MtgNavGraph(
                     onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null,
                     onWhoHasIt = if (supabaseSync.auth.configured) ({ names -> whoHas = names }) else null,
                     onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
-                    onOpenBadge = { navController.navigate(Routes.tokenBadge(deckId)) }
+                    onOpenBadge = { navController.navigate(Routes.tokenBadge(deckId)) },
+                    initialTab = initialTab
                 )
                 whoHas?.let { names ->
                     WhoHasItDialog(

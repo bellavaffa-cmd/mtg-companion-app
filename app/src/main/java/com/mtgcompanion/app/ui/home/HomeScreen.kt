@@ -103,7 +103,9 @@ fun HomeScreen(
     onViewCard: (String) -> Unit,
     onOpenFriends: (() -> Unit)? = null,
     /** Friend requests and trades waiting on the user. */
-    friendsWaiting: Int = 0
+    friendsWaiting: Int = 0,
+    /** The "New deck" tile: a deck from scratch. Opens the Decks tab when not given. */
+    onNewDeck: (() -> Unit)? = null
 ) {
     val deckCount by viewModel.deckCount.collectAsState()
     val binderCount by viewModel.binderCount.collectAsState()
@@ -368,7 +370,7 @@ fun HomeScreen(
                                     if (deck != null) {
                                         MiniDeckTile(deck, deckColors[deck.id].orEmpty(), onClick = { onOpenDeck(deck.id) }, shareArt = deck.id != continueDeck?.id, modifier = tileModifier)
                                     } else {
-                                        NewDeckTile(onClick = onOpenDecks, modifier = tileModifier)
+                                        NewDeckTile(onClick = onNewDeck ?: onOpenDecks, modifier = tileModifier)
                                     }
                                 }
                                 repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
@@ -385,7 +387,7 @@ fun HomeScreen(
                     items(decks, key = { it.id }) { deck ->
                         MiniDeckTile(deck, deckColors[deck.id].orEmpty(), onClick = { onOpenDeck(deck.id) }, shareArt = deck.id != continueDeck?.id)
                     }
-                    item(key = "new") { NewDeckTile(onClick = onOpenDecks) }
+                    item(key = "new") { NewDeckTile(onClick = onNewDeck ?: onOpenDecks) }
                 }
             }
         }

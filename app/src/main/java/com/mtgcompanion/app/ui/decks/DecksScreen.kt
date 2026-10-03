@@ -74,6 +74,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,10 +97,9 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrowsePrecons: () -> Unit) {
+fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrowsePrecons: () -> Unit, onNewDeck: () -> Unit) {
     val decks by viewModel.decks.collectAsState()
     val commanderColors by viewModel.commanderColors.collectAsState()
-    var showCreateDialog by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var ownership by rememberSaveable { mutableStateOf<String?>(null) }
     val app = LocalAppColors.current
@@ -135,7 +135,7 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrow
                     ) { Icon(Icons.Filled.Inventory2, contentDescription = "Browse precons", tint = app.textPrimary, modifier = Modifier.size(20.dp)) }
                     Spacer(Modifier.width(8.dp))
                     Box(
-                        Modifier.size(42.dp).clip(CircleShape).background(app.accent).clickable { showCreateDialog = true },
+                        Modifier.size(42.dp).clip(CircleShape).background(app.accent).clickable(onClick = onNewDeck),
                         contentAlignment = Alignment.Center
                     ) { Icon(Icons.Filled.Add, contentDescription = "New deck", tint = app.onAccent) }
                 }
@@ -160,7 +160,7 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrow
         if (decks.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "empty") {
                 Text(
-                    "No decks yet. Start from an official precon, or tap + to build one from scratch.",
+                    "No decks yet. Start from an official precon, or from scratch with a format and a commander.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(4.dp)
                 )
@@ -182,22 +182,27 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrow
             )
         }
 
-        // Fills an odd row, and is the obvious next step when the list is short.
+        // The two ways to start a deck: the obvious next step when the list is short.
         if (query.isBlank() && ownership == null) {
+            item(key = "scratch") {
+                StartTile(
+                    icon = Icons.Filled.Add,
+                    title = "Start from scratch",
+                    subtitle = "Pick a format and a commander",
+                    onClick = onNewDeck,
+                    modifier = Modifier.riseIn(shown.size + 3, entering)
+                )
+            }
             item(key = "precons") {
-                PreconTile(onClick = onBrowsePrecons, modifier = Modifier.riseIn(shown.size + 3, entering))
+                StartTile(
+                    icon = Icons.Filled.Inventory2,
+                    title = "Start from a precon",
+                    subtitle = "Import any official Commander deck",
+                    onClick = onBrowsePrecons,
+                    modifier = Modifier.riseIn(shown.size + 4, entering)
+                )
             }
         }
-    }
-
-    if (showCreateDialog) {
-        CreateDeckDialog(
-            onDismiss = { showCreateDialog = false },
-            onConfirm = { name, mode ->
-                showCreateDialog = false
-                viewModel.createDeck(name, mode) { deck -> onDeckClick(deck.id) }
-            }
-        )
     }
 }
 
@@ -280,8 +285,9 @@ private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit, modi
     }
 }
 
+/** A tile beside the decks that starts a new one — from scratch or from a precon. */
 @Composable
-private fun PreconTile(onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun StartTile(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val app = LocalAppColors.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -295,48 +301,10 @@ private fun PreconTile(onClick: () -> Unit, modifier: Modifier = Modifier) {
             .padding(18.dp)
     ) {
         Box(Modifier.size(48.dp).clip(CircleShape).background(app.surface3), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.Inventory2, contentDescription = null, tint = app.textPrimary)
+            Icon(icon, contentDescription = null, tint = app.textPrimary)
         }
         Spacer(Modifier.height(12.dp))
-        Text("Start from a precon", style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
-        Text("Import any official Commander deck", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+        Text(title, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
     }
-}
-
-@Composable
-private fun CreateDeckDialog(onDismiss: () -> Unit, onConfirm: (String, GameMode) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var mode by remember { mutableStateOf(GameMode.DEFAULT) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("New deck", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Deck name", color = TextMuted) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Gold,
-                        unfocusedBorderColor = BorderColor,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = Gold
-                    )
-                )
-                GameModeDropdown(selected = mode, onSelect = { mode = it })
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), mode) },
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = OnGold)
-            ) { Text("Create", color = OnGold) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
-        }
-    )
 }
