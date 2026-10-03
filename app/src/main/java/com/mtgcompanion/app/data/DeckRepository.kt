@@ -241,6 +241,12 @@ class DeckRepository(private val context: Context) {
         updateDeck(deckId) { deck -> deck.copy(considering = deck.considering.withConsidered(entry)) }
     }
 
+    /** Puts many entries on the considering list in one write (a decklist import's sideboard). */
+    suspend fun addConsideringEntries(deckId: String, entries: List<DeckCardEntry>) {
+        if (entries.isEmpty()) return
+        updateDeck(deckId) { deck -> deck.copy(considering = entries.fold(deck.considering) { list, entry -> list.withConsidered(entry) }) }
+    }
+
     suspend fun removeFromConsidering(deckId: String, scryfallId: String) {
         updateDeck(deckId) { deck -> deck.copy(considering = deck.considering.filterNot { it.scryfallId == scryfallId }) }
     }

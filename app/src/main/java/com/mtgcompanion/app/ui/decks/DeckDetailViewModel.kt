@@ -47,9 +47,12 @@ import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.LegalityReport
+import com.mtgcompanion.app.data.ListLine
+import com.mtgcompanion.app.data.ListSection
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.evaluateLegality
+import com.mtgcompanion.app.data.parseCardList
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
@@ -869,25 +872,38 @@ class DeckDetailViewModel(
     }
 
     /**
-     * Parse a pasted decklist and add each card via Scryfall fuzzy lookup. Handles the common export
-     * formats — "1 Sol Ring", "2x Brainstorm", "Sol Ring", and lines with a trailing set/collector
-     * ("1 Sol Ring (LTC) 285") or foil marker ("*F*") — skips section headers/comments, and reports
-     * how many copies were added and which lines couldn't be matched.
+     * Parse a pasted decklist and add each card via Scryfall fuzzy lookup. Reads the same shapes as
+     * binder imports (parseCardList) — "1 Sol Ring", "2x Brainstorm", "Sol Ring", and lines with a
+     * trailing set/collector ("1 Sol Ring (LTC) 285") or foil marker ("*F*") — skips section
+     * headers/comments, and reports how many copies were added and which lines couldn't be
+     * matched. Sideboard and maybeboard cards go on the Considering list rather than into the deck.
      */
     fun importDecklist(
         text: String,
         onProgress: (done: Int, total: Int) -> Unit,
-        onResult: (added: Int, failed: List<String>) -> Unit
+        onResult: (added: Int, considering: Int, failed: List<String>) -> Unit
     ) {
         viewModelScope.launch {
-            val lines = text.lines().mapNotNull { parseDecklistLine(it) }
+            val lines = parseCardList(text).lines.mapNotNull { it.toParsedLine() }
             val total = lines.size
             val resolved = mutableListOf<DeckCardEntry>()
+            val consideringEntries = mutableListOf<DeckCardEntry>()
             val unresolved = mutableListOf<ParsedLine>()
             val failed = mutableListOf<String>()
             var done = 0
             var added = 0
+            var considered = 0
             onProgress(0, total)
+
+            fun keep(line: ParsedLine, card: ScryfallCard) {
+                if (line.considering) {
+                    consideringEntries += line.toEntry(card)
+                    considered += line.quantity
+                } else {
+                    resolved += line.toEntry(card)
+                    added += line.quantity
+                }
+            }
 
             // Resolve in batches through /cards/collection (75 per request). Looking each line up
             // via /cards/named instead gets rate-limited (429) partway through a long list, which
@@ -901,8 +917,7 @@ class DeckDetailViewModel(
                 for (line in chunk) {
                     val card = response.data.firstOrNull { it.matches(line) }
                     if (card != null) {
-                        resolved += line.toEntry(card)
-                        added += line.quantity
+                        keep(line, card)
                         done++
                     } else {
                         unresolved += line
@@ -916,8 +931,7 @@ class DeckDetailViewModel(
             for (line in unresolved) {
                 val card = lookupCard(line.name)
                 if (card != null) {
-                    resolved += line.toEntry(card)
-                    added += line.quantity
+                    keep(line, card)
                 } else {
                     failed += line.name
                 }
@@ -929,7 +943,8 @@ class DeckDetailViewModel(
             // One write for the whole import: writing per card would re-trigger the deck analysis
             // (and its Scryfall lookup) on every single card.
             repository.addEntries(deckId, resolved)
-            onResult(added, failed)
+            repository.addConsideringEntries(deckId, consideringEntries)
+            onResult(added, considered, failed)
         }
     }
 
@@ -981,12 +996,16 @@ private const val ALTERNATIVES_PER_SWAP = 4
 /** Alternatives must cost under this fraction of the original — a swap has to actually save money. */
 private const val BUDGET_PRICE_FRACTION = 0.4
 
-/** One decklist line: how many copies, the card name, and the printing if the export named one. */
+/**
+ * One decklist line: how many copies, the card name, the printing if the export named one, and
+ * whether it was in the sideboard or maybeboard (so it goes on the Considering list).
+ */
 private data class ParsedLine(
     val quantity: Int,
     val name: String,
     val set: String?,
-    val collectorNumber: String?
+    val collectorNumber: String?,
+    val considering: Boolean = false
 ) {
     /** Address the exact printing when the line gave one; otherwise fall back to the name. */
     fun toIdentifier(): ScryfallIdentifier =
@@ -1007,48 +1026,16 @@ private fun ScryfallCard.matches(line: ParsedLine): Boolean =
         name.equals(line.name, ignoreCase = true)
     }
 
-private val QTY_REGEX = Regex("^(?:(\\d+)\\s*[xX]?\\s+)?(.+)$")
-
-/** Trailing printing reference in exports, e.g. "(SLD) 1962" or "[MH3] 285". */
-private val SET_NUMBER_REGEX = Regex("[\\(\\[]([A-Za-z0-9]{2,6})[\\)\\]]\\s+([A-Za-z0-9\\-★]+)")
-
-/** Parse one line into a [ParsedLine], or null for blanks, comments and section headers. */
-private fun parseDecklistLine(raw: String): ParsedLine? {
-    val line = raw.trim()
-    if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) return null
-    if (isSectionHeader(line)) return null
-
-    val match = QTY_REGEX.find(line) ?: return null
-    val quantity = (match.groupValues[1].toIntOrNull() ?: 1).coerceIn(1, 99)
-    val rest = match.groupValues[2]
-    val printing = SET_NUMBER_REGEX.find(rest)
-    val name = cleanCardName(rest)
-    if (name.isBlank()) return null
-
+/** A parsed list line as a deck import line; null for a line with no name (a CSV row with only an id). */
+private fun ListLine.toParsedLine(): ParsedLine? {
+    val cardName = name ?: return null
     return ParsedLine(
-        quantity = quantity,
-        name = name,
-        set = printing?.groupValues?.get(1),
-        collectorNumber = printing?.groupValues?.get(2)
+        quantity = quantity.coerceIn(1, 99),
+        name = cardName,
+        set = set,
+        collectorNumber = number,
+        considering = section != ListSection.MAIN
     )
-}
-
-private val SECTION_WORDS = setOf(
-    "deck", "commander", "companion", "sideboard", "maybeboard", "tokens", "about", "name"
-)
-
-/** Skip non-card lines: bare section words and category headers like "Creatures (30)". */
-private fun isSectionHeader(line: String): Boolean {
-    if (line.lowercase().trim() in SECTION_WORDS) return true
-    return Regex("^[A-Za-z][^\\d]*\\(\\d+\\)\\s*$").matches(line)
-}
-
-/** Strip export cruft so fuzzy match sees just the name: foil markers and trailing (SET)/[SET] + number. */
-private fun cleanCardName(raw: String): String {
-    return raw.trim()
-        .replace(Regex("\\*[A-Za-z]\\*"), " ")
-        .replace(Regex("\\s*[\\(\\[][A-Za-z0-9]{2,6}[\\)\\]].*$"), "")
-        .trim()
 }
 
 private val typeSortOrder = listOf(

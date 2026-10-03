@@ -519,8 +519,8 @@ fun DeckDetailScreen(
                         onProgress = { done, total ->
                             importState = ImportState(done = done, total = total)
                         },
-                        onResult = { added, failed ->
-                            importState = ImportState(summary = importSummary(added, failed))
+                        onResult = { added, considering, failed ->
+                            importState = ImportState(summary = importSummary(added, considering, failed))
                         }
                     )
                 }
@@ -642,8 +642,9 @@ fun DeckDetailScreen(
     }
 }
 
-private fun importSummary(added: Int, failed: List<String>): String = buildString {
+private fun importSummary(added: Int, considering: Int, failed: List<String>): String = buildString {
     append("Imported $added card${if (added == 1) "" else "s"}.")
+    if (considering > 0) append("\n\n$considering sideboard/maybeboard card${if (considering == 1) "" else "s"} went to Considering.")
     if (failed.isNotEmpty()) {
         append("\n\n${failed.size} line${if (failed.size == 1) "" else "s"} couldn't be matched:\n")
         append(failed.take(25).joinToString("\n") { "• $it" })

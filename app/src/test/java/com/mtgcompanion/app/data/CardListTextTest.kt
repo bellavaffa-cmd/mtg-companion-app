@@ -43,7 +43,62 @@ class CardListTextTest {
 
     @Test
     fun `headers, comments and blank lines are passed over`() {
-        assertEquals(listOf(ListLine(1, "Forest")), parseCardList("Deck\n// my binder\n\nCreatures (30)\nLands: 36\nSideboard:\n1 Forest\n# note").lines)
+        assertEquals(listOf(ListLine(1, "Forest")), parseCardList("// my binder\n\nCreatures (30)\nLands: 36\n1 Forest\n# note").lines)
+    }
+
+    @Test
+    fun `cards under a Sideboard or Maybeboard header are marked as such`() {
+        val parsed = parseCardList(
+            listOf(
+                "Commander",
+                "1 Atraxa, Praetors' Voice",
+                "Creatures (2)",
+                "2 Llanowar Elves",
+                "SIDEBOARD:",
+                "1 Duress",
+                "Maybeboard (1)",
+                "1 Rhystic Study",
+                "Deck",
+                "1 Forest"
+            ).joinToString("\n")
+        )
+        assertEquals(
+            listOf(
+                "Atraxa, Praetors' Voice" to ListSection.MAIN,
+                "Llanowar Elves" to ListSection.MAIN,
+                "Duress" to ListSection.SIDEBOARD,
+                "Rhystic Study" to ListSection.MAYBEBOARD,
+                "Forest" to ListSection.MAIN
+            ),
+            parsed.lines.map { it.name to it.section }
+        )
+    }
+
+    @Test
+    fun `an SB prefix marks one sideboard card`() {
+        assertEquals(
+            listOf(ListLine(4, "Lightning Bolt"), ListLine(2, "Duress", section = ListSection.SIDEBOARD), ListLine(1, "Island")),
+            parseCardList("4 Lightning Bolt\nSB: 2 Duress\n1 Island").lines
+        )
+    }
+
+    @Test
+    fun `an Arena export's sideboard after a blank line is the sideboard`() {
+        val arena = "Deck\n4 Lightning Bolt (M10) 146\n20 Mountain\n\n2 Duress\n1 Pyroblast"
+        assertEquals(
+            listOf(ListSection.MAIN, ListSection.MAIN, ListSection.SIDEBOARD, ListSection.SIDEBOARD),
+            parseCardList(arena).lines.map { it.section }
+        )
+        // A plain list with a gap in it is still all one deck.
+        assertEquals(
+            listOf(ListSection.MAIN, ListSection.MAIN),
+            parseCardList("4 Lightning Bolt\n\n20 Mountain").lines.map { it.section }
+        )
+        // A Commander section after the Arena sideboard goes back to the main deck.
+        assertEquals(
+            listOf(ListSection.MAIN, ListSection.SIDEBOARD, ListSection.MAIN),
+            parseCardList("Deck\n1 Sol Ring\n\n1 Duress\n\nCommander\n1 Kenrith, the Returned King").lines.map { it.section }
+        )
     }
 
     @Test

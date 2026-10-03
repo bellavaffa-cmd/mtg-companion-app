@@ -12,14 +12,18 @@ package com.mtgcompanion.app.data
 // optionally the set code, collector number, foil and Scryfall ID). Writes the plain text form,
 // which all of them read back. Mirrors the web app's collection/cardListText.ts.
 
-/** One line of a list: how many, which card (by id, printing or name), and whether foil. */
+/** Which part of a decklist a card line sits in. Binder imports take every part alike. */
+enum class ListSection { MAIN, SIDEBOARD, MAYBEBOARD }
+
+/** One line of a list: how many, which card (by id, printing or name), whether foil, and its part. */
 data class ListLine(
     val quantity: Int,
     val name: String?,
     val set: String? = null,
     val number: String? = null,
     val scryfallId: String? = null,
-    val foil: Boolean = false
+    val foil: Boolean = false,
+    val section: ListSection = ListSection.MAIN
 )
 
 data class ParsedList(val lines: List<ListLine>, val skipped: List<String>) {
@@ -37,6 +41,22 @@ private val HEADER = Regex("^[A-Za-z][^\\d]*(\\(\\d+\\)|:\\s*\\d+)\\s*$")
 
 private fun isHeader(line: String): Boolean =
     line.lowercase().removeSuffix(":").trim() in SECTION_WORDS || HEADER.matches(line)
+
+/** "SB: 2 Duress" — the older one-line way of marking a sideboard card. */
+private val SIDEBOARD_PREFIX = Regex("^SB:\\s*", RegexOption.IGNORE_CASE)
+
+/**
+ * The part a header line starts: "Sideboard", "Maybeboard (12)" and the like, or back to the main
+ * deck for "Deck", "Commander" and "Companion". Null for headers that don't change the part
+ * ("Creatures (30)", "Tokens").
+ */
+private fun headerSection(line: String): ListSection? =
+    when (line.lowercase().substringBefore('(').substringBefore(':').trim()) {
+        "sideboard" -> ListSection.SIDEBOARD
+        "maybeboard" -> ListSection.MAYBEBOARD
+        "deck", "commander", "companion" -> ListSection.MAIN
+        else -> null
+    }
 
 /** A card line, null for lines to pass over, or [UNREADABLE]. */
 private fun parseTextLine(raw: String): ListLine? {
@@ -148,11 +168,33 @@ fun parseCardList(text: String): ParsedList {
     if (looksLikeCsv(first)) return parseCsv(rows.drop(rows.indexOf(first)))
     val lines = mutableListOf<ListLine>()
     val skipped = mutableListOf<String>()
+    // Arena exports start with "Deck" and put the sideboard after a blank line, with no header of
+    // its own. Only lists that start that way get the blank-line rule, so a plain list with gaps
+    // in it stays all one deck.
+    val arena = first.trim().lowercase().removeSuffix(":").trim() == "deck"
+    var section = ListSection.MAIN
+    var cardsInSection = false
     for (row in rows) {
-        when (val line = parseTextLine(row)) {
+        val trimmed = row.trim()
+        if (trimmed.isEmpty()) {
+            if (arena && section == ListSection.MAIN && cardsInSection) {
+                section = ListSection.SIDEBOARD
+                cardsInSection = false
+            }
+            continue
+        }
+        if (isHeader(trimmed)) {
+            headerSection(trimmed)?.let { section = it; cardsInSection = false }
+            continue
+        }
+        val sideboardLine = SIDEBOARD_PREFIX.containsMatchIn(trimmed)
+        when (val line = parseTextLine(trimmed.replace(SIDEBOARD_PREFIX, ""))) {
             null -> Unit
-            UNREADABLE -> skipped += row.trim()
-            else -> lines += line
+            UNREADABLE -> skipped += trimmed
+            else -> {
+                lines += line.copy(section = if (sideboardLine) ListSection.SIDEBOARD else section)
+                cardsInSection = true
+            }
         }
     }
     return ParsedList(lines, skipped)
