@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -98,7 +99,7 @@ fun ValueHistoryScreen(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Collection value", style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.accent) } },
+                navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
         }

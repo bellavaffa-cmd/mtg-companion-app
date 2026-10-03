@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -102,7 +103,7 @@ fun TradesScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Trades", style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.accent) } },
+                navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
         }
@@ -438,7 +439,7 @@ fun TradeComposerScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Propose a trade", style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.accent) } },
+                navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
         }

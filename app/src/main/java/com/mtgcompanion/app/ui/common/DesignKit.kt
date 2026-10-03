@@ -24,6 +24,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -253,6 +255,18 @@ fun StatusBadge(label: String, fill: Color, ink: Color, icon: ImageVector? = nul
     ) {
         if (icon != null) Icon(icon, contentDescription = null, tint = if (outlined) fill else ink, modifier = Modifier.size(11.dp))
         Text(label, fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 10.5.sp, letterSpacing = 0.4.sp, color = if (outlined) fill else ink)
+    }
+}
+
+/**
+ * The app's one back button: the auto-mirrored arrow (it points the other way in right-to-left
+ * languages) in the accent colour, at the standard icon-button size. Buttons over art or a camera
+ * keep their own scrim style.
+ */
+@Composable
+fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    IconButton(onClick = onClick, modifier = modifier) {
+        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = LocalAppColors.current.accent)
     }
 }
 

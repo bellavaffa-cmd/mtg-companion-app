@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Style
@@ -211,9 +210,7 @@ private fun PickerContent(
         modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 12.dp)
     ) {
         if (canGoBack) {
-            IconButton(onClick = goBack, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = app.accent)
-            }
+            BackButton(onClick = goBack, modifier = Modifier.size(36.dp))
         } else if (imageUrl != null) {
             ArtImage(model = imageUrl.toArtCropUrl(), seed = subject, modifier = Modifier.size(width = 64.dp, height = 48.dp).clip(RoundedCornerShape(12.dp)))
         }

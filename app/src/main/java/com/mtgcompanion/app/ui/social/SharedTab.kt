@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -402,7 +403,7 @@ fun FriendSharedScreen(
                     val name = social.overview.value?.person(owner)?.displayName
                     Text(if (name != null) "$name's shared" else "Shared", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.accent) } },
+                navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
         }

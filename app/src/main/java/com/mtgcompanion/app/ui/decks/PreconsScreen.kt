@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
 import android.widget.Toast
@@ -25,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.AlertDialog
@@ -105,9 +105,7 @@ fun PreconsScreen(viewModel: PreconsViewModel, onBack: () -> Unit, onImported: (
             TopAppBar(
                 title = { Text("Precon decks", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
-                    }
+                    BackButton(onClick = onBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )

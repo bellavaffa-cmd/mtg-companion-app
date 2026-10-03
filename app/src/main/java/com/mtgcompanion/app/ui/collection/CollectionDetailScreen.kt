@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.openUrl
 import com.mtgcompanion.app.ui.common.CopyBadge
 import com.mtgcompanion.app.ui.common.CopyDetailsButton
@@ -61,7 +62,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GroupAdd
@@ -195,9 +195,7 @@ fun CollectionDetailScreen(
             ) else TopAppBar(
                 title = { Text(collection?.name ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
-                    }
+                    BackButton(onClick = onBack)
                 },
                 actions = {
                     SyncIconButton()

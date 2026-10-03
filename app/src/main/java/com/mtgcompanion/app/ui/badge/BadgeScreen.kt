@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.badge
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,9 +52,7 @@ fun BadgeScreen(viewModel: BadgeViewModel, onBack: () -> Unit) {
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, end = 16.dp, top = 4.dp)) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
-            }
+            BackButton(onClick = onBack)
             Column(Modifier.weight(1f)) {
                 Text("Token badge", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
                 if (deckName.isNotEmpty()) {

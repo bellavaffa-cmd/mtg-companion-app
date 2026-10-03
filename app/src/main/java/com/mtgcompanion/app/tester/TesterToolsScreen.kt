@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.tester
 
+import com.mtgcompanion.app.ui.common.BackButton
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -93,7 +94,7 @@ fun TesterToolsScreen(supabaseSync: SupabaseSync, onBack: () -> Unit, onOpenSett
         topBar = {
             TopAppBar(
                 title = { Text("Tester tools", color = GoldLight) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary) } },
+                navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )
         }

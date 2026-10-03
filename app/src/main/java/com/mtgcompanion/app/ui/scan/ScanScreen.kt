@@ -82,7 +82,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FlashOff
@@ -721,7 +720,7 @@ private fun OverlayBackButton(onBack: () -> Unit) {
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(12.dp)
     ) {
-        ScrimIconButton(onClick = onBack, icon = Icons.Filled.ArrowBack, desc = "Back")
+        ScrimIconButton(onClick = onBack, icon = Icons.AutoMirrored.Filled.ArrowBack, desc = "Back")
     }
 }
 

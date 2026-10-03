@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.settings
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.layout.fillMaxHeight
 import com.mtgcompanion.app.ui.common.readableWidth
 import com.mtgcompanion.app.ui.common.SetPasswordDialog
@@ -39,7 +40,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CameraAlt
@@ -195,9 +195,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("Settings", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
-                    }
+                    BackButton(onClick = onBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )
@@ -270,9 +268,7 @@ fun SettingsSectionScreen(
             TopAppBar(
                 title = { Text(section.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
-                    }
+                    BackButton(onClick = onBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )

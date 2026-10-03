@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -313,7 +314,7 @@ fun TagBinderScreen(viewModel: TagBinderViewModel, onBack: () -> Unit, onOpenTag
             TopAppBar(
                 title = { Text(tag?.label ?: "Tag", color = TextPrimary) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Gold) }
+                    BackButton(onClick = onBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )

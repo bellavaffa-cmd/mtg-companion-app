@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.search
 
+import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
@@ -26,7 +27,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
@@ -131,9 +131,7 @@ fun SearchResultsScreen(
             TopAppBar(
                 title = { Text("Results", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
-                    }
+                    BackButton(onClick = onBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.lazy.LazyRow
 import com.mtgcompanion.app.data.madeByLabel
 import com.mtgcompanion.app.data.holdsOwnCopies
@@ -86,7 +87,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.AddCircle
@@ -2684,7 +2684,7 @@ private fun DeckHero(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 12.dp)
         ) {
-            HeroButton(Icons.Filled.ArrowBack, "Back", onBack)
+            HeroButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBack)
             Text(
                 deck?.name ?: "",
                 style = MaterialTheme.typography.titleMedium,

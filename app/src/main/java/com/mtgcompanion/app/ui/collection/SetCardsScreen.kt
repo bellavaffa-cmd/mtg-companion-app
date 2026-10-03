@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -158,7 +159,7 @@ fun SetCardsScreen(viewModel: SetCardsViewModel, onBack: () -> Unit, onViewDetai
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.accent) }
+                    BackButton(onClick = onBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )

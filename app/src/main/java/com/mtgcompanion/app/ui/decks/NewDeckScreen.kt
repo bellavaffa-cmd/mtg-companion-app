@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,7 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -111,9 +111,7 @@ fun NewDeckScreen(viewModel: NewDeckViewModel, onBack: () -> Unit, onCreated: (d
             TopAppBar(
                 title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    IconButton(onClick = goBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
-                    }
+                    BackButton(onClick = goBack)
                 },
                 actions = {
                     if (state.step == NewDeckStep.SECOND) {

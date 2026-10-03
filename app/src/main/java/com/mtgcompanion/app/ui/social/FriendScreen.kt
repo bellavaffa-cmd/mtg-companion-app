@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,7 +70,7 @@ fun FriendScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Friend", style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.accent) } },
+                navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
         }

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -118,7 +119,7 @@ fun SharedCollectionScreen(
         topBar = {
             TopAppBar(
                 title = { Text(if (name != null) "$name's collection" else "Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.accent) } },
+                navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
         }

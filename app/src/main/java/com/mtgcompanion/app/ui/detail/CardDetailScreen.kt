@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.detail
 
+import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.AddToPicker
 import com.mtgcompanion.app.ui.common.AddVerb
 import com.mtgcompanion.app.ui.common.LocalAddToFeedback
@@ -72,7 +73,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -172,9 +172,7 @@ fun CardDetailScreen(
             TopAppBar(
                 title = { Text(state.card?.name ?: "Card", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
-                    }
+                    BackButton(onClick = onBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, scrolledContainerColor = Surface),
                 scrollBehavior = scrollBehavior
