@@ -2450,45 +2450,52 @@ private fun deckCardActions(
     onMoveToSideboard: (DeckCardEntry) -> Unit = {}
 ): List<CardMenuAction> {
     val actions = mutableListOf<CardMenuAction>()
-    if (!isCommander && !isPartnerCommander) {
-        actions += if (entry.replaceable) {
-            CardMenuAction("Not a cut candidate", Icons.Filled.SwapHoriz) { onToggleReplaceable(entry) }
-        } else {
-            CardMenuAction("Mark as cut candidate", Icons.Filled.SwapHoriz) { onToggleReplaceable(entry) }
-        }
-        if (hasConsidering) {
-            actions += CardMenuAction("Swap with a considered card", Icons.Filled.SwapHoriz) { onSwap(entry) }
-        }
-        actions += CardMenuAction("Move to Considering", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToConsidering(entry) }
-        if (hasSideboard) {
-            actions += CardMenuAction("Move to sideboard", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToSideboard(entry) }
-        }
-    }
-    // The same rule as the row's star: any format with a commander, by that format's own test.
+    // Commander: who leads the deck. The same rule as the row's star — any format with a commander,
+    // by that format's own test.
+    val commander = "Commander"
     if (entry.canLead(mode)) {
         actions += if (isCommander) {
-            CardMenuAction("Remove as commander", Icons.Filled.Star) { onSetCommander(null) }
+            CardMenuAction("Remove as commander", Icons.Filled.Star, description = "Stays in the deck", section = commander) { onSetCommander(null) }
         } else {
-            CardMenuAction("Set as commander", Icons.Outlined.Star) { onSetCommander(entry) }
+            CardMenuAction("Set as commander", Icons.Outlined.Star, section = commander) { onSetCommander(entry) }
         }
     }
     // Only offered once a main commander exists, for a card that isn't it, and that can actually
     // pair with it (Partner, Partner with, Friends forever, a Background, a Doctor — CommanderPairing.kt).
     if (mode.usesCommander && hasCommander && !isCommander && (isPartnerCommander || canPartnerWithCommander)) {
         actions += if (isPartnerCommander) {
-            CardMenuAction("Remove as $secondCommanderNoun", Icons.Filled.Star) { onSetPartnerCommander(null) }
+            CardMenuAction("Remove as $secondCommanderNoun", Icons.Filled.Star, description = "Stays in the deck", section = commander) { onSetPartnerCommander(null) }
         } else {
-            CardMenuAction("Set as $secondCommanderNoun", Icons.Outlined.Star) { onSetPartnerCommander(entry) }
+            CardMenuAction("Set as $secondCommanderNoun", Icons.Outlined.Star, section = commander) { onSetPartnerCommander(entry) }
         }
     }
-    actions += CardMenuAction("Copy to…", Icons.Filled.ContentCopy) { onCopy(entry) }
-    actions += CardMenuAction("Move to…", Icons.AutoMirrored.Filled.DriveFileMove) { onMove(entry) }
+    // In this deck: cutting, swapping and moving it within the deck's own lists.
+    val inDeck = "In this deck"
+    if (!isCommander && !isPartnerCommander) {
+        actions += if (entry.replaceable) {
+            CardMenuAction("Not a cut candidate", Icons.Filled.SwapHoriz, section = inDeck) { onToggleReplaceable(entry) }
+        } else {
+            CardMenuAction("Mark as cut candidate", Icons.Filled.SwapHoriz, description = "Stays in, flagged as first to go", section = inDeck) { onToggleReplaceable(entry) }
+        }
+        if (hasConsidering) {
+            actions += CardMenuAction("Swap with a considered card", Icons.Filled.SwapHoriz, section = inDeck) { onSwap(entry) }
+        }
+        actions += CardMenuAction("Move to Considering", Icons.AutoMirrored.Filled.DriveFileMove, description = "Out of the deck, still on your list", section = inDeck) { onMoveToConsidering(entry) }
+        if (hasSideboard) {
+            actions += CardMenuAction("Move to sideboard", Icons.AutoMirrored.Filled.DriveFileMove, section = inDeck) { onMoveToSideboard(entry) }
+        }
+    }
+    // Elsewhere: other decks and binders, and the card's own page.
+    val elsewhere = "Elsewhere"
+    actions += CardMenuAction("Move to…", Icons.AutoMirrored.Filled.DriveFileMove, description = "Out of this deck, into another or a binder", section = elsewhere) { onMove(entry) }
+    actions += CardMenuAction("Copy to…", Icons.Filled.ContentCopy, description = "Stays here, and goes there too", section = elsewhere) { onCopy(entry) }
+    actions += CardMenuAction("View details (EDHREC)", Icons.Filled.Info, section = elsewhere) { onViewDetails(entry.name) }
+    // Last, set apart, in the danger style.
     actions += CardMenuAction("Remove from deck", Icons.Filled.Close, destructive = true) { onRemove(entry) }
-    actions += CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
     return actions
 }
 
-/** What a sideboard card's long-press offers: back into the main deck, off the sideboard, its details. */
+/** What a sideboard card's long-press offers: back into the main deck, its details, and off the sideboard last. */
 private fun sideboardCardActions(
     entry: DeckCardEntry,
     onMoveToMain: () -> Unit,
@@ -2496,8 +2503,8 @@ private fun sideboardCardActions(
     onViewDetails: (String) -> Unit
 ): List<CardMenuAction> = listOf(
     CardMenuAction("Move to main deck", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToMain() },
-    CardMenuAction("Remove from sideboard", Icons.Filled.Close, destructive = true) { onRemove() },
-    CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
+    CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) },
+    CardMenuAction("Remove from sideboard", Icons.Filled.Close, destructive = true) { onRemove() }
 )
 
 /**

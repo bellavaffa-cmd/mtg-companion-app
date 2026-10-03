@@ -34,11 +34,17 @@ import androidx.compose.ui.window.Dialog
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.launch
 
-/** One row in a [CardActionMenu]. [destructive] tints it red, for a "Remove" action. */
+/**
+ * One row in a [CardActionMenu]. [destructive] tints it red, for a "Remove" action. [description]
+ * is a one-line hint under the label. Consecutive actions with the same [section] are grouped under
+ * a small heading of that name.
+ */
 data class CardMenuAction(
     val label: String,
     val icon: ImageVector,
     val destructive: Boolean = false,
+    val description: String? = null,
+    val section: String? = null,
     val onClick: () -> Unit
 )
 
@@ -135,7 +141,21 @@ private fun MenuContent(
             }
         }
     }
-    actions.forEach { action ->
+    var lastSection: String? = null
+    actions.forEachIndexed { index, action ->
+        val section = action.section
+        if (section != null && section != lastSection) {
+            Text(
+                section,
+                style = MaterialTheme.typography.labelMedium,
+                color = app.textMuted,
+                modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = if (index == 0) 2.dp else 12.dp, bottom = 2.dp)
+            )
+        } else if (section == null && lastSection != null) {
+            // Out of the grouped actions (to Remove, say): a little air rather than a heading.
+            Spacer(Modifier.height(10.dp))
+        }
+        lastSection = section
         val tint = if (action.destructive) app.error else app.textPrimary
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -152,7 +172,12 @@ private fun MenuContent(
                 Icon(action.icon, contentDescription = null, tint = if (action.destructive) app.error else app.accent, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(14.dp))
-            Text(action.label, style = MaterialTheme.typography.bodyMedium, color = tint)
+            Column(Modifier.weight(1f)) {
+                Text(action.label, style = MaterialTheme.typography.bodyMedium, color = tint)
+                if (!action.description.isNullOrBlank()) {
+                    Text(action.description, style = MaterialTheme.typography.bodySmall, color = app.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
     }
 }
