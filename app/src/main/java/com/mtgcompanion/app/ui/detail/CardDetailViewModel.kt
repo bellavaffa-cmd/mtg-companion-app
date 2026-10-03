@@ -119,6 +119,11 @@ class CardDetailViewModel(
         loadCard()
     }
 
+    /** Loads the card again after it failed (the error page's Try again). */
+    fun retry() {
+        if (!_uiState.value.loading) loadCard()
+    }
+
     private fun loadCard() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(loading = true, error = null)

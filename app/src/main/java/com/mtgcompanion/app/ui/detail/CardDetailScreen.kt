@@ -196,7 +196,11 @@ fun CardDetailScreen(
 
             state.error != null -> Column(
                 modifier = Modifier.fillMaxSize().background(Bg).padding(padding).padding(16.dp)
-            ) { Text(state.error ?: "", color = MaterialTheme.colorScheme.error) }
+            ) {
+                Text(state.error ?: "", color = MaterialTheme.colorScheme.error)
+                // Back online (or Scryfall answering again) shouldn't need leaving the page.
+                TextButton(onClick = { viewModel.retry() }) { Text("Try again", color = Gold) }
+            }
 
             state.card != null -> {
                 val card = state.card!!
