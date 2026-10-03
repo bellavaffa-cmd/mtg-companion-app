@@ -10,6 +10,40 @@ import java.net.URI
 // private channel; a player who joined a seat by QR code sends requests for their own seat, which
 // the table applies (or ignores, with remotes switched off). The same messages go between this app
 // and the web app — keep src/lifecounter/remote.ts in step.
+//
+// ---- Added with the gameplay update (all optional, so old and new clients keep working) ----
+//
+// Every addition is backwards compatible: a table ignores an action "type" it doesn't know, a remote
+// ignores a state key it doesn't know, and each side reads a missing key as "not supported" (null).
+//
+// Remote -> table (actions, for the sender's own seat):
+//   {"type":"deckInfo","deck":"Krenko Goblins"|null,
+//    "tokens":[{"id":"<scryfall id>","name":"Goblin","pt":"1/1"|null}, …],
+//    "triggers":[{"name":"Phyrexian Arena","step":"upkeep"|"draw"|"combat"|"end"}, …]}
+//       The tokens the seat's deck makes and its "at the beginning of your …" cards. Sent when the
+//       player picks a deck, and again whenever the table's state shows no "tokens" for the seat.
+//       The table keeps at most 40 of each, names cut to 80 characters. Unknown steps are dropped.
+//   {"type":"token","id":"<token id from deckInfo>","delta":1|-1|…}
+//       One of the seat's deck tokens up or down (|delta| <= 100; never below 0). An older remote
+//       still moves the plain Tokens counter with {"type":"counter","counter":"tokens",…}.
+//   {"type":"holdOk"}
+//       "OK, go on": any seat other than the one holding clears a "hold on" ("hold" in the state).
+//       The holder itself still lets go with {"type":"hold","on":false}.
+//
+// Table -> remotes (keys of the published state):
+//   players[i].tokens: [{"id":"…","name":"Goblin","pt":"1/1"|null,"count":3}, …]
+//       Present (possibly []) once the table knows the seat's deck tokens; absent/null otherwise —
+//       a remote then keeps its own counts, as before.
+//   clock: {"elapsedMs":754000,"paused":false}
+//       The game clock when this state was sent (time paused doesn't count). Count on from the
+//       moment it arrived, unless paused. Absent from older tables: use startedAt.
+//   turnTimer: {"seconds":120,"leftMs":87000} | null
+//       The per-turn timer of the player whose turn it is ("turn"): leftMs left of it when this
+//       state was sent, below 0 once the turn has run over. null/absent: no turn timer.
+//
+// Already in the protocol and used for the remote extras: "hold" (hold on), "target" (pointing,
+// shown as an announce), "concede", "planar" (with "plane" in the state), and showCard's lookup for
+// rulings (done on the phone; nothing goes to the table unless the card is shown).
 
 const val REMOTE_VERSION = 1
 
@@ -46,7 +80,9 @@ data class RemoteSeat(
     /** Times this seat has cast its commander; the tax is twice that. 0 from a table that doesn't say. */
     val commanderCasts: Int = 0,
     /** The same for its partner, when [partner]. */
-    val partnerCasts: Int = 0
+    val partnerCasts: Int = 0,
+    /** The seat's deck tokens and how many of each are out; null from a table that doesn't track them. */
+    val tokens: List<RemoteToken>? = null
 ) {
     fun damageFrom(from: Int, slot: Int): Int = commanderDamage.firstOrNull { it.from == from && it.slot == slot }?.amount ?: 0
 }
@@ -118,7 +154,11 @@ data class RemoteState(
     /** The seat that asked everyone to hold on, until they let go or the turn passes. */
     val hold: Int? = null,
     val plane: RemotePlane? = null,
-    val announce: RemoteAnnounce? = null
+    val announce: RemoteAnnounce? = null,
+    /** The game clock as sent; null from an older table. */
+    val clock: RemoteClock? = null,
+    /** The turn timer, while the table runs one. */
+    val turnTimer: RemoteTurnTimer? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("v", v).put("gameId", gameId).put("remotes", remotes)
@@ -135,6 +175,7 @@ data class RemoteState(
                 .put("userId", p.userId ?: JSONObject.NULL).put("avatarPath", p.avatarPath ?: JSONObject.NULL)
                 .put("canUndo", p.canUndo).put("partner", p.partner)
                 .put("commanderCasts", p.commanderCasts).put("partnerCasts", p.partnerCasts)
+                .also { o -> p.tokens?.let { t -> o.put("tokens", JSONArray(t.map { it.toJson() })) } }
         }))
         .put("shownCard", shownCard?.let { JSONObject().put("name", it.name).put("imageUrl", it.imageUrl).put("seat", it.seat) } ?: JSONObject.NULL)
         .put("over", over?.let { JSONObject().put("winner", it.winner ?: JSONObject.NULL).put("turns", it.turns).put("minutes", it.minutes) } ?: JSONObject.NULL)
@@ -142,6 +183,8 @@ data class RemoteState(
         .put("dayNight", dayNight ?: JSONObject.NULL).put("hold", hold ?: JSONObject.NULL)
         .put("plane", plane?.let { JSONObject().put("name", it.name).put("imageUrl", it.imageUrl ?: JSONObject.NULL).put("left", it.left) } ?: JSONObject.NULL)
         .put("announce", announce?.toJson() ?: JSONObject.NULL)
+        .also { o -> clock?.let { o.put("clock", JSONObject().put("elapsedMs", it.elapsedMs).put("paused", it.paused)) } }
+        .put("turnTimer", turnTimer?.let { JSONObject().put("seconds", it.seconds).put("leftMs", it.leftMs) } ?: JSONObject.NULL)
 
     companion object {
         /** Null for anything that isn't a game this version understands. */
@@ -161,7 +204,8 @@ data class RemoteState(
                         background = p.str("background"), deck = p.str("deck"), commander = p.str("commander"), userId = p.str("userId"), avatarPath = p.str("avatarPath"),
                         canUndo = p.optBoolean("canUndo"), partner = p.optBoolean("partner"),
                         commanderCasts = p.optInt("commanderCasts", 0).coerceAtLeast(0),
-                        partnerCasts = p.optInt("partnerCasts", 0).coerceAtLeast(0)
+                        partnerCasts = p.optInt("partnerCasts", 0).coerceAtLeast(0),
+                        tokens = RemoteToken.parseList(p.optJSONArray("tokens"))
                     )
                 }
             }
@@ -176,7 +220,11 @@ data class RemoteState(
                 dayNight = o.str("dayNight")?.takeIf { it == "DAY" || it == "NIGHT" },
                 hold = o.seat("hold"),
                 plane = o.optJSONObject("plane")?.let { RemotePlane(it.optString("name"), it.str("imageUrl"), it.optInt("left")) },
-                announce = o.optJSONObject("announce")?.let { RemoteAnnounce.parse(it) }
+                announce = o.optJSONObject("announce")?.let { RemoteAnnounce.parse(it) },
+                clock = o.optJSONObject("clock")?.let { RemoteClock(it.optLong("elapsedMs").coerceAtLeast(0), it.optBoolean("paused")) },
+                turnTimer = o.optJSONObject("turnTimer")?.let { t ->
+                    t.optInt("seconds", 0).takeIf { it > 0 }?.let { RemoteTurnTimer(it, t.optLong("leftMs")) }
+                }
             )
         }.getOrNull()
     }
@@ -214,6 +262,12 @@ object RemoteActions {
     fun emote(emote: String) = JSONObject().put("type", "emote").put("emote", emote)
     fun target(to: Int) = JSONObject().put("type", "target").put("to", to)
     fun concede() = JSONObject().put("type", "concede")
+    /** The seat's deck tokens and trigger cards (see the notes at the top). */
+    fun deckInfo(info: SeatDeckInfo) = deckInfoAction(info)
+    /** One of the seat's deck tokens up or down. */
+    fun token(id: String, delta: Int) = tokenAction(id, delta)
+    /** "OK, go on": clears someone else's hold on. */
+    fun holdOk() = JSONObject().put("type", "holdOk")
 }
 
 /** The dice a remote can ask the table to roll; 2 is a coin. */

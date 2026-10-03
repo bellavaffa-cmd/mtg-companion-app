@@ -16,6 +16,10 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -83,7 +87,11 @@ data class PlayerLife(
     /** That deck's commander, from their remote — or set at the table ([LifeCounterViewModel.setSeatCommander]). */
     val commander: String? = null,
     /** The art of a commander set at the table, while it's the tile's background. */
-    val commanderArt: String? = null
+    val commanderArt: String? = null,
+    /** The tokens and start-of-turn cards of the deck played here — from the player's remote, or the table owner's own deck. */
+    val deckInfo: SeatDeckInfo? = null,
+    /** How many of each of [deckInfo]'s tokens are out, by token id. */
+    val tokenCounts: Map<String, Int> = emptyMap()
 ) {
     fun counter(kind: PlayerCounter): Int = counters[kind] ?: 0
 
@@ -184,6 +192,8 @@ sealed interface HistoryEvent {
     /** A die or coin the table rolled for a remote; [sides] 2 is a coin. */
     data class Rolled(val sides: Int, val result: String) : HistoryEvent
     data object Conceded : HistoryEvent
+    /** One of the seat's deck tokens; [HistoryEntry.from]/[HistoryEntry.to] are the count. */
+    data class DeckToken(val name: String) : HistoryEvent
 }
 
 /**
@@ -291,7 +301,23 @@ class LifeCounterViewModel(
     // ---- The game as players' remotes see it (see remoteState) ----
 
     private var gameId = UUID.randomUUID().toString()
-    private var startedAt = System.currentTimeMillis()
+
+    private val _clock = MutableStateFlow(GameClock(System.currentTimeMillis()))
+    /** How long this game has been going (pausable). Its length goes into the table's games and the players' records. */
+    val clock: StateFlow<GameClock> = _clock.asStateFlow()
+    private val startedAt: Long get() = _clock.value.startedAt
+
+    private val _turnStartElapsed = MutableStateFlow(0L)
+    /** Where the game clock stood when the current turn began, for the turn timer. */
+    val turnStartElapsed: StateFlow<Long> = _turnStartElapsed.asStateFlow()
+
+    private fun elapsedNow(): Long = _clock.value.elapsed(System.currentTimeMillis())
+
+    /** The turn timer starts over: a new turn, a new first player, an undone turn. */
+    private fun restartTurnTimer() { _turnStartElapsed.value = elapsedNow() }
+
+    fun pauseClock() { _clock.value = _clock.value.pause(System.currentTimeMillis()) }
+    fun resumeClock() { _clock.value = _clock.value.resume(System.currentTimeMillis()) }
 
     private val _shownCard = MutableStateFlow<RemoteShownCard?>(null)
     /** A card a player is showing the table from their remote, until someone taps it away. */
@@ -370,7 +396,8 @@ class LifeCounterViewModel(
             id = gameId,
             endedAt = System.currentTimeMillis(),
             turns = _turnNumber.value,
-            minutes = ((lastAt - startedAt) / 60_000).toInt().coerceAtLeast(1),
+            // From the game clock, up to the last thing that happened: time paused doesn't count.
+            minutes = gameMinutes(_clock.value.elapsed(lastAt)),
             winnerSeat = winnerSeat,
             players = players.map { p ->
                 TableGamePlayer(p.id, p.displayName, p.commander, p.lossReason(settings.autoKill)?.name, me = p.id == settings.meSeat && p.linked == null)
@@ -392,6 +419,41 @@ class LifeCounterViewModel(
 
     /** Marks [seat] as the table owner's (null: none), their games saved to [deckId]. */
     fun setMe(seat: Int?, deckId: String?) = updateSettings { it.copy(meSeat = seat, meDeckId = deckId) }
+
+    /** The table owner's deck's tokens and trigger cards, once looked up; they go on the owner's seat. */
+    private var meDeckInfo: SeatDeckInfo? = null
+    private val deckInfoCache = mutableMapOf<String, SeatDeckInfo>()
+
+    /**
+     * Puts the owner's deck on their seat, and takes it off any other seat nobody has joined from a
+     * phone. A seat someone joined gets its deck from their remote instead ("deckInfo").
+     */
+    private fun applyMeDeck() {
+        val meSeat = _settings.value.meSeat
+        _players.value = _players.value.map { p ->
+            if (p.linked != null) return@map p
+            val info = if (p.id == meSeat) meDeckInfo else null
+            if (info == p.deckInfo) p
+            else p.copy(deckInfo = info, tokenCounts = if (info == null) emptyMap() else p.tokenCounts.filterKeys { id -> info.tokens.any { it.id == id } })
+        }
+    }
+
+    init {
+        // The owner's deck: looked up once per deck (its cards' oracle text and its tokens).
+        viewModelScope.launch {
+            combine(_settings.map { it.meSeat to it.meDeckId }.distinctUntilChanged(), decks) { (seat, deckId), list ->
+                seat to deckId?.let { id -> list.firstOrNull { it.id == id } }
+            }.distinctUntilChanged { a, b ->
+                a.first == b.first && a.second?.id == b.second?.id && a.second?.cards?.size == b.second?.cards?.size
+            }.collectLatest { (_, deck) ->
+                meDeckInfo = deck?.let { d ->
+                    val key = "${d.id}:${d.cards.size}"
+                    deckInfoCache[key] ?: loadSeatDeckInfo(d, cardRepository)?.also { deckInfoCache[key] = it }
+                }
+                applyMeDeck()
+            }
+        }
+    }
 
     /**
      * What [seat] is playing, set at the table for a player without a phone of their own: their
@@ -468,9 +530,12 @@ class LifeCounterViewModel(
                 name = linked.displayName,
                 backgroundImageUri = old?.backgroundImageUri ?: SocialApi.avatarUrl(linked.avatarPath),
                 deck = old?.deck,
-                commander = old?.commander
+                commander = old?.commander,
+                // The same deck's tokens, all back in the box.
+                deckInfo = old?.deckInfo
             )
         }
+        applyMeDeck()
         _gameNumber.value += 1
         _currentTurnPlayerId.value = 1
         _firstPlayerId.value = 1
@@ -486,7 +551,8 @@ class LifeCounterViewModel(
         _hold.value = null
         _announce.value = null
         gameId = UUID.randomUUID().toString()
-        startedAt = System.currentTimeMillis()
+        _clock.value = GameClock(System.currentTimeMillis())
+        _turnStartElapsed.value = 0L
     }
 
     fun consumeHighRollRequest() {
@@ -554,6 +620,18 @@ class LifeCounterViewModel(
         if (updated == current) return@undoable
         updatePlayer(playerId) { it.copy(counters = it.counters + (kind to updated)) }
         log(HistoryEvent.Counter(kind), playerId, current, updated)
+    }
+
+    /** One of the seat's deck tokens up or down ([SeatDeckInfo.tokens]); the plain Tokens counter is left alone. */
+    fun adjustToken(playerId: Int, tokenId: String, delta: Int) = undoable("token:$playerId:$tokenId") {
+        val player = player(playerId) ?: return@undoable
+        val tokens = player.deckInfo?.tokens ?: return@undoable
+        val current = player.tokenCounts[tokenId] ?: 0
+        val counts = changedTokenCounts(player.tokenCounts, tokens, tokenId, delta)
+        val updated = counts[tokenId] ?: 0
+        if (updated == current) return@undoable
+        updatePlayer(playerId) { it.copy(tokenCounts = counts) }
+        log(HistoryEvent.DeckToken(tokens.first { it.id == tokenId }.label), playerId, current, updated)
     }
 
     fun adjustMana(playerId: Int, color: String, delta: Int) = undoable("mana:$playerId:$color") {
@@ -693,6 +771,9 @@ class LifeCounterViewModel(
     /** The table's own way to take down a "hold on" nobody let go of. */
     fun clearHold() { _hold.value = null }
 
+    /** Another player's "OK, go on" from their remote: the hold on comes down (the holder lets go with hold(false)). */
+    private fun okGoOn(seat: Int) { _hold.value = holdAfterOk(_hold.value, seat) }
+
     // ---- Turn tracker ----
 
     /** Passing the turn also empties every mana pool and resets storm counts, which don't carry over. */
@@ -705,6 +786,7 @@ class LifeCounterViewModel(
         ) ?: return@undoable
         _currentTurnPlayerId.value = moved.turnPlayerId
         if (moved.roundComplete) _turnNumber.value += 1
+        restartTurnTimer()
         // A "hold on" is about the turn that's ending.
         _hold.value = null
         val perTurn = PlayerCounter.entries.filter { it.resetsEachTurn }.toSet()
@@ -720,6 +802,7 @@ class LifeCounterViewModel(
         _currentTurnPlayerId.value = playerId
         _firstPlayerId.value = playerId
         _turnNumber.value = 1
+        restartTurnTimer()
         log(HistoryEvent.WonHighRoll, playerId, null, null)
     }
 
@@ -956,9 +1039,11 @@ class LifeCounterViewModel(
             name = linked?.displayName ?: if (p.linked != null) null else p.name,
             backgroundImageUri = SocialApi.avatarUrl(linked?.avatarPath) ?: ownBackground,
             deck = if (linked?.userId == p.linked?.userId) p.deck else null,
-            commander = if (linked?.userId == p.linked?.userId) p.commander else null
+            commander = if (linked?.userId == p.linked?.userId) p.commander else null,
+            deckInfo = if (linked?.userId == p.linked?.userId) p.deckInfo else null,
+            tokenCounts = if (linked?.userId == p.linked?.userId) p.tokenCounts else emptyMap()
         )
-    }
+    }.also { applyMeDeck() }
 
     /** Nobody can join a table the game has moved on from. */
     private fun endMatch() {
@@ -995,7 +1080,7 @@ class LifeCounterViewModel(
 
     private fun samePlay(a: PlayerLife, b: PlayerLife) =
         a.life == b.life && a.killed == b.killed && a.commanderDamage == b.commanderDamage &&
-            a.counters == b.counters && a.manaPool == b.manaPool && a.commanderTax == b.commanderTax
+            a.counters == b.counters && a.manaPool == b.manaPool && a.commanderTax == b.commanderTax && a.tokenCounts == b.tokenCounts
 
     /**
      * Takes back the newest change — the newest one made from seat [by]'s remote when [by] is set.
@@ -1008,9 +1093,9 @@ class LifeCounterViewModel(
         undoStack.removeAt(index)
         _players.value = _players.value.map { p ->
             val was = entry.before.firstOrNull { it.id == p.id } ?: return@map p
-            p.copy(life = was.life, killed = was.killed, commanderDamage = was.commanderDamage, counters = was.counters, manaPool = was.manaPool, commanderTax = was.commanderTax)
+            p.copy(life = was.life, killed = was.killed, commanderDamage = was.commanderDamage, counters = was.counters, manaPool = was.manaPool, commanderTax = was.commanderTax, tokenCounts = was.tokenCounts)
         }
-        entry.turn?.let { (seat, number) -> _currentTurnPlayerId.value = seat; _turnNumber.value = number }
+        entry.turn?.let { (seat, number) -> _currentTurnPlayerId.value = seat; _turnNumber.value = number; restartTurnTimer() }
         if (index == 0) _history.value = entry.history
         bumpUndo()
     }
@@ -1059,7 +1144,7 @@ class LifeCounterViewModel(
         viewModelScope.launch {
             merge(
                 _players, _currentTurnPlayerId, _turnNumber, _settings, _shownCard, _undoVersion, _history,
-                _monarchPlayerId, _initiativePlayerId, _dayNight, _hold, _announce, _gameMode
+                _monarchPlayerId, _initiativePlayerId, _dayNight, _hold, _announce, _gameMode, _clock, _turnStartElapsed
             ).collect {
                 if (_match.value == null) return@collect
                 publishJob?.cancel()
@@ -1071,13 +1156,15 @@ class LifeCounterViewModel(
         }
     }
 
-    /** The game as the remotes see it. */
-    fun remoteState(): RemoteState {
+    /** The game as the remotes see it, at [now] (the clock and the turn timer are measured then). */
+    fun remoteState(now: Long = System.currentTimeMillis()): RemoteState {
         val settings = _settings.value
         val players = _players.value
         val alive = players.filterNot { it.isDefeated(settings.autoKill) }
         val over = players.size >= 2 && alive.size <= 1
         val lastAt = _history.value.lastOrNull()?.atMillis ?: startedAt
+        val clock = _clock.value
+        val turnTracked = settings.turnTrackerEnabled && players.size > 1
         return RemoteState(
             v = REMOTE_VERSION,
             gameId = gameId,
@@ -1106,11 +1193,12 @@ class LifeCounterViewModel(
                     canUndo = canUndoFor(p.id),
                     partner = p.hasPartner,
                     commanderCasts = p.commanderTax.getOrElse(0) { 0 } / 2,
-                    partnerCasts = if (p.hasPartner) p.commanderTax.getOrElse(1) { 0 } / 2 else 0
+                    partnerCasts = if (p.hasPartner) p.commanderTax.getOrElse(1) { 0 } / 2 else 0,
+                    tokens = p.deckInfo?.tokens?.map { RemoteToken(it.id, it.name, it.pt, p.tokenCounts[it.id] ?: 0) }
                 )
             },
             shownCard = _shownCard.value,
-            over = if (over) RemoteOver(alive.singleOrNull()?.id, _turnNumber.value, ((lastAt - startedAt) / 60_000).toInt().coerceAtLeast(1)) else null,
+            over = if (over) RemoteOver(alive.singleOrNull()?.id, _turnNumber.value, gameMinutes(clock.elapsed(lastAt))) else null,
             monarch = _monarchPlayerId.value,
             initiative = _initiativePlayerId.value,
             dayNight = _dayNight.value?.name,
@@ -1118,7 +1206,11 @@ class LifeCounterViewModel(
             plane = _gameMode.value.takeIf { it.mode == GameModeKind.PLANECHASE }?.let { mode ->
                 mode.currentPlane?.let { RemotePlane(it.name, it.displayImageUrl, mode.planeDeck.size) }
             },
-            announce = _announce.value
+            announce = _announce.value,
+            clock = RemoteClock(clock.elapsed(now), clock.paused),
+            turnTimer = if (turnTracked && !over) {
+                turnTimeLeft(settings.turnTimerMinutes, _turnStartElapsed.value, clock.elapsed(now))?.let { RemoteTurnTimer(settings.turnTimerMinutes * 60, it) }
+            } else null
         )
     }
 
@@ -1161,7 +1253,9 @@ class LifeCounterViewModel(
         fun seated(key: String): Int? = action.optInt(key, -1).takeIf { id -> id != seat && _players.value.any { it.id == id } }
         // A real true/false only: a missing or garbled one mustn't read as "give it up".
         fun flag(key: String): Boolean? = action.opt(key) as? Boolean
-        val before = remoteState().toJson().toString()
+        // Measured at one moment, so the ticking clock doesn't count as a change.
+        val at = System.currentTimeMillis()
+        val before = remoteState(at).toJson().toString()
         actingSeat = seat
         try {
             when (type) {
@@ -1246,12 +1340,22 @@ class LifeCounterViewModel(
                 }
                 "target" -> seated("to")?.let { _announce.value = newAnnounce(seat, "target").copy(to = it) }
                 "concede" -> concede(seat)
+                "deckInfo" -> parseDeckInfo(action)?.let { info ->
+                    updatePlayer(seat) { p ->
+                        p.copy(deckInfo = info, tokenCounts = p.tokenCounts.filterKeys { id -> info.tokens.any { it.id == id } })
+                    }
+                }
+                "token" -> {
+                    val id = action.optString("id")
+                    delta(100)?.let { d -> if (id.isNotEmpty()) adjustToken(seat, id, d) }
+                }
+                "holdOk" -> okGoOn(seat)
             }
         } finally {
             actingSeat = null
         }
         // Nothing changed (not theirs to do, say): let the remote see the game as it is.
-        if (remoteState().toJson().toString() == before) publish(force = true)
+        if (remoteState(at).toJson().toString() == before) publish(force = true)
     }
 
     override fun onCleared() {

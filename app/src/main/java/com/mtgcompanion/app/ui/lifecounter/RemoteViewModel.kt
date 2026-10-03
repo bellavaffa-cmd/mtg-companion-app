@@ -19,8 +19,6 @@ import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.ScryfallRuling
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
-import com.mtgcompanion.app.ui.badge.BadgeToken
-import com.mtgcompanion.app.ui.badge.badgeTokensFor
 import com.mtgcompanion.app.ui.social.avatarBytes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -155,11 +153,34 @@ class RemoteViewModel(
 
     fun clearToast(id: String) { if (_toast.value?.id == id) _toast.value = null }
 
+    private val _turnBuzz = MutableStateFlow(prefs.getBoolean(KEY_TURN_BUZZ, true))
+    /** Whether the phone buzzes when the turn comes to this seat (a setting on this phone). */
+    val turnBuzz: StateFlow<Boolean> = _turnBuzz.asStateFlow()
+    fun setTurnBuzz(on: Boolean) { _turnBuzz.value = on; prefs.edit().putBoolean(KEY_TURN_BUZZ, on).apply() }
+
+    private val _remindersOn = MutableStateFlow(prefs.getBoolean(KEY_REMINDERS, true))
+    /** Whether this phone shows the deck's start-of-turn cards when the turn comes here. */
+    val remindersOn: StateFlow<Boolean> = _remindersOn.asStateFlow()
+    fun setRemindersOn(on: Boolean) {
+        _remindersOn.value = on
+        prefs.edit().putBoolean(KEY_REMINDERS, on).apply()
+        if (!on) _reminder.value = emptyList()
+    }
+
+    private val _reminder = MutableStateFlow<List<String>>(emptyList())
+    /** "Upkeep: Phyrexian Arena" and so on, from the start of this seat's turn until it's put away or the turn passes. */
+    val reminder: StateFlow<List<String>> = _reminder.asStateFlow()
+    fun dismissReminder() { _reminder.value = emptyList() }
+
     private fun noticeNews(s: RemoteState) {
         val first = !heardFirst
         heardFirst = true
         val turnSeat = s.turn?.seat
-        if (!first && turnSeat == seat && lastTurnSeat != seat) _buzz.value += 1
+        if (turnSeat == seat && lastTurnSeat != seat) {
+            if (!first && _turnBuzz.value) _buzz.value += 1
+            if (_remindersOn.value) _reminder.value = reminderLines(_deckInfo.value?.triggers.orEmpty())
+        }
+        if (turnSeat != seat) _reminder.value = emptyList()
         lastTurnSeat = turnSeat
         val a = s.announce
         if (a != null && a.id != lastAnnounceId) {
@@ -172,6 +193,13 @@ class RemoteViewModel(
     private fun onState(s: RemoteState) {
         noticeNews(s)
         val mine = s.players.firstOrNull { it.seat == seat } ?: return
+        loadDeckInfo()
+        // A table that knows about deck tokens but not ours yet (a new game, a table that restarted): tell it.
+        val info = _deckInfo.value
+        if (info != null && mine.tokens == null && infoSentFor != s.gameId && s.remotes) {
+            infoSentFor = s.gameId
+            send(RemoteActions.deckInfo(info))
+        }
         // Sitting down at a new table: the tile starts bare, so put on it the picture and deck this
         // player chose last time — never over one that's already there.
         if (!appliedPrefs && s.remotes) {
@@ -193,6 +221,7 @@ class RemoteViewModel(
         val deck = decks.value.firstOrNull { it.id == deckId }
         // A partner deck has the table keep its two commanders apart.
         send(RemoteActions.background(urlFor(kind, deck, custom), deck?.name, commanderOf(deck), partner = deck?.partnerCommander != null))
+        loadDeckInfo()
     }
 
     fun chooseDeck(deck: Deck?) {
@@ -256,28 +285,56 @@ class RemoteViewModel(
         _preview.value = null
     }
 
-    // ---- Tokens from the deck ----
+    // ---- What the deck brings: its tokens and its start-of-turn cards ----
 
-    private val _tokens = MutableStateFlow<List<BadgeToken>?>(null)
-    /** The tokens the chosen deck makes; null while loading or when they couldn't be found. */
-    val tokens: StateFlow<List<BadgeToken>?> = _tokens.asStateFlow()
+    private val _deckInfo = MutableStateFlow<SeatDeckInfo?>(null)
+    /** The chosen deck's tokens and trigger cards; null while loading, without a deck, or when they couldn't be found. */
+    val deckInfo: StateFlow<SeatDeckInfo?> = _deckInfo.asStateFlow()
     private val _tokensLoading = MutableStateFlow(false)
     val tokensLoading: StateFlow<Boolean> = _tokensLoading.asStateFlow()
-    private var tokensDeck: String? = null
+    /** The deck (id and size) [deckInfo] is for, or is being looked up for. */
+    private var infoDeck: String? = null
+    /** The table game the deck's info was last sent for. */
+    private var infoSentFor: String? = null
 
-    fun loadTokens() {
-        val deck = deck() ?: return
-        if (deck.id == tokensDeck && _tokens.value != null) return
-        tokensDeck = deck.id
+    /**
+     * Looks up the chosen deck's tokens and trigger cards (once per deck) and tells the table, which
+     * puts the tokens on the seat's tile. Choosing no deck takes them off.
+     */
+    fun loadDeckInfo() {
+        val deck = deck()
+        if (deck == null) {
+            if (infoDeck != null) {
+                infoDeck = null
+                _deckInfo.value = null
+                send(RemoteActions.deckInfo(SeatDeckInfo(null, emptyList(), emptyList())))
+            }
+            return
+        }
+        val key = "${deck.id}:${deck.cards.size}"
+        if (key == infoDeck) return
+        infoDeck = key
+        _deckInfo.value = null
         _tokensLoading.value = true
         viewModelScope.launch {
-            _tokens.value = badgeTokensFor(deck, cardRepository)
+            val info = loadSeatDeckInfo(deck, cardRepository)
+            if (infoDeck != key) return@launch
             _tokensLoading.value = false
+            if (info == null) {
+                infoDeck = null // try again next time
+                return@launch
+            }
+            _deckInfo.value = info
+            infoSentFor = _state.value?.gameId
+            send(RemoteActions.deckInfo(info))
         }
     }
 
     private val _tokenCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
-    /** How many of each token this player has out, kept on this phone for the game being played. */
+    /**
+     * How many of each token this player has out, kept on this phone for the game being played —
+     * only for a table from before deck tokens; a newer one keeps the counts (RemoteSeat.tokens).
+     */
     val tokenCounts: StateFlow<Map<String, Int>> = _tokenCounts.asStateFlow()
     private var countsGame: String? = null
 
@@ -289,8 +346,16 @@ class RemoteViewModel(
         _tokenCounts.value = counts?.let { c -> c.keys().asSequence().associateWith { c.optInt(it) } } ?: emptyMap()
     }
 
-    /** One more (or fewer) of token [id]; the table's Tokens counter follows, one for one. */
+    /**
+     * One more (or fewer) of token [id]. A table that tracks deck tokens counts it on the seat;
+     * an older one gets the count kept here and its Tokens counter moved one for one.
+     */
     fun changeToken(id: String, delta: Int) {
+        val mine = _state.value?.players?.firstOrNull { it.seat == seat }
+        if (mine?.tokens != null) {
+            send(RemoteActions.token(id, delta))
+            return
+        }
         val current = _tokenCounts.value[id] ?: 0
         val next = (current + delta).coerceAtLeast(0)
         if (next == current) return
@@ -373,6 +438,8 @@ class RemoteViewModel(
         const val KEY_DECK = "deck_id"
         const val KEY_LOGGED = "logged_games"
         const val KEY_TOKEN_COUNTS = "token_counts"
+        const val KEY_TURN_BUZZ = "turn_buzz"
+        const val KEY_REMINDERS = "trigger_reminders"
     }
 
     class Factory(

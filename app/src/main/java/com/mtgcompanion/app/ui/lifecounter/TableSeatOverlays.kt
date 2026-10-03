@@ -4,9 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.Arrangement
@@ -220,7 +217,10 @@ internal fun TableGamesOverlay(games: List<TableGame>, onDelete: (String) -> Uni
 
 // ---- From players' remotes: "hold on", and the latest roll or emote ----
 
-/** A player asked everyone to hold on (priority). Stays until they let go, the turn passes, or the table taps it away. */
+/**
+ * A player asked everyone to hold on (priority). Stays until they let go, the turn passes, someone
+ * taps "OK, go on" here, or another player does on their remote.
+ */
 @Composable
 internal fun HoldBanner(name: String, onClear: () -> Unit, modifier: Modifier = Modifier) {
     Row(
@@ -231,11 +231,17 @@ internal fun HoldBanner(name: String, onClear: () -> Unit, modifier: Modifier = 
             .background(TableColors.CriticalRed)
             .border(BorderStroke(2.dp, Color.White), RoundedCornerShape(50))
             .clickable(onClick = onClear)
-            .padding(start = 16.dp, end = 10.dp, top = 6.dp, bottom = 6.dp)
+            .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
     ) {
         Text("✋", fontSize = 22.sp)
-        TableLabel("$name says hold on", 28.sp, maxLines = 1, modifier = Modifier.padding(start = 8.dp, end = 8.dp))
-        Icon(Icons.Filled.Close, contentDescription = "Clear the hold", tint = Color.White, modifier = Modifier.size(18.dp))
+        TableLabel("$name: hold on", 28.sp, maxLines = 1, modifier = Modifier.padding(start = 8.dp, end = 10.dp))
+        TableLabel(
+            "OK, go on",
+            20.sp,
+            color = Color.Black,
+            maxLines = 1,
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.White).padding(horizontal = 12.dp, vertical = 2.dp)
+        )
     }
 }
 
@@ -255,6 +261,8 @@ internal fun AnnounceToast(announce: RemoteAnnounce, nameOf: (Int) -> String, on
             else -> "$who rolled the planar die" to "Blank"
         }
         "emote" -> who to (REMOTE_EMOTES[announce.emote] ?: "")
+        // Their tile lights up too; this says who to look at from anywhere at the table.
+        "target" -> announce.to?.let { "$who →" to nameOf(it) } ?: (who to "")
         else -> announceText(announce, nameOf) to ""
     }
     key(announce.id) {
