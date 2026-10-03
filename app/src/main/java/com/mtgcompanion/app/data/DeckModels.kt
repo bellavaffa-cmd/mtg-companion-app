@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.data
 
+import com.mtgcompanion.app.network.scryfall.ScryfallCard
+
 /**
  * A play format a deck can be built for. [scryfallFormat] is the key used in Scryfall's
  * `legalities` map. [deckSize] is the required size (exact for singleton/commander formats,
@@ -86,6 +88,41 @@ data class DeckCardEntry(
      * is": all of them in a deck marked Proxy, none in any other.
      */
     val proxyQuantity: Int? = null
+)
+
+/**
+ * Whether a card can be the commander of a [mode] deck: a legendary creature, or a card whose
+ * text says it "can be your commander" ([saysSo]). Brawl also takes a legendary planeswalker.
+ * Formats without a commander take none. [typeLine] is the whole line, both faces of a
+ * double-faced card included.
+ */
+fun canLeadDeck(typeLine: String?, saysSo: Boolean, mode: GameMode): Boolean {
+    if (!mode.usesCommander) return false
+    if (saysSo) return true
+    val line = typeLine ?: return false
+    if (!line.contains("Legendary")) return false
+    return line.contains("Creature") || (mode == GameMode.BRAWL && line.contains("Planeswalker"))
+}
+
+/**
+ * Whether this deck entry can be the commander of a [mode] deck. [DeckCardEntry.canBeCommander]
+ * holds the Commander answer; Brawl also looks at the stored type line for a planeswalker (an
+ * entry saved before type lines were kept has none, so only its Commander answer counts).
+ */
+fun DeckCardEntry.canLead(mode: GameMode): Boolean = canLeadDeck(typeLine, canBeCommander, mode)
+
+/**
+ * This entry with what a deck needs to know about [card] — commander-ness, type line, partner
+ * ability, back face and tags — which an entry made from a binder card doesn't have. The entry's
+ * own printing, picture, count and the user's tags stay as they are.
+ */
+fun DeckCardEntry.withCardInfo(card: ScryfallCard): DeckCardEntry = copy(
+    imageUrl = imageUrl ?: card.displayImageUrl,
+    canBeCommander = card.canBeCommander,
+    typeLine = card.typeLine ?: typeLine,
+    partnerAbility = card.partnerAbility,
+    backImageUrl = card.backImageUrl ?: backImageUrl,
+    tags = card.tags.ifEmpty { tags }
 )
 
 /** Whether [a] and [b] can legally be co-commanders under the Partner mechanic. */

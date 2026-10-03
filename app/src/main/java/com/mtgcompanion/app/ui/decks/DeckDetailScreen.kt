@@ -148,6 +148,7 @@ import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.LegalityIssue
 import com.mtgcompanion.app.data.LegalityIssueKind
 import com.mtgcompanion.app.data.partnersWith
+import com.mtgcompanion.app.data.canLead
 import com.mtgcompanion.app.data.VersionSummary
 import com.mtgcompanion.app.data.cardNameKeys
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
@@ -1385,6 +1386,7 @@ private fun CardsTab(
                             isCommander = card.scryfallId == deck.commander?.scryfallId || card.scryfallId == deck.partnerCommander?.scryfallId,
                             onClick = { onZoomCard(card.scryfallId) },
                             actions = cardActions(card),
+                            canLead = card.canLead(deck.mode),
                             onToggleCommander = {
                                 viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
                             },
@@ -2018,6 +2020,8 @@ private fun DeckCardRow(
     isCommander: Boolean,
     onClick: () -> Unit,
     actions: List<CardMenuAction>,
+    /** Whether the card can lead this deck's format — shows the commander star. */
+    canLead: Boolean,
     onToggleCommander: () -> Unit,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
@@ -2066,7 +2070,7 @@ private fun DeckCardRow(
                 }
                 DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.padding(top = 3.dp))
             }
-            if (card.canBeCommander) {
+            if (canLead) {
                 IconButton(onClick = onToggleCommander, modifier = Modifier.size(30.dp)) {
                     Icon(
                         if (isCommander) Icons.Filled.Star else Icons.Outlined.Star,
@@ -2207,7 +2211,8 @@ private fun deckCardActions(
         }
         actions += CardMenuAction("Move to Considering", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToConsidering(entry) }
     }
-    if (entry.canBeCommander && mode == GameMode.COMMANDER) {
+    // The same rule as the row's star: any format with a commander, by that format's own test.
+    if (entry.canLead(mode)) {
         actions += if (isCommander) {
             CardMenuAction("Remove as commander", Icons.Filled.Star) { onSetCommander(null) }
         } else {
@@ -2216,7 +2221,7 @@ private fun deckCardActions(
     }
     // Only offered once a main commander exists, for a card that isn't it, and that actually has a
     // valid Partner pairing with it (plain "Partner"+"Partner", or a matching "Partner with <name>").
-    if (mode == GameMode.COMMANDER && hasCommander && !isCommander && (isPartnerCommander || canPartnerWithCommander)) {
+    if (mode.usesCommander && hasCommander && !isCommander && (isPartnerCommander || canPartnerWithCommander)) {
         actions += if (isPartnerCommander) {
             CardMenuAction("Remove as partner commander", Icons.Filled.Star) { onSetPartnerCommander(null) }
         } else {

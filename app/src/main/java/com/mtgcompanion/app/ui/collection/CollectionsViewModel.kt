@@ -201,8 +201,13 @@ class CollectionsViewModel(
         viewModelScope.launch {
             val deck = decks.value.firstOrNull { it.id == deckId }
             val inDeck = deck?.cards.orEmpty().map { it.scryfallId }.toSet()
-            allCards.value.filter { it.scryfallId in ids && it.scryfallId !in inDeck }.forEach { c ->
-                deckRepository.addEntry(deckId, DeckCardEntry(c.scryfallId, c.name, c.imageUrl, quantity = 1, backImageUrl = c.backImageUrl, tags = c.tags))
+            val picked = allCards.value.filter { it.scryfallId in ids && it.scryfallId !in inDeck }
+            // Looked up again so the deck knows each card's type and whether it can be the commander.
+            val entries = cardRepository.withFullCardInfo(
+                picked.map { c -> DeckCardEntry(c.scryfallId, c.name, c.imageUrl, quantity = 1, backImageUrl = c.backImageUrl, tags = c.tags) }
+            )
+            picked.zip(entries).forEach { (c, entry) ->
+                deckRepository.addEntry(deckId, entry)
                 // A loose copy in the Unsorted pile is the one that went into the deck.
                 repository.takeIntoDeck(deck, c.scryfallId, c.name)
             }

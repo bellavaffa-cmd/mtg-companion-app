@@ -219,7 +219,9 @@ class CollectionDetailViewModel(
             when (target.kind) {
                 SourceKind.BINDER -> repository.transferEntries(collectionId, ids, target.id, keepHere)
                 SourceKind.DECK -> {
-                    collection.value?.entries.orEmpty().filter { it.scryfallId in ids }.forEach { addCopyTo(it, target) }
+                    // One lookup for all the picked cards, rather than one each.
+                    val picked = collection.value?.entries.orEmpty().filter { it.scryfallId in ids }
+                    deckRepository.addEntries(target.id, cardRepository.withFullCardInfo(picked.map { it.toDeckEntry() }))
                     if (!keepHere) repository.removeEntries(collectionId, ids)
                 }
             }
@@ -267,13 +269,17 @@ class CollectionDetailViewModel(
 
     private suspend fun addCopyTo(entry: CollectionEntry, target: MoveTarget) {
         when (target.kind) {
-            SourceKind.DECK -> deckRepository.addEntry(
-                target.id,
-                DeckCardEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity + entry.foilQuantity, backImageUrl = entry.backImageUrl, tags = entry.tags)
-            )
+            SourceKind.DECK -> deckRepository.addEntry(target.id, cardRepository.withFullCardInfo(listOf(entry.toDeckEntry())).first())
             SourceKind.BINDER -> repository.addEntry(target.id, entry)
         }
     }
+
+    /**
+     * A deck entry for every copy of a binder card, foil or not. It has only what the binder keeps;
+     * cardRepository.withFullCardInfo fills in the rest (type, commander-ness).
+     */
+    private fun CollectionEntry.toDeckEntry() =
+        DeckCardEntry(scryfallId, name, imageUrl, quantity = quantity + foilQuantity, backImageUrl = backImageUrl, tags = tags)
 
     /** Swap an entry to a different printing/art, keeping its quantities. */
     fun changePrinting(oldScryfallId: String, newCard: com.mtgcompanion.app.network.scryfall.ScryfallCard) {

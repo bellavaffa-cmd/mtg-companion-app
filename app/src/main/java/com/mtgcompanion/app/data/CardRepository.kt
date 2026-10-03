@@ -84,6 +84,16 @@ class CardRepository {
     }
 
     /**
+     * [entries] with each card's full details filled in (see withCardInfo): entries made from
+     * binder cards don't keep commander-ness or type, so a deck couldn't make them its commander.
+     * A card the lookup can't give (offline, say) keeps its entry as it is. Same order and size.
+     */
+    suspend fun withFullCardInfo(entries: List<DeckCardEntry>): List<DeckCardEntry> {
+        val byId = getCardsByIds(entries.map { it.scryfallId }).associateBy { it.id }
+        return entries.map { entry -> byId[entry.scryfallId]?.let { entry.withCardInfo(it) } ?: entry }
+    }
+
+    /**
      * One /cards/collection request (max 75 identifiers). Use this instead of many /cards/named
      * calls for bulk work — Scryfall rate-limits (429) a rapid series of single-card requests.
      */

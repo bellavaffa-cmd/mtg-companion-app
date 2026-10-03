@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.network.scryfall
 
+import com.mtgcompanion.app.data.GameMode
+import com.mtgcompanion.app.data.canLeadDeck
 import com.squareup.moshi.Json
 
 data class ScryfallSearchResponse(
@@ -117,12 +119,13 @@ data class ScryfallCard(
             listOfNotNull(face.typeLine, face.oracleText).joinToString("\n")
         }
 
+    /** Whether this card can be a Commander deck's commander — see [canLead] for other formats. */
     val canBeCommander: Boolean
-        get() {
-            val isLegendaryCreature = typeLine?.contains("Legendary") == true && typeLine.contains("Creature")
-            val explicitlyAllowed = oracleText?.contains("can be your commander", ignoreCase = true) == true
-            return isLegendaryCreature || explicitlyAllowed
-        }
+        get() = canLead(GameMode.COMMANDER)
+
+    /** Whether this card can be the commander of a [mode] deck (Brawl also takes planeswalkers). */
+    fun canLead(mode: GameMode): Boolean =
+        canLeadDeck(typeLine, oracleText?.contains("can be your commander", ignoreCase = true) == true, mode)
 
     /**
      * Null if this card has no partner ability. `"Partner"` for a plain partner card (pairs with
