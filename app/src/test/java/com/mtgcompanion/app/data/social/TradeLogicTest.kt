@@ -136,4 +136,14 @@ class TradeLogicTest {
         assertNull(AppLink.parse("${base}add/a"))
         assertNull(AppLink.parse("hello"))
     }
+
+    @Test
+    fun `mark_trade_applied's answer says whether to move the cards`() {
+        assertEquals(true, parseAppliedResult("true"))
+        assertEquals(false, parseAppliedResult("false"))
+        assertEquals(false, parseAppliedResult(" \"false\"\n"))
+        // An older server answers nothing (void): go ahead, as before.
+        assertNull(parseAppliedResult(""))
+        assertNull(parseAppliedResult("null"))
+    }
 }

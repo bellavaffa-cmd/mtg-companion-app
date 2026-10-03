@@ -310,7 +310,13 @@ class SocialApi(private val auth: SupabaseAuth) {
         call("respond_trade", JSONObject().put("p_trade", tradeId).put("p_action", action).put("p_reply", reply.ifBlank { null } ?: JSONObject.NULL))
     }
 
-    suspend fun markTradeApplied(tradeId: String) { call("mark_trade_applied", JSONObject().put("p_trade", tradeId)) }
+    /**
+     * Marks the caller's side of an accepted trade as applied. True: this call marked it, so move
+     * the cards. False: that side was already done (or the trade isn't one to apply), so leave the
+     * binders alone. Null: an older server that answers nothing — treated as "go ahead".
+     */
+    suspend fun markTradeApplied(tradeId: String): Boolean? =
+        parseAppliedResult(call("mark_trade_applied", JSONObject().put("p_trade", tradeId)))
 
     companion object {
         /** Where a profile picture is served from (public, but only people who can see the profile learn its name). */

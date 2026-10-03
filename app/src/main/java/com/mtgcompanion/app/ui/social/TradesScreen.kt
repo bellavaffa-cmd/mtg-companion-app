@@ -315,6 +315,20 @@ private fun UpdateBindersDialog(social: SocialRepository, collectionRepository: 
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var short by remember { mutableStateOf<List<CollectionChange>?>(null) }
+    // Set once the cards have moved, so nothing on this dialog can move them a second time.
+    var done by remember { mutableStateOf(false) }
+    var already by remember { mutableStateOf(false) }
+
+    if (already) {
+        AlertDialog(
+            onDismissRequest = onClose,
+            containerColor = colors.surface,
+            title = { Text("Binders updated") },
+            text = { Text("Your binders were already updated for this trade.", color = colors.textMuted) },
+            confirmButton = { TextButton(onClick = onClose) { Text("OK", color = colors.accent) } }
+        )
+        return
+    }
 
     val missing = short
     if (missing != null) {
@@ -361,16 +375,31 @@ private fun UpdateBindersDialog(social: SocialRepository, collectionRepository: 
         },
         confirmButton = {
             TextButton(
-                enabled = !busy && (sides.get.isEmpty() || target != null),
+                enabled = !busy && !done && (sides.get.isEmpty() || target != null),
                 onClick = {
                     busy = true
                     error = null
                     scope.launch {
                         try {
+                            // The trade on screen already shows this side done (another device, say).
+                            if (!awaitingMyUpdate(trade, me)) {
+                                already = true
+                                runCatching { social.refresh() }
+                                return@launch
+                            }
                             // Marked first: if that fails (offline), nothing has changed and the user can simply try again.
-                            social.api.markTradeApplied(trade.id)
+                            // The server answers false when this side was already marked, so the cards only move once;
+                            // an older server answers nothing, which means go ahead.
+                            if (social.api.markTradeApplied(trade.id) == false) {
+                                already = true
+                                runCatching { social.refresh() }
+                                return@launch
+                            }
                             val left = collectionRepository.applyTrade(tradeChanges(trade, me, target ?: "", givenFrom))
-                            social.refresh()
+                            done = true
+                            // The cards have moved, so the job is done: a failed refresh only leaves the list stale
+                            // and must not offer "Update binders" again.
+                            runCatching { social.refresh() }
                             if (left.isEmpty()) onClose() else short = left
                         } catch (e: Exception) {
                             error = e.message

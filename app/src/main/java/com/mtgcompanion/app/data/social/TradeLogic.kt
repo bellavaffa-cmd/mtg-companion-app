@@ -29,6 +29,17 @@ fun tradeSides(trade: Trade, me: String): TradeSides =
 fun awaitingMyUpdate(trade: Trade, me: String): Boolean =
     trade.status == TradeStatus.ACCEPTED && if (trade.fromUser == me) !trade.fromApplied else !trade.toApplied
 
+/**
+ * Reads mark_trade_applied's answer: a JSON true/false (maybe quoted), or null when the server
+ * answers nothing (the function before it returned a boolean), which callers take as "go ahead".
+ */
+fun parseAppliedResult(text: String): Boolean? =
+    when (text.trim().trim('"').lowercase()) {
+        "true" -> true
+        "false" -> false
+        else -> null
+    }
+
 /** Whether [trade] waits on the user: an answer, or updating their binders. */
 fun waitingOnMe(trade: Trade, me: String): Boolean =
     (trade.status == TradeStatus.OPEN && trade.toUser == me) || awaitingMyUpdate(trade, me)
