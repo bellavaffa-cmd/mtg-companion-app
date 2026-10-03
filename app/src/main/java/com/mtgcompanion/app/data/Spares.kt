@@ -9,10 +9,10 @@ package com.mtgcompanion.app.data
 
 private fun key(name: String) = name.trim().lowercase()
 
-/** Every card name the decks play, are short of, or are considering — the ones to hold on to. */
+/** Every card name the decks play (sideboards too), are short of, or are considering — the ones to hold on to. */
 fun namesDecksUse(decks: List<Deck>): Set<String> =
     decks.flatMap { deck ->
-        (listOfNotNull(deck.commander, deck.partnerCommander) + deck.cards + deck.considering).map { key(it.name) }
+        (listOfNotNull(deck.commander, deck.partnerCommander) + deck.cards + deck.sideboard + deck.considering).map { key(it.name) }
     }.toSet()
 
 /** A card the user could let go of: where it sits, and how many they have. */

@@ -145,6 +145,20 @@ class ItemMergeTest {
     }
 
     @Test
+    fun `the sideboard merges like the deck itself`() {
+        val base = deck(emptyList()).copy(sideboard = listOf(card("a", 2), card("gone")))
+        val mine = deck(emptyList()).copy(sideboard = listOf(card("a", 3), card("b")))
+        val theirs = deck(emptyList()).copy(sideboard = listOf(card("a", 4), card("gone"), card("c")))
+        val onMine = ItemMerge.mergeDecks(base, mine, theirs, minePreferred = true)
+        // Added on each side kept, removed on one side gone, counts changed on both add up.
+        assertEquals(listOf("ax5", "bx1", "cx1"), onMine.sideboard.map { "${it.scryfallId}x${it.quantity}" })
+        // Both devices land on the same list.
+        assertEquals(onMine.sideboard, ItemMerge.mergeDecks(base, theirs, mine, minePreferred = false).sideboard)
+        // A deck saved before sideboards existed merges as an empty one.
+        assertEquals(listOf("b"), ItemMerge.mergeDecks(deck(emptyList()), deck(emptyList()).copy(sideboard = listOf(card("b"))), deck(emptyList()), true).sideboard.map { it.scryfallId })
+    }
+
+    @Test
     fun `binder counts add up per finish and an emptied card goes`() {
         fun entry(id: String, quantity: Int, foil: Int) =
             CollectionEntry(scryfallId = id, name = id, imageUrl = null, quantity = quantity, foilQuantity = foil)

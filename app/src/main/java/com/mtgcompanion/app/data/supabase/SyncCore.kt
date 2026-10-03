@@ -233,7 +233,7 @@ internal class SyncCore(
         (again.filter { it.key !in inPull } + rows).forEach { row ->
             val taken = if (row.kind == "deck") {
                 takeRow(row, deckAdapter, deckChanges, { mine ->
-                    mine.copy(cards = emptyList(), considering = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList())
+                    mine.copy(cards = emptyList(), considering = emptyList(), sideboard = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList())
                 }) { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) }
             } else {
                 takeRow(row, collectionAdapter, collectionChanges, { mine -> mine.copy(entries = emptyList()) }) { b, m, t, p ->
@@ -349,7 +349,7 @@ internal fun SyncCore.captureRescue(
  */
 internal fun rescueDecks(decks: List<Deck>, rescue: Rescue, adapter: JsonAdapter<Deck>): List<Deck> =
     rescueItems(decks, rescue, "deck", adapter, { it.id }, { mine ->
-        mine.copy(cards = emptyList(), considering = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList())
+        mine.copy(cards = emptyList(), considering = emptyList(), sideboard = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList())
     }) { b, m, t -> ItemMerge.mergeDecks(b, m, t, minePreferred = true) }
 
 /** The same, for binders. */

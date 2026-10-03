@@ -27,8 +27,16 @@ enum class GameMode(
     LEGACY("Legacy", "legacy", 60, false, false, 4, false),
     VINTAGE("Vintage", "vintage", 60, false, false, 4, false);
 
+    /**
+     * Whether the format has a sideboard (up to [MAX_SIDEBOARD] cards beside the main deck).
+     * Commander and Brawl don't: their "sideboard" lines go to Considering instead.
+     */
+    val hasSideboard: Boolean get() = !usesCommander
+
     companion object {
         val DEFAULT = COMMANDER
+        /** The most cards a sideboard may hold. */
+        const val MAX_SIDEBOARD = 15
         fun fromName(name: String?): GameMode = entries.firstOrNull { it.name == name } ?: DEFAULT
     }
 }
@@ -169,7 +177,15 @@ data class Deck(
     // out of [cards], so they never count toward size, curve, price, legality, bracket or combos.
     val considering: List<DeckCardEntry> = emptyList(),
     // Oldest first. Capped — see DeckRepository.
-    val versions: List<DeckVersion> = emptyList()
+    val versions: List<DeckVersion> = emptyList(),
+    /**
+     * The sideboard, for formats that have one (GameMode.hasSideboard). Like [considering] it's kept
+     * out of [cards], so it never counts toward size, curve, price, bracket or combos — only the
+     * legality check looks at it (at most 15 cards; copy limits count main deck and sideboard
+     * together). JSON key "sideboard"; data saved before it existed reads as empty. Synced and
+     * merged exactly like [considering].
+     */
+    val sideboard: List<DeckCardEntry> = emptyList()
 ) {
     val mode: GameMode get() = GameMode.fromName(gameMode)
     val ownershipType: DeckOwnership get() = DeckOwnership.fromName(ownership)

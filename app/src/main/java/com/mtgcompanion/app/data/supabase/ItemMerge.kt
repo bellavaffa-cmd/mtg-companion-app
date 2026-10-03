@@ -148,6 +148,7 @@ object ItemMerge {
         partnerCommander = pick(base.partnerCommander, mine.partnerCommander, theirs.partnerCommander, minePreferred),
         cards = mergeDeckCards(base.cards, mine.cards, theirs.cards, minePreferred),
         considering = mergeDeckCards(base.considering, mine.considering, theirs.considering, minePreferred),
+        sideboard = mergeDeckCards(base.sideboard, mine.sideboard, theirs.sideboard, minePreferred),
         tags = mergeStringSet(base.tags, mine.tags, theirs.tags),
         gameResults = mergeGameResults(base.gameResults, mine.gameResults, theirs.gameResults),
         versions = mergeVersions(mine.versions, theirs.versions)

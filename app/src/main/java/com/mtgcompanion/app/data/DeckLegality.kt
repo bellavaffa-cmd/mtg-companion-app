@@ -93,35 +93,12 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
 
     deck.cards.forEach { entry ->
         val card = cards[entry.scryfallId]
-        val basic = card.isBasicLand(entry.name)
 
-        // Format legality of the card itself.
+        // Format legality of the card itself. (Restricted cards' copy limit is checked below, with
+        // every printing and the sideboard counted together.)
         when (card?.legalities?.get(format)) {
             "banned" -> issues += LegalityIssue(entry.name, "Banned in ${mode.label}.", kind = LegalityIssueKind.LEGALITY)
             "not_legal" -> issues += LegalityIssue(entry.name, "Not legal in ${mode.label}.", kind = LegalityIssueKind.LEGALITY)
-            "restricted" -> if (entry.quantity > 1) {
-                issues += LegalityIssue(
-                    entry.name, "Restricted in ${mode.label} — max 1 copy (has ${entry.quantity}).",
-                    kind = LegalityIssueKind.COPY_LIMIT, scryfallId = entry.scryfallId, fixQuantity = 1
-                )
-            }
-        }
-
-        // Copy limits (basics are unlimited).
-        if (!basic) {
-            if (mode.singleton) {
-                if (entry.quantity > 1) {
-                    issues += LegalityIssue(
-                        entry.name, "${mode.label} is singleton — only 1 copy allowed (has ${entry.quantity}).",
-                        kind = LegalityIssueKind.COPY_LIMIT, scryfallId = entry.scryfallId, fixQuantity = 1
-                    )
-                }
-            } else if (entry.quantity > mode.maxCopies) {
-                issues += LegalityIssue(
-                    entry.name, "Max ${mode.maxCopies} copies allowed (has ${entry.quantity}).",
-                    kind = LegalityIssueKind.COPY_LIMIT, scryfallId = entry.scryfallId, fixQuantity = mode.maxCopies
-                )
-            }
         }
 
         // Commander colour identity.
@@ -138,7 +115,72 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
         }
     }
 
-    return LegalityReport(mode = mode, totalCards = totalCards, legal = issues.isEmpty(), issues = issues)
+    // The sideboard: only formats that have one, at most 15 cards, and every card legal there too.
+    val sideboardCount = deck.sideboard.sumOf { it.quantity }
+    if (sideboardCount > 0 && !mode.hasSideboard) {
+        issues += LegalityIssue(
+            null, "${mode.label} has no sideboard — $sideboardCount card${if (sideboardCount == 1) "" else "s"} still there.",
+            kind = LegalityIssueKind.DECK_SIZE
+        )
+    } else if (sideboardCount > GameMode.MAX_SIDEBOARD) {
+        issues += LegalityIssue(
+            null, "Sideboard has $sideboardCount cards; ${mode.label} allows at most ${GameMode.MAX_SIDEBOARD}.",
+            kind = LegalityIssueKind.DECK_SIZE
+        )
+    }
+    deck.sideboard.forEach { entry ->
+        when (cards[entry.scryfallId]?.legalities?.get(format)) {
+            "banned" -> issues += LegalityIssue(entry.name, "Banned in ${mode.label} (sideboard).", kind = LegalityIssueKind.LEGALITY)
+            "not_legal" -> issues += LegalityIssue(entry.name, "Not legal in ${mode.label} (sideboard).", kind = LegalityIssueKind.LEGALITY)
+        }
+    }
+
+    issues += copyLimitIssues(deck, cards)
+
+        return LegalityReport(mode = mode, totalCards = totalCards, legal = issues.isEmpty(), issues = issues)
+}
+
+/**
+ * Copy limits, with every printing of a card and its sideboard copies counted together (basics are
+ * unlimited). The issue sits on the card's biggest main-deck row, and offers to cut that row down
+ * when doing so is enough to fix it.
+ */
+private fun copyLimitIssues(deck: Deck, cards: Map<String, ScryfallCard>): List<LegalityIssue> {
+    val mode = deck.mode
+    val issues = mutableListOf<LegalityIssue>()
+    val main = deck.cards.groupBy { it.name.trim().lowercase() }
+    val side = deck.sideboard.groupBy { it.name.trim().lowercase() }
+    for (key in (main.keys + side.keys).distinct()) {
+        val mainRows = main[key].orEmpty()
+        val sideRows = side[key].orEmpty()
+        val first = mainRows.firstOrNull() ?: sideRows.first()
+        val card = (mainRows + sideRows).firstNotNullOfOrNull { cards[it.scryfallId] }
+        if (card.isBasicLand(first.name)) continue
+        val restricted = (mainRows + sideRows).any { cards[it.scryfallId]?.legalities?.get(mode.scryfallFormat) == "restricted" }
+        val limit = when {
+            restricted -> 1
+            mode.singleton -> 1
+            else -> mode.maxCopies
+        }
+        val inMain = mainRows.sumOf { it.quantity }
+        val inSide = sideRows.sumOf { it.quantity }
+        val total = inMain + inSide
+        if (total <= limit) continue
+        val has = if (inSide > 0) "has $inMain + $inSide in the sideboard" else "has $total"
+        val reason = when {
+            restricted -> "Restricted in ${mode.label} — max 1 copy ($has)."
+            mode.singleton -> "${mode.label} is singleton — only 1 copy allowed ($has)."
+            else -> "Max ${mode.maxCopies} copies allowed ($has)."
+        }
+        val row = mainRows.maxByOrNull { it.quantity }
+        val fix = row?.let { it.quantity - (total - limit) }?.takeIf { it >= 1 }
+        issues += LegalityIssue(
+            first.name, reason, kind = LegalityIssueKind.COPY_LIMIT,
+            scryfallId = row?.scryfallId,
+            fixQuantity = fix
+        )
+    }
+    return issues
 }
 
 /**
@@ -149,7 +191,8 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
 fun duplicateWarning(deck: Deck, card: ScryfallCard, addingQuantity: Int = 1): String? {
     val mode = deck.mode
     if (card.isBasicLand(card.name)) return null
-    val existingQuantity = deck.cards.find { it.scryfallId == card.id }?.quantity ?: 0
+    // The sideboard's copies count toward the same limit.
+    val existingQuantity = (deck.cards + deck.sideboard).filter { it.scryfallId == card.id }.sumOf { it.quantity }
     val newQuantity = existingQuantity + addingQuantity
     return when {
         mode.singleton && newQuantity > 1 ->

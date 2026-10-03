@@ -287,6 +287,34 @@ class DeckRepository(private val context: Context) {
         }
     }
 
+    // ---- Sideboard (see Sideboard.kt) ----
+
+    /** Adds [entry]'s copies to the deck's sideboard, merging with copies of the same printing. */
+    suspend fun addSideboardEntry(deckId: String, entry: DeckCardEntry) {
+        updateDeck(deckId) { it.withSideboardCopies(entry) }
+    }
+
+    /** Many entries onto the sideboard in one write (a decklist import's sideboard). */
+    suspend fun addSideboardEntries(deckId: String, entries: List<DeckCardEntry>) {
+        if (entries.isEmpty()) return
+        updateDeck(deckId) { deck -> entries.fold(deck) { d, entry -> d.withSideboardCopies(entry) } }
+    }
+
+    /** Sets the sideboard's copies of a card; zero or less takes it off the sideboard. */
+    suspend fun setSideboardQuantity(deckId: String, scryfallId: String, quantity: Int) {
+        updateDeck(deckId) { it.withSideboardQuantity(scryfallId, quantity) }
+    }
+
+    /** Every main-deck copy of a card onto the sideboard. */
+    suspend fun moveToSideboard(deckId: String, scryfallId: String) {
+        updateDeck(deckId) { it.movedToSideboard(scryfallId) }
+    }
+
+    /** Every sideboard copy of a card into the main deck. */
+    suspend fun moveToMain(deckId: String, scryfallId: String) {
+        updateDeck(deckId) { it.movedToMain(scryfallId) }
+    }
+
     /** Overwrite the whole deck list — used when restoring/pulling from Drive sync. */
     /**
      * Writes what a sync pulled, as a change to the decks as they are at that moment — so an edit made

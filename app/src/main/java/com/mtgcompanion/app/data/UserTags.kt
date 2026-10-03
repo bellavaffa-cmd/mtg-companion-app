@@ -36,7 +36,8 @@ fun Deck.withUserTags(scryfallId: String, tags: List<String>): Deck = copy(
     commander = commander?.let { if (it.scryfallId == scryfallId) it.tagged(tags) else it },
     partnerCommander = partnerCommander?.let { if (it.scryfallId == scryfallId) it.tagged(tags) else it },
     cards = cards.map { if (it.scryfallId == scryfallId) it.tagged(tags) else it },
-    considering = considering.map { if (it.scryfallId == scryfallId) it.tagged(tags) else it }
+    considering = considering.map { if (it.scryfallId == scryfallId) it.tagged(tags) else it },
+    sideboard = sideboard.map { if (it.scryfallId == scryfallId) it.tagged(tags) else it }
 )
 
 /** [this] with every copy of [scryfallId] in it carrying [tags]. */
@@ -72,7 +73,7 @@ fun allUserTags(decks: List<Deck>, collections: List<Collection>): List<String> 
 }
 
 private fun Deck.allEntries(): List<DeckCardEntry> =
-    cards + considering + listOfNotNull(commander, partnerCommander)
+    cards + considering + sideboard + listOfNotNull(commander, partnerCommander)
 
 /**
  * Tags, remembered by printing, so a copy keeps them wherever it goes.
@@ -99,7 +100,7 @@ fun rememberedUserTags(
         out[id] = tidyUserTags(out[id].orEmpty() + tags)
     }
     for (deck in decks) {
-        for (e in deck.cards + deck.considering + listOfNotNull(deck.commander, deck.partnerCommander)) {
+        for (e in deck.cards + deck.considering + deck.sideboard + listOfNotNull(deck.commander, deck.partnerCommander)) {
             note(e.scryfallId, e.userTags)
         }
     }
