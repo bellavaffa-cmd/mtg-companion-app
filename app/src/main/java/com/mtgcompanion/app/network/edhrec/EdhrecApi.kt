@@ -23,3 +23,10 @@ fun edhrecSlug(cardName: String): String {
         .replace(Regex("\\s+"), "-")
     return cleaned
 }
+
+/**
+ * EDHREC's page for two commanders together: both names slugged, in alphabetical order, joined by
+ * a hyphen — "Tymna the Weaver" and "Kraum, Ludevic's Opus" -> "kraum-ludevics-opus-tymna-the-weaver".
+ */
+fun edhrecPairSlug(first: String, second: String): String =
+    listOf(edhrecSlug(first), edhrecSlug(second)).sorted().joinToString("-")

@@ -31,8 +31,9 @@ class DeckRepository(private val context: Context) {
     }
 
     /**
-     * A new deck that arrives complete — a precon import. One write for cards and commanders, so its
-     * version history starts with the imported list rather than a "commander changed" step after it.
+     * A new deck that arrives complete — a precon import, or a new deck that starts with its
+     * commanders. One write for cards and commanders, so its version history starts with that list
+     * rather than a "commander changed" step after it.
      */
     suspend fun createDeckWithCards(
         name: String,
@@ -154,7 +155,7 @@ class DeckRepository(private val context: Context) {
     /**
      * Sets the main commander. Clearing it (null) also clears any partner commander, since a
      * partner pairing without a main commander is meaningless; setting a new one also drops the
-     * existing partner if it no longer has a valid Partner pairing with the new commander.
+     * existing partner if the two can no longer pair (CommanderPairing.kt).
      */
     suspend fun setCommander(deckId: String, card: DeckCardEntry?) {
         update { decks ->
@@ -162,7 +163,7 @@ class DeckRepository(private val context: Context) {
                 if (deck.id != deckId) return@map deck
                 val newPartner = when {
                     card == null -> null
-                    deck.partnerCommander != null && !partnersWith(card, deck.partnerCommander) -> null
+                    deck.partnerCommander != null && !canPair(card, deck.partnerCommander) -> null
                     else -> deck.partnerCommander
                 }
                 deck.copy(commander = card, partnerCommander = newPartner)

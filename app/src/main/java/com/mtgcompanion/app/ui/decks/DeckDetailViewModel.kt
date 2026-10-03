@@ -52,6 +52,7 @@ import com.mtgcompanion.app.data.ListSection
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.evaluateLegality
+import com.mtgcompanion.app.data.withPairingFrom
 import com.mtgcompanion.app.data.parseCardList
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
@@ -134,7 +135,12 @@ data class DeckAnalysis(
     val comboCompleters: Set<String> = emptySet(),
     /** Plain-language mana base warnings, with mana symbols as `{U}`. */
     val manaAdvice: List<String> = emptyList(),
-    val legality: LegalityReport? = null
+    val legality: LegalityReport? = null,
+    /**
+     * scryfallId -> pairing ability read from the card itself (CommanderPairing.kt), for the cards
+     * it could be fetched for: an entry saved by an older version may lack a newer ability.
+     */
+    val pairingAbilities: Map<String, String?> = emptyMap()
 )
 
 /** What each card does for the deck. [fromTagger] is false when counts came from the offline heuristic. */
@@ -425,14 +431,14 @@ class DeckDetailViewModel(
     val suggestions: StateFlow<List<EdhrecCardView>?> = deck.mapLatest { d ->
         val commander = d?.commander?.name ?: return@mapLatest null
         val lists = try {
-            edhrecRepository.getRecommendationsForCommander(commander)
+            edhrecRepository.getRecommendationsForCommander(commander, d.partnerCommander?.name)
         } catch (e: Exception) {
             null
         } ?: return@mapLatest null
         // EDHREC's top cards for a commander are mostly staples the deck probably already runs;
         // suggesting those wastes the list, so only offer cards the deck doesn't have.
         // Cards already on the Considering list are skipped too, as budget swaps do.
-        val inDeck = (d.cards.map { it.name } + d.considering.map { it.name } + listOfNotNull(d.commander?.name))
+        val inDeck = (d.cards.map { it.name } + d.considering.map { it.name } + listOfNotNull(d.commander?.name, d.partnerCommander?.name))
             .flatMap { cardNameKeys(it) }
             .toSet()
         // Top cards alone can come back empty after that filter — a precon's commander page is
@@ -579,7 +585,8 @@ class DeckDetailViewModel(
             nearMissPieces = nearMissPieces,
             comboCompleters = comboCompleters,
             manaAdvice = manaBaseAdvice(pipList, sourceList, landCount, d.mode),
-            legality = evaluateLegality(d, byId)
+            legality = evaluateLegality(d, byId),
+            pairingAbilities = byId.mapValues { it.value.partnerAbility }
         )
     }
 
@@ -676,11 +683,25 @@ class DeckDetailViewModel(
     }
 
     fun setCommander(card: DeckCardEntry?) {
-        viewModelScope.launch { repository.setCommander(deckId, card) }
+        val abilities = analysis.value.pairingAbilities
+        viewModelScope.launch { repository.setCommander(deckId, card?.withPairingFrom(abilities)) }
     }
 
+    /**
+     * Sets the second commander (a partner, Background, Doctor…). Both commanders keep their
+     * pairing ability as read from the card now, so a deck saved before that ability was known
+     * pairs (and syncs) the same as a new one.
+     */
     fun setPartnerCommander(card: DeckCardEntry?) {
-        viewModelScope.launch { repository.setPartnerCommander(deckId, card) }
+        val abilities = analysis.value.pairingAbilities
+        viewModelScope.launch {
+            val commander = deck.value?.commander
+            if (card != null && commander != null) {
+                val fresh = commander.withPairingFrom(abilities)
+                if (fresh != commander) repository.setCommander(deckId, fresh)
+            }
+            repository.setPartnerCommander(deckId, card?.withPairingFrom(abilities))
+        }
     }
 
 
@@ -977,7 +998,7 @@ class DeckDetailViewModel(
 }
 
 /** Scryfall asks for 50–100ms between requests. */
-private const val SCRYFALL_SPACING_MILLIS = 90L
+internal const val SCRYFALL_SPACING_MILLIS = 90L
 private const val MAX_BUDGET_SWAPS = 8
 private const val ALTERNATIVES_PER_SWAP = 4
 /** Alternatives must cost under this fraction of the original — a swap has to actually save money. */

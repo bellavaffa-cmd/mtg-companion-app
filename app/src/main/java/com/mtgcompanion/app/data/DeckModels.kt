@@ -62,8 +62,9 @@ data class DeckCardEntry(
     // Cached from Scryfall at add-time so the Cards tab can group by type instantly on open,
     // without waiting on a network round-trip. Null for entries added before this field existed.
     val typeLine: String? = null,
-    // Cached from ScryfallCard.partnerAbility — null (no partner ability), "Partner" (pairs with
-    // any other plain-partner card), or the exact "Partner with <Name>" target.
+    // Cached from ScryfallCard.partnerAbility — how this card can share command with a second
+    // commander: null, "Partner", the name a "Partner with" names, "Friends forever", "Choose a
+    // Background", "Doctor's companion"… (see CommanderPairing.kt). The web stores the same values.
     val partnerAbility: String? = null,
     // Cached from ScryfallCard.backImageUrl — the second face's art for a transform/modal-DFC/flip
     // card, so the zoom overlay can offer a flip control without a network round-trip. Null for
@@ -124,16 +125,6 @@ fun DeckCardEntry.withCardInfo(card: ScryfallCard): DeckCardEntry = copy(
     backImageUrl = card.backImageUrl ?: backImageUrl,
     tags = card.tags.ifEmpty { tags }
 )
-
-/** Whether [a] and [b] can legally be co-commanders under the Partner mechanic. */
-fun partnersWith(a: DeckCardEntry, b: DeckCardEntry): Boolean {
-    val abilityA = a.partnerAbility ?: return false
-    val abilityB = b.partnerAbility ?: return false
-    if (abilityA == "Partner" && abilityB == "Partner") return true
-    if (abilityA.equals(b.name, ignoreCase = true)) return true
-    if (abilityB.equals(a.name, ignoreCase = true)) return true
-    return false
-}
 
 /** One logged game's outcome for a deck's match record. [result] is "WIN", "LOSS", or "DRAW". */
 data class GameResult(

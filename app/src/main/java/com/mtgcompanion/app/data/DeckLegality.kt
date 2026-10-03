@@ -35,6 +35,15 @@ private fun ScryfallCard?.isBasicLand(name: String): Boolean =
     name in BASIC_LAND_NAMES || this?.typeLine?.contains("Basic", ignoreCase = true) == true
 
 /**
+ * A commander as pairing sees it, its ability read from the card itself where [cards] has it: an
+ * entry saved by an older version may lack a Friends forever or Background ability.
+ */
+private fun pairCardOf(entry: DeckCardEntry, cards: Map<String, ScryfallCard>): PairCard {
+    val card = cards[entry.scryfallId] ?: return entry.pairCard
+    return PairCard(card.name, card.typeLine ?: entry.typeLine, card.partnerAbility)
+}
+
+/**
  * Check [deck] against the construction rules of its game mode, using [cards] (a Scryfall id ->
  * card map) for legalities, types and colour identity. Cards missing from [cards] are skipped for
  * per-card checks but still counted toward deck size.
@@ -54,9 +63,9 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
             val mainIdentity = cards[deck.commander.scryfallId]?.colorIdentity?.toSet() ?: emptySet()
             val partner = deck.partnerCommander
             if (partner != null) {
-                if (!partnersWith(deck.commander, partner)) {
+                if (!canPair(pairCardOf(deck.commander, cards), pairCardOf(partner, cards))) {
                     issues += LegalityIssue(
-                        null, "${deck.commander.name} and ${partner.name} don't have a valid Partner pairing.",
+                        null, "${deck.commander.name} and ${partner.name} can't be commanders together.",
                         kind = LegalityIssueKind.COMMANDER
                     )
                 }

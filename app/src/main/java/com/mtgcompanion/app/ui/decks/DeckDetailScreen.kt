@@ -148,7 +148,11 @@ import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.LegalityIssue
 import com.mtgcompanion.app.data.LegalityIssueKind
-import com.mtgcompanion.app.data.partnersWith
+import com.mtgcompanion.app.data.SecondCommanderKind
+import com.mtgcompanion.app.data.canPair
+import com.mtgcompanion.app.data.pairCard
+import com.mtgcompanion.app.data.secondCommanderKind
+import com.mtgcompanion.app.data.withPairingFrom
 import com.mtgcompanion.app.data.canLead
 import com.mtgcompanion.app.data.VersionSummary
 import com.mtgcompanion.app.data.cardNameKeys
@@ -205,7 +209,9 @@ fun DeckDetailScreen(
     /** Opens another of the user's decks — where a proxy's real copy is. */
     onOpenDeck: ((String) -> Unit)? = null,
     /** Puts one of this deck's tokens onto an NFC e-paper badge. */
-    onOpenBadge: (() -> Unit)? = null
+    onOpenBadge: (() -> Unit)? = null,
+    /** The tab to open on ("Suggestions" for a deck just made with its commander); null for Cards. */
+    initialTab: String? = null
 ) {
     val context = LocalContext.current
     val deck by viewModel.deck.collectAsState()
@@ -218,7 +224,7 @@ fun DeckDetailScreen(
     val layout = LocalLayoutSize.current
     // On a desktop-width window Stats sits in a panel beside the cards, so it isn't a tab there.
     val tabs = if (layout == LayoutSize.DESKTOP) DECK_TABS.filter { it != "Stats" } else DECK_TABS
-    val pagerState = rememberPagerState(pageCount = { tabs.size })
+    val pagerState = rememberPagerState(initialPage = (initialTab?.let { tabs.indexOf(it) } ?: 0).coerceAtLeast(0), pageCount = { tabs.size })
     val missing by viewModel.missing.collectAsState()
     val cardTags by viewModel.cardTags.collectAsState()
     // Swap flows: a cut candidate choosing its replacement, or a considered card choosing what it replaces.
@@ -353,7 +359,15 @@ fun DeckDetailScreen(
                                 isCommander = currentDeck.commander?.scryfallId == entry.scryfallId,
                                 hasCommander = currentDeck.commander != null,
                                 isPartnerCommander = currentDeck.partnerCommander?.scryfallId == entry.scryfallId,
-                                canPartnerWithCommander = currentDeck.commander?.let { partnersWith(it, entry) } ?: false,
+                                canPartnerWithCommander = currentDeck.commander?.let { commander ->
+                                    canPair(
+                                        commander.withPairingFrom(analysis.pairingAbilities),
+                                        entry.withPairingFrom(analysis.pairingAbilities)
+                                    )
+                                } ?: false,
+                                secondCommanderNoun = currentDeck.commander
+                                    ?.let { secondCommanderKind(it.withPairingFrom(analysis.pairingAbilities).pairCard) }
+                                    ?.noun ?: SecondCommanderKind.PARTNER.noun,
                                 onViewDetails = onViewDetails,
                                 onCopy = { copyTarget = it },
                                 onMove = { moveTarget = it },
@@ -2224,6 +2238,8 @@ private fun deckCardActions(
     hasCommander: Boolean,
     isPartnerCommander: Boolean,
     canPartnerWithCommander: Boolean,
+    /** What the second commander is called: "partner commander", "Background", "Doctor"… */
+    secondCommanderNoun: String,
     onViewDetails: (String) -> Unit,
     onCopy: (DeckCardEntry) -> Unit,
     onMove: (DeckCardEntry) -> Unit,
@@ -2255,13 +2271,13 @@ private fun deckCardActions(
             CardMenuAction("Set as commander", Icons.Outlined.Star) { onSetCommander(entry) }
         }
     }
-    // Only offered once a main commander exists, for a card that isn't it, and that actually has a
-    // valid Partner pairing with it (plain "Partner"+"Partner", or a matching "Partner with <name>").
+    // Only offered once a main commander exists, for a card that isn't it, and that can actually
+    // pair with it (Partner, Partner with, Friends forever, a Background, a Doctor — CommanderPairing.kt).
     if (mode.usesCommander && hasCommander && !isCommander && (isPartnerCommander || canPartnerWithCommander)) {
         actions += if (isPartnerCommander) {
-            CardMenuAction("Remove as partner commander", Icons.Filled.Star) { onSetPartnerCommander(null) }
+            CardMenuAction("Remove as $secondCommanderNoun", Icons.Filled.Star) { onSetPartnerCommander(null) }
         } else {
-            CardMenuAction("Set as partner commander", Icons.Outlined.Star) { onSetPartnerCommander(entry) }
+            CardMenuAction("Set as $secondCommanderNoun", Icons.Outlined.Star) { onSetPartnerCommander(entry) }
         }
     }
     actions += CardMenuAction("Copy to…", Icons.Filled.ContentCopy) { onCopy(entry) }

@@ -2,6 +2,7 @@ package com.mtgcompanion.app.network.scryfall
 
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.canLeadDeck
+import com.mtgcompanion.app.data.pairingAbility
 import com.squareup.moshi.Json
 
 data class ScryfallSearchResponse(
@@ -79,7 +80,11 @@ data class ScryfallCard(
      */
     @Json(name = "all_parts") val allParts: List<ScryfallPart>? = null,
     /** How this printing was made: "nonfoil", "foil", "etched". */
-    val finishes: List<String>? = null
+    val finishes: List<String>? = null,
+    /** "2024-08-02" — when this printing came out. The commander picker's "Newest" sort. */
+    @Json(name = "released_at") val releasedAt: String? = null,
+    /** Where EDHREC ranks the card by how many decks play it (1 = most). Absent for unplayed cards. */
+    @Json(name = "edhrec_rank") val edhrecRank: Int? = null
 ) {
     val displayImageUrl: String?
         get() = imageUris?.normal ?: cardFaces?.firstOrNull()?.imageUris?.normal
@@ -130,21 +135,12 @@ data class ScryfallCard(
         canLeadDeck(typeLine, oracleText?.contains("can be your commander", ignoreCase = true) == true, mode)
 
     /**
-     * Null if this card has no partner ability. `"Partner"` for a plain partner card (pairs with
-     * any other plain-partner commander); otherwise the exact name from "Partner with <Name>"
-     * (pairs only with that specific card).
+     * How this card can share command with a second commander, as a deck entry stores it: null,
+     * "Partner", the name a "Partner with" names, "Friends forever", "Choose a Background"… See
+     * data/CommanderPairing.kt, which also says how they pair.
      */
     val partnerAbility: String?
-        get() {
-            val line = displayOracleText?.lineSequence()?.map { it.trim() }
-                ?.firstOrNull { it.startsWith("Partner", ignoreCase = true) } ?: return null
-            val withPrefix = "Partner with "
-            return if (line.startsWith(withPrefix, ignoreCase = true)) {
-                line.removePrefix(withPrefix).substringBefore(" (").trim()
-            } else {
-                "Partner"
-            }
-        }
+        get() = pairingAbility(listOf(oracleText) + cardFaces.orEmpty().map { it.oracleText }, keywords)
 
     companion object {
         private val FLIPPABLE_LAYOUTS = setOf("transform", "modal_dfc", "flip", "reversible_card", "double_faced_token")
