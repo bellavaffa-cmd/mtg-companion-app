@@ -84,7 +84,8 @@ fun applyCollectionChanges(collections: List<Collection>, changes: List<Collecti
             entries = when {
                 existing != null && q == 0 && f == 0 -> entries.filterNot { it.scryfallId == ch.card.scryfallId }
                 existing != null -> entries.map { if (it.scryfallId == ch.card.scryfallId) it.copy(quantity = q, foilQuantity = f) else it }
-                q > 0 || f > 0 -> entries + CollectionEntry(ch.card.scryfallId, ch.card.name, ch.card.imageUrl, q, f)
+                // Cards a trade brings in arrive in the condition the giver said they were in.
+                q > 0 || f > 0 -> entries + CollectionEntry(ch.card.scryfallId, ch.card.name, ch.card.imageUrl, q, f, condition = ch.card.condition)
                 else -> entries
             }
         }
@@ -140,7 +141,7 @@ fun cardsTheyWant(mine: List<Collection>, theirs: List<Collection>): List<Wanted
             imageUrl = e.imageUrl,
             copies = copies.sumOf { it.entry.quantity + it.entry.foilQuantity },
             wishlist = wants.getValue(key),
-            card = TradeCard(e.scryfallId, e.name, e.imageUrl, foil = e.quantity <= 0, quantity = 1, collectionId = best.collectionId)
+            card = TradeCard(e.scryfallId, e.name, e.imageUrl, foil = e.quantity <= 0, quantity = 1, collectionId = best.collectionId, condition = e.condition)
         )
     }.sortedBy { it.name.lowercase() }
 }

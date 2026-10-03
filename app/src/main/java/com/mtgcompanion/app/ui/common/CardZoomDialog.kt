@@ -185,7 +185,12 @@ data class ZoomCard(
     /** Tags used on other cards, offered as one-tap additions. */
     val knownUserTags: List<String> = emptyList(),
     /** One full-width button under the card, for a screen whose whole point is picking it ("Build with …"). */
-    val primaryAction: ZoomAction? = null
+    val primaryAction: ZoomAction? = null,
+    /**
+     * A binder card's own details row — condition, language, price alert, price history (see
+     * CopyDetailsButton) — shown under the tags. Null elsewhere.
+     */
+    val copyDetails: (@Composable () -> Unit)? = null
 )
 
 /** A labelled button in the enlarged-card overlay — see [ZoomCard.primaryAction]. */
@@ -420,6 +425,9 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                     }
                     card.onUserTags?.let { save ->
                         UserTagsButton(card.userTags, card.knownUserTags, save, Modifier.background(Surface))
+                    }
+                    card.copyDetails?.let { details ->
+                        Box(Modifier.fillMaxWidth().background(Surface)) { details() }
                     }
                     // While a printing is previewed, show its own price instead of the original's.
                     val effectivePrice = previewed?.prices?.usd?.toDoubleOrNull() ?: card.priceUsd

@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.network.scryfall.ScryfallPrices
 
 /** Aggregate stats over a set of owned cards, for a dashboard. */
 data class CollectionDashboard(
@@ -15,7 +16,9 @@ data class CollectionDashboard(
     /** Copies counted. */
     val cards: Int = 0,
     /** Each card's price (US dollars, non-foil), by scryfallId — for the price movers. */
-    val prices: Map<String, Double> = emptyMap()
+    val prices: Map<String, Double> = emptyMap(),
+    /** Each card's prices as Scryfall gave them (non-foil, foil, euros), by scryfallId — for its price history. */
+    val allPrices: Map<String, ScryfallPrices?> = emptyMap()
 )
 
 /**
@@ -59,6 +62,7 @@ suspend fun computeDashboard(
         pricedCount = pricedCount,
         complete = cardsById.size >= quantities.size * 0.98,
         prices = cardsById.mapNotNull { (id, card) -> card.prices?.usd?.toDoubleOrNull()?.let { id to it } }.toMap(),
+        allPrices = cardsById.mapValues { it.value.prices },
         cards = quantities.sumOf { it.second },
         colorCounts = colorTotals.entries.filter { it.value > 0 }.map { it.key to it.value },
         typeCounts = typeTotals.entries.sortedByDescending { it.value }.map { it.key to it.value }

@@ -9,8 +9,9 @@ package com.mtgcompanion.app.data
 //   1 Sol Ring [CMR] 472 *F*        (foil; *E* etched, "(foil)"/"[foil]" work too)
 //
 // and the CSV collection exports those apps make (a header row naming Count/Quantity and Name, and
-// optionally the set code, collector number, foil and Scryfall ID). Writes the plain text form,
-// which all of them read back. Mirrors the web app's collection/cardListText.ts.
+// optionally the set code, collector number, foil, condition, language and Scryfall ID). Writes the
+// plain text form, which all of them read back, and a CSV that keeps condition and language too.
+// Mirrors the web app's collection/cardListText.ts.
 
 /** Which part of a decklist a card line sits in. Binder imports take every part alike. */
 enum class ListSection { MAIN, SIDEBOARD, MAYBEBOARD }
@@ -23,7 +24,11 @@ data class ListLine(
     val number: String? = null,
     val scryfallId: String? = null,
     val foil: Boolean = false,
-    val section: ListSection = ListSection.MAIN
+    val section: ListSection = ListSection.MAIN,
+    /** From a CSV's Condition column, as a code (see CopyDetails.kt); null when it hasn't one. */
+    val condition: String? = null,
+    /** From a CSV's Language column, as a Scryfall code; null when it hasn't one. */
+    val language: String? = null
 )
 
 data class ParsedList(val lines: List<ListLine>, val skipped: List<String>) {
@@ -114,6 +119,10 @@ private object Columns {
     val number = listOf("collector number", "card number", "collector_number", "number", "cn")
     val foil = listOf("foil", "finish", "printing")
     val id = listOf("scryfall id", "scryfall_id", "scryfallid")
+    // Moxfield, Deckbox and TCGplayer write words ("Near Mint", "English"); ManaBox writes
+    // near_mint and en. Read the same way whichever it is (see conditionCode / languageCode).
+    val condition = listOf("condition")
+    val language = listOf("language", "lang")
 }
 
 private fun List<String>.column(names: List<String>): Int = names.firstNotNullOfOrNull { n -> indexOf(n).takeIf { it != -1 } } ?: -1
@@ -121,6 +130,8 @@ private fun List<String>.column(names: List<String>): Int = names.firstNotNullOf
 private fun isFoilValue(v: String) =
     Regex("foil|etched|^(true|yes|1)$", RegexOption.IGNORE_CASE).containsMatchIn(v) &&
         !Regex("non|normal|^(false|no|0)$", RegexOption.IGNORE_CASE).containsMatchIn(v)
+
+private val FOIL_CONDITION = Regex("\\s(foil|etched)$", RegexOption.IGNORE_CASE)
 
 private val SET_CODE = Regex("[A-Za-z0-9]{2,6}")
 private val SCRYFALL_ID = Regex("[0-9a-fA-F-]{36}")
@@ -133,6 +144,8 @@ private fun parseCsv(rows: List<String>): ParsedList {
     val numberAt = header.column(Columns.number)
     val foilAt = header.column(Columns.foil)
     val idAt = header.column(Columns.id)
+    val conditionAt = header.column(Columns.condition)
+    val languageAt = header.column(Columns.language)
     val lines = mutableListOf<ListLine>()
     val skipped = mutableListOf<String>()
     for (row in rows.drop(1)) {
@@ -149,7 +162,10 @@ private fun parseCsv(rows: List<String>): ParsedList {
             set = get(setAt).takeIf { SET_CODE.matches(it) }?.lowercase(),
             number = get(numberAt).ifEmpty { null },
             scryfallId = id,
-            foil = isFoilValue(get(foilAt))
+            // TCGplayer puts the finish in the condition: "Near Mint Foil".
+            foil = isFoilValue(get(foilAt)) || FOIL_CONDITION.containsMatchIn(get(conditionAt)),
+            condition = conditionCode(get(conditionAt)),
+            language = languageCode(get(languageAt))
         )
     }
     return ParsedList(lines, skipped)
@@ -214,3 +230,37 @@ fun buildCardListText(entries: List<CollectionEntry>, printings: Map<String, Pai
             if (e.foilQuantity > 0) "${e.foilQuantity} $card *F*" else null
         )
     }.joinToString("\n")
+
+/** A CSV cell, quoted when it has to be. */
+private fun csvCell(value: String): String =
+    if (value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + value.replace("\"", "\"\"") + "\"" else value
+
+/** The header [buildCardListCsv] writes — Moxfield's own column names, which the others read too. */
+const val CARD_LIST_CSV_HEADER = "Count,Name,Edition,Collector Number,Foil,Condition,Language,Scryfall ID"
+
+/**
+ * The binder's cards as a CSV collection file: one row per card and finish (foils on their own row,
+ * "foil" in the Foil column), with the copies' condition and language in words ("Near Mint",
+ * "Japanese") when they've been set. [printings] (scryfallId → set code to collector number) fills
+ * Edition and Collector Number. Reads back in with [parseCardList], here and in other apps.
+ */
+fun buildCardListCsv(entries: List<CollectionEntry>, printings: Map<String, Pair<String, String>> = emptyMap()): String {
+    val rows = entries.sortedBy { it.name.lowercase() }.flatMap { e ->
+        val p = printings[e.scryfallId]
+        fun row(count: Int, foil: Boolean) = listOf(
+            count.toString(),
+            e.name,
+            p?.first?.lowercase().orEmpty(),
+            p?.second.orEmpty(),
+            if (foil) "foil" else "",
+            e.condition?.let(::conditionName).orEmpty(),
+            e.language?.let(::languageName).orEmpty(),
+            e.scryfallId
+        ).joinToString(",") { csvCell(it) }
+        listOfNotNull(
+            if (e.quantity > 0) row(e.quantity, false) else null,
+            if (e.foilQuantity > 0) row(e.foilQuantity, true) else null
+        )
+    }
+    return (listOf(CARD_LIST_CSV_HEADER) + rows).joinToString("\n")
+}

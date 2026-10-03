@@ -89,6 +89,18 @@ class CollectionRepository(private val context: Context) {
         }
     }
 
+    /** The condition and language of a binder card's copies (see CopyDetails.kt); null clears one. */
+    suspend fun setCopyDetails(collectionId: String, scryfallId: String, condition: String?, language: String?) {
+        updateEntries(collectionId) { entries ->
+            entries.map { if (it.scryfallId == scryfallId) it.copy(condition = condition, language = language) else it }
+        }
+    }
+
+    /** An owned card's "rises above" alert (USD); null turns it off. */
+    suspend fun setPriceAlertAbove(collectionId: String, scryfallId: String, usd: Double?) {
+        updateEntries(collectionId) { entries -> entries.map { if (it.scryfallId == scryfallId) it.copy(priceAlertAbove = usd) else it } }
+    }
+
     /** A wishlist card's price alert (USD); null turns it off. */
     suspend fun setPriceAlert(collectionId: String, scryfallId: String, usd: Double?) {
         updateEntries(collectionId) { entries -> entries.map { if (it.scryfallId == scryfallId) it.copy(priceAlert = usd) else it } }
@@ -170,7 +182,7 @@ class CollectionRepository(private val context: Context) {
     private fun List<CollectionEntry>.mergeIn(added: List<CollectionEntry>): List<CollectionEntry> =
         added.fold(this) { list, entry ->
             if (list.any { it.scryfallId == entry.scryfallId }) {
-                list.map { if (it.scryfallId != entry.scryfallId) it else it.copy(quantity = it.quantity + entry.quantity, foilQuantity = it.foilQuantity + entry.foilQuantity) }
+                list.map { if (it.scryfallId != entry.scryfallId) it else it.withCopiesOf(entry) }
             } else {
                 list + entry
             }
@@ -193,11 +205,7 @@ class CollectionRepository(private val context: Context) {
             val existing = entries.find { it.scryfallId == entry.scryfallId }
             if (existing != null) {
                 entries.map {
-                    if (it.scryfallId != entry.scryfallId) it
-                    else it.copy(
-                        quantity = it.quantity + entry.quantity,
-                        foilQuantity = it.foilQuantity + entry.foilQuantity
-                    )
+                    if (it.scryfallId != entry.scryfallId) it else it.withCopiesOf(entry)
                 }
             } else {
                 entries + entry

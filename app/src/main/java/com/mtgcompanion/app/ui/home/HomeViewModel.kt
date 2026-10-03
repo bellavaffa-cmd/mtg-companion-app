@@ -11,6 +11,11 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.ValueHistory
+import com.mtgcompanion.app.data.CardPriceHistory
+import com.mtgcompanion.app.data.AlertHit
+import com.mtgcompanion.app.data.alertHits
+import com.mtgcompanion.app.data.alertWatches
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
@@ -110,9 +115,26 @@ class HomeViewModel(
                 entries.map { (id, e) -> PricedCard(id, e.first().name, e.first().imageUrl, e.sumOf { it.quantity + it.foilQuantity }) },
                 dashboard.prices
             )
+            // And each card's own prices, for its price history (see CardPriceHistory).
+            CardPriceHistory.record(dashboard.allPrices)
         }
         dashboard?.totalUsd
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * Price alerts that are past their line now — wishlist cards at or under theirs, owned cards at
+     * or over theirs — for Home's banner. Looked up when the binders change; empty without alerts.
+     */
+    val priceAlertHits: StateFlow<List<AlertHit>> = collectionRepository.collectionsFlow
+        .map { alertWatches(it) }
+        .distinctUntilChanged()
+        .mapLatest { watches ->
+            if (watches.isEmpty()) return@mapLatest emptyList()
+            val prices = cardRepository.getCardsByIds(watches.map { it.entry.scryfallId }.distinct())
+                .associate { it.id to (it.prices?.usd?.toDoubleOrNull() to it.prices?.usdFoil?.toDoubleOrNull()) }
+            alertHits(watches, prices)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** The deck a user most recently opened, so Home can offer to jump straight back in. */
     val lastOpenedDeck: StateFlow<Deck?> = combine(decks, settingsRepository.lastOpenedDeckId) { list, id ->

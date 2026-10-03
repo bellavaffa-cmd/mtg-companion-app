@@ -171,6 +171,9 @@ object ItemMerge {
                     tags = pick(b.tags, m.tags, t.tags, minePreferred),
                     userTags = mergeStringSet(b.userTags, m.userTags, t.userTags),
                     priceAlert = pick(b.priceAlert, m.priceAlert, t.priceAlert, minePreferred),
+                    priceAlertAbove = pick(b.priceAlertAbove, m.priceAlertAbove, t.priceAlertAbove, minePreferred),
+                    condition = pick(b.condition, m.condition, t.condition, minePreferred),
+                    language = pick(b.language, m.language, t.language, minePreferred),
                     auto = pick(b.auto, m.auto, t.auto, minePreferred)
                 )
             }

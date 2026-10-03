@@ -6,6 +6,7 @@ import com.mtgcompanion.app.data.WISHLIST_ID
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.CardListImporter
 import com.mtgcompanion.app.data.buildCardListText
+import com.mtgcompanion.app.data.buildCardListCsv
 import com.mtgcompanion.app.data.parseCardList
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -151,6 +152,16 @@ class CollectionDetailViewModel(
         viewModelScope.launch { repository.setPriceAlert(collectionId, entry.scryfallId, usd) }
     }
 
+    /** The condition and language of this binder's copies of a card; null clears one. */
+    fun setCopyDetails(entry: CollectionEntry, condition: String?, language: String?) {
+        viewModelScope.launch { repository.setCopyDetails(collectionId, entry.scryfallId, condition, language) }
+    }
+
+    /** An owned card's "tell me when it rises above" alert (USD); null turns it off. */
+    fun setPriceAlertAbove(entry: CollectionEntry, usd: Double?) {
+        viewModelScope.launch { repository.setPriceAlertAbove(collectionId, entry.scryfallId, usd) }
+    }
+
     private val _importProgress = MutableStateFlow<ImportProgress>(ImportProgress.Idle)
     /** Where an import from another app is up to. */
     val importProgress: StateFlow<ImportProgress> = _importProgress.asStateFlow()
@@ -186,6 +197,15 @@ class CollectionDetailViewModel(
             .mapNotNull { c -> if (c.set != null && c.collectorNumber != null) c.id to (c.set to c.collectorNumber) else null }
             .toMap()
         return buildCardListText(entries, printings)
+    }
+
+    /** The binder (or the cards [ids] in it) as a CSV file, with each card's printing, condition and language. */
+    suspend fun exportCsv(ids: Set<String>? = null): String {
+        val entries = collection.value?.entries.orEmpty().filter { ids == null || it.scryfallId in ids }
+        val printings = cardRepository.getCardsByIds(entries.map { it.scryfallId })
+            .mapNotNull { c -> if (c.set != null && c.collectorNumber != null) c.id to (c.set to c.collectorNumber) else null }
+            .toMap()
+        return buildCardListCsv(entries, printings)
     }
 
     fun setQuantity(entry: CollectionEntry, quantity: Int, foilQuantity: Int) {

@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.scan
 
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material.icons.filled.AutoAwesome
 import com.mtgcompanion.app.ui.common.AddToPicker
 import com.mtgcompanion.app.ui.common.AddVerb
 import com.mtgcompanion.app.ui.common.LocalAddToFeedback
@@ -562,6 +565,7 @@ fun ScanScreen(
                 onScanAgain = { viewModel.scanAgain(it.card) },
                 onRemove = { viewModel.removeScan(it.id) },
                 onPickArt = { artPickerRow = it },
+                onFoil = { row, foil -> viewModel.setFoil(row.id, foil) },
                 onAllTo = { addingAll = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
@@ -747,6 +751,7 @@ private fun ScannedListPanel(
     onScanAgain: (ScanRow) -> Unit,
     onRemove: (ScanRow) -> Unit,
     onPickArt: (ScanRow) -> Unit,
+    onFoil: (ScanRow, Boolean) -> Unit,
     onAllTo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -815,7 +820,9 @@ private fun ScannedListPanel(
                         onAddTo = { onAddTo(scanned) },
                         onScanAgain = { onScanAgain(scanned) },
                         onRemove = { onRemove(scanned) },
-                        onPickArt = { onPickArt(scanned) }
+                        onPickArt = { onPickArt(scanned) },
+                        // Only a printing that comes in foil can be a foil copy.
+                        onFoil = if (scanned.card.canBeFoil) ({ foil -> onFoil(scanned, foil) }) else null
                     )
                 }
             }
@@ -834,7 +841,9 @@ private fun ScannedCardRow(
     onAddTo: () -> Unit,
     onScanAgain: () -> Unit,
     onRemove: () -> Unit,
-    onPickArt: () -> Unit
+    onPickArt: () -> Unit,
+    /** Marks this copy foil or not; null for a printing that doesn't come in foil. */
+    onFoil: ((Boolean) -> Unit)? = null
 ) {
     val card = scanned.card
     Column(
@@ -925,13 +934,31 @@ private fun ScannedCardRow(
                 Icon(Icons.Filled.Close, contentDescription = "Take off this scan", tint = TextDim, modifier = Modifier.size(18.dp))
             }
         }
-        Button(
-            onClick = onAddTo,
-            shape = RoundedCornerShape(8.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
-            modifier = Modifier.padding(top = 8.dp)
-        ) { Text("Add to…", style = MaterialTheme.typography.labelMedium, color = Bg) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            Button(
+                onClick = onAddTo,
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) { Text("Add to…", style = MaterialTheme.typography.labelMedium, color = Bg) }
+            // The camera can't see foiling: the user says, per copy, and it goes in as a foil copy.
+            if (onFoil != null) {
+                val foil = scanned.foil
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(BorderStroke(1.dp, if (foil) Gold else BorderColor), RoundedCornerShape(8.dp))
+                        .background(if (foil) Gold.copy(alpha = 0.16f) else Bg)
+                        .toggleable(value = foil, role = Role.Switch, onValueChange = onFoil)
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = if (foil) Gold else TextDim, modifier = Modifier.size(14.dp))
+                    Text("Foil", style = MaterialTheme.typography.labelMedium, color = if (foil) Gold else TextMuted)
+                }
+            }
+        }
     }
 }
 

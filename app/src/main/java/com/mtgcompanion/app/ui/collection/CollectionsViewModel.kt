@@ -11,6 +11,13 @@ import com.mtgcompanion.app.data.CardListImporter
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.buildCardListText
+import com.mtgcompanion.app.data.buildCardListCsv
+import com.mtgcompanion.app.data.BreakdownCard
+import com.mtgcompanion.app.data.CollectionBreakdown
+import com.mtgcompanion.app.data.SetInfo
+import com.mtgcompanion.app.data.SetProgress
+import com.mtgcompanion.app.data.collectionBreakdown
+import com.mtgcompanion.app.data.setProgress as progressInSets
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.AddToOps
 import kotlinx.coroutines.flow.first
@@ -148,6 +155,57 @@ class CollectionsViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /**
+     * Where the collection's value sits (by set, colour, rarity, type) and its dearest cards, for the
+     * dashboard's Breakdown. Null until the cards' details have loaded.
+     */
+    val breakdown: StateFlow<CollectionBreakdown?> = combine(allCards, cardFacts, prices) { cards, facts, priced ->
+        if (cards.isEmpty() || facts.isEmpty()) return@combine null
+        collectionBreakdown(cards.map { c ->
+            val f = facts[c.scryfallId]
+            BreakdownCard(
+                id = c.scryfallId,
+                name = c.name,
+                imageUrl = c.imageUrl,
+                // Proxies are print-outs: held, but worth nothing.
+                copies = c.total - c.proxies,
+                usd = priced[c.scryfallId],
+                setCode = f?.set.orEmpty(),
+                setName = f?.setName.orEmpty(),
+                colors = f?.colors.orEmpty(),
+                rarity = f?.rarity.orEmpty(),
+                typeLine = f?.typeLine.orEmpty()
+            )
+        })
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    private val _sets = MutableStateFlow<Map<String, SetInfo>?>(null)
+    private val _setsFailed = MutableStateFlow(false)
+    /** Scryfall's sets couldn't be fetched (offline, say): the Sets tab says so and offers to try again. */
+    val setsFailed: StateFlow<Boolean> = _setsFailed.asStateFlow()
+
+    /** Fetches Scryfall's sets for the Sets tab, the first time it's opened (or to try again). */
+    fun loadSets() {
+        if (_sets.value != null) return
+        viewModelScope.launch {
+            _setsFailed.value = false
+            val sets = runCatching { cardRepository.getSets() }.getOrNull()
+            if (sets.isNullOrEmpty()) _setsFailed.value = true else _sets.value = sets
+        }
+    }
+
+    /**
+     * Every set the user owns a printing from, with how much of it they have. Printings whose set
+     * hasn't been looked up yet wait; a set Scryfall's list lacks shows with its size unknown.
+     */
+    val setProgress: StateFlow<List<SetProgress>?> = combine(allCards, cardFacts, _sets) { cards, facts, sets ->
+        if (sets == null) return@combine null
+        val owned = cards.filter { it.total - it.proxies > 0 }
+            .mapNotNull { c -> facts[c.scryfallId]?.set?.takeIf { it.isNotBlank() }?.let { c.scryfallId to it } }
+            .toMap()
+        progressInSets(owned, sets)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
      * An All Cards entry is one exact printing shared by every binder/deck listed in its
      * [AllCardEntry.sources], so re-arting it means updating that printing everywhere it's held,
      * not just one place.
@@ -247,6 +305,22 @@ class CollectionsViewModel(
             .mapNotNull { c -> if (c.set != null && c.collectorNumber != null) c.id to (c.set to c.collectorNumber) else null }
             .toMap()
         return buildCardListText(entries, printings)
+    }
+
+    /**
+     * The picked cards [ids] as a CSV file — each binder's copies a row of their own, so their
+     * condition and language go too; a card only in decks as one row of its copies there.
+     */
+    suspend fun exportCsv(ids: Set<String>): String {
+        val owned = collections.value.filter { it.kind == CollectionType.OWNED }.flatMap { it.entries }.filter { it.scryfallId in ids }
+        val deckOnly = allCards.value.filter { it.scryfallId in ids && owned.none { e -> e.scryfallId == it.scryfallId } }
+            .map { CollectionEntry(it.scryfallId, it.name, it.imageUrl, quantity = it.total - it.proxies) }
+            .filter { it.quantity > 0 }
+        val entries = owned + deckOnly
+        val printings = cardRepository.getCardsByIds(entries.map { it.scryfallId }.distinct())
+            .mapNotNull { c -> if (c.set != null && c.collectorNumber != null) c.id to (c.set to c.collectorNumber) else null }
+            .toMap()
+        return buildCardListCsv(entries, printings)
     }
 
     /** The pile of cards not in a binder yet, if there is one. */

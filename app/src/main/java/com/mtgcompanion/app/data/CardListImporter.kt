@@ -8,8 +8,18 @@ import retrofit2.HttpException
 import java.io.IOException
 
 /** One card an import found, with its copies added together. */
-data class ImportedCard(val card: ScryfallCard, val quantity: Int, val foilQuantity: Int) {
-    fun toEntry() = CollectionEntry(card.id, card.name, card.displayImageUrl, quantity, foilQuantity, card.backImageUrl, card.tags)
+data class ImportedCard(
+    val card: ScryfallCard,
+    val quantity: Int,
+    val foilQuantity: Int,
+    /** The copies' condition and language, when the list said (a CSV's columns); the first line's wins. */
+    val condition: String? = null,
+    val language: String? = null
+) {
+    fun toEntry() = CollectionEntry(
+        card.id, card.name, card.displayImageUrl, quantity, foilQuantity, card.backImageUrl, card.tags,
+        condition = condition, language = language
+    )
 }
 
 data class ImportResult(val cards: List<ImportedCard>, val missing: List<String>) {
@@ -52,7 +62,9 @@ class CardListImporter(private val cards: CardRepository = CardRepository()) {
         val byCard = LinkedHashMap<String, ImportedCard>()
         found.toSortedMap().forEach { (i, card) ->
             val line = lines[i]
-            val item = byCard[card.id] ?: ImportedCard(card, 0, 0)
+            val had = byCard[card.id] ?: ImportedCard(card, 0, 0)
+            // One entry describes all its copies, so lines of the same card share the first one's say.
+            val item = had.copy(condition = had.condition ?: line.condition, language = had.language ?: line.language)
             byCard[card.id] = if (line.foil) item.copy(foilQuantity = item.foilQuantity + line.quantity) else item.copy(quantity = item.quantity + line.quantity)
         }
         return ImportResult(byCard.values.toList(), missing)

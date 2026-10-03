@@ -43,4 +43,15 @@ class ScanLogTest {
         val list = rows("sol" to 9000L, "cult" to 4000L, "sol" to 0L)
         assertEquals(listOf("sol" to 2, "cult" to 1), grouped(list).map { it.card.id to it.quantity })
     }
+
+    @Test
+    fun copiesMarkedFoilGoInAsFoil() {
+        val list = rows("sol" to 9000L, "sol" to 4000L, "cult" to 2000L, "sol" to 0L)
+            .mapIndexed { i, r -> if (i == 0 || i == 1) r.copy(foil = true) else r }
+        val groups = grouped(list).associateBy { it.card.id }
+        assertEquals(3, groups.getValue("sol").quantity)
+        assertEquals(2, groups.getValue("sol").foils)
+        assertEquals(1, groups.getValue("sol").plain)
+        assertEquals(0, groups.getValue("cult").foils)
+    }
 }

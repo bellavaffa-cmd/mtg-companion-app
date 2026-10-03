@@ -1,6 +1,9 @@
 package com.mtgcompanion.app.ui.collection
 
 import com.mtgcompanion.app.ui.common.openUrl
+import com.mtgcompanion.app.ui.common.CopyBadge
+import com.mtgcompanion.app.ui.common.CopyDetailsButton
+import com.mtgcompanion.app.data.copyBadges
 import com.mtgcompanion.app.data.buyListUrl
 import com.mtgcompanion.app.data.BuyLine
 import com.mtgcompanion.app.data.decksConsidering
@@ -236,7 +239,7 @@ fun CollectionDetailScreen(
                 onImport = { _, text -> viewModel.importCards(text) },
                 onDismiss = { listDialog = null; viewModel.resetImport() }
             )
-            "export" -> ExportCollectionDialog(collection?.name ?: "binder", viewModel::exportText) { listDialog = null }
+            "export" -> ExportCollectionDialog(collection?.name ?: "binder", viewModel::exportText, buildCsv = { viewModel.exportCsv() }) { listDialog = null }
         }
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             if (collection?.entries?.isNotEmpty() == true) {
@@ -404,7 +407,17 @@ fun CollectionDetailScreen(
                 onFindSimilar = { zoomId = null; similarSearchFor = entry.name },
                 userTags = userTagsByCard[entry.scryfallId].orEmpty(),
                 knownUserTags = knownUserTags,
-                onUserTags = { next -> viewModel.setUserTags(entry.scryfallId, next) }
+                onUserTags = { next -> viewModel.setUserTags(entry.scryfallId, next) },
+                // Condition, language and a "rises above" alert belong to owned copies; a wishlist
+                // card still has its price history.
+                copyDetails = {
+                    CopyDetailsButton(
+                        entry = entry,
+                        onCopyDetails = if (isWishlist) null else ({ condition, language -> viewModel.setCopyDetails(entry, condition, language) }),
+                        onAlertAbove = if (isWishlist) null else ({ usd -> viewModel.setPriceAlertAbove(entry, usd) }),
+                        price = prices[entry.scryfallId]
+                    )
+                }
             )
         }
         CardZoomDialog(zoomCards, entries.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
@@ -518,7 +531,7 @@ fun CollectionDetailScreen(
                 onDismiss = { bulk = null }
             )
         }
-        "export" -> ExportCollectionDialog(pickedLabel, { exact -> viewModel.exportText(exact, pickedIds) }, title = "Export $pickedLabel") { bulk = null }
+        "export" -> ExportCollectionDialog(pickedLabel, { exact -> viewModel.exportText(exact, pickedIds) }, title = "Export $pickedLabel", buildCsv = { viewModel.exportCsv(pickedIds) }) { bulk = null }
     }
 }
 
@@ -570,11 +583,18 @@ private fun CollectionCardRow(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-                Text(
-                    "Normal: ${entry.quantity}" + if (entry.foilQuantity > 0) " · Foil: ${entry.foilQuantity}" else "",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = TextMuted
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Normal: ${entry.quantity}" + if (entry.foilQuantity > 0) " · Foil: ${entry.foilQuantity}" else "",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextMuted
+                    )
+                    // The copies' condition and language, only when the user has said.
+                    copyBadges(entry).forEach { CopyBadge(it) }
+                    if (entry.priceAlertAbove != null) {
+                        Icon(Icons.Filled.NotificationsActive, contentDescription = "Price alert set", tint = Gold, modifier = Modifier.size(14.dp))
+                    }
+                }
                 considering?.let {
                     Text("Considering in $it", style = MaterialTheme.typography.labelMedium, color = GoldDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -661,6 +681,12 @@ private fun CollectionCardTile(entry: CollectionEntry, selecting: Boolean, selec
                         .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+                val badges = copyBadges(entry)
+                if (badges.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)) {
+                        badges.forEach { CopyBadge(it) }
+                    }
+                }
                 if (entry.backImageUrl != null) FlipBadge()
             }
             Text(

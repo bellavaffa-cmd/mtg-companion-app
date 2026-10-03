@@ -23,23 +23,26 @@ import androidx.work.WorkerParameters
 import com.mtgcompanion.app.MainActivity
 import com.mtgcompanion.app.R
 import com.mtgcompanion.app.data.social.PushNotifications
+import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.flow.first
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Price alerts on wishlist cards: the user sets a price per card ([CollectionEntry.priceAlert], USD,
- * non-foil) and gets a notification when Scryfall's price is at or under it. Checked in the
- * background a few times a day, and when the app opens. Scryfall updates its prices once a day.
- * The web app checks when it's opened (src/collection/priceAlerts.ts).
+ * Price alerts: on wishlist cards, a price per card ([CollectionEntry.priceAlert], USD, non-foil) to
+ * be told when Scryfall's price is at or under it; on owned binder cards, a price to be told when it
+ * rises to or over it ([CollectionEntry.priceAlertAbove]). When each goes off is PriceAlertRules.kt.
+ * Checked in the background a few times a day, and when the app opens. Scryfall updates its prices
+ * once a day. The same check notes each card's price for its history (see CardPriceHistory), once a
+ * day. The web app checks when it's opened (src/collection/priceAlerts.ts).
  */
 object PriceAlerts {
     private const val WORK = "price_alerts"
     private const val CHANNEL = "price_alerts"
     private const val PREFS = "price_alerts"
 
-    /** A card is told about again only when it drops further, or after going back over and dropping again. */
-    data class Hit(val collectionId: String, val entry: CollectionEntry, val price: Double)
+    /** A card past its alert, at [price]. A card is told about again only when it moves further past. */
+    data class Hit(val collectionId: String, val entry: CollectionEntry, val price: Double, val direction: AlertDirection = AlertDirection.BELOW)
 
     fun schedule(context: Context) {
         val network = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
@@ -55,30 +58,54 @@ object PriceAlerts {
     /** A US dollar price in the currency prices show in (Settings → Prices). */
     fun formatUsd(v: Double): String = Prices.money.value.format(v)
 
-    /** Cards now at or under their alert, not told about at this price yet; remembers them as told. */
-    suspend fun check(context: Context, collections: List<Collection>, cardRepository: CardRepository = CardRepository()): List<Hit> {
-        val watched = collections.filter { it.kind == CollectionType.WISHLIST }
-            .flatMap { c -> c.entries.filter { (it.priceAlert ?: 0.0) > 0.0 }.map { c.id to it } }
+    /**
+     * Cards now past their alert, not told about at this price yet; remembers them as told. [known]:
+     * cards already fetched (by id), so they aren't asked for again.
+     */
+    suspend fun check(
+        context: Context,
+        collections: List<Collection>,
+        cardRepository: CardRepository = CardRepository(),
+        known: Map<String, ScryfallCard> = emptyMap()
+    ): List<Hit> {
+        val watched = alertWatches(collections)
         if (watched.isEmpty()) return emptyList()
-        val prices = cardRepository.getCardsByIds(watched.map { it.second.scryfallId }.distinct())
-            .associate { it.id to it.prices?.usd?.toDoubleOrNull() }
+        val missing = watched.map { it.entry.scryfallId }.distinct().filterNot { it in known }
+        val cards = known + cardRepository.getCardsByIds(missing).associateBy { it.id }
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val edit = prefs.edit()
         val hits = mutableListOf<Hit>()
-        for ((collectionId, entry) in watched) {
-            val price = prices[entry.scryfallId] ?: continue
-            val key = entry.scryfallId
-            if (price > (entry.priceAlert ?: 0.0)) {
-                edit.remove(key)
-                continue
+        for (watch in watched) {
+            val prices = cards[watch.entry.scryfallId]?.prices
+            val price = alertPrice(watch, prices?.usd?.toDoubleOrNull(), prices?.usdFoil?.toDoubleOrNull()) ?: continue
+            val key = watch.memoryKey
+            val told = if (prefs.contains(key)) prefs.getFloat(key, 0f).toDouble() else null
+            when (val step = alertStep(watch, price, told)) {
+                AlertStep.Forget -> edit.remove(key)
+                AlertStep.Quiet -> Unit
+                is AlertStep.Tell -> {
+                    edit.putFloat(key, step.price.toFloat())
+                    hits += Hit(watch.collectionId, watch.entry, step.price, watch.direction)
+                }
             }
-            val seen = if (prefs.contains(key)) prefs.getFloat(key, 0f).toDouble() else null
-            if (seen != null && price >= seen - 0.001) continue
-            edit.putFloat(key, price.toFloat())
-            hits += Hit(collectionId, entry, price)
         }
         edit.apply()
         return hits
+    }
+
+    /**
+     * Once a day, every binder card's prices (wishlists too) for its price history — the cards come
+     * back for [check] to use. Only cards not noted today yet (Home notes the owned ones when it works
+     * out the collection's value) are asked for.
+     */
+    private suspend fun notePrices(collections: List<Collection>, cardRepository: CardRepository): Map<String, ScryfallCard> {
+        val today = java.time.LocalDate.now().toEpochDay()
+        val tracks = CardPriceHistory.load()
+        val ids = collections.flatMap { c -> c.entries.map { it.scryfallId } }.distinct().filter { tracks[it]?.lastDay != today }
+        if (ids.isEmpty()) return emptyMap()
+        val cards = cardRepository.getCardsByIds(ids).associateBy { it.id }
+        CardPriceHistory.record(cards.mapValues { it.value.prices })
+        return cards
     }
 
     fun notify(context: Context, hits: List<Hit>) {
@@ -86,13 +113,27 @@ object PriceAlerts {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Price alerts", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "When a card on your wishlist gets cheaper than the price you set"
+            description = "When a card on your wishlist gets cheaper, or one you own gets dearer, than the price you set"
         })
         val first = hits.first()
+        val rises = hits.all { it.direction == AlertDirection.ABOVE }
+        val drops = hits.all { it.direction == AlertDirection.BELOW }
         val body = if (hits.size == 1) {
-            "${first.entry.name} is ${formatUsd(first.price)} — under your ${formatUsd(first.entry.priceAlert ?: 0.0)} alert"
+            if (first.direction == AlertDirection.ABOVE) "${first.entry.name} is ${formatUsd(first.price)} — over your ${formatUsd(first.entry.priceAlertAbove ?: 0.0)} alert"
+            else "${first.entry.name} is ${formatUsd(first.price)} — under your ${formatUsd(first.entry.priceAlert ?: 0.0)} alert"
         } else {
-            "${hits.size} wishlist cards are under your alert prices: " + hits.joinToString(", ") { "${it.entry.name} ${formatUsd(it.price)}" }
+            when {
+                drops -> "${hits.size} wishlist cards are under your alert prices: "
+                rises -> "${hits.size} of your cards are over your alert prices: "
+                else -> "${hits.size} cards passed your alert prices: "
+            } + hits.joinToString(", ") { "${it.entry.name} ${formatUsd(it.price)}" }
+        }
+        val title = when {
+            hits.size == 1 && first.direction == AlertDirection.ABOVE -> "Price rise: ${first.entry.name}"
+            hits.size == 1 -> "Price drop: ${first.entry.name}"
+            drops -> "Price drops on your wishlist"
+            rises -> "Price rises on your cards"
+            else -> "Price alerts"
         }
         val intent = Intent(context, MainActivity::class.java)
             .putExtra(PushNotifications.EXTRA_OPEN, "binder:${first.collectionId}")
@@ -101,7 +142,7 @@ object PriceAlerts {
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(0xFFE6B45E.toInt())
-            .setContentTitle(if (hits.size == 1) "Price drop: ${first.entry.name}" else "Price drops on your wishlist")
+            .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
@@ -117,7 +158,10 @@ object PriceAlerts {
     class Worker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result = try {
             val collections = CollectionRepository(applicationContext).collectionsFlow.first()
-            notify(applicationContext, check(applicationContext, collections))
+            val cardRepository = CardRepository()
+            // A failed price note mustn't stop the alerts.
+            val known = runCatching { notePrices(collections, cardRepository) }.getOrDefault(emptyMap())
+            notify(applicationContext, check(applicationContext, collections, cardRepository, known))
             Result.success()
         } catch (e: Exception) {
             Result.retry()

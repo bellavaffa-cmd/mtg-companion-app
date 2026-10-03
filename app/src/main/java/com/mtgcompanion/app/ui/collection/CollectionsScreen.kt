@@ -6,6 +6,7 @@ import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.data.offerCards
 import com.mtgcompanion.app.data.isWishlist
 import com.mtgcompanion.app.data.RoleTags
+import com.mtgcompanion.app.data.CollectionBreakdown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.GroupAdd
@@ -128,7 +129,9 @@ fun CollectionsScreen(
     /** Opens a tag's automatic binder. */
     onOpenTag: (String) -> Unit = {},
     /** Offers these spares to a friend in a trade (picking who comes next); null without an account. */
-    onOfferSpares: ((List<TradeCard>) -> Unit)? = null
+    onOfferSpares: ((List<TradeCard>) -> Unit)? = null,
+    /** Opens a set's cards, owned and missing (from the Sets page), by set code. */
+    onOpenSet: (String) -> Unit = {}
 ) {
     val tagBinders by viewModel.tagBinders.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
@@ -139,6 +142,7 @@ fun CollectionsScreen(
     // Spares only: binder cards no deck of yours plays.
     var sparesOnly by remember { mutableStateOf(false) }
     val dashboard by viewModel.dashboard.collectAsState()
+    val breakdown by viewModel.breakdown.collectAsState()
     val prices by viewModel.prices.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
@@ -146,13 +150,13 @@ fun CollectionsScreen(
     var showImport by remember { mutableStateOf(false) }
     val importProgress by viewModel.importProgress.collectAsState()
     val unsorted by viewModel.unsorted.collectAsState()
-    // Page 0 = All Cards, 1 = Binders, 2 = Shared (with accounts). Swipe or tap the tabs to switch.
-    val pageCount = if (sharedPage != null) 3 else 2
+    // Page 0 = All Cards, 1 = Binders, 2 = Sets, 3 = Shared (with accounts). Swipe or tap the tabs to switch.
+    val pageCount = if (sharedPage != null) 4 else 3
     val pagerState = rememberPagerState(pageCount = { pageCount })
     val scope = rememberCoroutineScope()
     LaunchedEffect(openShared) {
         if (openShared && sharedPage != null) {
-            pagerState.scrollToPage(2)
+            pagerState.scrollToPage(3)
             onSharedOpened()
         }
     }
@@ -240,7 +244,7 @@ fun CollectionsScreen(
         }
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             SegmentedTabs(
-                labels = if (sharedPage != null) listOf("All cards", "Binders", "Shared") else listOf("All cards", "Binders"),
+                labels = if (sharedPage != null) listOf("All cards", "Binders", "Sets", "Shared") else listOf("All cards", "Binders", "Sets"),
                 selected = pagerState.currentPage,
                 onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -267,14 +271,17 @@ fun CollectionsScreen(
                         pickedIds = pickedIds,
                         onToggle = ::toggle,
                         dashboard = dashboard,
+                        breakdown = breakdown,
                         prices = prices,
                         viewMode = viewMode,
                         gridColumns = gridColumns,
                         onViewDetails = onViewDetails,
                         viewModel = viewModel
                     )
-                } else if (page == 2 && sharedPage != null) {
+                } else if (page == 3 && sharedPage != null) {
                     sharedPage()
+                } else if (page == 2) {
+                    SetsTab(viewModel, onOpenSet)
                 } else {
                     CollectionsTab(
                         // The Unsorted pile on top, then the Wishlist; both are always there.
@@ -323,7 +330,7 @@ fun CollectionsScreen(
                 onDismiss = { bulk = null }
             )
         }
-        "export" -> ExportCollectionDialog(pickedLabel, { exact -> viewModel.exportText(pickedIds, exact) }, title = "Export $pickedLabel") { bulk = null }
+        "export" -> ExportCollectionDialog(pickedLabel, { exact -> viewModel.exportText(pickedIds, exact) }, title = "Export $pickedLabel", buildCsv = { viewModel.exportCsv(pickedIds) }) { bulk = null }
     }
 
     if (showCreateDialog) {
@@ -413,6 +420,7 @@ private fun AllCardsTab(
     pickedIds: Set<String>,
     onToggle: (String) -> Unit,
     dashboard: CollectionDashboard?,
+    breakdown: CollectionBreakdown?,
     prices: Map<String, Double>,
     viewMode: CardViewMode,
     gridColumns: Int,
@@ -448,6 +456,8 @@ private fun AllCardsTab(
                 item { UnsortedRow(unsorted) { onOpenUnsorted(unsorted.id) } }
             }
             item { DashboardPanel(dashboard) }
+            // Where the value sits — by set, colour, rarity, type — and the dearest cards.
+            item { BreakdownPanel(breakdown, onViewDetails) }
             item {
                 OutlinedTextField(
                     value = query,

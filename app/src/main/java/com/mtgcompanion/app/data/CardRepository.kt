@@ -11,6 +11,9 @@ import retrofit2.HttpException
 /** One page of search results, plus whether Scryfall has more beyond it. */
 data class SearchPage(val cards: List<ScryfallCard>, val hasMore: Boolean)
 
+/** Scryfall's sets, kept for the app's run: they change a few times a month. */
+private var setsCache: Map<String, SetInfo>? = null
+
 /** Pages of printings to follow at most. A basic land runs to five; nothing runs to ten. */
 private const val MOST_PRINTING_PAGES = 10
 
@@ -91,6 +94,31 @@ class CardRepository {
     suspend fun withFullCardInfo(entries: List<DeckCardEntry>): List<DeckCardEntry> {
         val byId = getCardsByIds(entries.map { it.scryfallId }).associateBy { it.id }
         return entries.map { entry -> byId[entry.scryfallId]?.let { entry.withCardInfo(it) } ?: entry }
+    }
+
+    /** Every set by its (lower-case) code, from Scryfall's /sets — asked once a run, then remembered. */
+    suspend fun getSets(): Map<String, SetInfo> {
+        setsCache?.let { return it }
+        val sets = api.getSets().data.mapNotNull { s ->
+            val code = s.code?.lowercase() ?: return@mapNotNull null
+            code to SetInfo(code, s.name ?: code.uppercase(), s.cardCount ?: 0, s.releasedAt, s.iconSvgUri)
+        }.toMap()
+        if (sets.isNotEmpty()) setsCache = sets
+        return sets
+    }
+
+    /**
+     * Every printing in the set [code], in the set's order — a page of 175 at a time, up to [maxPages]
+     * pages. Scryfall's extras (art cards and the like) are included, as its card_count counts them.
+     */
+    suspend fun getSetCards(code: String, maxPages: Int = 12): List<ScryfallCard> {
+        val all = mutableListOf<ScryfallCard>()
+        for (page in 1..maxPages) {
+            val result = search("e:${code.lowercase()} unique:prints include:extras", order = "set", dir = "asc", page = page)
+            all += result.cards
+            if (!result.hasMore) break
+        }
+        return all
     }
 
     /**

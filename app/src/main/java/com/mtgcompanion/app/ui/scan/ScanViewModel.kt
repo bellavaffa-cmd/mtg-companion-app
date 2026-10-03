@@ -68,6 +68,7 @@ import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.CardIndexRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.network.scryfall.canBeFoil
 import com.mtgcompanion.app.ui.common.AddToOps
 import com.mtgcompanion.app.ui.common.AddToPick
 import com.mtgcompanion.app.ui.common.SourceKind
@@ -983,7 +984,13 @@ class ScanViewModel(
 
     /** The printing on a row, swapped for the art the user picked. */
     fun setPrinting(rowId: Long, card: ScryfallCard) {
-        setScanned(_uiState.value.scannedCards.map { if (it.id == rowId) it.copy(card = card, exact = true) else it })
+        // A printing that never comes in foil can't be a foil copy.
+        setScanned(_uiState.value.scannedCards.map { if (it.id == rowId) it.copy(card = card, exact = true, foil = it.foil && card.canBeFoil) else it })
+    }
+
+    /** Marks one scanned copy foil or not — the camera can't tell, so the user says. */
+    fun setFoil(rowId: Long, foil: Boolean) {
+        setScanned(_uiState.value.scannedCards.map { if (it.id == rowId) it.copy(foil = foil && it.card.canBeFoil) else it })
     }
 
     /** One more copy of a card already scanned — its own row, as if it went past the camera again. */
@@ -1040,8 +1047,9 @@ class ScanViewModel(
         setScanned(_uiState.value.scannedCards.filterNot { it.id == rowId })
     }
 
-    private fun collectionEntry(card: ScryfallCard, quantity: Int) =
-        CollectionEntry(card.id, card.name, card.displayImageUrl, quantity = quantity, foilQuantity = 0, backImageUrl = card.backImageUrl, tags = card.tags)
+    /** A pile's copies of a card as a binder entry: the ones marked foil as foil copies. */
+    private fun collectionEntry(group: ScanGroup) =
+        CollectionEntry(group.card.id, group.card.name, group.card.displayImageUrl, quantity = group.plain, foilQuantity = group.foils, backImageUrl = group.card.backImageUrl, tags = group.card.tags)
 
     private fun deckEntry(card: ScryfallCard, quantity: Int) =
         DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity = quantity, canBeCommander = card.canBeCommander, typeLine = card.typeLine, partnerAbility = card.partnerAbility, backImageUrl = card.backImageUrl, tags = card.tags)
@@ -1054,7 +1062,16 @@ class ScanViewModel(
      * out of the Unsorted pile.
      */
     suspend fun putAway(card: ScryfallCard, quantity: Int, pick: AddToPick, ops: AddToOps) {
-        ops.addCard(card, pick.copy(quantity = quantity), fromPile = false)
+        // Into a binder, the copies marked foil go in as foil (all of them, if the picker said foil).
+        val foils = if (pick.foil) quantity else _uiState.value.scannedCards.count { it.card.id == card.id && it.foil }.coerceAtMost(quantity)
+        if (pick.target.kind == SourceKind.BINDER && foils > 0) {
+            // Made once (a new binder named in the picker), then both finishes go into it.
+            val into = pick.copy(target = ops.resolve(pick), isNew = false)
+            if (quantity - foils > 0) ops.addCard(card, into.copy(quantity = quantity - foils, foil = false), fromPile = false)
+            ops.addCard(card, into.copy(quantity = foils, foil = true), fromPile = false)
+        } else {
+            ops.addCard(card, pick.copy(quantity = quantity), fromPile = false)
+        }
         setScanned(_uiState.value.scannedCards.filterNot { it.card.id == card.id })
         if (lastAddedCard?.id == card.id) lastAddedCard = null
     }
@@ -1069,7 +1086,7 @@ class ScanViewModel(
         val target = ops.resolve(pick)
         when (target.kind) {
             SourceKind.BINDER -> {
-                val entries = pile.map { collectionEntry(it.card, it.quantity) }
+                val entries = pile.map { collectionEntry(it) }
                 // The Unsorted pile is made when the first cards go into it.
                 if (target.id == UNSORTED_COLLECTION_ID) collectionRepository.addUnsorted(entries)
                 else collectionRepository.addEntries(target.id, entries)

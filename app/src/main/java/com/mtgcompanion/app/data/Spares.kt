@@ -74,6 +74,7 @@ fun offerCards(spares: List<Spare>, prices: Map<String, Double> = emptyMap(), li
                 name = it.entry.name,
                 imageUrl = it.entry.imageUrl,
                 foil = it.copies == it.foils,
-                quantity = it.copies
+                quantity = it.copies,
+                condition = it.entry.condition
             )
         }

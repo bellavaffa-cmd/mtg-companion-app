@@ -41,6 +41,10 @@ interface ScryfallApi {
     @GET("bulk-data")
     suspend fun getBulkData(): BulkDataList
 
+    /** Every set Scryfall knows, with how many printings each has (card_count) — for set completion. */
+    @GET("sets")
+    suspend fun getSets(): ScryfallSetList
+
     /** Official rulings for a card, by its Scryfall id. */
     @GET("cards/{id}/rulings")
     suspend fun getRulings(@Path("id") id: String): ScryfallRulingsResponse

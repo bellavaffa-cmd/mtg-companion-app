@@ -217,20 +217,41 @@ fun ImportCardsDialog(
 
 /**
  * A binder as text for other apps: "Simple" is "4 Lightning Bolt" (everything reads it); "Exact
- * printing" adds "(CMR) 472" so the same art comes back. Copy it, share it, or save a .txt file.
+ * printing" adds "(CMR) 472" so the same art comes back; "CSV", when [buildCsv] is given, is a
+ * collection file that keeps each card's condition and language too. Copy it, share it, or save it.
  */
 @Composable
-fun ExportCollectionDialog(binderName: String, buildText: suspend (exact: Boolean) -> String, title: String = "Export list", onDismiss: () -> Unit) {
+fun ExportCollectionDialog(
+    binderName: String,
+    buildText: suspend (exact: Boolean) -> String,
+    title: String = "Export list",
+    buildCsv: (suspend () -> String)? = null,
+    onDismiss: () -> Unit
+) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     var exact by remember { mutableStateOf(false) }
+    var csv by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(exact) {
+    LaunchedEffect(exact, csv) {
         text = null
-        text = runCatching { buildText(exact) }.getOrElse { message = it.message; buildText(false) }
+        val makeCsv = buildCsv?.takeIf { csv }
+        text = if (makeCsv != null) runCatching { makeCsv() }.getOrElse { message = it.message; null }
+        else runCatching { buildText(exact) }.getOrElse { message = it.message; buildText(false) }
+    }
+    val fileName = binderName.replace(Regex("[^\\w\\- ]+"), "").trim().ifBlank { "binder" }
+    val csvSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        val content = text ?: return@rememberLauncherForActivityResult
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write((content + "\n").toByteArray()) } != null }.getOrDefault(false)
+            }
+            message = if (ok) "Saved." else "That file couldn't be saved."
+        }
     }
     val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         val content = text ?: return@rememberLauncherForActivityResult
@@ -252,8 +273,9 @@ fun ExportCollectionDialog(binderName: String, buildText: suspend (exact: Boolea
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Paste it into Moxfield, Archidekt, ManaBox, TCGplayer — or this app on another device.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    PillChip("Simple", !exact, { exact = false })
-                    PillChip("Exact printing", exact, { exact = true })
+                    PillChip("Simple", !exact && !csv, { exact = false; csv = false })
+                    PillChip("Exact printing", exact && !csv, { exact = true; csv = false })
+                    if (buildCsv != null) PillChip("CSV", csv, { csv = true })
                 }
                 Text(
                     text ?: "Loading…",
@@ -264,14 +286,14 @@ fun ExportCollectionDialog(binderName: String, buildText: suspend (exact: Boolea
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
                         val content = text ?: return@OutlinedButton
-                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, content).putExtra(Intent.EXTRA_SUBJECT, binderName), "Share binder"))
+                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(if (csv) "text/csv" else "text/plain").putExtra(Intent.EXTRA_TEXT, content).putExtra(Intent.EXTRA_SUBJECT, binderName), "Share binder"))
                     }, enabled = ready) {
                         Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text("  Share", color = colors.textPrimary)
                     }
-                    OutlinedButton(onClick = { saver.launch(binderName.replace(Regex("[^\\w\\- ]+"), "").trim().ifBlank { "binder" } + ".txt") }, enabled = ready) {
+                    OutlinedButton(onClick = { if (csv) csvSaver.launch("$fileName.csv") else saver.launch("$fileName.txt") }, enabled = ready) {
                         Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("  Save .txt", color = colors.textPrimary)
+                        Text(if (csv) "  Save .csv" else "  Save .txt", color = colors.textPrimary)
                     }
                 }
                 message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.textMuted) }
