@@ -56,6 +56,12 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.EventSeat
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -98,9 +104,7 @@ import com.mtgcompanion.app.ui.social.GiphyPickerDialog
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import kotlin.math.cos
 import kotlin.math.roundToInt
-import kotlin.math.sin
 import androidx.compose.material3.Text
 
 /**
@@ -129,6 +133,9 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
     val shownCard by viewModel.shownCard.collectAsState()
     val hold by viewModel.hold.collectAsState()
     val announce by viewModel.announce.collectAsState()
+    val clock by viewModel.clock.collectAsState()
+    val turnStartElapsed by viewModel.turnStartElapsed.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // The latest announcement from a remote, for a few seconds — and not again when the screen
     // comes back to one that's already been and gone.
@@ -225,6 +232,23 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
     val layout = TableLayouts.byId(settings.layoutId)
     val winnerId = winnerIdOf(players, settings.autoKill)
 
+    // The turn timer runs for whoever's turn it is, on the game clock (pausing the game pauses it).
+    val timerOn = ready && settings.turnTrackerEnabled && settings.turnTimerMinutes > 0 && players.size > 1 && winnerId == null && highRoll == null
+    val tileTimer = if (timerOn) TileTurnTimer(clock, turnStartElapsed, settings.turnTimerMinutes) else null
+    // Time's up: one long buzz, once a turn.
+    LaunchedEffect(tileTimer, currentTurnPlayerId) {
+        val timer = tileTimer ?: return@LaunchedEffect
+        if (timer.clock.paused) return@LaunchedEffect
+        val left = turnTimeLeft(timer.minutes, timer.turnStartElapsed, timer.clock.elapsed(System.currentTimeMillis())) ?: return@LaunchedEffect
+        if (left <= 0) return@LaunchedEffect
+        delay(left)
+        vibrate(context, longArrayOf(0, 450, 150, 450))
+    }
+
+    // A turn's trigger reminders show until they're tapped away (or the turn passes).
+    val turnKey = "$gameNumber:$turnNumber:$currentTurnPlayerId"
+    var remindersDismissed by remember { mutableStateOf<String?>(null) }
+
     Box(Modifier.fillMaxSize().background(TableColors.Background)) {
         Column(Modifier.fillMaxSize()) {
             if (gameModeState.mode != GameModeKind.NONE) {
@@ -253,6 +277,11 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                                 turnNumber = turnNumber,
                                 onEndTurn = viewModel::nextTurn,
                                 roll = highRoll?.let { r -> r.rolls[player.id]?.let { TileRoll(it, winner = r.winnerId == player.id) } },
+                                turnTimer = if (player.id == activeSeat) tileTimer else null,
+                                reminders = if (player.id == activeSeat && settings.triggerReminders && remindersDismissed != turnKey) {
+                                    reminderLines(player.deckInfo?.triggers.orEmpty())
+                                } else emptyList(),
+                                onDismissReminders = { remindersDismissed = turnKey },
                                 pointedAtBy = showingAnnounce?.takeIf { it.kind == "target" && it.to == player.id }?.let { nameOf(it.seat) },
                                 isMonarch = player.id == monarchPlayerId,
                                 hasInitiative = player.id == initiativePlayerId,
@@ -299,7 +328,7 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                         modifier = Modifier.align(Alignment.Center).offset(y = 64.dp)
                     )
                 }
-                showingAnnounce?.takeIf { it.kind != "target" }?.let { a ->
+                showingAnnounce?.let { a ->
                     AnnounceToast(
                         announce = a,
                         nameOf = ::nameOf,
@@ -317,53 +346,55 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { menuOpen = false }
                     )
                 }
-                if (menuOpen) {
-                    RadialMenu(
-                        items = listOf(
-                            RadialItem("Restart", TableColors.MenuRestart, -145f) { confirmRestart = true },
-                            RadialItem("Exit", TableColors.MenuExit, -90f, onBack),
-                            RadialItem("High roll", TableColors.MenuHighRoll, -35f) { highRoll = viewModel.rollHighRoll() },
-                            RadialItem("Settings", TableColors.MenuSettings, 25f) { showSettings = true },
-                            RadialItem("Tips", TableColors.MenuTips, 95f) { replayTips = true },
-                            RadialItem("Seating", TableColors.MenuSeating, 165f) { showSeating = true }
-                        ),
-                        onPicked = { menuOpen = false },
-                        modifier = Modifier.align(Alignment.Center).offset { menuOffset(menuAnchor, tableBounds) }
-                    )
-                }
                 androidx.compose.animation.AnimatedVisibility(
                     visible = menuOpen,
                     enter = slideInVertically(tween(TableMotion.FAST, easing = TableMotion.SlideIn)) { it },
                     exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(200)),
                     modifier = Modifier.align(Alignment.BottomCenter)
                 ) {
-                    ToolBar(
-                        items = listOf(
-                            ToolItem("Undo", Icons.AutoMirrored.Filled.Undo, enabled = canUndo) { viewModel.undo() },
-                            ToolItem("Dice", Icons.Filled.Casino) { showDice = true },
-                            ToolItem("History", Icons.Filled.History) { showHistory = true },
-                            ToolItem("Games", Icons.Filled.EmojiEvents) { showTableGames = true },
-                            ToolItem("Card search", Icons.Filled.Search) { showCardSearch = true },
-                            ToolItem("Monarch", Icons.Filled.WorkspacePremium) {
-                                tokenStart = monarchPlayerId?.let { seatBounds[it]?.center }
-                                floatingToken = TokenKind.MONARCH
-                            },
-                            ToolItem("Initiative", Icons.Filled.Castle) {
-                                tokenStart = initiativePlayerId?.let { seatBounds[it]?.center }
-                                floatingToken = TokenKind.INITIATIVE
-                            },
-                            ToolItem("Day/Night", Icons.Filled.LightMode) { viewModel.startDayNight() },
-                            ToolItem("Planechase", Icons.Filled.Public) {
-                                if (gameModeState.mode != GameModeKind.PLANECHASE) viewModel.startPlanechase()
-                                showGameMode = true
-                            },
-                            ToolItem("Archenemy", Icons.Filled.Shield) {
-                                if (gameModeState.mode == GameModeKind.ARCHENEMY) showGameMode = true else pickingArchenemy = true
-                            },
-                            ToolItem("Bounty", Icons.Filled.Flag) {
-                                if (gameModeState.mode != GameModeKind.BOUNTY) viewModel.startBounty()
-                                showGameMode = true
-                            }
+                    GameMenu(
+                        clock = clock,
+                        turnNumber = if (settings.turnTrackerEnabled) turnNumber else null,
+                        onPause = viewModel::pauseClock,
+                        onResume = viewModel::resumeClock,
+                        sections = listOf(
+                            MenuSection("Game", listOf(
+                                ToolItem("Restart", Icons.Filled.RestartAlt) { confirmRestart = true },
+                                ToolItem("Exit", Icons.AutoMirrored.Filled.ExitToApp, onClick = onBack),
+                                ToolItem("High roll", Icons.Filled.Casino) { highRoll = viewModel.rollHighRoll() },
+                                ToolItem("Seating", Icons.Filled.EventSeat) { showSeating = true },
+                                ToolItem("Games", Icons.Filled.EmojiEvents) { showTableGames = true }
+                            )),
+                            MenuSection("Table", listOf(
+                                ToolItem("Monarch", Icons.Filled.WorkspacePremium) {
+                                    tokenStart = monarchPlayerId?.let { seatBounds[it]?.center }
+                                    floatingToken = TokenKind.MONARCH
+                                },
+                                ToolItem("Initiative", Icons.Filled.Castle) {
+                                    tokenStart = initiativePlayerId?.let { seatBounds[it]?.center }
+                                    floatingToken = TokenKind.INITIATIVE
+                                },
+                                ToolItem("Day/Night", Icons.Filled.LightMode) { viewModel.startDayNight() },
+                                ToolItem("Planechase", Icons.Filled.Public) {
+                                    if (gameModeState.mode != GameModeKind.PLANECHASE) viewModel.startPlanechase()
+                                    showGameMode = true
+                                },
+                                ToolItem("Archenemy", Icons.Filled.Shield) {
+                                    if (gameModeState.mode == GameModeKind.ARCHENEMY) showGameMode = true else pickingArchenemy = true
+                                },
+                                ToolItem("Bounty", Icons.Filled.Flag) {
+                                    if (gameModeState.mode != GameModeKind.BOUNTY) viewModel.startBounty()
+                                    showGameMode = true
+                                }
+                            )),
+                            MenuSection("Tools", listOf(
+                                ToolItem("Undo", Icons.AutoMirrored.Filled.Undo, enabled = canUndo) { viewModel.undo() },
+                                ToolItem("Dice", Icons.Filled.Casino) { showDice = true },
+                                ToolItem("History", Icons.Filled.History) { showHistory = true },
+                                ToolItem("Card search", Icons.Filled.Search) { showCardSearch = true },
+                                ToolItem("Settings", Icons.Filled.Settings) { showSettings = true },
+                                ToolItem("Tips", Icons.Filled.Lightbulb) { replayTips = true }
+                            ))
                         ),
                         onPicked = { menuOpen = false }
                     )
@@ -692,7 +723,8 @@ private fun LifeCounterViewModel.actionsFor(
     searchGiphy = if (socialRepository != null) searchGiphy else null,
     pickCommander = pickCommander,
     pickMe = pickMe,
-    meDeck = meDeck
+    meDeck = meDeck,
+    adjustToken = { tokenId, delta -> adjustToken(id, tokenId, delta) }
 )
 
 // ---- Defeat & victory messages ----
@@ -778,43 +810,6 @@ private fun MenuButton(open: Boolean, onClick: () -> Unit, modifier: Modifier = 
     }
 }
 
-private class RadialItem(val label: String, val color: Color, val angle: Float, val onClick: () -> Unit)
-
-/**
- * Game-level actions scattered around the centre button, each pill tilted and swinging into place:
- * from a squashed −40° to a settled −20°.
- */
-@Composable
-private fun RadialMenu(items: List<RadialItem>, onPicked: () -> Unit, modifier: Modifier = Modifier) {
-    val radius = 112.dp
-    Box(modifier) {
-        items.forEachIndexed { index, item ->
-            val swing = remember { Animatable(0f) }
-            LaunchedEffect(Unit) { swing.animateTo(1f, tween(TableMotion.FAST, delayMillis = 25 * index, easing = TableMotion.Pop)) }
-            val radians = Math.toRadians(item.angle.toDouble())
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .offset(x = radius * cos(radians).toFloat(), y = radius * sin(radians).toFloat())
-                    .graphicsLayer {
-                        val p = swing.value
-                        rotationZ = -40f + 20f * p
-                        scaleX = 0.6f + 0.4f * p
-                        scaleY = 0.7f + 0.3f * p
-                        alpha = p.coerceIn(0f, 1f)
-                    }
-                    .clip(RoundedCornerShape(50))
-                    .background(item.color)
-                    .clickable { onPicked(); item.onClick() }
-                    .padding(horizontal = 18.dp, vertical = 5.dp)
-            ) {
-                TableLabel(item.label, 30.sp, color = Color.Black, maxLines = 1)
-            }
-        }
-    }
-}
-
 private class ToolItem(val label: String, val icon: ImageVector, val enabled: Boolean = true, val onClick: () -> Unit)
 
 /** CSS ease-out, which Lotus's chip entrance runs its keyframes on. */
@@ -837,41 +832,103 @@ private fun chipPose(p: Float): Pair<Float, Float> {
     return (y0 + (y1 - y0) * t) to (r0 + (r1 - r0) * t)
 }
 
-/** Table tools and game modes, along the bottom while the menu is open. */
+private class MenuSection(val title: String, val items: List<ToolItem>)
+
+/**
+ * The centre menu, along the bottom while it's open: the game clock, then everything grouped as
+ * Game (this game and the next), Table (what sits on the table: monarch, day/night, game modes)
+ * and Tools.
+ */
 @Composable
-private fun ToolBar(items: List<ToolItem>, onPicked: () -> Unit) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+private fun GameMenu(
+    clock: GameClock,
+    turnNumber: Int?,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    sections: List<MenuSection>,
+    onPicked: () -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .background(TableColors.BarBackground)
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { }
+            .padding(vertical = 12.dp)
     ) {
-        items.forEach { item ->
-            val entrance = remember { Animatable(0f) }
-            LaunchedEffect(Unit) { entrance.animateTo(1f, tween(TableMotion.MENU_CHIPS, easing = EaseOut)) }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+        ) {
+            GameClockLabel(clock, Modifier.weight(1f))
+            turnNumber?.let { TableLabel("Turn $it", 22.sp, color = Color.Black.copy(alpha = 0.6f), maxLines = 1) }
+            Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .graphicsLayer {
-                        val (rise, rotation) = chipPose(entrance.value)
-                        translationY = rise * size.height
-                        rotationZ = rotation
-                    }
-                    .alpha(if (item.enabled) 1f else 0.35f)
-                    .clip(RoundedCornerShape(50))
+                    .size(38.dp)
+                    .clip(CircleShape)
                     .background(Color.Black)
-                    .clickable(enabled = item.enabled) { onPicked(); item.onClick() }
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .clickable { if (clock.paused) onResume() else onPause() }
+                    .semantics { contentDescription = if (clock.paused) "Start the game clock" else "Pause the game clock" }
             ) {
-                Icon(item.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                TableLabel(item.label, 24.sp, maxLines = 1)
+                Icon(if (clock.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+            }
+        }
+        sections.forEachIndexed { sectionIndex, section ->
+            TableLabel(section.title, 18.sp, color = Color.Black.copy(alpha = 0.55f), maxLines = 1, modifier = Modifier.padding(start = 18.dp, top = 2.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)
+            ) {
+                section.items.forEachIndexed { index, item ->
+                    val entrance = remember { Animatable(0f) }
+                    LaunchedEffect(Unit) {
+                        delay(30L * (sectionIndex * 2 + index).coerceAtMost(10))
+                        entrance.animateTo(1f, tween(TableMotion.MENU_CHIPS, easing = EaseOut))
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        modifier = Modifier
+                            .graphicsLayer {
+                                val (rise, rotation) = chipPose(entrance.value)
+                                translationY = rise * size.height
+                                rotationZ = rotation
+                            }
+                            .alpha(if (item.enabled) 1f else 0.35f)
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.Black)
+                            .clickable(enabled = item.enabled) { onPicked(); item.onClick() }
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Icon(item.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        TableLabel(item.label, 24.sp, maxLines = 1)
+                    }
+                }
             }
         }
     }
+}
+
+/** "Game 12:34", ticking (or "paused"). */
+@Composable
+private fun GameClockLabel(clock: GameClock, modifier: Modifier = Modifier) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(clock) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
+    TableLabel(
+        "Game " + formatClock(clock.elapsed(now)) + if (clock.paused) " · paused" else "",
+        26.sp,
+        color = Color.Black,
+        maxLines = 1,
+        modifier = modifier
+    )
 }
 
 @Composable

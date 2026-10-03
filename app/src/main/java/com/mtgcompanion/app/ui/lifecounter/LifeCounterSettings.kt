@@ -23,6 +23,10 @@ data class LifeCounterSettings(
     val twoPlayerStartingLife: Int = 20,
 
     val turnTrackerEnabled: Boolean = false,
+    /** Minutes a turn may take before the active player's phone buzzes (see TURN_TIMER_CHOICES); 0 is off. Needs the turn tracker. */
+    val turnTimerMinutes: Int = 0,
+    /** At the start of a player's turn, their deck's "at the beginning of your …" cards show on their tile. */
+    val triggerReminders: Boolean = true,
     val highRollAtStart: Boolean = false,
     /** Off means players are only ever out when someone taps Kill. */
     val autoKill: Boolean = true,

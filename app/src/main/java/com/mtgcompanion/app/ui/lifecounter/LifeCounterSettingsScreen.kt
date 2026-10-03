@@ -63,6 +63,15 @@ internal fun LifeCounterSettingsOverlay(
 
                     Group("Gameplay")
                     Check("Turn tracker", "Whose turn it is gets a bigger tile and an End turn button", settings.turnTrackerEnabled) { v -> onUpdate { it.copy(turnTrackerEnabled = v) } }
+                    Item("Turn timer", if (settings.turnTrackerEnabled) "The active player's tile counts down and the phone buzzes at 0" else "Needs the turn tracker")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp, bottom = 8.dp).horizontalScroll(rememberScrollState())) {
+                        TURN_TIMER_CHOICES.forEach { minutes ->
+                            ValueChip(if (minutes == 0) "Off" else "$minutes min", selected = settings.turnTimerMinutes == minutes, onClick = {
+                                onUpdate { it.copy(turnTimerMinutes = minutes) }
+                            })
+                        }
+                    }
+                    Check("Trigger reminders", "At the start of a turn, the deck's \"at the beginning of your upkeep\" (and draw, combat, end step) cards show on the tile", settings.triggerReminders) { v -> onUpdate { it.copy(triggerReminders = v) } }
                     Check("High roll at game start", null, settings.highRollAtStart) { v -> onUpdate { it.copy(highRollAtStart = v) } }
                     Check("Auto-kill", "Kill players from life, poison or commander damage", settings.autoKill) { v -> onUpdate { it.copy(autoKill = v) } }
                     Check("Commander damage", "Commander damage causes players to lose life", settings.commanderDamageCostsLife) { v -> onUpdate { it.copy(commanderDamageCostsLife = v) } }

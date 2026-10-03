@@ -73,6 +73,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
@@ -153,6 +154,7 @@ import com.mtgcompanion.app.ui.detail.CardDetailViewModel
 import com.mtgcompanion.app.ui.home.HomeScreen
 import com.mtgcompanion.app.ui.home.HomeViewModel
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterScreen
+import com.mtgcompanion.app.ui.lifecounter.PlayScreen
 import com.mtgcompanion.app.ui.lifecounter.RemoteScreen
 import com.mtgcompanion.app.ui.social.WhoHasItDialog
 import com.mtgcompanion.app.ui.lifecounter.RemoteViewModel
@@ -199,6 +201,8 @@ private object Routes {
     const val SCAN = "scan"
     const val RULES = "rules"
     const val LIFE_COUNTER = "life_counter"
+    /** The Play tab: start a life counter game, join a table, recent games. */
+    const val PLAY = "play"
     const val VALUE_HISTORY = "value_history"
     const val FRIENDS = "friends"
     const val FRIEND = "friend/{userId}"
@@ -237,7 +241,7 @@ private object Routes {
 // Routes that show the bottom nav bar. Scan is excluded so its camera runs full-screen (it has its
 // own back button); Settings shows the bar so you can jump to another tab from it.
 private val bottomNavRoutes = setOf(
-    Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.RULES, Routes.FRIENDS
+    Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.RULES, Routes.FRIENDS, Routes.PLAY
 )
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -328,6 +332,7 @@ fun MtgNavGraph(
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
+                Routes.PLAY -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
                 else -> null
@@ -339,7 +344,7 @@ fun MtgNavGraph(
                     NavDestination.SCAN -> navController.navigateToTab(Routes.SCAN)
                     NavDestination.DECKS -> navController.navigateToTab(Routes.DECKS)
                     NavDestination.COLLECTION -> navController.navigateToTab(Routes.COLLECTION)
-                    NavDestination.LIFE_COUNTER -> navController.navigate(Routes.LIFE_COUNTER)
+                    NavDestination.LIFE_COUNTER -> navController.navigateToTab(Routes.PLAY)
                     NavDestination.RULES -> navController.navigateToTab(Routes.RULES)
                     NavDestination.FRIENDS -> navController.navigateToTab(Routes.FRIENDS)
                     NavDestination.SETTINGS -> navController.navigateToTab(Routes.SETTINGS)
@@ -687,6 +692,19 @@ fun MtgNavGraph(
                 RulesScreen(viewModel = viewModel)
             }
 
+            destination(Routes.PLAY) {
+                val games by lifeCounterSettingsRepository.tableGamesFlow.collectAsState(initial = emptyList())
+                val remoteSeat by settingsRepository.remoteSeat.collectAsState(initial = null)
+                PlayScreen(
+                    games = games,
+                    remoteSeat = remoteSeat,
+                    onStartGame = { navController.navigate(Routes.LIFE_COUNTER) },
+                    onJoinTable = { navController.navigate(Routes.QR_SCAN) },
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
+                    onOpenRules = { navController.navigateToTab(Routes.RULES) }
+                )
+            }
+
             destination(Routes.LIFE_COUNTER) {
                 val viewModel: LifeCounterViewModel = viewModel(factory = LifeCounterViewModel.Factory(playerProfileRepository, lifeCounterSettingsRepository, socialRepository, deckRepository))
                 LifeCounterScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
@@ -1008,16 +1026,21 @@ private fun NavGraphBuilder.destination(
 }
 
 /**
- * Floating bottom bar: four destinations around a raised Scan button, with a highlight pill that
- * springs to the selected tab. Rules moved out of the bar (it's on Home and in Search's toolbar).
+ * Floating bottom bar: five destinations around a raised Scan button that stays in the middle —
+ * Home, Search and Play on its left, Decks and Collection on its right — with a highlight pill
+ * that springs to the selected tab. Six equal slots would push Scan off centre, so each side
+ * shares its half of the bar instead. Rules moved out of the bar (it's on Home, Play and in
+ * Search's toolbar).
  */
 @Composable
 private fun MtgBottomBar(currentRoute: String?, navController: NavHostController) {
     val colors = LocalAppColors.current
     val haptic = LocalHapticFeedback.current
+    // Slots, left to right: 0 Home, 1 Search, 2 Play, (Scan), 3 Decks, 4 Collection.
     val selected = when (currentRoute) {
         Routes.HOME -> 0
         Routes.SEARCH -> 1
+        Routes.PLAY -> 2
         Routes.DECKS, Routes.DECK_DETAIL -> 3
         Routes.COLLECTION -> 4
         else -> -1
@@ -1036,15 +1059,27 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
                 .clip(RoundedCornerShape(26.dp))
                 .background(colors.surface)
         ) {
-            val slot = maxWidth / 5
-            val pillX by animateDpAsState(slot * selected.coerceAtLeast(0) + (slot - 52.dp) / 2, popSpring(), label = "barPill")
+            val scanSlot = 64.dp
+            val half = (maxWidth - scanSlot) / 2
+            val left = half / 3
+            val right = half / 2
+            val pillWidth = 44.dp
+            val pillTarget = when {
+                selected < 0 -> 0.dp
+                selected < 3 -> left * selected + (left - pillWidth) / 2
+                else -> half + scanSlot + right * (selected - 3) + (right - pillWidth) / 2
+            }
+            val pillX by animateDpAsState(pillTarget, popSpring(), label = "barPill")
             if (selected >= 0) {
-                Box(Modifier.offset(x = pillX, y = 8.dp).size(width = 52.dp, height = 30.dp).clip(RoundedCornerShape(15.dp)).background(colors.accentGlow))
+                Box(Modifier.offset(x = pillX, y = 8.dp).size(width = pillWidth, height = 30.dp).clip(RoundedCornerShape(15.dp)).background(colors.accentGlow))
             }
             Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                BarItem(Icons.Filled.Home, "Home", selected == 0) { go(Routes.HOME) }
-                BarItem(Icons.Filled.Search, "Search", selected == 1) { go(Routes.SEARCH) }
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Row(Modifier.width(half).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                    BarItem(Icons.Filled.Home, "Home", selected == 0) { go(Routes.HOME) }
+                    BarItem(Icons.Filled.Search, "Search", selected == 1) { go(Routes.SEARCH) }
+                    BarItem(Icons.Filled.Favorite, "Play", selected == 2) { go(Routes.PLAY) }
+                }
+                Box(Modifier.width(scanSlot), contentAlignment = Alignment.Center) {
                     val interaction = remember { MutableInteractionSource() }
                     Box(
                         Modifier
@@ -1058,8 +1093,10 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
                         Icon(Icons.Filled.CameraAlt, contentDescription = "Scan a card", tint = colors.onAccent, modifier = Modifier.size(26.dp))
                     }
                 }
-                BarItem(Icons.Filled.Style, "Decks", selected == 3) { go(Routes.DECKS) }
-                BarItem(Icons.Filled.Collections, "Collection", selected == 4) { go(Routes.COLLECTION) }
+                Row(Modifier.width(half).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                    BarItem(Icons.Filled.Style, "Decks", selected == 3) { go(Routes.DECKS) }
+                    BarItem(Icons.Filled.Collections, "Collection", selected == 4) { go(Routes.COLLECTION) }
+                }
             }
         }
     }
@@ -1090,7 +1127,7 @@ private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean
  * that tab brought Settings back rather than the tab (only restarting the app got out of it).
  */
 private val tabRoutes = setOf(
-    Routes.HOME, Routes.SEARCH, Routes.SCAN, Routes.DECKS, Routes.COLLECTION, Routes.RULES, Routes.FRIENDS, Routes.SETTINGS
+    Routes.HOME, Routes.SEARCH, Routes.SCAN, Routes.DECKS, Routes.COLLECTION, Routes.RULES, Routes.FRIENDS, Routes.SETTINGS, Routes.PLAY
 )
 
 private fun NavHostController.navigateToTab(route: String) {

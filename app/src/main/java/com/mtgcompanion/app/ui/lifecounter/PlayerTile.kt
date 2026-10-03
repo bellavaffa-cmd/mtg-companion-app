@@ -145,8 +145,13 @@ class PlayerTileActions(
     /** Marks this seat as the table owner's and picks their deck; null when there's nowhere to save games. */
     val pickMe: (() -> Unit)? = null,
     /** When this seat is the table owner's: the deck their games here are saved to ("" before one's picked). */
-    val meDeck: String? = null
+    val meDeck: String? = null,
+    /** One of the seat's deck tokens ([PlayerLife.deckInfo]) up or down, by token id. */
+    val adjustToken: (tokenId: String, delta: Int) -> Unit = { _, _ -> }
 )
+
+/** The turn timer on the active player's tile: it counts itself down on [clock]. */
+data class TileTurnTimer(val clock: GameClock, val turnStartElapsed: Long, val minutes: Int)
 
 /**
  * One player's seat, laid out from that player's own point of view — the caller turns it to face
@@ -174,7 +179,12 @@ fun PlayerTile(
     // This player's high roll, while one is showing.
     roll: TileRoll? = null,
     // Who is pointing at this player from their remote, for the few seconds it shows.
-    pointedAtBy: String? = null
+    pointedAtBy: String? = null,
+    // On the player whose turn it is, with the turn timer on.
+    turnTimer: TileTurnTimer? = null,
+    // At the start of their turn: their deck's "at the beginning of your …" cards, one line per step.
+    reminders: List<String> = emptyList(),
+    onDismissReminders: () -> Unit = {}
 ) {
     val seat = seatColor(player.colorIndex)
     val hasImage = player.backgroundImageUri != null
@@ -376,12 +386,16 @@ fun PlayerTile(
                         onOpenDamage = { settle(Reveal.DAMAGE_END) },
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = CardGap + 10.dp)
                     )
-                    TileCounters(
-                        player = player,
-                        settings = settings,
-                        ink = ink,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = CardGap + 10.dp, start = 16.dp, end = 16.dp)
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                        // Clear of the End turn button on the active tile.
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                            .padding(bottom = CardGap + 10.dp, start = 16.dp, end = if (isActiveTurn && onEndTurn != null) 76.dp else 16.dp)
+                    ) {
+                        if (alive) TileTokens(player = player, ink = ink, onAdjust = actions.adjustToken)
+                        TileCounters(player = player, settings = settings, ink = ink)
+                    }
                 }
             }
 
@@ -409,8 +423,16 @@ fun PlayerTile(
             }
             if (isActiveTurn && onEndTurn != null) {
                 AnimatedVisibility(visible = reveal == Reveal.NONE && alive, enter = fadeIn(tween(TableMotion.FAST)), exit = fadeOut(tween(150))) {
-                    TurnControls(turnNumber = turnNumber, ink = ink, onEndTurn = onEndTurn)
+                    TurnControls(turnNumber = turnNumber, ink = ink, onEndTurn = onEndTurn, timer = turnTimer)
                 }
+            }
+            AnimatedVisibility(
+                visible = reminders.isNotEmpty() && reveal == Reveal.NONE && alive,
+                enter = fadeIn(tween(TableMotion.FAST)),
+                exit = fadeOut(tween(150)),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 52.dp, start = 16.dp, end = 16.dp)
+            ) {
+                ReminderChip(reminders, onDismiss = onDismissReminders)
             }
 
             AnimatedVisibility(visible = !alive, enter = fadeIn(tween(TableMotion.FAST)), exit = fadeOut(tween(TableMotion.FAST))) {
@@ -450,10 +472,15 @@ data class TileRoll(val value: Int, val winner: Boolean)
  * turn bottom right — out of the way of the life total, which stays in the middle.
  */
 @Composable
-private fun TurnControls(turnNumber: Int, ink: Color, onEndTurn: () -> Unit) {
+private fun TurnControls(turnNumber: Int, ink: Color, onEndTurn: () -> Unit, timer: TileTurnTimer? = null) {
     Box(Modifier.fillMaxSize()) {
-        if (turnNumber > 0) {
-            TableLabel("Turn $turnNumber", 20.sp, color = ink, modifier = Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 16.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 16.dp)
+        ) {
+            if (turnNumber > 0) TableLabel("Turn $turnNumber", 20.sp, color = ink)
+            timer?.let { TurnTimerLabel(it, ink) }
         }
         Box(
             contentAlignment = Alignment.Center,
@@ -467,6 +494,92 @@ private fun TurnControls(turnNumber: Int, ink: Color, onEndTurn: () -> Unit) {
                 .semantics { contentDescription = "End turn" }
         ) {
             Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
+        }
+    }
+}
+
+/** The turn's time left, ticking; red and counting up once it has run over. */
+@Composable
+private fun TurnTimerLabel(timer: TileTurnTimer, ink: Color) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(timer) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(500)
+        }
+    }
+    val left = turnTimeLeft(timer.minutes, timer.turnStartElapsed, timer.clock.elapsed(now)) ?: return
+    val over = left <= 0
+    TableLabel(
+        if (over) "Time! +" + formatClock(-left) else formatClock(left + 999),
+        20.sp,
+        color = if (over) Color.White else ink,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (over) TableColors.CriticalRed else ink.copy(alpha = 0.14f))
+            .padding(horizontal = 9.dp, vertical = 1.dp)
+    )
+}
+
+/** What the player's deck asks them to remember now their turn has started. Tap to put it away. */
+@Composable
+private fun ReminderChip(lines: List<String>, onDismiss: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.Black.copy(alpha = 0.78f))
+            .border(BorderStroke(1.dp, TableColors.Gold), RoundedCornerShape(14.dp))
+            .clickable(onClick = onDismiss)
+            .semantics { contentDescription = "Trigger reminder: " + lines.joinToString(". ") + ". Tap to dismiss." }
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Column(Modifier.weight(1f, fill = false)) {
+            lines.take(4).forEach { TableLabel(it, 16.sp, color = Color.White, maxLines = 2) }
+        }
+        TableLabel("✕", 16.sp, color = TableColors.TextMuted)
+    }
+}
+
+/**
+ * The seat's deck tokens, one chip each: "Goblin 1/1 ×3". Tap a chip for one more; its − for one
+ * fewer. Only for a seat whose deck is known — the plain Tokens counter covers the rest.
+ */
+@Composable
+private fun TileTokens(player: PlayerLife, ink: Color, onAdjust: (String, Int) -> Unit) {
+    val tokens = player.deckInfo?.tokens.orEmpty()
+    if (tokens.isEmpty()) return
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+        tokens.forEach { token ->
+            val count = player.tokenCounts[token.id] ?: 0
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(ink.copy(alpha = if (count > 0) 0.22f else 0.1f))
+            ) {
+                if (count > 0) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clickable { onAdjust(token.id, -1) }
+                            .semantics { contentDescription = "One fewer ${token.label}" }
+                    ) {
+                        TableLabel("−", 19.sp, color = ink)
+                    }
+                }
+                TableLabel(
+                    tokenChipText(token, count),
+                    16.sp,
+                    color = ink.copy(alpha = if (count > 0) 1f else 0.7f),
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clickable { onAdjust(token.id, 1) }
+                        .semantics { contentDescription = "One more ${token.label}, $count out" }
+                        .padding(start = if (count > 0) 0.dp else 10.dp, end = 10.dp, top = 3.dp, bottom = 3.dp)
+                )
+            }
         }
     }
 }
@@ -944,6 +1057,13 @@ private fun OptionsCard(player: PlayerLife, autoKill: Boolean, actions: PlayerTi
                     onClick = pickMe,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+        }
+
+        player.deckInfo?.tokens?.takeIf { it.isNotEmpty() }?.let { tokens ->
+            CardSection(player.deckInfo?.deck?.let { "Tokens · $it" } ?: "Deck tokens")
+            tokens.forEach { token ->
+                StepperRow(token.label, player.tokenCounts[token.id] ?: 0) { actions.adjustToken(token.id, it) }
             }
         }
 

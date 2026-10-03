@@ -341,6 +341,7 @@ private fun describeHistoryEntry(entry: HistoryEntry, nameOf: (Int) -> String): 
         HistoryEvent.CommanderCast -> if (to != null && from != null && to > from) "$who cast their commander (tax $to)" else "$who · commander tax$change"
         is HistoryEvent.Rolled -> if (event.sides == 2) "$who flipped a coin: ${event.result}" else "$who rolled a d${event.sides}: ${event.result}"
         HistoryEvent.Conceded -> "$who conceded"
+        is HistoryEvent.DeckToken -> "$who · ${event.name} tokens$change"
     }
 }
 
