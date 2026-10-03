@@ -135,6 +135,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import com.mtgcompanion.app.data.StatsPanels
+import com.mtgcompanion.app.data.oddsPercent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -1650,6 +1654,11 @@ private fun StatsTab(
     val proxies by viewModel.proxies.collectAsState()
     val proxiesElsewhere by viewModel.proxiesElsewhere.collectAsState()
     val tokens by viewModel.tokens.collectAsState()
+    // Every panel folds away; which are open is remembered across decks (StatsPanels).
+    val panelState by viewModel.statsPanels.collectAsState()
+    val isOpen: (String) -> Boolean = { id -> StatsPanels.isOpen(id, panelState) }
+    val toggle: (String) -> Unit = { id -> viewModel.setStatsPanelOpen(id, !StatsPanels.isOpen(id, panelState)) }
+    val money = rememberMoney()
     // Tapping a token opens the same sheet the remote uses, on that token.
     var badgeToken by remember { mutableStateOf<String?>(null) }
     badgeToken?.let { id ->
@@ -1660,18 +1669,16 @@ private fun StatsTab(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        analysis.legality?.let { report ->
-            item(key = "legality") {
-                Panel {
-                    SectionLabel("Legality")
-                    Spacer(Modifier.height(8.dp))
-                    LegalitySection(report, viewModel)
-                }
+        item(key = "summary") {
+            val cards = deck.cards.sumOf { it.quantity }
+            CollapsibleStat("Summary", isOpen("summary"), { toggle("summary") }, summary = "$cards cards · ${money.format(analysis.totalUsd)}") {
+                StatsSummary(analysis, cards, money.format(analysis.totalUsd), viewModel)
             }
         }
         val (proxiesLeft, swaps) = proxies
         if (proxiesLeft > 0 || deck.ownershipType == DeckOwnership.PROXY) {
-            item {
+            item(key = "proxies") {
+                CollapsibleStat("Proxies", isOpen("proxies"), { toggle("proxies") }, summary = "$proxiesLeft left") {
                 ProxiesPanel(
                     proxiesLeft = proxiesLeft,
                     swaps = swaps,
@@ -1680,14 +1687,29 @@ private fun StatsTab(
                     onSwapIn = { viewModel.swapInProxy(it) },
                     onMarkPhysical = { viewModel.setOwnership(DeckOwnership.PHYSICAL) }
                 )
+                }
             }
         }
-        item { MatchRecordPanel(deck.gameResults, onLog = { showLogResult = true }, onRemove = { viewModel.removeGameResult(it) }) }
-        if (tokens.isNotEmpty()) {
-            item { TokensPanel(tokens, onOpenBadge, onTokenClick = { badgeToken = it }) }
+        item(key = "match") {
+            val games = deck.gameResults.size
+            CollapsibleStat("Match record", isOpen("match"), { toggle("match") }, summary = if (games == 0) "No games yet" else "$games game${if (games == 1) "" else "s"}") {
+                MatchRecordPanel(deck.gameResults, onLog = { showLogResult = true }, onRemove = { viewModel.removeGameResult(it) })
+            }
         }
-        item { VersionHistoryPanel(versionHistory, onOpen = { openVersion = it }) }
-        item {
+        if (tokens.isNotEmpty()) {
+            item(key = "tokens") {
+                CollapsibleStat("Tokens to bring", isOpen("tokens"), { toggle("tokens") }, summary = if (tokens.size == 1) "1 kind" else "${tokens.size} kinds") {
+                    TokensPanel(tokens, onOpenBadge, onTokenClick = { badgeToken = it })
+                }
+            }
+        }
+        item(key = "versions") {
+            CollapsibleStat("Version history", isOpen("versions"), { toggle("versions") }, summary = if (versionHistory.isEmpty()) null else "${versionHistory.size} saved") {
+                VersionHistoryPanel(versionHistory, onOpen = { openVersion = it })
+            }
+        }
+        item(key = "bracket") {
+            CollapsibleStat("Commander bracket", isOpen("bracket"), { toggle("bracket") }, summary = analysis.bracketName.ifBlank { null }) {
             Panel {
                 SectionLabel("Commander bracket")
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp)) {
@@ -1713,15 +1735,18 @@ private fun StatsTab(
                     modifier = Modifier.padding(top = 6.dp)
                 )
             }
-        }
-        item {
-            Panel {
-                SectionLabel("Total value")
-                val money = rememberMoney()
-                CountUpText(analysis.totalUsd, NumberStyle(46), TextPrimary, format = { money.format(it) }, modifier = Modifier.padding(top = 4.dp))
             }
         }
-        item {
+        item(key = "value") {
+            CollapsibleStat("Total value", isOpen("value"), { toggle("value") }, summary = money.format(analysis.totalUsd)) {
+            Panel {
+                SectionLabel("Total value")
+                CountUpText(analysis.totalUsd, NumberStyle(46), TextPrimary, format = { money.format(it) }, modifier = Modifier.padding(top = 4.dp))
+            }
+            }
+        }
+        item(key = "curve") {
+            CollapsibleStat("Mana curve", isOpen("curve"), { toggle("curve") }, summary = "avg ${"%.2f".format(analysis.avgManaValue)}") {
             Panel {
                 SectionLabel("Mana curve")
                 ManaCurveChart(analysis.manaCurve)
@@ -1732,10 +1757,22 @@ private fun StatsTab(
                     modifier = Modifier.padding(top = 10.dp)
                 )
             }
+            }
         }
-        item { RolesPanel(roles, onTag, ownedGaps, onOwned = { ownedFor = it }) }
-        handOdds?.let { odds -> item { HandOddsPanel(odds) } }
-        item {
+        item(key = "roles") {
+            CollapsibleStat("Deck roles", isOpen("roles"), { toggle("roles") }) {
+                RolesPanel(roles, onTag, ownedGaps, onOwned = { ownedFor = it })
+            }
+        }
+        handOdds?.let { odds ->
+            item(key = "hand") {
+                CollapsibleStat("Opening hand", isOpen("hand"), { toggle("hand") }, summary = "${oddsPercent(odds.keepable)} keepable") {
+                    HandOddsPanel(odds)
+                }
+            }
+        }
+        item(key = "colors") {
+            CollapsibleStat("Colors", isOpen("colors"), { toggle("colors") }) {
             Panel {
                 SectionLabel("Colors")
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 6.dp)) {
@@ -1747,9 +1784,11 @@ private fun StatsTab(
                     }
                 }
             }
+            }
         }
         if (analysis.colorPipCounts.isNotEmpty()) {
-            item {
+            item(key = "pips") {
+                CollapsibleStat("Mana symbols", isOpen("pips"), { toggle("pips") }) {
                 Panel {
                     SectionLabel("Mana symbols")
                     val totalPips = analysis.colorPipCounts.sumOf { it.second }
@@ -1798,10 +1837,12 @@ private fun StatsTab(
                         modifier = Modifier.padding(top = 10.dp)
                     )
                 }
+                }
             }
         }
         if (analysis.landCount > 0) {
-            item {
+            item(key = "manabase") {
+                CollapsibleStat("Mana base", isOpen("manabase"), { toggle("manabase") }, summary = "${analysis.landCount} lands") {
                 Panel {
                     SectionLabel("Mana base")
                     Text(
@@ -1854,15 +1895,18 @@ private fun StatsTab(
                         )
                     }
                 }
+                }
             }
         }
-        item {
+        item(key = "types") {
+            CollapsibleStat("Card types", isOpen("types"), { toggle("types") }) {
             Panel {
                 SectionLabel("Card types")
                 val maxType = analysis.typeCounts.maxOfOrNull { it.second } ?: 1
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
                     analysis.typeCounts.forEach { (type, count) -> StatBar(type, count, maxType) }
                 }
+            }
             }
         }
     }
@@ -2119,9 +2163,101 @@ internal fun Panel(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
+/**
+ * A panel's title. Inside an open [CollapsibleStat] whose title it matches, it carries the chevron
+ * that folds the panel away; anywhere else it's just the title.
+ */
 @Composable
 internal fun SectionLabel(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium)
+    val fold = LocalPanelFold.current
+    if (fold == null || fold.title != text) {
+        Text(text, style = MaterialTheme.typography.titleMedium)
+        return
+    }
+    PanelTitle(text, open = true, onClick = fold.onToggle)
+}
+
+/** The title of a [CollapsibleStat], set while it's open so the panel's own [SectionLabel] can fold it. */
+private class PanelFold(val title: String, val onToggle: () -> Unit)
+
+private val LocalPanelFold = compositionLocalOf<PanelFold?> { null }
+
+@Composable
+private fun PanelTitle(text: String, open: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
+    ) {
+        Text(text, style = MaterialTheme.typography.titleMedium)
+        Icon(
+            if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = if (open) "Hide $text" else "Show $text",
+            tint = TextMuted,
+            modifier = Modifier.padding(start = 4.dp).size(20.dp)
+        )
+    }
+}
+
+/**
+ * A Stats panel that folds away to a single line — its [title], a chevron and a short [summary] —
+ * and opens to the full [content] (a [Panel] whose [SectionLabel] matches [title]).
+ */
+@Composable
+private fun CollapsibleStat(title: String, open: Boolean, onToggle: () -> Unit, summary: String? = null, content: @Composable () -> Unit) {
+    if (open) {
+        CompositionLocalProvider(LocalPanelFold provides PanelFold(title, onToggle)) { content() }
+        return
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .elevatedCard(shape = RoundedCornerShape(22.dp))
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        PanelTitle(title, open = false, onClick = onToggle)
+        Spacer(Modifier.weight(1f))
+        if (summary != null) {
+            Text(summary, style = MaterialTheme.typography.labelMedium, color = TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 12.dp))
+        }
+    }
+}
+
+/** The top of Stats: the deck's key figures in a strip, then its legality badge. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StatsSummary(analysis: DeckAnalysis, cards: Int, value: String, viewModel: DeckDetailViewModel) {
+    Panel {
+        SectionLabel("Summary")
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 10.dp)
+        ) {
+            SummaryFigure("$cards", if (cards == 1) "card" else "cards")
+            SummaryFigure(value, "total value")
+            SummaryFigure("%.2f".format(analysis.avgManaValue), "avg mana value")
+            if (analysis.bracket > 0) SummaryFigure("${analysis.bracket}", "bracket")
+        }
+        analysis.legality?.let { report ->
+            Spacer(Modifier.height(12.dp))
+            LegalitySection(report, viewModel)
+        }
+    }
+}
+
+@Composable
+private fun SummaryFigure(value: String, label: String) {
+    Column(
+        Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Surface2)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(value, style = NumberStyle(22), color = TextPrimary, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = TextMuted, maxLines = 1)
+    }
 }
 
 @Composable
@@ -2675,7 +2811,7 @@ private fun ProxiesPanel(
 ) {
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Proxies", style = MaterialTheme.typography.titleSmall, color = GoldLight, modifier = Modifier.weight(1f))
+            Box(Modifier.weight(1f)) { SectionLabel("Proxies") }
             Text("$proxiesLeft left", style = MaterialTheme.typography.labelMedium, color = TextMuted)
         }
         Spacer(Modifier.height(8.dp))

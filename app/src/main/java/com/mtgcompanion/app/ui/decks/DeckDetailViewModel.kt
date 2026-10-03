@@ -190,6 +190,14 @@ class DeckDetailViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
 
     /** Shared grid column count for both tabs above, when either is in Grid mode. */
+    /** Open/closed panels on the Stats tab, the same for every deck (see [StatsPanels]). */
+    val statsPanels: StateFlow<Map<String, Boolean>> = settingsRepository.statsPanels
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    fun setStatsPanelOpen(id: String, open: Boolean) {
+        viewModelScope.launch { settingsRepository.setStatsPanelOpen(id, open) }
+    }
+
     val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)
 

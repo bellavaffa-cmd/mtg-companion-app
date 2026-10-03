@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -65,6 +66,7 @@ class SettingsRepository(private val context: Context) {
     private val cardOfDayDateKey = stringPreferencesKey("card_of_day_date")
     private val cardOfDayNameKey = stringPreferencesKey("card_of_day_name")
     private val cardOfDayImageUrlKey = stringPreferencesKey("card_of_day_image_url")
+    private val statsPanelsKey = stringSetPreferencesKey("deck_stats_panels")
 
 
     val searchViewMode: Flow<CardViewMode> = context.dataStore.data.map { CardViewMode.fromName(it[searchViewModeKey]) }
@@ -134,6 +136,13 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setRecViewMode(mode: CardViewMode) {
         context.dataStore.edit { it[recViewModeKey] = mode.name }
+    }
+
+    /** The deck Stats panels the user has opened or closed (see [StatsPanels]). */
+    val statsPanels: Flow<Map<String, Boolean>> = context.dataStore.data.map { StatsPanels.decode(it[statsPanelsKey]) }
+
+    suspend fun setStatsPanelOpen(id: String, open: Boolean) {
+        context.dataStore.edit { it[statsPanelsKey] = StatsPanels.encode(StatsPanels.decode(it[statsPanelsKey]) + (id to open)) }
     }
 
     suspend fun setGridColumns(columns: Int) {
