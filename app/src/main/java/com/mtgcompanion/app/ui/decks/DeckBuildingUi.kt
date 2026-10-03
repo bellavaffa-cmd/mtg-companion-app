@@ -81,6 +81,7 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
+import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.ComboSummaryRow
 import com.mtgcompanion.app.ui.common.InlineManaText
 import com.mtgcompanion.app.ui.common.elevatedCard
@@ -341,6 +342,15 @@ private fun resultColor(result: String, win: Color, other: Color): Color = when 
 internal fun MatchRecordPanel(results: List<GameResult>, onLog: () -> Unit, onRemove: (String) -> Unit) {
     val stats = remember(results) { gameStats(results) }
     var showAll by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<String?>(null) }
+    removing?.let { id ->
+        ConfirmDeleteDialog(
+            title = "Delete this game?",
+            message = "It comes off this deck's record. This can't be undone.",
+            onConfirm = { removing = null; onRemove(id) },
+            onDismiss = { removing = null }
+        )
+    }
     Panel {
         Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             SectionLabel("Match record")
@@ -404,7 +414,8 @@ internal fun MatchRecordPanel(results: List<GameResult>, onLog: () -> Unit, onRe
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = { onRemove(game.id) }, modifier = Modifier.size(24.dp)) {
+                    // Asked first, and a full-size target: it sat right beside the text and went on one tap.
+                    IconButton(onClick = { removing = game.id }, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Filled.Close, contentDescription = "Remove this result", tint = TextDim, modifier = Modifier.size(16.dp))
                     }
                 }
