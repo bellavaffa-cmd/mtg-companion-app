@@ -128,6 +128,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import com.mtgcompanion.app.data.LegalityReport
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -200,8 +205,11 @@ import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 import com.mtgcompanion.app.ui.badge.BadgeSheetDialog
 
-/** Tab order. The Considering tab sits right beside Cards, since the two are worked together. */
-private val DECK_TABS = listOf("Cards", "Considering", "Stats", "Suggestions", "Legality")
+/**
+ * Tab order. The Considering tab sits right beside Cards, since the two are worked together.
+ * Legality has no tab of its own: its badge heads Stats (as on the web), and opens the list there.
+ */
+private val DECK_TABS = listOf("Cards", "Considering", "Stats", "Suggestions")
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -230,7 +238,9 @@ fun DeckDetailScreen(
     val layout = LocalLayoutSize.current
     // On a desktop-width window Stats sits in a panel beside the cards, so it isn't a tab there.
     val tabs = if (layout == LayoutSize.DESKTOP) DECK_TABS.filter { it != "Stats" } else DECK_TABS
-    val pagerState = rememberPagerState(initialPage = (initialTab?.let { tabs.indexOf(it) } ?: 0).coerceAtLeast(0), pageCount = { tabs.size })
+    // Links made when Legality was a tab of its own open on Stats, where it lives now.
+    val startTab = if (initialTab == "Legality") "Stats" else initialTab
+    val pagerState = rememberPagerState(initialPage = (startTab?.let { tabs.indexOf(it) } ?: 0).coerceAtLeast(0), pageCount = { tabs.size })
     val missing by viewModel.missing.collectAsState()
     val cardTags by viewModel.cardTags.collectAsState()
     // Swap flows: a cut candidate choosing its replacement, or a considered card choosing what it replaces.
@@ -437,7 +447,7 @@ fun DeckDetailScreen(
                         onMarkCut = { entry -> viewModel.setReplaceable(entry.scryfallId, true) },
                         onViewDetails = onViewDetails
                     )
-                    else -> LegalityTab(analysis, viewModel)
+                    else -> Unit
                 }
             }
         }
@@ -1054,7 +1064,7 @@ private fun DeckSettingsDialog(
         text = {
             Column {
                 Text(
-                    "The game mode sets the legality rules checked in the Legal tab.",
+                    "The game mode sets the legality rules checked in Stats.",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
                 )
@@ -1155,72 +1165,91 @@ private fun DeckSettingsDialog(
     )
 }
 
+/**
+ * The deck's legality at a glance — "Legal" with a tick, or how many problems there are — which
+ * opens the full list, with its one-tap fixes, underneath. Heads the Stats tab.
+ */
 @Composable
-private fun LegalityTab(analysis: DeckAnalysis, viewModel: DeckDetailViewModel) {
-    val report = analysis.legality
-    if (report == null) {
-        LoadingBox()
+private fun LegalitySection(report: LegalityReport, viewModel: DeckDetailViewModel) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Column {
+        LegalityBadge(report, expanded = open, onClick = { open = !open })
+        AnimatedVisibility(visible = open) {
+            Column(Modifier.padding(top = 12.dp)) { LegalityDetails(report, viewModel) }
+        }
+    }
+}
+
+@Composable
+private fun LegalityBadge(report: LegalityReport, expanded: Boolean, onClick: () -> Unit) {
+    val app = LocalAppColors.current
+    val color = if (report.legal) app.success else app.error
+    val problems = report.issues.size
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.16f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Icon(if (report.legal) Icons.Filled.CheckCircle else Icons.Filled.Cancel, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+        Text(
+            when {
+                report.legal -> "Legal"
+                problems > 0 -> "$problems problem${if (problems == 1) "" else "s"}"
+                else -> "Not legal"
+            },
+            style = MaterialTheme.typography.labelLarge,
+            color = color
+        )
+        Icon(
+            if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = if (expanded) "Hide legality" else "Show legality",
+            tint = color,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+/** What the badge opens: the format, the count against its size rule, then each problem. */
+@Composable
+private fun LegalityDetails(report: LegalityReport, viewModel: DeckDetailViewModel) {
+    val context = LocalContext.current
+    val app = LocalAppColors.current
+    Text(
+        if (report.legal) "Legal for ${report.mode.label}" else "Not legal for ${report.mode.label}",
+        style = MaterialTheme.typography.titleSmall,
+        color = if (report.legal) app.success else app.error
+    )
+    Text(
+        "${report.totalCards} cards" +
+            if (report.mode.exactSize) " · needs ${report.mode.deckSize}" else " · min ${report.mode.deckSize}",
+        style = MaterialTheme.typography.labelMedium,
+        color = TextMuted
+    )
+    if (report.legal) {
+        Text(
+            "This deck follows ${report.mode.label}'s building rules.",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextMuted,
+            modifier = Modifier.padding(top = 8.dp)
+        )
         return
     }
-    val context = LocalContext.current
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Panel {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    val color = if (report.legal) Gold else Color(0xFFD3402F)
-                    Icon(
-                        if (report.legal) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                        contentDescription = null,
-                        tint = color
-                    )
-                    Column {
-                        Text(
-                            if (report.legal) "Legal for ${report.mode.label}" else "Not legal for ${report.mode.label}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = color
-                        )
-                        Text(
-                            "${report.totalCards} cards" +
-                                if (report.mode.exactSize) " · needs ${report.mode.deckSize}" else " · min ${report.mode.deckSize}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = TextMuted
-                        )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
+        report.issues.forEach { issue ->
+            LegalityIssueRow(
+                issue,
+                onFix = if (issue.kind == LegalityIssueKind.COPY_LIMIT && issue.scryfallId != null && issue.fixQuantity != null) {
+                    {
+                        viewModel.setCardQuantity(issue.scryfallId, issue.fixQuantity)
+                        val word = if (issue.fixQuantity == 1) "copy" else "copies"
+                        Toast.makeText(context, "Reduced ${issue.card} to ${issue.fixQuantity} $word.", Toast.LENGTH_SHORT).show()
                     }
-                }
-            }
-        }
-        if (report.legal) {
-            item {
-                Text(
-                    "No rule violations found for ${report.mode.label}.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted
-                )
-            }
-        } else {
-            item {
-                Text(
-                    "${report.issues.size} issue${if (report.issues.size == 1) "" else "s"}",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-            items(report.issues) { issue ->
-                LegalityIssueRow(
-                    issue,
-                    onFix = if (issue.kind == LegalityIssueKind.COPY_LIMIT && issue.scryfallId != null && issue.fixQuantity != null) {
-                        {
-                            viewModel.setCardQuantity(issue.scryfallId, issue.fixQuantity)
-                            val word = if (issue.fixQuantity == 1) "copy" else "copies"
-                            Toast.makeText(context, "Reduced ${issue.card} to ${issue.fixQuantity} $word.", Toast.LENGTH_SHORT).show()
-                        }
-                    } else null
-                )
-            }
+                } else null
+            )
         }
     }
 }
@@ -1244,7 +1273,7 @@ private fun LegalityIssueRow(issue: LegalityIssue, onFix: (() -> Unit)?) {
         Icon(
             Icons.Filled.Cancel,
             contentDescription = null,
-            tint = Color(0xFFD3402F),
+            tint = LocalAppColors.current.error,
             modifier = Modifier.size(18.dp)
         )
         Column(modifier = Modifier.weight(1f)) {
@@ -1641,6 +1670,15 @@ private fun StatsTab(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        analysis.legality?.let { report ->
+            item(key = "legality") {
+                Panel {
+                    SectionLabel("Legality")
+                    Spacer(Modifier.height(8.dp))
+                    LegalitySection(report, viewModel)
+                }
+            }
+        }
         val (proxiesLeft, swaps) = proxies
         if (proxiesLeft > 0 || deck.ownershipType == DeckOwnership.PROXY) {
             item {
@@ -2560,7 +2598,7 @@ private fun DeckHero(
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(app.accentGlow).padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
-                    // Whether the deck is legal for its game mode; the Legality tab says why not.
+                    // Whether the deck is legal for its game mode; the badge at the top of Stats says why not.
                     analysis.legality?.takeIf { !analysis.loading }?.let { report ->
                         val illegal = Color(0xFFD3402F)
                         Text(
