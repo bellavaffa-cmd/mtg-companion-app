@@ -112,6 +112,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
@@ -156,6 +158,10 @@ import com.mtgcompanion.app.data.withPairingFrom
 import com.mtgcompanion.app.data.canLead
 import com.mtgcompanion.app.data.VersionSummary
 import com.mtgcompanion.app.data.cardNameKeys
+import com.mtgcompanion.app.data.DeckExportFormat
+import com.mtgcompanion.app.data.deckExportText
+import com.mtgcompanion.app.data.isOwnedName
+import com.mtgcompanion.app.data.sideboardCount
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
@@ -271,6 +277,11 @@ fun DeckDetailScreen(
     var showImport by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
     var showGoldfish by remember { mutableStateOf(false) }
+    // "Compare with…": first the picker (a deck or a saved version), then the comparison itself.
+    var comparePicking by remember { mutableStateOf(false) }
+    var compareWith by remember { mutableStateOf<CompareTarget?>(null) }
+    // A sideboard card whose remove-confirmation is up.
+    var removeSideboardTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     // Progress while an import runs, then its summary ("Imported N; M couldn't be matched…").
     var importState by remember { mutableStateOf<ImportState?>(null) }
 
@@ -318,8 +329,12 @@ fun DeckDetailScreen(
                             onClick = { menuOpen = false; showExport = true }
                         )
                         DropdownMenuItem(
-                            text = { Text("Goldfish (playtest)", color = TextPrimary) },
+                            text = { Text("Playtest", color = TextPrimary) },
                             onClick = { menuOpen = false; showGoldfish = true }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Compare with…", color = TextPrimary) },
+                            onClick = { menuOpen = false; comparePicking = true }
                         )
                         DropdownMenuItem(
                             text = { Text("Cards I don't own", color = TextPrimary) },
@@ -384,10 +399,26 @@ fun DeckDetailScreen(
                                     }
                                 },
                                 onMoveToConsidering = { entry -> addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, considering = true)) { viewModel.moveToConsidering(entry.scryfallId) } },
-                                onSwap = { swapOut = it }
+                                onSwap = { swapOut = it },
+                                hasSideboard = currentDeck.mode.hasSideboard,
+                                onMoveToSideboard = { entry ->
+                                    addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity, sideboard = true)) { viewModel.moveToSideboard(entry.scryfallId) }
+                                }
                             )
                         },
-                        viewModel
+                        viewModel,
+                        onZoomSideboard = { zoom = "side" to it },
+                        sideboardActions = { entry ->
+                            sideboardCardActions(
+                                entry = entry,
+                                onMoveToMain = {
+                                    addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity)) { viewModel.moveToMain(entry.scryfallId) }
+                                },
+                                onRemove = { removeSideboardTarget = entry },
+                                onViewDetails = onViewDetails
+                            )
+                        },
+                        onRemoveLastSideboardCopy = { removeSideboardTarget = it }
                     )
                     "Considering" -> ConsideringTab(
                         deck = currentDeck,
@@ -448,6 +479,24 @@ fun DeckDetailScreen(
                     )
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
+            } else if (source == "side") {
+                val side = currentDeck.sideboard.sortedBy { it.name.lowercase() }
+                val zoomCards = side.map { entry ->
+                    ZoomCard(
+                        imageUrl = entry.imageUrl,
+                        cardName = entry.name,
+                        priceUsd = prices[entry.scryfallId],
+                        quantity = entry.quantity,
+                        onIncrement = { viewModel.setSideboardQuantity(entry.scryfallId, entry.quantity + 1) },
+                        onDecrement = { viewModel.setSideboardQuantity(entry.scryfallId, (entry.quantity - 1).coerceAtLeast(1)) },
+                        onViewDetails = { zoom = null; onViewDetails(entry.name) },
+                        backImageUrl = entry.backImageUrl,
+                        tags = cardTags[entry.name].orEmpty().map(RoleTags::label),
+                        onFindSimilar = { zoom = null; similarSearchFor = entry.name },
+                        onTagClick = searchTag
+                    )
+                }
+                CardZoomDialog(zoomCards, side.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
             } else if (source == "consider") {
                 val considering = currentDeck.considering
                 val zoomCards = considering.map { entry ->
@@ -502,9 +551,10 @@ fun DeckDetailScreen(
                 imageUrl = entry.imageUrl,
                 targets = moveTargets,
                 quantity = quantityLimits(verb, entry.quantity),
+                offerSideboard = true,
                 onPick = { pick ->
                     close()
-                    addTo.perform(addToMessage(verb, entry.name, pick.place, pick.considering, pick.quantity)) {
+                    addTo.perform(addToMessage(verb, entry.name, pick)) {
                         viewModel.sendCard(entry, pick, keep = verb == AddVerb.COPY, ops = this)
                     }
                 },
@@ -522,9 +572,11 @@ fun DeckDetailScreen(
                 canMakeDeck = false,
                 considering = true,
                 quantity = null,
+                offerSideboard = true,
+                printing = card,
                 onPick = { pick ->
                     addSuggestion = null
-                    addTo.perform(addToMessage(AddVerb.ADD, name, pick.place, pick.considering)) {
+                    addTo.perform(addToMessage(AddVerb.ADD, name, pick)) {
                         if (card != null) addCard(card, pick) else viewModel.addByName(name, pick, this)
                     }
                 },
@@ -539,6 +591,16 @@ fun DeckDetailScreen(
                 confirmLabel = "Remove from deck",
                 onConfirm = { viewModel.removeCard(entry.scryfallId); removeCardTarget = null },
                 onDismiss = { removeCardTarget = null }
+            )
+        }
+
+        removeSideboardTarget?.let { entry ->
+            ConfirmDeleteDialog(
+                title = "Remove from sideboard?",
+                message = "Take ${entry.name} (${entry.quantity} cop${if (entry.quantity == 1) "y" else "ies"}) out of this deck's sideboard?",
+                confirmLabel = "Remove from sideboard",
+                onConfirm = { viewModel.setSideboardQuantity(entry.scryfallId, 0); removeSideboardTarget = null },
+                onDismiss = { removeSideboardTarget = null }
             )
         }
 
@@ -567,8 +629,8 @@ fun DeckDetailScreen(
                         onProgress = { done, total ->
                             importState = ImportState(done = done, total = total)
                         },
-                        onResult = { added, considering, failed ->
-                            importState = ImportState(summary = importSummary(added, considering, failed))
+                        onResult = { added, considering, sideboard, failed ->
+                            importState = ImportState(summary = importSummary(added, considering, sideboard, failed))
                         }
                     )
                 }
@@ -618,7 +680,21 @@ fun DeckDetailScreen(
             ExportDialog(deck = currentDeck, viewModel = viewModel, onDismiss = { showExport = false })
         }
         if (showGoldfish) {
-            GoldfishDialog(deck = currentDeck, onDismiss = { showGoldfish = false })
+            val tokens by viewModel.tokens.collectAsState()
+            GoldfishDialog(deck = currentDeck, tokens = tokens, onDismiss = { showGoldfish = false })
+        }
+        if (comparePicking) {
+            val others by viewModel.otherDecks.collectAsState()
+            val history by viewModel.versionHistory.collectAsState()
+            ComparePickerDialog(
+                decks = others,
+                versions = history,
+                onPick = { comparePicking = false; compareWith = it },
+                onDismiss = { comparePicking = false }
+            )
+        }
+        compareWith?.let { target ->
+            CompareScreen(deck = currentDeck, target = target, onDismiss = { compareWith = null })
         }
 
         swapOut?.let { outgoing ->
@@ -690,8 +766,9 @@ fun DeckDetailScreen(
     }
 }
 
-private fun importSummary(added: Int, considering: Int, failed: List<String>): String = buildString {
+private fun importSummary(added: Int, considering: Int, sideboard: Int, failed: List<String>): String = buildString {
     append("Imported $added card${if (added == 1) "" else "s"}.")
+    if (sideboard > 0) append("\n\n$sideboard card${if (sideboard == 1) "" else "s"} went to the sideboard.")
     if (considering > 0) append("\n\n$considering sideboard/maybeboard card${if (considering == 1) "" else "s"} went to Considering.")
     if (failed.isNotEmpty()) {
         append("\n\n${failed.size} line${if (failed.size == 1) "" else "s"} couldn't be matched:\n")
@@ -813,34 +890,6 @@ private fun ImportResultDialog(state: ImportState, onDismiss: () -> Unit) {
     )
 }
 
-/** Builds a plain-text decklist ("1 Card Name" per line), commander first. */
-/**
- * "Simple" is just "qty name" per line — the most broadly compatible format (Moxfield, Archidekt,
- * TappedOut, MTG Arena, MTGO all read it). "Exact printing" appends "(SET) collector-number" from
- * [cards], the same "(SLD) 1962" shape the deck's own decklist *importer* already parses — so it
- * round-trips through this app (or anywhere else that also understands printing-annotated lines)
- * preserving which specific art/printing each card was.
- */
-private fun buildDecklist(deck: Deck, cards: Map<String, ScryfallCard> = emptyMap(), exactPrinting: Boolean = false): String = buildString {
-    fun line(entry: DeckCardEntry) {
-        val printing = if (exactPrinting) {
-            cards[entry.scryfallId]?.let { card ->
-                val set = card.set?.uppercase()
-                val number = card.collectorNumber
-                if (set != null && number != null) " ($set) $number" else null
-            }
-        } else null
-        appendLine("${entry.quantity} ${entry.name}${printing ?: ""}")
-    }
-    deck.commander?.let { line(it) }
-    deck.partnerCommander?.let { line(it) }
-    val commanderIds = setOfNotNull(deck.commander?.scryfallId, deck.partnerCommander?.scryfallId)
-    deck.cards
-        .filterNot { it.scryfallId in commanderIds }
-        .sortedBy { it.name.lowercase() }
-        .forEach { line(it) }
-}
-
 @Composable
 private fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
@@ -885,22 +934,34 @@ private fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
     )
 }
 
+/**
+ * Export list: the deck as text in one of four shapes (DeckExport.kt) — Simple ("1 Sol Ring", what
+ * nearly everything reads), Exact printing (with "(SET) number", so the art survives), Arena and
+ * MTGO. The printings are looked up the first time a format needs them.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExportDialog(deck: Deck, viewModel: DeckDetailViewModel, onDismiss: () -> Unit) {
     val clipboard = LocalClipboardManager.current
-    var exact by remember { mutableStateOf(false) }
+    var format by remember { mutableStateOf(DeckExportFormat.SIMPLE) }
     var exactCards by remember { mutableStateOf<Map<String, ScryfallCard>?>(null) }
     var loadingExact by remember { mutableStateOf(false) }
 
-    LaunchedEffect(exact) {
-        if (exact && exactCards == null) {
+    LaunchedEffect(format) {
+        if (format.needsPrintings && exactCards == null) {
             loadingExact = true
             exactCards = runCatching { viewModel.resolveCardsForExport() }.getOrDefault(emptyMap())
             loadingExact = false
         }
     }
 
-    val decklist = if (exact) buildDecklist(deck, exactCards.orEmpty(), exactPrinting = true) else buildDecklist(deck)
+    val printings = exactCards.orEmpty().mapNotNull { (id, card) ->
+        val set = card.set
+        val number = card.collectorNumber
+        if (set != null && number != null) id to (set to number) else null
+    }.toMap()
+    val loading = format.needsPrintings && loadingExact
+    val decklist = deckExportText(deck, format, if (format.needsPrintings) printings else emptyMap())
 
     AlertDialog(
         containerColor = Surface,
@@ -909,14 +970,20 @@ private fun ExportDialog(deck: Deck, viewModel: DeckDetailViewModel, onDismiss: 
         text = {
             Column {
                 Text(
-                    "Copy this decklist to share or back up your deck.",
+                    when (format) {
+                        DeckExportFormat.SIMPLE -> "Copy this decklist to share or back up your deck."
+                        DeckExportFormat.EXACT -> "Each card with its set and collector number, so the same art comes back."
+                        DeckExportFormat.ARENA -> "For MTG Arena's Import: Commander, Deck and Sideboard sections."
+                        DeckExportFormat.MTGO -> "For Magic Online: no set codes, the sideboard after a blank line."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
                 )
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ExportFormatChip("Simple", selected = !exact) { exact = false }
-                    ExportFormatChip("Exact printing", selected = exact) { exact = true }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DeckExportFormat.entries.forEach { f ->
+                        ExportFormatChip(f.label, selected = format == f) { format = f }
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
                 Column(
@@ -928,7 +995,7 @@ private fun ExportDialog(deck: Deck, viewModel: DeckDetailViewModel, onDismiss: 
                         .verticalScroll(rememberScrollState())
                         .padding(12.dp)
                 ) {
-                    if (exact && loadingExact) {
+                    if (loading) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Gold)
                     } else {
                         Text(
@@ -943,7 +1010,7 @@ private fun ExportDialog(deck: Deck, viewModel: DeckDetailViewModel, onDismiss: 
         confirmButton = {
             Button(
                 onClick = { clipboard.setText(AnnotatedString(decklist)) },
-                enabled = decklist.isNotBlank() && !(exact && loadingExact),
+                enabled = decklist.isNotBlank() && !loading,
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
             ) { Text("Copy") }
         },
@@ -1204,7 +1271,11 @@ private fun CardsTab(
     analysis: DeckAnalysis,
     onZoomCard: (String) -> Unit,
     cardActions: (DeckCardEntry) -> List<CardMenuAction>,
-    viewModel: DeckDetailViewModel
+    viewModel: DeckDetailViewModel,
+    onZoomSideboard: (String) -> Unit = {},
+    sideboardActions: (DeckCardEntry) -> List<CardMenuAction> = { emptyList() },
+    /** The − on a sideboard card's last copy: asked about first, as in the main deck. */
+    onRemoveLastSideboardCopy: (DeckCardEntry) -> Unit = {}
 ) {
     val query by viewModel.cardQuery.collectAsState()
     val trimmed = query.trim()
@@ -1306,6 +1377,57 @@ private fun CardsTab(
         }
     }
 
+    // The sideboard, after the main deck's groups: the same rows, with their own − and +. Shown for a
+    // format with a sideboard, and for any deck that still has cards there (one switched to Commander).
+    val showSideboard = deck.mode.hasSideboard || deck.sideboard.isNotEmpty()
+    val sideboardShown = deck.sideboard
+        .filter { card -> filter == CardFilter.ALL && RoleTags.matches(card.name, tagsOf(card), trimmed) }
+        .sortedBy { it.name.lowercase() }
+    val sideboardSection: LazyListScope.(columns: Int, grid: Boolean) -> Unit = { columns, grid ->
+        if (showSideboard && (sideboardShown.isNotEmpty() || (trimmed.isEmpty() && filter == CardFilter.ALL))) {
+            item(key = "sideboard-header") {
+                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp, start = 2.dp, end = 4.dp)) {
+                    Text("Sideboard (${deck.sideboardCount})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    if (deck.mode.hasSideboard) Text("up to 15", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                }
+            }
+            if (sideboardShown.isEmpty()) {
+                item(key = "sideboard-empty") {
+                    Text(
+                        "No sideboard cards yet. Long-press a card and choose Move to sideboard, or pick Sideboard when adding one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
+                    )
+                }
+            }
+            val sideFewer: (DeckCardEntry) -> Unit = { card ->
+                if (card.quantity <= 1) onRemoveLastSideboardCopy(card) else viewModel.setSideboardQuantity(card.scryfallId, card.quantity - 1)
+            }
+            cardGrid(sideboardShown, columns = columns, key = { "sb-" + it.scryfallId }) { card ->
+                if (grid) {
+                    DeckCardTile(
+                        card = card,
+                        onClick = { onZoomSideboard(card.scryfallId) },
+                        actions = sideboardActions(card),
+                        onIncrement = { viewModel.setSideboardQuantity(card.scryfallId, card.quantity + 1) },
+                        onDecrement = { sideFewer(card) }
+                    )
+                } else {
+                    DeckCardRow(
+                        card = card,
+                        isCommander = false,
+                        onClick = { onZoomSideboard(card.scryfallId) },
+                        actions = sideboardActions(card),
+                        canLead = false,
+                        onToggleCommander = {},
+                        onIncrement = { viewModel.setSideboardQuantity(card.scryfallId, card.quantity + 1) },
+                        onDecrement = { sideFewer(card) }
+                    )
+                }
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         run {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 12.dp, top = 16.dp)) {
@@ -1375,6 +1497,7 @@ private fun CardsTab(
         BoxWithConstraints(Modifier.fillMaxSize()) {
         val listCols = listColumnsFor(maxWidth - 40.dp)
         val gridCols = gridColumnsFor(maxWidth - 40.dp, gridColumns)
+        val gridMode = viewMode == CardViewMode.GRID
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(20.dp),
@@ -1387,6 +1510,7 @@ private fun CardsTab(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+                sideboardSection(if (gridMode) gridCols else listCols, gridMode)
                 addSection()
                 return@LazyColumn
             }
@@ -1403,6 +1527,7 @@ private fun CardsTab(
                         color = TextMuted
                     )
                 }
+                sideboardSection(if (gridMode) gridCols else listCols, gridMode)
                 addSection()
                 return@LazyColumn
             }
@@ -1446,6 +1571,7 @@ private fun CardsTab(
                     }
                 }
             }
+            sideboardSection(if (gridMode) gridCols else listCols, gridMode)
             addSection()
         }
         }
@@ -1862,12 +1988,38 @@ private fun AnalysisTab(
     val viewMode by viewModel.recViewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val budgetSwaps by viewModel.budgetSwaps.collectAsState()
+    val ownedOnly by viewModel.ownedOnly.collectAsState()
+    val ownedKeys by viewModel.ownedKeys.collectAsState()
+    // "Only cards I own" narrows the budget swaps' alternatives the same way as the suggestions.
+    val swaps = budgetSwaps.let { state ->
+        if (state is BudgetSwapState.Done) {
+            state.copy(swaps = state.swaps.map { swap ->
+                swap.copy(alternatives = swap.alternatives.filter { !ownedOnly || isOwnedName(it.name, ownedKeys) }.take(ALTERNATIVES_PER_SWAP))
+            })
+        } else state
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item(key = "owned-only") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { viewModel.setOwnedOnly(!ownedOnly) }.padding(vertical = 2.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Only cards I own", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                    Text("Suggestions and budget swaps you have in your binders", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                }
+                Switch(
+                    checked = ownedOnly,
+                    onCheckedChange = { viewModel.setOwnedOnly(it) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Gold, checkedThumbColor = Bg)
+                )
+            }
+        }
         item { SectionLabel("Combos (${analysis.combos.size})") }
         if (!analysis.combosAvailable) {
             item { Text("Couldn't reach Commander Spellbook — check your connection.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
@@ -1884,7 +2036,7 @@ private fun AnalysisTab(
         }
         nearMissSection(analysis.nearMisses, analysis.combosAvailable, onConsider = onConsiderName)
         budgetSwapsSection(
-            state = budgetSwaps,
+            state = swaps,
             onFind = viewModel::findBudgetSwaps,
             onConsider = onConsiderCard,
             onMarkCut = onMarkCut,
@@ -1900,7 +2052,13 @@ private fun AnalysisTab(
                     color = TextMuted
                 )
             }
-            sug.isEmpty() -> item { Text("No suggestions found.", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
+            sug.isEmpty() -> item {
+                Text(
+                    if (ownedOnly) "None of this commander's suggestions are in your binders." else "No suggestions found.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+            }
             viewMode == CardViewMode.GRID -> {
                 cardGrid(sug, columns = gridColumns, key = { it.id ?: it.name }) { view ->
                     SuggestionTile(view, onClick = { onZoomSugg(view.id ?: view.name) }, onConsider = { onConsiderName(view.name) })
@@ -2249,7 +2407,9 @@ private fun deckCardActions(
     hasConsidering: Boolean,
     onToggleReplaceable: (DeckCardEntry) -> Unit,
     onMoveToConsidering: (DeckCardEntry) -> Unit,
-    onSwap: (DeckCardEntry) -> Unit
+    onSwap: (DeckCardEntry) -> Unit,
+    hasSideboard: Boolean = false,
+    onMoveToSideboard: (DeckCardEntry) -> Unit = {}
 ): List<CardMenuAction> {
     val actions = mutableListOf<CardMenuAction>()
     if (!isCommander && !isPartnerCommander) {
@@ -2262,6 +2422,9 @@ private fun deckCardActions(
             actions += CardMenuAction("Swap with a considered card", Icons.Filled.SwapHoriz) { onSwap(entry) }
         }
         actions += CardMenuAction("Move to Considering", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToConsidering(entry) }
+        if (hasSideboard) {
+            actions += CardMenuAction("Move to sideboard", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToSideboard(entry) }
+        }
     }
     // The same rule as the row's star: any format with a commander, by that format's own test.
     if (entry.canLead(mode)) {
@@ -2286,6 +2449,18 @@ private fun deckCardActions(
     actions += CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
     return actions
 }
+
+/** What a sideboard card's long-press offers: back into the main deck, off the sideboard, its details. */
+private fun sideboardCardActions(
+    entry: DeckCardEntry,
+    onMoveToMain: () -> Unit,
+    onRemove: () -> Unit,
+    onViewDetails: (String) -> Unit
+): List<CardMenuAction> = listOf(
+    CardMenuAction("Move to main deck", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToMain() },
+    CardMenuAction("Remove from sideboard", Icons.Filled.Close, destructive = true) { onRemove() },
+    CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
+)
 
 /**
  * The deck page's header: commander art filling the top, deck name and key figures over its lower

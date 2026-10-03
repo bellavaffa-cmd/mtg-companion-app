@@ -389,9 +389,11 @@ fun CardDetailScreen(
             targets = decks.map { it.asTarget() } + collections.map { it.asTarget() },
             canBeFoil = card.canBeFoil,
             startKind = startKind,
+            offerSideboard = true,
+            printing = card,
             onPick = { pick ->
                 adding = null
-                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick.place, pick.considering, pick.quantity)) { addCard(card, pick) }
+                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick)) { addCard(card, pick) }
             },
             onDismiss = { adding = null }
         )

@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.mtgcompanion.app.data.GameMode
+import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.launch
@@ -69,6 +70,12 @@ import kotlinx.coroutines.launch
  * - [quantity]: a copies stepper; null hides it (the scanner's pile says how many).
  * - [canBeFoil]: on the binder list, a Foil switch.
  * - [startKind]: open straight on that kind's list (Back still reaches the first step).
+ * - [offerSideboard]: with [considering] on offer, the deck list's choice becomes "Into the deck /
+ *   Sideboard / Considering" when a deck there has a sideboard; picking Sideboard lists only those.
+ *   For flows whose change reads [AddToPick.sideboard] (AddToOps.addCard does).
+ * - [printing]: the card being added — a "Printing: SET #number" row opens the printing picker,
+ *   and the one chosen comes back as [AddToPick.printing]. Only for adding a new card, never for
+ *   moving or copying copies that already exist.
  *
  * On a phone it's a sheet from the bottom, like the card actions sheet; on wider screens the same
  * content opens as a centred panel.
@@ -87,7 +94,9 @@ fun AddToPicker(
     considering: Boolean? = false,
     quantity: QuantityLimits? = quantityLimits(verb),
     canBeFoil: Boolean = false,
-    startKind: SourceKind? = null
+    startKind: SourceKind? = null,
+    offerSideboard: Boolean = false,
+    printing: ScryfallCard? = null
 ) {
     val app = LocalAppColors.current
     if (LocalLayoutSize.current.isWide) {
@@ -101,7 +110,7 @@ fun AddToPicker(
                     .background(app.surface)
                     .padding(horizontal = 12.dp, vertical = 16.dp)
             ) {
-                PickerContent(verb, subject, targets, imageUrl, canMakeBinder, canMakeDeck, considering, quantity, canBeFoil, startKind, onDismiss) { pick ->
+                PickerContent(verb, subject, targets, imageUrl, canMakeBinder, canMakeDeck, considering, quantity, canBeFoil, startKind, offerSideboard, printing, onDismiss) { pick ->
                     onDismiss()
                     onPick(pick)
                 }
@@ -124,7 +133,7 @@ fun AddToPicker(
     ) {
         KeepSystemBarsHidden()
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 20.dp)) {
-            PickerContent(verb, subject, targets, imageUrl, canMakeBinder, canMakeDeck, considering, quantity, canBeFoil, startKind, onDismiss) { pick ->
+            PickerContent(verb, subject, targets, imageUrl, canMakeBinder, canMakeDeck, considering, quantity, canBeFoil, startKind, offerSideboard, printing, onDismiss) { pick ->
                 scope.launch { sheetState.hide() }.invokeOnCompletion {
                     onDismiss()
                     onPick(pick)
@@ -146,6 +155,8 @@ private fun PickerContent(
     quantity: QuantityLimits?,
     canBeFoil: Boolean,
     startKind: SourceKind?,
+    offerSideboard: Boolean,
+    printing: ScryfallCard?,
     onDismiss: () -> Unit,
     onPick: (AddToPick) -> Unit
 ) {
@@ -163,6 +174,10 @@ private fun PickerContent(
     var newName by remember { mutableStateOf("") }
     var newMode by remember { mutableStateOf(GameMode.DEFAULT) }
     var considering by remember { mutableStateOf(startConsidering ?: false) }
+    var sideboard by remember { mutableStateOf(false) }
+    // The printing to add, when the card being added was given: the one it came as until another is chosen.
+    var chosenPrinting by remember { mutableStateOf(printing) }
+    var choosingPrinting by remember { mutableStateOf(false) }
     var copies by remember { mutableIntStateOf(quantity?.default ?: 1) }
     var foil by remember { mutableStateOf(false) }
 
@@ -172,10 +187,15 @@ private fun PickerContent(
 
     val toDeck = listKind == SourceKind.DECK
     val intoConsidering = toDeck && startConsidering != null && considering
+    // Sideboard is a third choice only where a deck on offer has one.
+    val sideboardOffered = toDeck && startConsidering != null && offerSideboard && targets.any { it.kind == SourceKind.DECK && it.hasSideboard }
+    val intoSideboard = sideboardOffered && sideboard && !considering
     fun pick(target: MoveTarget, isNew: Boolean = false) = onPick(
         AddToPick(
             target = target,
             considering = intoConsidering,
+            sideboard = intoSideboard && target.hasSideboard,
+            printing = chosenPrinting?.takeIf { printing != null && it.id != printing.id },
             // Considering is a list of cards to think about, not of copies.
             quantity = if (intoConsidering || quantity == null) quantity?.default ?: 1 else copies,
             foil = !toDeck && canBeFoil && foil,
@@ -237,25 +257,42 @@ private fun PickerContent(
             }
         }
         else -> {
-            val shown = targets.filter { it.kind == listKind }
-            val offerNew = (toDeck && canMakeDeck) || (listKind == SourceKind.BINDER && canMakeBinder)
+            // Into the sideboard, only the decks that have one are listed, and no new deck is offered.
+            val shown = targets.filter { it.kind == listKind && (!intoSideboard || it.hasSideboard) }
+            val offerNew = (toDeck && canMakeDeck && !intoSideboard) || (listKind == SourceKind.BINDER && canMakeBinder)
             if (toDeck && startConsidering != null) {
-                // Into the deck, or onto its Considering list.
+                // Into the deck, its sideboard, or onto its Considering list. 0, 1, 2 in that order.
+                val part = when {
+                    considering -> 2
+                    intoSideboard -> 1
+                    else -> 0
+                }
+                val parts = listOfNotNull(0 to "Into the deck", if (sideboardOffered) 1 to "Sideboard" else null, 2 to "Considering")
                 Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp).clip(RoundedCornerShape(12.dp)).background(app.surface3).padding(3.dp)) {
-                    listOf(false to "Into the deck", true to "Considering").forEach { (value, text) ->
+                    parts.forEach { (value, text) ->
                         Text(
                             text,
-                            color = if (considering == value) app.accent else app.textMuted,
+                            color = if (part == value) app.accent else app.textMuted,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(9.dp))
-                                .background(if (considering == value) app.surface else Color.Transparent)
-                                .clickable { considering = value }
+                                .background(if (part == value) app.surface else Color.Transparent)
+                                .clickable { considering = value == 2; sideboard = value == 1 }
                                 .padding(vertical = 8.dp)
                         )
                     }
+                }
+                if (intoSideboard) {
+                    Text(
+                        "Beside the main deck, up to 15 cards. Only decks whose format has a sideboard are listed.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = app.textDim,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
                 }
                 if (considering) {
                     Text(
@@ -264,6 +301,42 @@ private fun PickerContent(
                         color = app.textDim,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
+                }
+            }
+            val shownPrinting = chosenPrinting
+            if (shownPrinting != null) {
+                // Which printing goes in: the existing printing picker, in the card's zoom.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { choosingPrinting = true }
+                        .padding(horizontal = 4.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        "Printing: " + listOfNotNull(shownPrinting.set?.uppercase(), shownPrinting.collectorNumber?.let { "#$it" }).joinToString(" ").ifEmpty { "this one" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = app.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("Change", style = MaterialTheme.typography.labelLarge, color = app.accent)
+                }
+                if (choosingPrinting) {
+                    CardZoomDialog(
+                        listOf(
+                            ZoomCard(
+                                imageUrl = shownPrinting.displayImageUrl,
+                                cardName = shownPrinting.name,
+                                backImageUrl = shownPrinting.backImageUrl,
+                                onSelectPrinting = { chosen -> chosenPrinting = chosen; choosingPrinting = false }
+                            )
+                        ),
+                        0
+                    ) { choosingPrinting = false }
                 }
             }
             val showStepper = quantity != null && quantity.max > 1 && !intoConsidering

@@ -4,6 +4,7 @@ import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.GameMode
+import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.data.Collection as Binder
 
 // The plain parts of adding, moving and copying cards into a deck or binder: what the picker
@@ -19,11 +20,13 @@ data class MoveTarget(
     val id: String,
     val name: String,
     val imageUrl: String? = null,
-    val cards: Int? = null
+    val cards: Int? = null,
+    /** A deck whose format has a sideboard — the picker can put cards there. */
+    val hasSideboard: Boolean = false
 )
 
 /** A deck as a place to put cards, with its commander's picture. */
-fun Deck.asTarget() = MoveTarget(SourceKind.DECK, id, name, imageUrl = commander?.imageUrl, cards = cards.sumOf { it.quantity })
+fun Deck.asTarget() = MoveTarget(SourceKind.DECK, id, name, imageUrl = commander?.imageUrl, cards = cards.sumOf { it.quantity }, hasSideboard = mode.hasSideboard)
 
 /** A binder as a place to put cards. */
 fun Binder.asTarget() = MoveTarget(SourceKind.BINDER, id, name, cards = entries.sumOf { it.quantity + it.foilQuantity })
@@ -54,11 +57,16 @@ fun addToTitle(verb: AddVerb, subject: String): String = "${verb.label} $subject
 
 /**
  * The confirmation: "Added Sol Ring to Atraxa", "Moved 3 cards to Trades", "Added Sol Ring to
- * Considering in Atraxa". [quantity] above one is said for a single card: "Added 4 × Forest to Lands".
+ * Considering in Atraxa", "Moved Duress to the sideboard in Burn". [quantity] above one is said for
+ * a single card: "Added 4 × Forest to Lands".
  */
-fun addToMessage(verb: AddVerb, subject: String, place: String, considering: Boolean = false, quantity: Int = 1): String {
+fun addToMessage(verb: AddVerb, subject: String, place: String, considering: Boolean = false, quantity: Int = 1, sideboard: Boolean = false): String {
     val what = if (quantity > 1) "$quantity × $subject" else subject
-    val where = if (considering) "Considering in $place" else place
+    val where = when {
+        considering -> "Considering in $place"
+        sideboard -> "the sideboard in $place"
+        else -> place
+    }
     return "${verb.done} $what to $where"
 }
 
@@ -100,10 +108,18 @@ data class AddToPick(
     val quantity: Int = 1,
     val foil: Boolean = false,
     val isNew: Boolean = false,
-    val newDeckMode: GameMode? = null
+    val newDeckMode: GameMode? = null,
+    /** Into the deck's sideboard rather than its main deck (never with [considering]). */
+    val sideboard: Boolean = false,
+    /** The printing chosen in the picker for a card being added; null keeps the card as it came. */
+    val printing: ScryfallCard? = null
 ) {
     val place: String get() = target.name
 }
+
+/** The confirmation for [pick]: "Added Sol Ring to the sideboard in Burn" and the like. */
+fun addToMessage(verb: AddVerb, subject: String, pick: AddToPick, quantity: Int = pick.quantity): String =
+    addToMessage(verb, subject, pick.place, pick.considering, quantity, pick.sideboard)
 
 /** One thing Undo puts back as it was. */
 sealed interface UndoStep {
@@ -111,6 +127,8 @@ sealed interface UndoStep {
     data class DeckCard(val deckId: String, val scryfallId: String, val before: DeckCardEntry?, val stillThere: Boolean) : UndoStep
     /** A card on a deck's Considering list. */
     data class Considered(val deckId: String, val scryfallId: String, val before: DeckCardEntry?, val stillThere: Boolean) : UndoStep
+    /** A card in a deck's sideboard. */
+    data class Sideboard(val deckId: String, val scryfallId: String, val before: DeckCardEntry?, val stillThere: Boolean) : UndoStep
     /** A deck's commanders, as they were. */
     data class Commanders(val deckId: String, val commander: DeckCardEntry?, val partner: DeckCardEntry?) : UndoStep
     /** A card in a binder. */
@@ -145,6 +163,7 @@ fun undoSteps(
         val was = before ?: Deck(id = after.id, name = after.name)
         steps += changed(was.cards, after.cards, { it.scryfallId }) { id, b, still -> UndoStep.DeckCard(after.id, id, b, still) }
         steps += changed(was.considering, after.considering, { it.scryfallId }) { id, b, still -> UndoStep.Considered(after.id, id, b, still) }
+        steps += changed(was.sideboard, after.sideboard, { it.scryfallId }) { id, b, still -> UndoStep.Sideboard(after.id, id, b, still) }
         if (was.commander != after.commander || was.partnerCommander != after.partnerCommander) {
             commanders += UndoStep.Commanders(after.id, was.commander, was.partnerCommander)
         }

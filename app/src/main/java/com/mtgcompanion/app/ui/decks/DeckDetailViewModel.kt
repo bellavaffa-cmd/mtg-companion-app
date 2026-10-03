@@ -49,6 +49,10 @@ import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.LegalityReport
 import com.mtgcompanion.app.data.ListLine
 import com.mtgcompanion.app.data.ListSection
+import com.mtgcompanion.app.data.DeckPart
+import com.mtgcompanion.app.data.importPart
+import com.mtgcompanion.app.data.isOwnedName
+import com.mtgcompanion.app.data.ownedNameKeys
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.evaluateLegality
@@ -189,6 +193,10 @@ class DeckDetailViewModel(
     val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)
 
+    /** The user's other decks — for "Compare with…". */
+    val otherDecks: StateFlow<List<Deck>> = repository.decksFlow.map { decks -> decks.filter { it.id != deckId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     /** Other decks and all binders this deck's cards can be moved into. */
     val moveTargets: StateFlow<List<MoveTarget>> =
         combine(repository.decksFlow, collectionRepository.collectionsFlow) { decks, collections ->
@@ -223,7 +231,7 @@ class DeckDetailViewModel(
 
     /** scryfallId -> USD price for the deck's and considering list's cards. */
     val prices: StateFlow<Map<String, Double>> = deck.mapLatest { d ->
-        fetchPrices(cardRepository, (d?.cards.orEmpty() + d?.considering.orEmpty()).map { it.scryfallId }.distinct())
+        fetchPrices(cardRepository, (d?.cards.orEmpty() + d?.sideboard.orEmpty() + d?.considering.orEmpty()).map { it.scryfallId }.distinct())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /**
@@ -266,7 +274,7 @@ class DeckDetailViewModel(
 
     /** Card name -> what it does (RoleTags ids), for the deck's cards and its considering list. */
     val cardTags: StateFlow<Map<String, List<String>>> = combine(deck, RoleTags.version) { d, _ ->
-        (d?.cards.orEmpty() + d?.considering.orEmpty()).associate { it.name to RoleTags.tagsOf(it.name).orEmpty() }
+        (d?.cards.orEmpty() + d?.sideboard.orEmpty() + d?.considering.orEmpty()).associate { it.name to RoleTags.tagsOf(it.name).orEmpty() }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /** Tags still being looked up, (done, total). */
@@ -397,7 +405,7 @@ class DeckDetailViewModel(
                 val identity = (commanderIds.mapNotNull { full[it]?.colorIdentity }.flatten().takeIf { commanderIds.isNotEmpty() }
                     ?: candidates.mapNotNull { full[it.first.scryfallId]?.colorIdentity }.flatten())
                     .distinct().joinToString("").ifEmpty { "c" }
-                val alreadyHave = (d.cards + d.considering).flatMap { cardNameKeys(it.name) }.toSet()
+                val alreadyHave = (d.cards + d.sideboard + d.considering).flatMap { cardNameKeys(it.name) }.toSet()
 
                 val swaps = candidates.map { (entry, price) ->
                     val role = roleCache[entry.name].orEmpty().let { roles -> DeckRole.TAGGED.firstOrNull { it in roles } }
@@ -411,7 +419,8 @@ class DeckDetailViewModel(
                     val alternatives = try {
                         cardRepository.search(query, order = "edhrec").cards
                             .filterNot { alt -> cardNameKeys(alt.name).any { it in alreadyHave } }
-                            .take(ALTERNATIVES_PER_SWAP)
+                            // More than are shown, so "Only cards I own" has some to choose from.
+                            .take(ALTERNATIVES_KEPT)
                     } catch (e: Exception) {
                         emptyList()
                     }
@@ -427,18 +436,40 @@ class DeckDetailViewModel(
         }
     }
 
+    private val _ownedOnly = MutableStateFlow(false)
+    /** "Only cards I own" on the Suggestions tab: suggestions and budget swaps limited to cards in the user's binders. */
+    val ownedOnly: StateFlow<Boolean> = _ownedOnly.asStateFlow()
+    fun setOwnedOnly(on: Boolean) { _ownedOnly.value = on }
+
+    /** Name keys of every card with a copy in the user's binders (see ownedNameKeys). */
+    val ownedKeys: StateFlow<Set<String>> = collectionRepository.collectionsFlow.map { ownedNameKeys(it) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
     /** EDHREC "top cards" suggestions for this deck's commander (null if no commander/data). */
-    val suggestions: StateFlow<List<EdhrecCardView>?> = deck.mapLatest { d ->
-        val commander = d?.commander?.name ?: return@mapLatest null
+    val suggestions: StateFlow<List<EdhrecCardView>?> = combine(
+        deck.mapLatest { d -> suggestionPool(d) },
+        _ownedOnly,
+        ownedKeys
+    ) { pool, ownedOnly, owned ->
+        pool?.let { views -> (if (ownedOnly) views.filter { isOwnedName(it.name, owned) } else views).take(12) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Every EDHREC suggestion the deck doesn't have yet, best first — [suggestions] shows the top of it. */
+    private suspend fun suggestionPool(d: Deck?): List<EdhrecCardView>? {
+        val pool = d
+        val commander = pool?.commander?.name ?: return null
         val lists = try {
-            edhrecRepository.getRecommendationsForCommander(commander, d.partnerCommander?.name)
+            edhrecRepository.getRecommendationsForCommander(commander, pool.partnerCommander?.name)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
-        } ?: return@mapLatest null
+        } ?: return null
         // EDHREC's top cards for a commander are mostly staples the deck probably already runs;
         // suggesting those wastes the list, so only offer cards the deck doesn't have.
         // Cards already on the Considering list are skipped too, as budget swaps do.
-        val inDeck = (d.cards.map { it.name } + d.considering.map { it.name } + listOfNotNull(d.commander?.name, d.partnerCommander?.name))
+        val inDeck = (pool.cards.map { it.name } + pool.sideboard.map { it.name } + pool.considering.map { it.name } + listOfNotNull(pool.commander?.name, pool.partnerCommander?.name))
             .flatMap { cardNameKeys(it) }
             .toSet()
         // Top cards alone can come back empty after that filter — a precon's commander page is
@@ -448,11 +479,10 @@ class DeckDetailViewModel(
         val headline = lists.filter { it.tag in priority }.sortedBy { priority.indexOf(it.tag) }.flatMap { it.cardviews }
         val rest = lists.filterNot { it.tag in priority }.flatMap { it.cardviews }
             .sortedByDescending { it.inclusionPercent ?: -1 }
-        (headline + rest)
+        return (headline + rest)
             .distinctBy { it.name }
             .filterNot { view -> cardNameKeys(view.name).any { it in inDeck } }
-            .take(12)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }
 
     /**
      * The tokens this deck's cards make, each with a picture. Read off the cards themselves
@@ -473,7 +503,8 @@ class DeckDetailViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private suspend fun buildAnalysis(d: Deck): DeckAnalysis {
-        val byId = cardRepository.getCardsByIds(d.cards.map { it.scryfallId }).associateBy { it.id }
+        // The sideboard's cards too, for the legality check — nothing else here looks at them.
+        val byId = cardRepository.getCardsByIds((d.cards + d.sideboard).map { it.scryfallId }.distinct()).associateBy { it.id }
 
         // Cards grouped by type (Creatures, Instants, …, Lands last).
         val groups = d.cards
@@ -633,6 +664,25 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.removeFromConsidering(deckId, scryfallId) }
     }
 
+    // ---- Sideboard ----
+    // Moving between the main deck and the sideboard leaves the Unsorted pile alone: the copies stay
+    // with the deck either way.
+
+    /** Run by the add confirmation, which says so and can undo it. */
+    suspend fun moveToSideboard(scryfallId: String) {
+        repository.moveToSideboard(deckId, scryfallId)
+    }
+
+    /** Run by the add confirmation, which says so and can undo it. */
+    suspend fun moveToMain(scryfallId: String) {
+        repository.moveToMain(deckId, scryfallId)
+    }
+
+    /** The sideboard's copies of a card; zero takes it off the sideboard. */
+    fun setSideboardQuantity(scryfallId: String, quantity: Int) {
+        viewModelScope.launch { repository.setSideboardQuantity(deckId, scryfallId, quantity) }
+    }
+
     fun swap(outScryfallId: String, inScryfallId: String) {
         viewModelScope.launch {
             val before = deck.value
@@ -679,7 +729,8 @@ class DeckDetailViewModel(
     /** Resolves this deck's cards to full Scryfall data (set + collector number) for exact-printing export. */
     suspend fun resolveCardsForExport(): Map<String, ScryfallCard> {
         val d = deck.value ?: return emptyMap()
-        return cardRepository.getCardsByIds(d.cards.map { it.scryfallId }).associateBy { it.id }
+        return cardRepository.getCardsByIds((d.cards + d.sideboard + listOfNotNull(d.commander, d.partnerCommander)).map { it.scryfallId }.distinct())
+            .associateBy { it.id }
     }
 
     fun setCommander(card: DeckCardEntry?) {
@@ -831,9 +882,11 @@ class DeckDetailViewModel(
         val target = ops.resolve(pick)
         val quantity = pick.quantity.coerceIn(1, entry.quantity.coerceAtLeast(1))
         when (target.kind) {
-            SourceKind.DECK ->
-                if (pick.considering) repository.addConsideringEntry(target.id, entry.copy(quantity = 1))
-                else repository.addEntry(target.id, entry.copy(quantity = quantity))
+            SourceKind.DECK -> when {
+                pick.considering -> repository.addConsideringEntry(target.id, entry.copy(quantity = 1))
+                pick.sideboard -> repository.addSideboardEntry(target.id, entry.copy(quantity = quantity))
+                else -> repository.addEntry(target.id, entry.copy(quantity = quantity))
+            }
             SourceKind.BINDER -> collectionRepository.addEntry(
                 target.id,
                 CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = quantity, foilQuantity = 0, backImageUrl = entry.backImageUrl, tags = entry.tags)
@@ -884,32 +937,43 @@ class DeckDetailViewModel(
      * binder imports (parseCardList) — "1 Sol Ring", "2x Brainstorm", "Sol Ring", and lines with a
      * trailing set/collector ("1 Sol Ring (LTC) 285") or foil marker ("*F*") — skips section
      * headers/comments, and reports how many copies were added and which lines couldn't be
-     * matched. Sideboard and maybeboard cards go on the Considering list rather than into the deck.
+     * matched. Sideboard cards go into the sideboard for a format that has one, onto the Considering
+     * list for Commander and Brawl; maybeboard cards onto Considering (see importPart).
      */
     fun importDecklist(
         text: String,
         onProgress: (done: Int, total: Int) -> Unit,
-        onResult: (added: Int, considering: Int, failed: List<String>) -> Unit
+        onResult: (added: Int, considering: Int, sideboard: Int, failed: List<String>) -> Unit
     ) {
         viewModelScope.launch {
-            val lines = parseCardList(text).lines.mapNotNull { it.toParsedLine() }
+            val mode = deck.value?.mode ?: GameMode.DEFAULT
+            val lines = parseCardList(text).lines.mapNotNull { it.toParsedLine(mode) }
             val total = lines.size
             val resolved = mutableListOf<DeckCardEntry>()
             val consideringEntries = mutableListOf<DeckCardEntry>()
+            val sideboardEntries = mutableListOf<DeckCardEntry>()
             val unresolved = mutableListOf<ParsedLine>()
             val failed = mutableListOf<String>()
             var done = 0
             var added = 0
             var considered = 0
+            var sided = 0
             onProgress(0, total)
 
             fun keep(line: ParsedLine, card: ScryfallCard) {
-                if (line.considering) {
-                    consideringEntries += line.toEntry(card)
-                    considered += line.quantity
-                } else {
-                    resolved += line.toEntry(card)
-                    added += line.quantity
+                when (line.part) {
+                    DeckPart.CONSIDERING -> {
+                        consideringEntries += line.toEntry(card)
+                        considered += line.quantity
+                    }
+                    DeckPart.SIDEBOARD -> {
+                        sideboardEntries += line.toEntry(card)
+                        sided += line.quantity
+                    }
+                    DeckPart.MAIN -> {
+                        resolved += line.toEntry(card)
+                        added += line.quantity
+                    }
                 }
             }
 
@@ -952,7 +1016,8 @@ class DeckDetailViewModel(
             // (and its Scryfall lookup) on every single card.
             repository.addEntries(deckId, resolved)
             repository.addConsideringEntries(deckId, consideringEntries)
-            onResult(added, considered, failed)
+            repository.addSideboardEntries(deckId, sideboardEntries)
+            onResult(added, considered, sided, failed)
         }
     }
 
@@ -1000,20 +1065,23 @@ class DeckDetailViewModel(
 /** Scryfall asks for 50–100ms between requests. */
 internal const val SCRYFALL_SPACING_MILLIS = 90L
 private const val MAX_BUDGET_SWAPS = 8
-private const val ALTERNATIVES_PER_SWAP = 4
+/** How many cheaper alternatives each budget swap shows. */
+internal const val ALTERNATIVES_PER_SWAP = 4
+/** How many are kept, so filtering to owned cards still has some to show. */
+private const val ALTERNATIVES_KEPT = 24
 /** Alternatives must cost under this fraction of the original — a swap has to actually save money. */
 private const val BUDGET_PRICE_FRACTION = 0.4
 
 /**
  * One decklist line: how many copies, the card name, the printing if the export named one, and
- * whether it was in the sideboard or maybeboard (so it goes on the Considering list).
+ * which part of the deck it goes in (the sideboard, Considering — see importPart).
  */
 private data class ParsedLine(
     val quantity: Int,
     val name: String,
     val set: String?,
     val collectorNumber: String?,
-    val considering: Boolean = false
+    val part: DeckPart = DeckPart.MAIN
 ) {
     /** Address the exact printing when the line gave one; otherwise fall back to the name. */
     fun toIdentifier(): ScryfallIdentifier =
@@ -1034,15 +1102,15 @@ private fun ScryfallCard.matches(line: ParsedLine): Boolean =
         name.equals(line.name, ignoreCase = true)
     }
 
-/** A parsed list line as a deck import line; null for a line with no name (a CSV row with only an id). */
-private fun ListLine.toParsedLine(): ParsedLine? {
+/** A parsed list line as a [mode] deck's import line; null for a line with no name (a CSV row with only an id). */
+private fun ListLine.toParsedLine(mode: GameMode): ParsedLine? {
     val cardName = name ?: return null
     return ParsedLine(
         quantity = quantity.coerceIn(1, 99),
         name = cardName,
         set = set,
         collectorNumber = number,
-        considering = section != ListSection.MAIN
+        part = importPart(section, mode)
     )
 }
 

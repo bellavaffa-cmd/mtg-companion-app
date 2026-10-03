@@ -234,9 +234,11 @@ fun SearchResultsScreen(
             imageUrl = card.displayImageUrl,
             targets = addTargets,
             canBeFoil = card.canBeFoil,
+            offerSideboard = true,
+            printing = card,
             onPick = { pick ->
                 addTarget = null
-                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick.place, pick.considering, pick.quantity)) { addCard(card, pick) }
+                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick)) { addCard(card, pick) }
             },
             onDismiss = { addTarget = null }
         )

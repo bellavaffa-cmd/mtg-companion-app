@@ -103,6 +103,11 @@ class AddToFeedback internal constructor(
                     if (step.stillThere) decks.removeFromConsidering(step.deckId, step.scryfallId)
                     step.before?.let { decks.addConsideringEntry(step.deckId, it) }
                 }
+                is UndoStep.Sideboard -> when {
+                    step.before == null -> decks.setSideboardQuantity(step.deckId, step.scryfallId, 0)
+                    step.stillThere -> decks.setSideboardQuantity(step.deckId, step.scryfallId, step.before.quantity)
+                    else -> decks.addSideboardEntry(step.deckId, step.before)
+                }
                 is UndoStep.Commanders -> {
                     decks.setCommander(step.deckId, step.commander)
                     decks.setPartnerCommander(step.deckId, step.partner)
@@ -156,17 +161,25 @@ class AddToOps internal constructor(
     }
 
     /**
-     * Puts [pick]'s quantity of [card] where [pick] says: into a deck (with a note when the format's
-     * copy limit is passed — the card goes in either way), onto its Considering list, or into a
-     * binder (foil or not). A deck that holds the user's own copies takes its copies out of the
-     * Unsorted pile, unless [fromPile] is false (the scanner's cards are new copies in hand).
+     * Puts [pick]'s quantity of [card] (or of the printing chosen in the picker, [AddToPick.printing])
+     * where [pick] says: into a deck (with a note when the format's copy limit is passed — the card
+     * goes in either way), its sideboard, its Considering list, or into a binder (foil or not). A
+     * deck that holds the user's own copies takes its copies out of the Unsorted pile, unless
+     * [fromPile] is false (the scanner's cards are new copies in hand). The sideboard doesn't: it's
+     * kept out of what a deck holds, like Considering.
      */
     suspend fun addCard(card: ScryfallCard, pick: AddToPick, fromPile: Boolean = true) {
+        @Suppress("NAME_SHADOWING")
+        val card = pick.printing ?: card
         val target = resolve(pick)
         val quantity = pick.quantity.coerceAtLeast(1)
         when (target.kind) {
             SourceKind.DECK -> if (pick.considering) {
                 decks.addConsideringEntry(target.id, card.asDeckEntry(1))
+            } else if (pick.sideboard) {
+                val deck = decks.decksFlow.first().firstOrNull { it.id == target.id }
+                deck?.let { duplicateWarning(it, card, quantity) }?.let { addNote(it) }
+                decks.addSideboardEntry(target.id, card.asDeckEntry(quantity))
             } else {
                 val deck = decks.decksFlow.first().firstOrNull { it.id == target.id }
                 deck?.let { duplicateWarning(it, card, quantity) }?.let { addNote(it) }

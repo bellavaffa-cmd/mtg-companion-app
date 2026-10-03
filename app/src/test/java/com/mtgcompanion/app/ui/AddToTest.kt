@@ -141,6 +141,24 @@ class AddToTest {
     }
 
     @Test
+    fun movingToTheSideboardIsSaidAndUndoneLikeTheRest() {
+        assertEquals("Moved 2 × Duress to the sideboard in Rakdos", addToMessage(AddVerb.MOVE, "Duress", "Rakdos", quantity = 2, sideboard = true))
+        val pick = com.mtgcompanion.app.ui.common.AddToPick(MoveTarget(SourceKind.DECK, "d", "Burn", hasSideboard = true), sideboard = true)
+        assertEquals("Added Sol Ring to the sideboard in Burn", addToMessage(AddVerb.ADD, "Sol Ring", pick))
+        val before = listOf(Deck("d", "Deck", cards = listOf(sol)))
+        val after = listOf(Deck("d", "Deck", sideboard = listOf(sol)))
+        val steps = undoSteps(before, after, emptyList(), emptyList())
+        assertTrue(UndoStep.Sideboard("d", "sol", null, stillThere = true) in steps)
+        assertTrue(UndoStep.DeckCard("d", "sol", sol, stillThere = false) in steps)
+    }
+
+    @Test
+    fun onlyDecksWhoseFormatHasOneOfferASideboard() {
+        assertTrue(Deck("d", "Burn", gameMode = com.mtgcompanion.app.data.GameMode.MODERN.name).asTarget().hasSideboard)
+        assertTrue(!Deck("d", "Atraxa").asTarget().hasSideboard)
+    }
+
+    @Test
     fun aDeckOrBinderMadeForTheCardsIsDeletedAgain() {
         val after = listOf(Deck("new", "New", cards = listOf(sol)))
         val binders = listOf(Collection("nb", "New binder", entries = listOf(CollectionEntry("sol", "Sol Ring", null, quantity = 1))))
