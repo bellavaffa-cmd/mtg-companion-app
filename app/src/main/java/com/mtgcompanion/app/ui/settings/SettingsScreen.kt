@@ -41,6 +41,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Sell
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.mtgcompanion.app.data.Currencies
+import com.mtgcompanion.app.data.Prices
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.ExpandLess
@@ -103,20 +114,81 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 import com.mtgcompanion.app.ui.theme.accentPreviewColor
 import kotlin.math.roundToInt
 
+/** Settings' sections. The Settings screen lists them; each opens as a screen of its own. */
+enum class SettingsSection(val id: String, val title: String, val icon: ImageVector) {
+    ACCOUNT("account", "Account & sync", Icons.Filled.Person),
+    APPEARANCE("appearance", "Appearance", Icons.Filled.DarkMode),
+    CARD_DISPLAY("card-display", "Card Display", Icons.Filled.GridView),
+    PRICES("prices", "Prices", Icons.Filled.Sell),
+    OFFLINE_SEARCH("offline-search", "Offline Search", Icons.Filled.CloudOff),
+    CARD_RECOGNITION("card-recognition", "Card Recognition", Icons.Filled.CameraAlt),
+    APP_UPDATES("app-updates", "App Updates", Icons.Filled.Autorenew);
+
+    companion object {
+        fun fromId(id: String?): SettingsSection? = entries.firstOrNull { it.id == id }
+    }
+}
+
+/**
+ * Settings: one row per section — its icon, its name and a line on how it's set now — each opening
+ * the section on a screen of its own ([SettingsSectionScreen]).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    driveImporter: DriveImporter,
     supabaseSync: SupabaseSync,
     updateManager: UpdateManager,
     offlineCardRepository: OfflineCardRepository,
     cardIndexRepository: CardIndexRepository,
     settingsRepository: SettingsRepository,
     onBack: () -> Unit,
-    onOpenFriends: (() -> Unit)? = null,
+    onOpenSection: (SettingsSection) -> Unit,
     /** Only in the tester app: opens its tools. */
     onOpenTesterTools: (() -> Unit)? = null
 ) {
+    val account by supabaseSync.auth.account.collectAsState()
+    val brightness by settingsRepository.appBrightness.collectAsState(initial = AppBrightness.DEFAULT)
+    val accent by settingsRepository.accentTheme.collectAsState(initial = AccentTheme.DEFAULT)
+    val modes = listOf(
+        settingsRepository.searchViewMode.collectAsState(initial = CardViewMode.DEFAULT).value,
+        settingsRepository.collectionViewMode.collectAsState(initial = CardViewMode.DEFAULT).value,
+        settingsRepository.deckViewMode.collectAsState(initial = CardViewMode.DEFAULT).value,
+        settingsRepository.allCardsViewMode.collectAsState(initial = CardViewMode.DEFAULT).value,
+        settingsRepository.recViewMode.collectAsState(initial = CardViewMode.DEFAULT).value
+    )
+    val chosenCurrency by Prices.chosen.collectAsState()
+    val offline by offlineCardRepository.status.collectAsState()
+    val recognition by cardIndexRepository.status.collectAsState()
+    val update by updateManager.state.collectAsState()
+
+    fun summaryOf(section: SettingsSection): String = when (section) {
+        SettingsSection.ACCOUNT -> when {
+            !supabaseSync.auth.configured -> "Cloud sync isn't set up in this build"
+            account != null -> "Signed in as ${account?.email}"
+            else -> "Not signed in — sign in to sync decks and binders"
+        }
+        SettingsSection.APPEARANCE -> {
+            val mode = when (brightness) {
+                AppBrightness.DARK -> "Dark"
+                AppBrightness.LIGHT -> "Light"
+                AppBrightness.SYSTEM -> "Follows the system"
+            }
+            "$mode · ${accent.label}"
+        }
+        SettingsSection.CARD_DISPLAY -> {
+            val grids = modes.count { it == CardViewMode.GRID }
+            when (grids) {
+                0 -> "Every tab shows a list"
+                modes.size -> "Every tab shows a grid"
+                else -> "$grids of ${modes.size} tabs show a grid"
+            }
+        }
+        SettingsSection.PRICES -> Currencies.of(chosenCurrency).let { "${it.name} (${it.code})" }
+        SettingsSection.OFFLINE_SEARCH -> if (offline.hasData) "${offline.cardCount} cards downloaded" else "Not downloaded"
+        SettingsSection.CARD_RECOGNITION -> if (recognition.ready) "${recognition.cardCount} card pictures" else "Downloads the first time you scan"
+        SettingsSection.APP_UPDATES -> update.available?.let { "${it.headline} is available" } ?: "Version ${BuildConfig.VERSION_NAME}"
+    }
+
     Scaffold(
         containerColor = Bg,
         topBar = {
@@ -134,90 +206,107 @@ fun SettingsScreen(
         // On a wide window the settings stay a comfortable reading width, centred.
         Box(Modifier.fillMaxSize().background(Bg).padding(padding), contentAlignment = Alignment.TopCenter) {
         Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
                 .readableWidth()
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
-            SettingsCategory("Account & sync") {
-                AccountSyncSection(supabaseSync)
-                if (onOpenFriends != null && supabaseSync.auth.configured) {
-                    OutlinedButton(onClick = onOpenFriends, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                        Icon(Icons.Filled.Group, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Friends, sharing and trades", color = TextPrimary)
-                    }
-                }
-                DriveImportSection(driveImporter, supabaseSync)
+            SettingsSection.entries.forEach { section ->
+                SettingsSectionRow(section.icon, section.title, summaryOf(section)) { onOpenSection(section) }
             }
-
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-
-            SettingsCategory("Appearance") { AppearanceSection(settingsRepository) }
-
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-
-            SettingsCategory("Card Display") { CardDisplaySection(settingsRepository) }
-
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-
-            SettingsCategory("Prices") { PricesSection(settingsRepository) }
-
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-
-            SettingsCategory("Offline Search") { OfflineSearchSection(offlineCardRepository) }
-
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-
-            SettingsCategory("Card Recognition") { CardRecognitionSection(cardIndexRepository) }
-
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-
-            SettingsCategory("App Updates") { AppUpdatesSection(updateManager) }
-
             if (onOpenTesterTools != null) {
-                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(BorderColor))
-                OutlinedButton(onClick = onOpenTesterTools, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Text("Tester tools", color = TextPrimary)
-                }
+                SettingsSectionRow(Icons.Filled.Science, "Tester tools", "Reports, checklists and scan logs", onOpenTesterTools)
             }
         }
         }
     }
 }
 
-/** One collapsible settings category: a tap-to-expand header with a chevron, collapsed by default. */
 @Composable
-private fun SettingsCategory(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(vertical = 4.dp)
+private fun SettingsSectionRow(icon: ImageVector, title: String, summary: String, onClick: () -> Unit) {
+    val app = LocalAppColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(app.surface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Box(
+            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(app.surface2),
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                contentDescription = if (expanded) "Collapse" else "Expand",
-                tint = GoldDim
+            Icon(icon, contentDescription = null, tint = app.accent, modifier = Modifier.size(20.dp))
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = app.textPrimary)
+            Text(summary, style = MaterialTheme.typography.bodySmall, color = app.textMuted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = app.textDim)
+    }
+}
+
+/** One settings section on a screen of its own, opened from [SettingsScreen]'s list. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsSectionScreen(
+    section: SettingsSection,
+    driveImporter: DriveImporter,
+    supabaseSync: SupabaseSync,
+    updateManager: UpdateManager,
+    offlineCardRepository: OfflineCardRepository,
+    cardIndexRepository: CardIndexRepository,
+    settingsRepository: SettingsRepository,
+    onBack: () -> Unit,
+    onOpenFriends: (() -> Unit)? = null
+) {
+    Scaffold(
+        containerColor = Bg,
+        topBar = {
+            TopAppBar(
+                title = { Text(section.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Gold)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )
         }
-        AnimatedVisibility(visible = expanded) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.padding(top = 10.dp)
-            ) { content() }
+    ) { padding ->
+        Box(Modifier.fillMaxSize().background(Bg).padding(padding), contentAlignment = Alignment.TopCenter) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .readableWidth()
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp)
+        ) {
+            when (section) {
+                SettingsSection.ACCOUNT -> {
+                    AccountSyncSection(supabaseSync)
+                    if (onOpenFriends != null && supabaseSync.auth.configured) {
+                        OutlinedButton(onClick = onOpenFriends, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                            Icon(Icons.Filled.Group, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Friends, sharing and trades", color = TextPrimary)
+                        }
+                    }
+                    DriveImportSection(driveImporter, supabaseSync)
+                }
+                SettingsSection.APPEARANCE -> AppearanceSection(settingsRepository)
+                SettingsSection.CARD_DISPLAY -> CardDisplaySection(settingsRepository)
+                SettingsSection.PRICES -> PricesSection(settingsRepository)
+                SettingsSection.OFFLINE_SEARCH -> OfflineSearchSection(offlineCardRepository)
+                SettingsSection.CARD_RECOGNITION -> CardRecognitionSection(cardIndexRepository)
+                SettingsSection.APP_UPDATES -> AppUpdatesSection(updateManager)
+            }
+        }
         }
     }
 }

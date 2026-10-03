@@ -171,6 +171,8 @@ import com.mtgcompanion.app.ui.search.SearchResultsScreen
 import com.mtgcompanion.app.ui.search.SearchScreen
 import com.mtgcompanion.app.ui.search.SearchViewModel
 import com.mtgcompanion.app.ui.settings.SettingsScreen
+import com.mtgcompanion.app.ui.settings.SettingsSection
+import com.mtgcompanion.app.ui.settings.SettingsSectionScreen
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -198,6 +200,9 @@ private object Routes {
     /** A deck from scratch: format, commander, name. */
     const val NEW_DECK = "new_deck"
     const val SETTINGS = "settings"
+    /** One of Settings' sections on a screen of its own (SettingsSection ids). */
+    const val SETTINGS_SECTION = "settings/{section}"
+    fun settingsSection(id: String) = "settings/$id"
     /** The tester app's own tools; never reached in the real app. */
     const val TESTER = "tester"
     const val SCAN = "scan"
@@ -246,7 +251,7 @@ private object Routes {
 // Routes that show the bottom nav bar. Scan is excluded so its camera runs full-screen (it has its
 // own back button); Settings shows the bar so you can jump to another tab from it.
 private val bottomNavRoutes = setOf(
-    Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.RULES, Routes.FRIENDS, Routes.PLAY
+    Routes.HOME, Routes.SEARCH, Routes.COLLECTION, Routes.DECKS, Routes.DECK_DETAIL, Routes.SETTINGS, Routes.SETTINGS_SECTION, Routes.RULES, Routes.FRIENDS, Routes.PLAY
 )
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -338,7 +343,7 @@ fun MtgNavGraph(
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.PLAY -> NavDestination.LIFE_COUNTER
-                Routes.SETTINGS -> NavDestination.SETTINGS
+                Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
                 else -> null
             }
@@ -728,16 +733,37 @@ fun MtgNavGraph(
 
             destination(Routes.SETTINGS) {
                 SettingsScreen(
-                    driveImporter = driveImporter,
                     supabaseSync = supabaseSync,
                     updateManager = updateManager,
                     offlineCardRepository = offlineCardRepository,
                     cardIndexRepository = cardIndexRepository,
                     settingsRepository = settingsRepository,
                     onBack = { navController.popBackStack() },
-                    onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) },
+                    onOpenSection = { section -> navController.navigate(Routes.settingsSection(section.id)) { launchSingleTop = true } },
                     onOpenTesterTools = if (Tester.on) { { navController.navigate(Routes.TESTER) { launchSingleTop = true } } } else null
                 )
+            }
+
+            destination(
+                route = Routes.SETTINGS_SECTION,
+                arguments = listOf(navArgument("section") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val section = SettingsSection.fromId(backStackEntry.arguments?.getString("section"))
+                if (section == null) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                } else {
+                    SettingsSectionScreen(
+                        section = section,
+                        driveImporter = driveImporter,
+                        supabaseSync = supabaseSync,
+                        updateManager = updateManager,
+                        offlineCardRepository = offlineCardRepository,
+                        cardIndexRepository = cardIndexRepository,
+                        settingsRepository = settingsRepository,
+                        onBack = { navController.popBackStack() },
+                        onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) }
+                    )
+                }
             }
 
             if (Tester.on) {
