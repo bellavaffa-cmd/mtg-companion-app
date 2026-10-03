@@ -102,8 +102,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -315,44 +321,28 @@ fun DeckDetailScreen(
                 onBack = onBack,
                 onMenu = { menuOpen = true },
                 menu = {
-                    DropdownMenu(
-                        expanded = menuOpen,
-                        onDismissRequest = { menuOpen = false },
-                        modifier = Modifier.background(Surface2)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Deck settings", color = TextPrimary) },
-                            onClick = { menuOpen = false; showSettings = true }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Import list", color = TextPrimary) },
-                            onClick = { menuOpen = false; showImport = true }
-                        )
-                        if (onShare != null) {
-                            DropdownMenuItem(
-                                text = { Text("Share with friends", color = TextPrimary) },
-                                onClick = { menuOpen = false; onShare() }
-                            )
+                    // The deck's own actions, in a sheet like a card's: each with a line on what it does,
+                    // Delete last in the danger style.
+                    val d = deck
+                    if (d != null) {
+                        val deckActions = buildList {
+                            if (onShare != null) add(CardMenuAction("Share with friends", Icons.Filled.Group, description = "View only — friends, pods or a link") { onShare() })
+                            add(CardMenuAction("Playtest", Icons.Filled.Casino, description = "Mulligan, play or draw, then turns") { showGoldfish = true })
+                            add(CardMenuAction("Compare with…", Icons.Filled.Layers, description = "Another deck or a saved version") { comparePicking = true })
+                            add(CardMenuAction("Cards I don't own", Icons.Filled.Sell, description = "Buy them, wishlist them, or ask friends") { showMissing = true })
+                            add(CardMenuAction("Import list", Icons.AutoMirrored.Filled.PlaylistAdd, description = "Paste a decklist") { showImport = true })
+                            add(CardMenuAction("Export list", Icons.Filled.IosShare, description = "Simple, exact printing, Arena or MTGO") { showExport = true })
+                            add(CardMenuAction("Deck settings", Icons.Filled.Tune, description = "Format, ownership and tags") { showSettings = true })
+                            add(CardMenuAction("Delete deck", Icons.Filled.Delete, destructive = true) { confirmDelete = true })
                         }
-                        DropdownMenuItem(
-                            text = { Text("Export list", color = TextPrimary) },
-                            onClick = { menuOpen = false; showExport = true }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Playtest", color = TextPrimary) },
-                            onClick = { menuOpen = false; showGoldfish = true }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Compare with…", color = TextPrimary) },
-                            onClick = { menuOpen = false; comparePicking = true }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Cards I don't own", color = TextPrimary) },
-                            onClick = { menuOpen = false; showMissing = true }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Delete deck", color = LocalAppColors.current.error) },
-                            onClick = { menuOpen = false; confirmDelete = true }
+                        val cardCount = d.cards.sumOf { it.quantity }
+                        CardActionMenu(
+                            expanded = menuOpen,
+                            onDismiss = { menuOpen = false },
+                            actions = deckActions,
+                            title = d.name,
+                            subtitle = "$cardCount card${if (cardCount == 1) "" else "s"} · ${d.ownershipType.label}",
+                            imageUrl = d.commander?.imageUrl.toArtCropUrl()
                         )
                     }
                 }

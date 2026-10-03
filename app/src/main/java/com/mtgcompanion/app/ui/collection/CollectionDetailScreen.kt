@@ -28,8 +28,10 @@ import androidx.compose.ui.platform.LocalContext
 import com.mtgcompanion.app.data.PriceAlerts
 import com.mtgcompanion.app.data.CollectionType
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Sell
+import com.mtgcompanion.app.ui.common.CardActionMenu
+import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.theme.Surface2
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.common.SyncIconButton
@@ -208,21 +210,35 @@ fun CollectionDetailScreen(
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "Binder actions", tint = TextPrimary)
                         }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.background(Surface2)) {
-                            DropdownMenuItem(text = { Text("Import list", color = TextPrimary) }, onClick = { menuOpen = false; viewModel.resetImport(); listDialog = "import" })
-                            DropdownMenuItem(text = { Text("Export list", color = TextPrimary) }, onClick = { menuOpen = false; listDialog = "export" })
-                            // The Wishlist is a shopping list: buy the lot in one basket.
-                            if (collection?.isWishlist == true && collection?.entries?.isNotEmpty() == true) DropdownMenuItem(
-                                text = { Text("Buy these cards", color = TextPrimary) },
-                                onClick = {
-                                    menuOpen = false
-                                    buyListUrl(collection?.entries.orEmpty().map { BuyLine(it.name, it.quantity) })?.let { openUrl(context, it) }
-                                }
-                            )
-                            // The Wishlist is always there.
-                            if (collection?.isWishlist != true) DropdownMenuItem(
-                                text = { Text(if (collection?.isUnsorted == true) "Remove all cards" else "Delete binder", color = LocalAppColors.current.error) },
-                                onClick = { menuOpen = false; confirmDeleteBinder = true }
+                        // The binder's own actions, in a sheet like a card's: each with a line on what
+                        // it does, the destructive one last.
+                        val c = collection
+                        if (c != null) {
+                            val binderActions = buildList {
+                                add(CardMenuAction("Import list", Icons.AutoMirrored.Filled.PlaylistAdd, description = "A list from Moxfield, ManaBox, Archidekt…") { viewModel.resetImport(); listDialog = "import" })
+                                add(CardMenuAction("Export list", Icons.Filled.IosShare, description = "For other apps, as text or CSV") { listDialog = "export" })
+                                // The Wishlist is a shopping list: buy the lot in one basket.
+                                if (c.isWishlist && c.entries.isNotEmpty()) add(
+                                    CardMenuAction("Buy these cards", Icons.Filled.Sell, description = "All of them at TCGplayer, in one basket") {
+                                        buyListUrl(c.entries.map { BuyLine(it.name, it.quantity) })?.let { openUrl(context, it) }
+                                    }
+                                )
+                                // The Wishlist is always there.
+                                if (!c.isWishlist) add(
+                                    CardMenuAction(
+                                        if (c.isUnsorted) "Remove all cards" else "Delete binder",
+                                        Icons.Filled.Delete,
+                                        destructive = true
+                                    ) { confirmDeleteBinder = true }
+                                )
+                            }
+                            val cardCount = c.entries.sumOf { it.quantity + it.foilQuantity }
+                            CardActionMenu(
+                                expanded = menuOpen,
+                                onDismiss = { menuOpen = false },
+                                actions = binderActions,
+                                title = c.name,
+                                subtitle = "$cardCount card${if (cardCount == 1) "" else "s"}"
                             )
                         }
                     }
