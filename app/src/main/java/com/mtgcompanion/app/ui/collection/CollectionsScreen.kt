@@ -14,7 +14,11 @@ import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.activity.compose.BackHandler
-import com.mtgcompanion.app.ui.common.MoveTargetDialog
+import com.mtgcompanion.app.ui.common.AddToPicker
+import com.mtgcompanion.app.ui.common.AddVerb
+import com.mtgcompanion.app.ui.common.LocalAddToFeedback
+import com.mtgcompanion.app.ui.common.SourceKind
+import com.mtgcompanion.app.ui.common.addToMessage
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.zoomSource
@@ -154,6 +158,7 @@ fun CollectionsScreen(
     }
     val binderTargets by viewModel.binderTargets.collectAsState()
     val deckTargets by viewModel.deckTargets.collectAsState()
+    val addTo = LocalAddToFeedback.current
     // All cards' search: it filters the list, and Select all takes what it shows.
     var query by remember { mutableStateOf("") }
     // A card's name or one of its tags.
@@ -188,8 +193,7 @@ fun CollectionsScreen(
         bottomBar = {
             if (selecting) SelectionActionBar(
                 listOf(
-                    SelectionAction("To binder", Icons.AutoMirrored.Filled.DriveFileMove) { bulk = "binder" },
-                    SelectionAction("To deck", Icons.Filled.Style) { bulk = "deck" },
+                    SelectionAction("Add to…", Icons.AutoMirrored.Filled.DriveFileMove) { bulk = "add" },
                     SelectionAction("Export", Icons.Filled.IosShare) { bulk = "export" },
                     SelectionAction("Remove", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
                 )
@@ -291,21 +295,24 @@ fun CollectionsScreen(
     val pickedLabel = if (picked.size == 1) picked.first().name else "${picked.size} cards"
     val done = { bulk = null; selected = emptySet() }
     when (bulk) {
-        "binder" -> MoveTargetDialog(
-            cardName = pickedLabel,
-            targets = binderTargets,
-            onPick = { target -> viewModel.gatherIntoBinder(pickedIds, target.id); done() },
-            onDismiss = { bulk = null },
-            onNewBinder = { name -> viewModel.gatherIntoNewBinder(pickedIds, name); done() },
-            title = "Move $pickedLabel into"
-        )
-        "deck" -> MoveTargetDialog(
-            cardName = pickedLabel,
-            targets = deckTargets,
-            onPick = { target -> viewModel.addToDeck(pickedIds, target.id); done() },
-            onDismiss = { bulk = null },
-            title = "Add $pickedLabel to"
-        )
+        "add" -> {
+            val ids = pickedIds
+            AddToPicker(
+                verb = AddVerb.ADD,
+                subject = pickedLabel,
+                imageUrl = picked.singleOrNull()?.imageUrl,
+                targets = binderTargets + deckTargets,
+                // Into a binder every copy is gathered; into a deck, one of each.
+                quantity = null,
+                onPick = { pick ->
+                    done()
+                    // A binder gathers the copies from the others: they're moved, not added.
+                    val verb = if (pick.target.kind == SourceKind.BINDER) AddVerb.MOVE else AddVerb.ADD
+                    addTo.perform(addToMessage(verb, pickedLabel, pick.place, pick.considering)) { viewModel.sendPicked(ids, pick, this) }
+                },
+                onDismiss = { bulk = null }
+            )
+        }
         "remove" -> {
             val copies = viewModel.copiesInBinders(pickedIds)
             ConfirmDeleteDialog(

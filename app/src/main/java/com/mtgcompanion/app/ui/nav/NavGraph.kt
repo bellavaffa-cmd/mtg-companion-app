@@ -10,6 +10,11 @@ import com.mtgcompanion.app.ui.collection.TagBinderViewModel
 import com.mtgcompanion.app.ui.common.SyncPullResult
 import com.mtgcompanion.app.ui.common.PullToSyncBox
 import com.mtgcompanion.app.ui.common.CardZoomHost
+import com.mtgcompanion.app.ui.common.AddToSnackbarHost
+import com.mtgcompanion.app.ui.common.LocalAddToFeedback
+import com.mtgcompanion.app.ui.common.addToFeedback
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.rememberCoroutineScope
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import com.mtgcompanion.app.ui.common.SetPasswordDialog
@@ -284,6 +289,13 @@ fun MtgNavGraph(
         }
     }
 
+    // The confirmation for cards going into a deck or binder, from any screen (see AddToFeedback).
+    // Its scope is the app's, not a screen's, so a change and its Undo finish after the screen is left.
+    val addToHost = remember { SnackbarHostState() }
+    val addToScope = rememberCoroutineScope()
+    val addTo = remember { addToFeedback(addToHost, addToScope, deckRepository, collectionRepository) }
+    CompositionLocalProvider(LocalAddToFeedback provides addTo) {
+    Box(Modifier.fillMaxSize()) {
     // Enlarged cards draw above everything here, bars included, so they can grow out of their thumbnails.
     CardZoomHost(onOpenRulings = { name ->
         RulingsRequest.card.value = name
@@ -822,6 +834,15 @@ fun MtgNavGraph(
         }
         }
         }
+    }
+    }
+    // Over the enlarged cards too: a card added from its zoom stays up, and the confirmation shows on it.
+    AddToSnackbarHost(
+        addToHost,
+        Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = if (layoutSize == LayoutSize.PHONE && currentRoute in bottomNavRoutes) 76.dp else 8.dp)
+    )
     }
     }
 

@@ -12,6 +12,10 @@ import com.mtgcompanion.app.ui.theme.NumberStyle
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.common.StatusBadge
 import com.mtgcompanion.app.ui.common.PillChip
+import com.mtgcompanion.app.ui.common.AddToFeedback
+import com.mtgcompanion.app.ui.common.AddToSnackbarHost
+import com.mtgcompanion.app.ui.common.LocalAddToFeedback
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -513,16 +517,20 @@ private fun MatchupList(title: String, rows: List<Matchup>) {
 
 /**
  * The cards the user owns that do [label]'s job and aren't in the deck: each can go into the deck,
- * or onto its Considering list ([considering]: the names already there).
+ * or onto its Considering list ([considering]: the names already there). The dialog stays open for
+ * more, so the add confirmation (with Undo) shows inside it: [onAdd] is handed that [AddToFeedback].
  */
 @Composable
 internal fun OwnedForRoleDialog(
     label: String,
     cards: List<OwnedCard>,
     considering: Set<String>,
-    onAdd: (OwnedCard, considering: Boolean) -> Unit,
+    onAdd: (OwnedCard, considering: Boolean, feedback: AddToFeedback) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val snackbars = remember { SnackbarHostState() }
+    val app = LocalAddToFeedback.current
+    val feedback = remember(app) { app.withHost(snackbars) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface,
@@ -556,13 +564,14 @@ internal fun OwnedForRoleDialog(
                             // The buttons get their own line, so a long name isn't cut short.
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                 if (!consideringIt) {
-                                    TextButton(onClick = { onAdd(card, true) }) { Text("Consider", color = TextMuted, style = MaterialTheme.typography.labelMedium) }
+                                    TextButton(onClick = { onAdd(card, true, feedback) }) { Text("Consider", color = TextMuted, style = MaterialTheme.typography.labelMedium) }
                                 }
-                                TextButton(onClick = { onAdd(card, false) }) { Text("Add to deck", color = Gold, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) }
+                                TextButton(onClick = { onAdd(card, false, feedback) }) { Text("Add to deck", color = Gold, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) }
                             }
                         }
                     }
                 }
+                AddToSnackbarHost(snackbars)
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = Gold) } }
@@ -810,7 +819,7 @@ internal fun LazyListScope.nearMissSection(nearMisses: List<NearMissCombo>, avai
                         modifier = Modifier.weight(1f)
                     )
                     near.missing.firstOrNull()?.let { name ->
-                        TextButton(onClick = { onConsider(name) }) { Text("Consider", color = Gold, style = MaterialTheme.typography.labelMedium) }
+                        TextButton(onClick = { onConsider(name) }) { Text("Add…", color = Gold, style = MaterialTheme.typography.labelMedium) }
                     }
                 }
             }
@@ -890,7 +899,7 @@ internal fun LazyListScope.budgetSwapsSection(
                                     )
                                     Text(rememberMoney().format(alt.prices?.usd) ?: "—", style = MaterialTheme.typography.labelMedium, color = TextMuted)
                                     Text(
-                                        "Consider",
+                                        "Add…",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = Gold,
                                         modifier = Modifier.clickable { onConsider(alt) }.padding(vertical = 2.dp)

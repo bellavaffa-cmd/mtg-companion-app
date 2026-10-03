@@ -77,7 +77,9 @@ data class ScryfallCard(
      * Everything printed alongside this card: the tokens it makes, an emblem, the other half of a
      * meld. Scryfall sends it on any card that has one — see DeckTokens.kt.
      */
-    @Json(name = "all_parts") val allParts: List<ScryfallPart>? = null
+    @Json(name = "all_parts") val allParts: List<ScryfallPart>? = null,
+    /** How this printing was made: "nonfoil", "foil", "etched". */
+    val finishes: List<String>? = null
 ) {
     val displayImageUrl: String?
         get() = imageUris?.normal ?: cardFaces?.firstOrNull()?.imageUris?.normal
@@ -196,6 +198,13 @@ data class ScryfallImageUris(
     val large: String? = null,
     @Json(name = "art_crop") val artCrop: String? = null
 )
+
+/**
+ * Whether this printing comes in foil (or etched foil): its [ScryfallCard.finishes], or — for a card
+ * from somewhere that doesn't keep them — whether it has a foil price.
+ */
+val ScryfallCard.canBeFoil: Boolean
+    get() = finishes?.any { it == "foil" || it == "etched" } ?: (prices?.usdFoil != null)
 
 /**
  * Scryfall serves the cropped art at the same CDN path as the full image, differing only in the

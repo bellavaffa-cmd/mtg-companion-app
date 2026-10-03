@@ -51,8 +51,6 @@ data class CardDetailUiState(
     val combos: List<Variant> = emptyList(),
     val combosLoading: Boolean = false,
     val prints: List<ScryfallCard> = emptyList(),
-    val addedToCollectionMessage: String? = null,
-    val addedToDeckMessage: String? = null
 )
 
 class CardDetailViewModel(
@@ -258,60 +256,6 @@ class CardDetailViewModel(
     /** Switch the detail view (and what gets added to a deck/binder) to a chosen printing/art. */
     fun selectPrinting(card: ScryfallCard) {
         _uiState.value = _uiState.value.copy(card = card)
-    }
-
-    // [card] is passed in rather than read from the state: the enlarged card can add a suggested
-    // card, which isn't the one the page is about.
-    fun addToCollection(collectionId: String, card: ScryfallCard) {
-        viewModelScope.launch {
-            collectionRepository.addCard(collectionId, card)
-            _uiState.value = _uiState.value.copy(addedToCollectionMessage = "Added ${card.name} to binder.")
-        }
-    }
-
-    fun createCollectionAndAdd(name: String, card: ScryfallCard) {
-        viewModelScope.launch {
-            val collection = collectionRepository.createCollection(name)
-            collectionRepository.addCard(collection.id, card)
-            _uiState.value = _uiState.value.copy(
-                addedToCollectionMessage = "Added ${card.name} to \"${collection.name}\"."
-            )
-        }
-    }
-
-    fun addToDeck(deckId: String, card: ScryfallCard) {
-        viewModelScope.launch {
-            // Checked before adding, off the deck's currently-loaded state — informational only,
-            // the card is added either way (testing/sideboard scenarios are legitimate).
-            val deck = decks.value.find { it.id == deckId }
-            val warning = deck?.let { duplicateWarning(it, card) }
-            deckRepository.addCardToDeck(deckId, card)
-            // A loose copy in the Unsorted pile is the one that went into the deck.
-            val fromPile = collectionRepository.takeIntoDeck(deck, card.id, card.name) > 0
-            _uiState.value = _uiState.value.copy(addedToDeckMessage = warning ?: ("Added ${card.name} to deck." + if (fromPile) " Taken from Unsorted." else ""))
-        }
-    }
-
-    /** Puts [card] on a deck's Considering list instead of in the deck itself. */
-    fun considerForDeck(deckId: String, card: ScryfallCard) {
-        viewModelScope.launch {
-            deckRepository.addToConsidering(deckId, card)
-            val deckName = decks.value.find { it.id == deckId }?.name ?: "the deck"
-            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added ${card.name} to Considering for \"$deckName\".")
-        }
-    }
-
-    fun createDeckAndAdd(name: String, card: ScryfallCard) {
-        viewModelScope.launch {
-            val deck = deckRepository.createDeck(name)
-            deckRepository.addCardToDeck(deck.id, card)
-            collectionRepository.takeIntoDeck(deck, card.id, card.name)
-            _uiState.value = _uiState.value.copy(addedToDeckMessage = "Added ${card.name} to \"${deck.name}\".")
-        }
-    }
-
-    fun clearMessages() {
-        _uiState.value = _uiState.value.copy(addedToCollectionMessage = null, addedToDeckMessage = null)
     }
 
     class Factory(

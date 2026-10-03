@@ -529,7 +529,7 @@ private fun CardInfoBar(card: ZoomCard, priceUsd: Double?, onRulings: (() -> Uni
             }
             card.onAdd?.let { add ->
                 IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); add() }) {
-                    Icon(Icons.Filled.AddCircle, contentDescription = "Add to binder or deck", tint = Gold)
+                    Icon(Icons.Filled.AddCircle, contentDescription = "Add to…", tint = Gold)
                 }
             }
             card.onMove?.let { move ->

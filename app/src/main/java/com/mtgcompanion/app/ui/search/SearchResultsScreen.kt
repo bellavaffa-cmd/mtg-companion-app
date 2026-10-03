@@ -4,7 +4,6 @@ import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.zoomSource
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
 import com.mtgcompanion.app.ui.common.adaptiveGridColumns
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -71,7 +70,11 @@ import com.mtgcompanion.app.ui.common.CardMenuAction
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.FlipBadge
-import com.mtgcompanion.app.ui.common.MoveTargetDialog
+import com.mtgcompanion.app.ui.common.AddToPicker
+import com.mtgcompanion.app.ui.common.AddVerb
+import com.mtgcompanion.app.ui.common.LocalAddToFeedback
+import com.mtgcompanion.app.ui.common.addToMessage
+import com.mtgcompanion.app.network.scryfall.canBeFoil
 import com.mtgcompanion.app.ui.common.ShimmerPlaceholder
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
@@ -98,8 +101,8 @@ fun SearchResultsScreen(
     val gridColumns by viewModel.gridColumns.collectAsState()
     val gridCols = adaptiveGridColumns(gridColumns)
     val listCols = adaptiveListColumns()
-    val context = LocalContext.current
     val addTargets by viewModel.addTargets.collectAsState()
+    val addTo = LocalAddToFeedback.current
     val cardSources by viewModel.cardSources.collectAsState()
     // The card whose "Add to…" binder/deck picker is open.
     var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
@@ -225,15 +228,17 @@ fun SearchResultsScreen(
     }
 
     addTarget?.let { card ->
-        MoveTargetDialog(
-            cardName = card.name,
+        AddToPicker(
+            verb = AddVerb.ADD,
+            subject = card.name,
+            imageUrl = card.displayImageUrl,
             targets = addTargets,
-            onPick = { target ->
-                viewModel.addToTarget(card, target) { warning -> Toast.makeText(context, warning, Toast.LENGTH_LONG).show() }
+            canBeFoil = card.canBeFoil,
+            onPick = { pick ->
                 addTarget = null
+                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick.place, pick.considering, pick.quantity)) { addCard(card, pick) }
             },
-            onDismiss = { addTarget = null },
-            title = "Add ${card.name} to"
+            onDismiss = { addTarget = null }
         )
     }
 
@@ -373,7 +378,7 @@ private val ScryfallCard.isRareOrMythic: Boolean
     get() = rarity == "rare" || rarity == "mythic"
 
 private fun resultCardActions(onAddToTarget: () -> Unit, onViewDetails: () -> Unit) = listOf(
-    CardMenuAction("Add to binder/deck", Icons.Filled.Add, onClick = onAddToTarget),
+    CardMenuAction("Add to…", Icons.Filled.Add, onClick = onAddToTarget),
     CardMenuAction("View details (EDHREC)", Icons.Filled.Info, onClick = onViewDetails)
 )
 

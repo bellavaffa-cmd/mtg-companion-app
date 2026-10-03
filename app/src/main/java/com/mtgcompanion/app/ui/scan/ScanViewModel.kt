@@ -68,6 +68,9 @@ import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.CardIndexRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.ui.common.AddToOps
+import com.mtgcompanion.app.ui.common.AddToPick
+import com.mtgcompanion.app.ui.common.SourceKind
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -1043,108 +1046,46 @@ class ScanViewModel(
     private fun deckEntry(card: ScryfallCard, quantity: Int) =
         DeckCardEntry(card.id, card.name, card.displayImageUrl, quantity = quantity, canBeCommander = card.canBeCommander, typeLine = card.typeLine, partnerAbility = card.partnerAbility, backImageUrl = card.backImageUrl, tags = card.tags)
 
-    fun addToCollection(card: ScryfallCard, quantity: Int, collectionId: String) {
-        viewModelScope.launch {
-            collectionRepository.addEntry(collectionId, collectionEntry(card, quantity))
-            putAway(card, quantity, "binder")
-        }
-    }
-
-    fun createCollectionAndAdd(card: ScryfallCard, quantity: Int, name: String) {
-        viewModelScope.launch {
-            val collection = collectionRepository.createCollection(name)
-            collectionRepository.addEntry(collection.id, collectionEntry(card, quantity))
-            putAway(card, quantity, "\"${collection.name}\"")
-        }
-    }
-
     /**
-     * A card that's been put away leaves the list: what's left is what still has to go somewhere,
-     * and scanning that card again starts a fresh count rather than adding to a filed one.
+     * Every copy of [card] in the pile ([quantity]) where [pick] says — run by the add confirmation
+     * ([ops]), which says so and can undo it. A card that's been put away leaves the list: what's
+     * left is what still has to go somewhere, and scanning that card again starts a fresh count
+     * rather than adding to a filed one. The scanner's cards are new copies in hand, so none come
+     * out of the Unsorted pile.
      */
-    private fun putAway(card: ScryfallCard, quantity: Int, where: String) {
-        setScanned(
-            _uiState.value.scannedCards.filterNot { it.card.id == card.id },
-            status = "Added $quantity × ${card.name} to $where"
-        )
+    suspend fun putAway(card: ScryfallCard, quantity: Int, pick: AddToPick, ops: AddToOps) {
+        ops.addCard(card, pick.copy(quantity = quantity), fromPile = false)
+        setScanned(_uiState.value.scannedCards.filterNot { it.card.id == card.id })
         if (lastAddedCard?.id == card.id) lastAddedCard = null
-    }
-
-    fun addToDeck(card: ScryfallCard, quantity: Int, deckId: String) {
-        viewModelScope.launch {
-            // Checked before adding, off the deck's currently-stored state — informational only,
-            // the card is added either way (testing/sideboard scenarios are legitimate).
-            val warning = deckRepository.decksFlow.first().find { it.id == deckId }
-                ?.let { duplicateWarning(it, card, addingQuantity = quantity) }
-            deckRepository.addEntry(deckId, deckEntry(card, quantity))
-            putAway(card, quantity, "deck")
-            warning?.let { _uiState.value = _uiState.value.copy(status = it) }
-        }
-    }
-
-    fun createDeckAndAdd(card: ScryfallCard, quantity: Int, name: String) {
-        viewModelScope.launch {
-            val deck = deckRepository.createDeck(name)
-            deckRepository.addEntry(deck.id, deckEntry(card, quantity))
-            putAway(card, quantity, "\"${deck.name}\"")
-        }
     }
 
     /** Everything scanned, copies added together — what a whole pile goes into a binder or deck as. */
     private fun pile(): List<ScanGroup> = grouped(_uiState.value.scannedCards)
 
-    private fun pileAdded(where: String, cards: Int) {
-        setScanned(emptyList(), status = "Added $cards ${if (cards == 1) "card" else "cards"} to $where")
+    /** The whole pile where [pick] says; the list is emptied, ready for the next pile. */
+    suspend fun putAllAway(pick: AddToPick, ops: AddToOps) {
+        val pile = pile()
+        if (pile.isEmpty()) return
+        val target = ops.resolve(pick)
+        when (target.kind) {
+            SourceKind.BINDER -> {
+                val entries = pile.map { collectionEntry(it.card, it.quantity) }
+                // The Unsorted pile is made when the first cards go into it.
+                if (target.id == UNSORTED_COLLECTION_ID) collectionRepository.addUnsorted(entries)
+                else collectionRepository.addEntries(target.id, entries)
+            }
+            SourceKind.DECK -> deckRepository.addEntries(target.id, pile.map { deckEntry(it.card, it.quantity) })
+        }
+        setScanned(emptyList())
         lastAddedCard = null
         lastLookedUp = null
     }
 
-    /** The whole pile into a binder; the list is emptied, ready for the next pile. */
-    fun addAllToCollection(collectionId: String) {
-        val pile = pile()
-        if (pile.isEmpty()) return
-        viewModelScope.launch {
-            val entries = pile.map { collectionEntry(it.card, it.quantity) }
-            val name = collectionRepository.collectionsFlow.first().find { it.id == collectionId }?.name
-                ?: UNSORTED_COLLECTION_NAME
-            // The Unsorted pile is made when the first cards go into it.
-            if (collectionId == UNSORTED_COLLECTION_ID) collectionRepository.addUnsorted(entries)
-            else collectionRepository.addEntries(collectionId, entries)
-            pileAdded("\"$name\"", pile.sumOf { it.quantity })
-        }
-    }
-
-    /** The whole pile into a new binder named [name]. */
-    fun createCollectionAndAddAll(name: String) {
-        val pile = pile()
-        if (pile.isEmpty()) return
-        viewModelScope.launch {
-            val collection = collectionRepository.createCollection(name)
-            collectionRepository.addEntries(collection.id, pile.map { collectionEntry(it.card, it.quantity) })
-            pileAdded("\"${collection.name}\"", pile.sumOf { it.quantity })
-        }
-    }
-
-    /** The whole pile into a deck. */
-    fun addAllToDeck(deckId: String) {
-        val pile = pile()
-        if (pile.isEmpty()) return
-        viewModelScope.launch {
-            val deck = deckRepository.decksFlow.first().find { it.id == deckId }
-            pile.forEach { deckRepository.addEntry(deckId, deckEntry(it.card, it.quantity)) }
-            pileAdded("\"${deck?.name ?: "deck"}\"", pile.sumOf { it.quantity })
-        }
-    }
-
-    /** The whole pile into a new deck named [name]. */
-    fun createDeckAndAddAll(name: String) {
-        val pile = pile()
-        if (pile.isEmpty()) return
-        viewModelScope.launch {
-            val deck = deckRepository.createDeck(name)
-            pile.forEach { deckRepository.addEntry(deck.id, deckEntry(it.card, it.quantity)) }
-            pileAdded("\"${deck.name}\"", pile.sumOf { it.quantity })
-        }
+    /** Scans put away and then undone: back on the list, as they were. */
+    fun restoreScans(rows: List<ScanRow>) {
+        val current = _uiState.value.scannedCards
+        val ids = current.map { it.id }.toSet()
+        setScanned((current + rows.filter { it.id !in ids }).sortedByDescending { it.at })
     }
 
     class Factory(

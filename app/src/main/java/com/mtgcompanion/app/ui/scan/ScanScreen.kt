@@ -1,5 +1,12 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.ui.common.AddToPicker
+import com.mtgcompanion.app.ui.common.AddVerb
+import com.mtgcompanion.app.ui.common.LocalAddToFeedback
+import com.mtgcompanion.app.ui.common.addToMessage
+import com.mtgcompanion.app.ui.common.asTarget
+import com.mtgcompanion.app.ui.common.cardsSubject
+import com.mtgcompanion.app.network.scryfall.canBeFoil
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.Verified
 import com.mtgcompanion.app.data.ScanMode
@@ -172,11 +179,11 @@ fun ScanScreen(
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    var deckPickerCard by remember { mutableStateOf<ScanRow?>(null) }
-    var collectionPickerCard by remember { mutableStateOf<ScanRow?>(null) }
+    // The scan whose Add to… picker is open — every copy of its card in the pile goes.
+    var addingRow by remember { mutableStateOf<ScanRow?>(null) }
+    val addTo = LocalAddToFeedback.current
     // The whole pile at once, rather than a card at a time.
-    var deckPickerForAll by remember { mutableStateOf(false) }
-    var collectionPickerForAll by remember { mutableStateOf(false) }
+    var addingAll by remember { mutableStateOf(false) }
     // The row picking the printing it's really holding, when the set code couldn't be read.
     var artPickerRow by remember { mutableStateOf<ScanRow?>(null) }
     var showList by remember { mutableStateOf(false) }
@@ -551,13 +558,11 @@ fun ScanScreen(
                 cards = state.scannedCards,
                 onClose = { showList = false },
                 onCardClick = { showList = false; onCardClick(it.card.name) },
-                onAddToCollection = { collectionPickerCard = it },
-                onAddToDeck = { deckPickerCard = it },
+                onAddTo = { addingRow = it },
                 onScanAgain = { viewModel.scanAgain(it.card) },
                 onRemove = { viewModel.removeScan(it.id) },
                 onPickArt = { artPickerRow = it },
-                onAllToDeck = { deckPickerForAll = true },
-                onAllToCollection = { collectionPickerForAll = true },
+                onAllTo = { addingAll = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -596,72 +601,51 @@ fun ScanScreen(
         )
     }
 
-    if (deckPickerForAll) {
-        DeckPickerDialog(
-            decks = decks,
-            onDismiss = { deckPickerForAll = false },
-            onPickDeck = { deckId ->
-                deckPickerForAll = false
+    // Cards you own but haven't sorted: offered even before the pile exists.
+    val binders = if (collections.any { it.isUnsorted }) collections
+    else listOf(Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME)) + collections
+    val places = decks.map { it.asTarget() } + binders.map { it.asTarget() }
+
+    if (addingAll) {
+        val rows = state.scannedCards
+        val label = cardsSubject(rows.size, rows.singleOrNull()?.card?.name)
+        AddToPicker(
+            verb = AddVerb.ADD,
+            subject = label,
+            targets = places,
+            // Scans are cards in hand: they go into a deck or binder, and the pile says how many.
+            considering = null,
+            quantity = null,
+            onPick = { pick ->
+                addingAll = false
                 showList = false
-                viewModel.addAllToDeck(deckId)
+                addTo.perform(addToMessage(AddVerb.ADD, label, pick.place), onUndone = { viewModel.restoreScans(rows) }) {
+                    viewModel.putAllAway(pick, this)
+                }
             },
-            onCreateDeck = { name ->
-                deckPickerForAll = false
-                showList = false
-                viewModel.createDeckAndAddAll(name)
-            }
+            onDismiss = { addingAll = false }
         )
     }
 
-    if (collectionPickerForAll) {
-        CollectionPickerDialog(
-            // Cards you own but haven't sorted: offered even before the pile exists.
-            collections = if (collections.any { it.isUnsorted }) collections
-            else listOf(Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME)) + collections,
-            onDismiss = { collectionPickerForAll = false },
-            onPickCollection = { collectionId ->
-                collectionPickerForAll = false
-                showList = false
-                viewModel.addAllToCollection(collectionId)
-            },
-            onCreateCollection = { name ->
-                collectionPickerForAll = false
-                showList = false
-                viewModel.createCollectionAndAddAll(name)
-            }
-        )
-    }
-
-    deckPickerCard?.let { scanned ->
+    addingRow?.let { scanned ->
         // Filing a card files every copy of it in the pile, however many rows that is.
-        val copies = state.scannedCards.count { it.card.id == scanned.card.id }
-        DeckPickerDialog(
-            decks = decks,
-            onDismiss = { deckPickerCard = null },
-            onPickDeck = { deckId ->
-                deckPickerCard = null
-                viewModel.addToDeck(scanned.card, copies, deckId)
+        val rows = state.scannedCards.filter { it.card.id == scanned.card.id }
+        val copies = rows.size
+        AddToPicker(
+            verb = AddVerb.ADD,
+            subject = if (copies > 1) "$copies × ${scanned.card.name}" else scanned.card.name,
+            imageUrl = scanned.card.displayImageUrl,
+            targets = places,
+            considering = null,
+            quantity = null,
+            canBeFoil = scanned.card.canBeFoil,
+            onPick = { pick ->
+                addingRow = null
+                addTo.perform(addToMessage(AddVerb.ADD, scanned.card.name, pick.place, quantity = copies), onUndone = { viewModel.restoreScans(rows) }) {
+                    viewModel.putAway(scanned.card, copies, pick, this)
+                }
             },
-            onCreateDeck = { name ->
-                deckPickerCard = null
-                viewModel.createDeckAndAdd(scanned.card, copies, name)
-            }
-        )
-    }
-
-    collectionPickerCard?.let { scanned ->
-        val copies = state.scannedCards.count { it.card.id == scanned.card.id }
-        CollectionPickerDialog(
-            collections = collections,
-            onDismiss = { collectionPickerCard = null },
-            onPickCollection = { collectionId ->
-                collectionPickerCard = null
-                viewModel.addToCollection(scanned.card, copies, collectionId)
-            },
-            onCreateCollection = { name ->
-                collectionPickerCard = null
-                viewModel.createCollectionAndAdd(scanned.card, copies, name)
-            }
+            onDismiss = { addingRow = null }
         )
     }
 
@@ -705,63 +689,6 @@ private fun ManualAddDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
                 onClick = { if (name.isNotBlank()) onAdd(name.trim()) },
                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
             ) { Text("Add", color = Bg) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
-        }
-    )
-}
-
-@Composable
-private fun CollectionPickerDialog(
-    collections: List<com.mtgcompanion.app.data.Collection>,
-    onDismiss: () -> Unit,
-    onPickCollection: (String) -> Unit,
-    onCreateCollection: (String) -> Unit
-) {
-    var newName by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("Add to binder", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
-        text = {
-            // Scrolls: with more binders than fit, the ones below (and the new-binder box) were out of reach.
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                collections.forEach { collection ->
-                    Text(
-                        collection.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextPrimary,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPickCollection(collection.id) }
-                            .padding(vertical = 10.dp)
-                    )
-                }
-                if (collections.isNotEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))
-                }
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    label = { Text("New binder name", color = TextMuted) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Gold,
-                        unfocusedBorderColor = BorderColor,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = Gold
-                    ),
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (newName.isNotBlank()) onCreateCollection(newName.trim()) },
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("Create & add", color = Bg) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
@@ -816,13 +743,11 @@ private fun ScannedListPanel(
     cards: List<ScanRow>,
     onClose: () -> Unit,
     onCardClick: (ScanRow) -> Unit,
-    onAddToCollection: (ScanRow) -> Unit,
-    onAddToDeck: (ScanRow) -> Unit,
+    onAddTo: (ScanRow) -> Unit,
     onScanAgain: (ScanRow) -> Unit,
     onRemove: (ScanRow) -> Unit,
     onPickArt: (ScanRow) -> Unit,
-    onAllToDeck: () -> Unit,
-    onAllToCollection: () -> Unit,
+    onAllTo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -872,26 +797,13 @@ private fun ScannedListPanel(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item(key = "add-all") {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Button(
+                        onClick = onAllTo,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
                     ) {
-                        Button(
-                            onClick = onAllToDeck,
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("All to a deck", style = MaterialTheme.typography.labelLarge, color = Bg)
-                        }
-                        OutlinedButton(
-                            onClick = onAllToCollection,
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, BorderColor),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("All to a binder", style = MaterialTheme.typography.labelLarge, color = TextPrimary)
-                        }
+                        Text("Add all to…", style = MaterialTheme.typography.labelLarge, color = Bg)
                     }
                 }
                 items(shown, key = { it.id }) { scanned ->
@@ -900,8 +812,7 @@ private fun ScannedListPanel(
                         copy = copyNumber(cards, scanned),
                         justNow = scannedTwiceOver(cards, scanned),
                         onClick = { onCardClick(scanned) },
-                        onAddToCollection = { onAddToCollection(scanned) },
-                        onAddToDeck = { onAddToDeck(scanned) },
+                        onAddTo = { onAddTo(scanned) },
                         onScanAgain = { onScanAgain(scanned) },
                         onRemove = { onRemove(scanned) },
                         onPickArt = { onPickArt(scanned) }
@@ -920,8 +831,7 @@ private fun ScannedCardRow(
     /** Whether the copy before it was scanned seconds ago — the camera catching one card twice. */
     justNow: Boolean,
     onClick: () -> Unit,
-    onAddToCollection: () -> Unit,
-    onAddToDeck: () -> Unit,
+    onAddTo: () -> Unit,
     onScanAgain: () -> Unit,
     onRemove: () -> Unit,
     onPickArt: () -> Unit
@@ -1015,79 +925,14 @@ private fun ScannedCardRow(
                 Icon(Icons.Filled.Close, contentDescription = "Take off this scan", tint = TextDim, modifier = Modifier.size(18.dp))
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-            Button(
-                onClick = onAddToCollection,
-                shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("+ BINDER", style = MaterialTheme.typography.labelMedium, color = Bg) }
-            OutlinedButton(
-                onClick = onAddToDeck,
-                shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                border = BorderStroke(1.dp, BorderColor),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldLight)
-            ) { Text("+ DECK", style = MaterialTheme.typography.labelMedium) }
-        }
+        Button(
+            onClick = onAddTo,
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
+            modifier = Modifier.padding(top = 8.dp)
+        ) { Text("Add to…", style = MaterialTheme.typography.labelMedium, color = Bg) }
     }
-}
-
-@Composable
-private fun DeckPickerDialog(
-    decks: List<Deck>,
-    onDismiss: () -> Unit,
-    onPickDeck: (String) -> Unit,
-    onCreateDeck: (String) -> Unit
-) {
-    var newDeckName by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("Add to deck", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
-        text = {
-            // Scrolls: with more decks than fit, the ones below (and the new-deck box) were out of reach.
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                decks.forEach { deck ->
-                    Text(
-                        deck.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextPrimary,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPickDeck(deck.id) }
-                            .padding(vertical = 10.dp)
-                    )
-                }
-                if (decks.isNotEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))
-                }
-                OutlinedTextField(
-                    value = newDeckName,
-                    onValueChange = { newDeckName = it },
-                    label = { Text("New deck name", color = TextMuted) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Gold,
-                        unfocusedBorderColor = BorderColor,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = Gold
-                    ),
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (newDeckName.isNotBlank()) onCreateDeck(newDeckName.trim()) },
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("Create & add", color = Bg) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
-        }
-    )
 }
 
 /**

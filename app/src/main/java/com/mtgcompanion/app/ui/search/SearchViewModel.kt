@@ -18,6 +18,7 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
+import com.mtgcompanion.app.ui.common.asTarget
 import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.ui.common.buildCardSources
 import kotlinx.coroutines.CancellationException
@@ -200,8 +201,7 @@ class SearchViewModel(
     val addTargets: StateFlow<List<MoveTarget>> = combine(
         deckRepository.decksFlow, collectionRepository.collectionsFlow
     ) { decks, collections ->
-        decks.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
-            collections.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
+        decks.map { it.asTarget() } + collections.map { it.asTarget() }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** scryfallId -> every binder/deck holding that card, for a result's zoom overlay. */
@@ -413,26 +413,6 @@ class SearchViewModel(
                 if (generation != searchGeneration) return@launch
                 val latest = _uiState.value
                 if (latest is SearchUiState.Success) _uiState.value = latest.copy(loadingMore = false)
-            }
-        }
-    }
-
-    /**
-     * Add [card] straight into [target], for the long-press "Add to…" action. [onWarning], for a
-     * deck target whose format rules the resulting copy count would break (singleton, max copies),
-     * is informational — the card is added either way.
-     */
-    fun addToTarget(card: ScryfallCard, target: MoveTarget, onWarning: ((String) -> Unit)? = null) {
-        viewModelScope.launch {
-            when (target.kind) {
-                SourceKind.DECK -> {
-                    val deck = deckRepository.decksFlow.first().find { it.id == target.id }
-                    deck?.let { duplicateWarning(it, card) }?.let { onWarning?.invoke(it) }
-                    deckRepository.addCardToDeck(target.id, card)
-                    // A loose copy in the Unsorted pile is the one that went into the deck.
-                    collectionRepository.takeIntoDeck(deck, card.id, card.name)
-                }
-                SourceKind.BINDER -> collectionRepository.addCard(target.id, card)
             }
         }
     }

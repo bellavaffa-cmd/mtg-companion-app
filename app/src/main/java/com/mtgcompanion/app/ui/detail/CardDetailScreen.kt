@@ -1,5 +1,12 @@
 package com.mtgcompanion.app.ui.detail
 
+import com.mtgcompanion.app.ui.common.AddToPicker
+import com.mtgcompanion.app.ui.common.AddVerb
+import com.mtgcompanion.app.ui.common.LocalAddToFeedback
+import com.mtgcompanion.app.ui.common.SourceKind
+import com.mtgcompanion.app.ui.common.addToMessage
+import com.mtgcompanion.app.ui.common.asTarget
+import com.mtgcompanion.app.network.scryfall.canBeFoil
 import com.mtgcompanion.app.ui.common.openUrl
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.zoomSource
@@ -82,8 +89,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -146,8 +151,6 @@ fun CardDetailScreen(
     val cardSources by viewModel.cardSources.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val context = LocalContext.current
-    var showDeckPicker by remember { mutableStateOf(false) }
-    var showCollectionPicker by remember { mutableStateOf(false) }
     // Key of the suggested card being enlarged, if any.
     var zoomKey by remember { mutableStateOf<String?>(null) }
     // scryfallId of the enlarged "similar card", if any — its own overlay, independent of the
@@ -155,25 +158,15 @@ fun CardDetailScreen(
     var similarZoomId by remember { mutableStateOf<String?>(null) }
     // Name of the card a nested "find similar" was triggered for, from within a zoom overlay.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
-    // Card the binder/deck pickers will add — this page's card, or one of its suggestions.
-    var addTarget by remember { mutableStateOf<ScryfallCard?>(null) }
-    // Set when the add button on an enlarged card needs a binder-or-deck choice first.
-    var chooseDestinationFor by remember { mutableStateOf<ScryfallCard?>(null) }
-    val snackbarHostState = remember { SnackbarHostState() }
+    // The card the Add to… picker is open for — this page's card, or one of its suggestions — and
+    // the list it opens on: the page's own "Add to deck"/"Add to binder" go straight to theirs.
+    var adding by remember { mutableStateOf<Pair<ScryfallCard, SourceKind?>?>(null) }
+    val addTo = LocalAddToFeedback.current
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-
-    LaunchedEffect(state.addedToCollectionMessage, state.addedToDeckMessage) {
-        val message = state.addedToCollectionMessage ?: state.addedToDeckMessage
-        if (message != null) {
-            snackbarHostState.showSnackbar(message)
-            viewModel.clearMessages()
-        }
-    }
 
     Scaffold(
         containerColor = Bg,
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(state.card?.name ?: "Card", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
@@ -230,8 +223,8 @@ fun CardDetailScreen(
                     }
                     fullSpanItem {
                         CollectionAndDeckActions(
-                            onAddToCollection = { addTarget = card; showCollectionPicker = true },
-                            onAddToDeck = { addTarget = card; showDeckPicker = true }
+                            onAddToCollection = { adding = card to SourceKind.BINDER },
+                            onAddToDeck = { adding = card to SourceKind.DECK }
                         )
                     }
                     fullSpanItem { PricesSection(state, onOpenTcgplayer = {
@@ -336,8 +329,8 @@ fun CardDetailScreen(
                                 imageUrl = similar.displayImageUrl,
                                 cardName = similar.name,
                                 priceUsd = similar.prices?.usd?.toDoubleOrNull(),
-                                onAdd = { chooseDestinationFor = similar },
-                                onSelectPrinting = { chosen -> chooseDestinationFor = chosen },
+                                onAdd = { adding = similar to null },
+                                onSelectPrinting = { chosen -> adding = chosen to null },
                                 onViewDetails = { similarZoomId = null; onViewDetails(similar.name) },
                                 sources = cardSources[similar.id].orEmpty(),
                                 backImageUrl = similar.backImageUrl,
@@ -360,11 +353,11 @@ fun CardDetailScreen(
                                 quantity = owned[view.name.lowercase()] ?: 0,
                                 // Only offer to add once we know which Scryfall printing it is.
                                 onAdd = resolved?.let { card ->
-                                    { chooseDestinationFor = card }
+                                    { adding = card to null }
                                 },
                                 // Picking a printing here goes straight into the binder-or-deck
                                 // choice, so choosing art and saving it is one motion, not two.
-                                onSelectPrinting = { chosen -> chooseDestinationFor = chosen },
+                                onSelectPrinting = { chosen -> adding = chosen to null },
                                 onViewDetails = { zoomKey = null; onViewDetails(view.name) },
                                 sources = resolved?.id?.let { cardSources[it] }.orEmpty(),
                                 backImageUrl = resolved?.backImageUrl,
@@ -383,145 +376,26 @@ fun CardDetailScreen(
         SimilarCardsDialog(
             cardName = name,
             onDismiss = { similarSearchFor = null },
-            onAdd = { similar -> similarSearchFor = null; chooseDestinationFor = similar },
+            onAdd = { similar -> similarSearchFor = null; adding = similar to null },
             onViewDetails = { similar -> similarSearchFor = null; onViewDetails(similar.name) }
         )
     }
 
-    chooseDestinationFor?.let { card ->
-        AddDestinationDialog(
-            cardName = card.name,
-            onDismiss = { chooseDestinationFor = null },
-            onBinder = { chooseDestinationFor = null; addTarget = card; showCollectionPicker = true },
-            onDeck = { chooseDestinationFor = null; addTarget = card; showDeckPicker = true }
+    adding?.let { (card, startKind) ->
+        AddToPicker(
+            verb = AddVerb.ADD,
+            subject = card.name,
+            imageUrl = card.displayImageUrl,
+            targets = decks.map { it.asTarget() } + collections.map { it.asTarget() },
+            canBeFoil = card.canBeFoil,
+            startKind = startKind,
+            onPick = { pick ->
+                adding = null
+                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick.place, pick.considering, pick.quantity)) { addCard(card, pick) }
+            },
+            onDismiss = { adding = null }
         )
     }
-
-    if (showDeckPicker) {
-        val target = addTarget
-        DeckPickerDialog(
-            decks = decks,
-            onDismiss = { showDeckPicker = false },
-            onPickDeck = { deckId ->
-                showDeckPicker = false
-                target?.let { viewModel.addToDeck(deckId, it) }
-            },
-            onConsiderDeck = { deckId ->
-                showDeckPicker = false
-                target?.let { viewModel.considerForDeck(deckId, it) }
-            },
-            onCreateDeck = { name ->
-                showDeckPicker = false
-                target?.let { viewModel.createDeckAndAdd(name, it) }
-            }
-        )
-    }
-
-    if (showCollectionPicker) {
-        val target = addTarget
-        CollectionPickerDialog(
-            collections = collections,
-            onDismiss = { showCollectionPicker = false },
-            onPickCollection = { collectionId ->
-                showCollectionPicker = false
-                target?.let { viewModel.addToCollection(collectionId, it) }
-            },
-            onCreateCollection = { name ->
-                showCollectionPicker = false
-                target?.let { viewModel.createCollectionAndAdd(name, it) }
-            }
-        )
-    }
-}
-
-/** Binder or deck? Asked when adding straight from an enlarged suggested card. */
-@Composable
-private fun AddDestinationDialog(
-    cardName: String,
-    onDismiss: () -> Unit,
-    onBinder: () -> Unit,
-    onDeck: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("Add $cardName to…", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
-        text = {
-            Column {
-                Text(
-                    "Binder",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextPrimary,
-                    modifier = Modifier.fillMaxWidth().clickable(onClick = onBinder).padding(vertical = 12.dp)
-                )
-                Text(
-                    "Deck",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextPrimary,
-                    modifier = Modifier.fillMaxWidth().clickable(onClick = onDeck).padding(vertical = 12.dp)
-                )
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) } }
-    )
-}
-
-@Composable
-private fun CollectionPickerDialog(
-    collections: List<com.mtgcompanion.app.data.Collection>,
-    onDismiss: () -> Unit,
-    onPickCollection: (String) -> Unit,
-    onCreateCollection: (String) -> Unit
-) {
-    var newName by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("Add to binder", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
-        text = {
-            // Scrolls: with more binders than fit, the ones below (and the new-binder box) were out of reach.
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                collections.forEach { collection ->
-                    Text(
-                        collection.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextPrimary,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPickCollection(collection.id) }
-                            .padding(vertical = 10.dp)
-                    )
-                }
-                if (collections.isNotEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))
-                }
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    label = { Text("New binder name", color = TextMuted) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Gold,
-                        unfocusedBorderColor = BorderColor,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = Gold
-                    ),
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (newName.isNotBlank()) onCreateCollection(newName.trim()) },
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("Create & add", color = Bg) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
-        }
-    )
 }
 
 /** Adds a single full-width row inside the grid. */
@@ -890,73 +764,3 @@ private fun CombosSection(state: CardDetailUiState) {
     }
 }
 
-@Composable
-private fun DeckPickerDialog(
-    decks: List<Deck>,
-    onDismiss: () -> Unit,
-    onPickDeck: (String) -> Unit,
-    onConsiderDeck: (String) -> Unit,
-    onCreateDeck: (String) -> Unit
-) {
-    var newDeckName by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("Add to deck", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
-        text = {
-            // Scrolls: with more decks than fit, the ones below (and the new-deck box) were out of reach.
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (decks.isNotEmpty()) {
-                    Text(
-                        "Tap a deck to add the card, or CONSIDER to put it on that deck's Considering list.",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextMuted,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                }
-                decks.forEach { deck ->
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            deck.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextPrimary,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { onPickDeck(deck.id) }
-                                .padding(vertical = 10.dp)
-                        )
-                        TextButton(onClick = { onConsiderDeck(deck.id) }) {
-                            Text("Consider", color = Gold, style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                }
-                if (decks.isNotEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(BorderColor))
-                }
-                OutlinedTextField(
-                    value = newDeckName,
-                    onValueChange = { newDeckName = it },
-                    label = { Text("New deck name", color = TextMuted) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Gold,
-                        unfocusedBorderColor = BorderColor,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = Gold
-                    ),
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (newDeckName.isNotBlank()) onCreateDeck(newDeckName.trim()) },
-                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-            ) { Text("Create & add", color = Bg) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) }
-        }
-    )
-}

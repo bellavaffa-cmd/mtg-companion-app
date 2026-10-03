@@ -75,6 +75,15 @@ import com.mtgcompanion.app.data.RoleTag
 import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.CardSource
+import com.mtgcompanion.app.ui.common.AddToOps
+import com.mtgcompanion.app.ui.common.AddToPick
+import com.mtgcompanion.app.ui.common.AddToPicker
+import com.mtgcompanion.app.ui.common.AddVerb
+import com.mtgcompanion.app.ui.common.LocalAddToFeedback
+import com.mtgcompanion.app.ui.common.addToMessage
+import com.mtgcompanion.app.ui.common.asTarget
+import com.mtgcompanion.app.ui.common.cardsSubject
+import kotlinx.coroutines.flow.first
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.ui.common.ZoomCard
@@ -254,36 +263,21 @@ class TagBinderViewModel(
     val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
-     * Adds one copy of each of [cards] to [deckId] — into the deck, or its Considering list —
-     * skipping any the deck (or, for Considering, that list) already has. [onDone] gets what happened.
+     * Adds one copy of each of [cards] to the deck [pick] names — into the deck, or its Considering
+     * list — skipping any the deck (or, for Considering, that list) already has. Run by the add
+     * confirmation ([ops]), which says what happened and can undo it.
      */
-    fun addToDeck(cards: List<OwnedCard>, deckId: String, considering: Boolean, onDone: (String) -> Unit) {
-        viewModelScope.launch {
-            val deck = decks.value.firstOrNull { it.id == deckId } ?: return@launch
-            val have = (deck.cards.map { it.name } + if (considering) deck.considering.map { it.name } else emptyList()).map(RoleTags::key).toSet()
-            val fresh = cards.filter { it.key !in have }.distinctBy { it.key }
-            val message = try {
-                // A deck entry needs the full card (type, commander-ness…), which a binder entry doesn't keep.
-                val full = if (fresh.isEmpty()) emptyList() else cardRepository.getCardsByIds(fresh.map { it.scryfallId })
-                var fromPile = 0
-                full.forEach { card ->
-                    if (considering) deckRepository.addToConsidering(deckId, card)
-                    else {
-                        deckRepository.addCardToDeck(deckId, card)
-                        // A loose copy in the Unsorted pile is the one that went into the deck.
-                        fromPile += collectionRepository.takeIntoDeck(deck, card.id, card.name)
-                    }
-                }
-                val skipped = cards.size - full.size
-                (if (full.isEmpty()) "Nothing added" else "Added ${full.size} ${if (full.size == 1) "card" else "cards"}") +
-                    " to " + (if (considering) "${deck.name}'s Considering list" else deck.name) +
-                    (if (skipped > 0) " · $skipped ${if (skipped == 1) "was" else "were"} already there" else "") +
-                    (if (fromPile > 0) " · $fromPile taken from Unsorted" else "") + "."
-            } catch (e: Exception) {
-                "Couldn't reach Scryfall — try again when you're online."
-            }
-            onDone(message)
-        }
+    suspend fun addToDeck(cards: List<OwnedCard>, pick: AddToPick, ops: AddToOps) {
+        val target = ops.resolve(pick)
+        val deck = deckRepository.decksFlow.first().firstOrNull { it.id == target.id }
+        val have = (deck?.cards.orEmpty().map { it.name } + if (pick.considering) deck?.considering.orEmpty().map { it.name } else emptyList()).map(RoleTags::key).toSet()
+        val fresh = cards.filter { it.key !in have }.distinctBy { it.key }
+        // A deck entry needs the full card (type, commander-ness…), which a binder entry doesn't keep.
+        val full = if (fresh.isEmpty()) emptyList() else cardRepository.getCardsByIds(fresh.map { it.scryfallId })
+        full.forEach { card -> ops.addCard(card, pick.copy(target = target, isNew = false, quantity = 1)) }
+        val skipped = cards.size - full.size
+        if (full.isEmpty()) ops.message = "Nothing added to ${target.name}"
+        if (skipped > 0) ops.addNote("$skipped ${if (skipped == 1) "was" else "were"} already there.")
     }
 
     class Factory(
@@ -428,12 +422,21 @@ fun TagBinderScreen(viewModel: TagBinderViewModel, onBack: () -> Unit, onOpenTag
 
     adding?.let { toAdd ->
         val decks by viewModel.decks.collectAsState()
-        AddToDeckDialog(
-            label = if (toAdd.size == 1) toAdd.first().name else "${toAdd.size} cards",
-            decks = decks,
-            onAdd = { deckId, considering, onResult -> viewModel.addToDeck(toAdd, deckId, considering, onResult) },
-            onOpenDeck = { id -> adding = null; selected = emptySet(); onOpenDeck(id) },
-            onDone = { adding = null; selected = emptySet() },
+        val addTo = LocalAddToFeedback.current
+        val label = cardsSubject(toAdd.size, toAdd.singleOrNull()?.name)
+        AddToPicker(
+            verb = AddVerb.ADD,
+            subject = label,
+            imageUrl = toAdd.singleOrNull()?.imageUrl,
+            targets = decks.map { it.asTarget() },
+            canMakeBinder = false,
+            // One copy of each.
+            quantity = null,
+            onPick = { pick ->
+                adding = null
+                selected = emptySet()
+                addTo.perform(addToMessage(AddVerb.ADD, label, pick.place, pick.considering)) { viewModel.addToDeck(toAdd, pick, this) }
+            },
             onDismiss = { adding = null }
         )
     }
@@ -474,103 +477,4 @@ private fun OwnedCardRow(card: OwnedCard, selecting: Boolean, selected: Boolean,
             Icon(Icons.Filled.CheckCircle, contentDescription = if (selected) "Selected" else "Not selected", tint = if (selected) Gold else TextDim)
         }
     }
-}
-
-/** Picks a deck, and whether the cards go into it or its Considering list, then says what happened. */
-@Composable
-fun AddToDeckDialog(
-    label: String,
-    decks: List<Deck>,
-    onAdd: (deckId: String, considering: Boolean, onResult: (String) -> Unit) -> Unit,
-    onOpenDeck: (String) -> Unit,
-    onDone: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    // The decks may still be loading when this opens: the first one is picked once they're in.
-    var picked by remember { mutableStateOf<String?>(null) }
-    val deckId = picked?.takeIf { id -> decks.any { it.id == id } } ?: decks.firstOrNull()?.id
-    var considering by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("Add $label to a deck", color = GoldLight) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                when {
-                    result != null -> Text(result!!, color = TextPrimary)
-                    decks.isEmpty() -> Text("You have no decks yet. Make one in Decks first.", color = TextMuted)
-                    else -> {
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Surface3).padding(3.dp)) {
-                            listOf(false to "Into the deck", true to "Considering").forEach { (value, text) ->
-                                Text(
-                                    text,
-                                    color = if (considering == value) Gold else TextMuted,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(9.dp))
-                                        .background(if (considering == value) Surface else Color.Transparent)
-                                        .clickable { considering = value }
-                                        .padding(vertical = 8.dp),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                )
-                            }
-                        }
-                        Text(
-                            if (considering) "Cards you might play — kept beside the deck, not counted in it." else "One copy of each, skipping any the deck already has.",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = TextDim
-                        )
-                        Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            decks.forEach { d ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(Surface2)
-                                        .border(BorderStroke(2.dp, if (d.id == deckId) Gold else Color.Transparent), RoundedCornerShape(12.dp))
-                                        .clickable { picked = d.id }
-                                        .padding(6.dp)
-                                ) {
-                                    AsyncImage(
-                                        model = d.commander?.imageUrl.toArtCropUrl(),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.size(width = 52.dp, height = 38.dp).clip(RoundedCornerShape(8.dp)).background(Surface3)
-                                    )
-                                    Text(d.name, color = TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                    Text("${d.cards.sumOf { it.quantity }} cards", style = MaterialTheme.typography.labelMedium, color = TextMuted)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            if (result != null) {
-                Row {
-                    deckId?.let { id -> TextButton(onClick = { onOpenDeck(id) }) { Text("Open deck", color = TextMuted) } }
-                    Button(onClick = onDone, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) { Text("Done") }
-                }
-            } else {
-                Button(
-                    enabled = deckId != null && !busy,
-                    onClick = {
-                        val id = deckId ?: return@Button
-                        busy = true
-                        onAdd(id, considering) { message -> busy = false; result = message }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
-                ) {
-                    if (busy) CircularProgressIndicator(color = Bg, strokeWidth = 2.dp, modifier = Modifier.size(16.dp)) else Text("Add")
-                }
-            }
-        },
-        dismissButton = { if (result == null) TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) } }
-    )
 }

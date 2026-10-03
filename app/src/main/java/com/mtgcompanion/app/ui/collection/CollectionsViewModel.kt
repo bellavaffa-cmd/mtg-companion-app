@@ -12,6 +12,10 @@ import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.buildCardListText
 import com.mtgcompanion.app.ui.common.MoveTarget
+import com.mtgcompanion.app.ui.common.AddToOps
+import kotlinx.coroutines.flow.first
+import com.mtgcompanion.app.ui.common.AddToPick
+import com.mtgcompanion.app.ui.common.asTarget
 import com.mtgcompanion.app.data.parseCardList
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -175,42 +179,45 @@ class CollectionsViewModel(
 
     /** Binders picked cards can be gathered into: owned ones and the Unsorted pile, not wishlists. */
     val binderTargets: StateFlow<List<MoveTarget>> = repository.collectionsFlow
-        .map { all -> all.filter { it.kind == CollectionType.OWNED }.map { MoveTarget(SourceKind.BINDER, it.id, it.name) } }
+        .map { all -> all.filter { it.kind == CollectionType.OWNED }.map { it.asTarget() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Decks picked cards can be added to. */
     val deckTargets: StateFlow<List<MoveTarget>> = deckRepository.decksFlow
-        .map { all -> all.map { MoveTarget(SourceKind.DECK, it.id, it.name) } }
+        .map { all -> all.map { it.asTarget() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Gathers every copy of the picked cards [ids] from the user's binders into [binderId]. */
-    fun gatherIntoBinder(ids: Set<String>, binderId: String) {
-        viewModelScope.launch { repository.gatherInto(binderId, ids) }
-    }
-
-    /** Makes a binder named [name] and gathers the picked cards [ids] into it. */
-    fun gatherIntoNewBinder(ids: Set<String>, name: String) {
-        viewModelScope.launch {
-            val binder = repository.createCollection(name.trim().ifBlank { "New binder" }, CollectionType.OWNED)
-            repository.gatherInto(binder.id, ids)
+    /**
+     * The picked cards [ids] where [pick] says, run by the add confirmation ([ops]): into a binder,
+     * every copy in the user's binders is gathered there; into a deck, one copy of each card the
+     * deck doesn't have yet (a loose one from the Unsorted pile, when the deck holds real cards), or
+     * onto its Considering list.
+     */
+    suspend fun sendPicked(ids: Set<String>, pick: AddToPick, ops: AddToOps) {
+        val target = ops.resolve(pick)
+        if (target.kind == SourceKind.BINDER) {
+            repository.gatherInto(target.id, ids)
+            return
         }
-    }
-
-    /** Adds one copy of each picked card to the deck [deckId] — cards already in it are left as they are. */
-    fun addToDeck(ids: Set<String>, deckId: String) {
-        viewModelScope.launch {
-            val deck = decks.value.firstOrNull { it.id == deckId }
-            val inDeck = deck?.cards.orEmpty().map { it.scryfallId }.toSet()
-            val picked = allCards.value.filter { it.scryfallId in ids && it.scryfallId !in inDeck }
-            // Looked up again so the deck knows each card's type and whether it can be the commander.
-            val entries = cardRepository.withFullCardInfo(
-                picked.map { c -> DeckCardEntry(c.scryfallId, c.name, c.imageUrl, quantity = 1, backImageUrl = c.backImageUrl, tags = c.tags) }
-            )
-            picked.zip(entries).forEach { (c, entry) ->
-                deckRepository.addEntry(deckId, entry)
-                // A loose copy in the Unsorted pile is the one that went into the deck.
-                repository.takeIntoDeck(deck, c.scryfallId, c.name)
-            }
+        val deck = deckRepository.decksFlow.first().firstOrNull { it.id == target.id }
+        val have = (if (pick.considering) deck?.considering else deck?.cards).orEmpty().map { it.scryfallId }.toSet()
+        val picked = allCards.value.filter { it.scryfallId in ids && it.scryfallId !in have }
+        val skipped = ids.size - picked.size
+        if (skipped > 0) ops.addNote("$skipped ${if (skipped == 1) "was" else "were"} already there.")
+        if (picked.isEmpty()) {
+            ops.message = "Nothing added to ${target.name}"
+            return
+        }
+        // Looked up again so the deck knows each card's type and whether it can be the commander.
+        val entries = cardRepository.withFullCardInfo(
+            picked.map { c -> DeckCardEntry(c.scryfallId, c.name, c.imageUrl, quantity = 1, backImageUrl = c.backImageUrl, tags = c.tags) }
+        )
+        if (pick.considering) {
+            deckRepository.addConsideringEntries(target.id, entries)
+        } else {
+            deckRepository.addEntries(target.id, entries)
+            // A loose copy in the Unsorted pile is the one that went into the deck.
+            picked.forEach { c -> repository.takeIntoDeck(deck, c.scryfallId, c.name) }
         }
     }
 

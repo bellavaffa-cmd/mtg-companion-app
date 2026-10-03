@@ -22,6 +22,10 @@ import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.ui.common.MoveTarget
+import com.mtgcompanion.app.ui.common.AddToOps
+import com.mtgcompanion.app.ui.common.AddToPick
+import com.mtgcompanion.app.ui.common.asTarget
+import com.mtgcompanion.app.ui.common.copiesTaken
 import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.ui.common.buildCardSources
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -87,8 +91,7 @@ class CollectionDetailViewModel(
     /** Decks and other binders this binder's cards can be moved into. */
     val moveTargets: StateFlow<List<MoveTarget>> =
         combine(deckRepository.decksFlow, repository.collectionsFlow) { decks, collections ->
-            decks.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
-                collections.filter { it.id != collectionId }.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
+            decks.map { it.asTarget() } + collections.filter { it.id != collectionId }.map { it.asTarget() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** The user's decks — for "Considering in …" on a card the Wishlist has because a deck is considering it. */
@@ -200,39 +203,48 @@ class CollectionDetailViewModel(
         }
     }
 
-    /** Add a card not yet in this binder — e.g. one picked from the zoom overlay's "find similar" list. */
-    fun addCard(card: com.mtgcompanion.app.network.scryfall.ScryfallCard) {
-        viewModelScope.launch { repository.addCard(collectionId, card) }
-    }
-
-    /** Move a card (all its copies) out of this binder into [target] deck or binder. */
-    fun moveEntry(entry: CollectionEntry, target: MoveTarget) {
-        viewModelScope.launch {
-            addCopyTo(entry, target)
-            repository.removeEntry(collectionId, entry.scryfallId)
-        }
-    }
-
-    /** Moves the picked cards [ids] into [target] deck or binder — or with [keepHere], copies them. */
-    fun moveEntries(ids: Set<String>, target: MoveTarget, keepHere: Boolean) {
-        viewModelScope.launch {
-            when (target.kind) {
-                SourceKind.BINDER -> repository.transferEntries(collectionId, ids, target.id, keepHere)
-                SourceKind.DECK -> {
-                    // One lookup for all the picked cards, rather than one each.
-                    val picked = collection.value?.entries.orEmpty().filter { it.scryfallId in ids }
-                    deckRepository.addEntries(target.id, cardRepository.withFullCardInfo(picked.map { it.toDeckEntry() }))
-                    if (!keepHere) repository.removeEntries(collectionId, ids)
-                }
+    /**
+     * Sends [pick]'s quantity of [entry]'s copies (plain ones first, then foils) to a deck or another
+     * binder — moving them out of this binder, or with [keep], copying them. Onto a deck's
+     * Considering list they're copied either way: it's a list of cards to think about, and the
+     * copies stay where they are. Run by the add confirmation ([ops]), which can undo it.
+     */
+    suspend fun sendEntry(entry: CollectionEntry, pick: AddToPick, keep: Boolean, ops: AddToOps) {
+        val target = ops.resolve(pick)
+        val (plain, foil) = copiesTaken(entry, pick.quantity)
+        val moving = entry.copy(quantity = plain, foilQuantity = foil)
+        when (target.kind) {
+            SourceKind.DECK -> {
+                val deckEntry = cardRepository.withFullCardInfo(listOf(moving.toDeckEntry())).first()
+                if (pick.considering) deckRepository.addConsideringEntry(target.id, deckEntry.copy(quantity = 1))
+                else deckRepository.addEntry(target.id, deckEntry)
             }
+            SourceKind.BINDER -> repository.addEntry(target.id, moving)
+        }
+        if (!keep && !pick.considering) {
+            val leftPlain = entry.quantity - plain
+            val leftFoil = entry.foilQuantity - foil
+            if (leftPlain + leftFoil <= 0) repository.removeEntry(collectionId, entry.scryfallId)
+            else repository.setQuantity(collectionId, entry.scryfallId, leftPlain, leftFoil)
         }
     }
 
-    /** Makes a binder named [name] and moves the picked cards [ids] into it — or with [keepHere], copies them. */
-    fun moveEntriesToNewBinder(ids: Set<String>, name: String, keepHere: Boolean) {
-        viewModelScope.launch {
-            val binder = repository.createCollection(name.trim().ifBlank { "New binder" }, CollectionType.OWNED)
-            repository.transferEntries(collectionId, ids, binder.id, keepHere)
+    /**
+     * Sends the picked cards [ids] (all their copies) to a deck or another binder — moving them, or
+     * with [keep], copying them; see [sendEntry] for Considering.
+     */
+    suspend fun sendEntries(ids: Set<String>, pick: AddToPick, keep: Boolean, ops: AddToOps) {
+        val target = ops.resolve(pick)
+        when (target.kind) {
+            SourceKind.BINDER -> repository.transferEntries(collectionId, ids, target.id, keep)
+            SourceKind.DECK -> {
+                val picked = collection.value?.entries.orEmpty().filter { it.scryfallId in ids }
+                // One lookup for all the picked cards, rather than one each.
+                val entries = cardRepository.withFullCardInfo(picked.map { it.toDeckEntry() })
+                if (pick.considering) deckRepository.addConsideringEntries(target.id, entries.map { it.copy(quantity = 1) })
+                else deckRepository.addEntries(target.id, entries)
+                if (!keep && !pick.considering) repository.removeEntries(collectionId, ids)
+            }
         }
     }
 
@@ -250,27 +262,11 @@ class CollectionDetailViewModel(
         }
     }
 
-    /** Makes a binder named [name] and moves the card into it — or with [keepHere], copies it. */
-    fun moveToNewBinder(entry: CollectionEntry, name: String, keepHere: Boolean) {
-        viewModelScope.launch {
-            val binder = repository.createCollection(name.trim().ifBlank { "New binder" }, CollectionType.OWNED)
-            addCopyTo(entry, MoveTarget(SourceKind.BINDER, binder.id, binder.name))
-            if (!keepHere) repository.removeEntry(collectionId, entry.scryfallId)
-        }
-    }
-
     /** Removes every card but keeps the binder (the Unsorted pile is emptied, not deleted). */
     fun clearAll(onDone: () -> Unit) {
         viewModelScope.launch {
             repository.clearEntries(collectionId)
             onDone()
-        }
-    }
-
-    private suspend fun addCopyTo(entry: CollectionEntry, target: MoveTarget) {
-        when (target.kind) {
-            SourceKind.DECK -> deckRepository.addEntry(target.id, cardRepository.withFullCardInfo(listOf(entry.toDeckEntry())).first())
-            SourceKind.BINDER -> repository.addEntry(target.id, entry)
         }
     }
 

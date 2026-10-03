@@ -55,6 +55,9 @@ import com.mtgcompanion.app.data.evaluateLegality
 import com.mtgcompanion.app.data.parseCardList
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
+import com.mtgcompanion.app.ui.common.AddToOps
+import com.mtgcompanion.app.ui.common.AddToPick
+import com.mtgcompanion.app.ui.common.asTarget
 import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.ui.common.buildCardSources
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
@@ -183,8 +186,7 @@ class DeckDetailViewModel(
     /** Other decks and all binders this deck's cards can be moved into. */
     val moveTargets: StateFlow<List<MoveTarget>> =
         combine(repository.decksFlow, collectionRepository.collectionsFlow) { decks, collections ->
-            decks.filter { it.id != deckId }.map { MoveTarget(SourceKind.DECK, it.id, it.name) } +
-                collections.map { MoveTarget(SourceKind.BINDER, it.id, it.name) }
+            decks.filter { it.id != deckId }.map { it.asTarget() } + collections.map { it.asTarget() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** scryfallId -> every other binder/deck holding that card, for the zoom overlay's "also in" list. */
@@ -317,26 +319,22 @@ class DeckDetailViewModel(
             }
         }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    /** Adds one copy of an owned [card] to the deck, or its Considering list. [onDone] gets what happened. */
-    fun addOwned(card: OwnedCard, considering: Boolean, onDone: (String) -> Unit) {
-        viewModelScope.launch {
-            val message = try {
-                // A deck entry needs the full card (type, commander-ness…), which a binder entry doesn't keep.
-                val full = cardRepository.getCardsByIds(listOf(card.scryfallId)).firstOrNull()
-                if (full == null) "Couldn't find ${card.name} on Scryfall."
-                else {
-                    if (considering) repository.addToConsidering(deckId, full) else repository.addCardToDeck(deckId, full)
-                    // A loose copy in the Unsorted pile is the one that went into the deck.
-                    val fromPile = !considering && collectionRepository.takeIntoDeck(deck.value, full.id, full.name) > 0
-                    "Added ${card.name} to " + (if (considering) "Considering." else "the deck.") + if (fromPile) " Taken from Unsorted." else ""
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                "Couldn't reach Scryfall — try again when you're online."
-            }
-            onDone(message)
+    /** This deck, as the place cards go into. */
+    private fun here() = MoveTarget(SourceKind.DECK, deckId, deck.value?.name ?: "the deck")
+
+    /**
+     * Adds one copy of an owned [card] to the deck, or its Considering list — run by the add
+     * confirmation ([ops]), which says what happened and can undo it.
+     */
+    suspend fun addOwned(card: OwnedCard, considering: Boolean, ops: AddToOps) {
+        // A deck entry needs the full card (type, commander-ness…), which a binder entry doesn't keep.
+        val full = cardRepository.getCardsByIds(listOf(card.scryfallId)).firstOrNull()
+        if (full == null) {
+            ops.message = "Couldn't find ${card.name} on Scryfall."
+            return
         }
+        // A loose copy in the Unsorted pile is the one that goes into the deck (see AddToOps.addCard).
+        ops.addCard(full, AddToPick(here(), considering = considering))
     }
 
     /** Newest first, with what changed and the record played on each. */
@@ -595,17 +593,12 @@ class DeckDetailViewModel(
     }
 
     /**
-     * Add a card not yet in the deck — e.g. one picked from the zoom overlay's "find similar" list.
-     * The card is always added — [onWarning], if the resulting copy count breaks this deck's
-     * format rules (singleton, max copies), is informational rather than a block, since testing/
-     * sideboard scenarios are legitimate.
+     * Adds [card] to this deck — one picked from "find similar", or found by the Cards tab's search
+     * — through the add confirmation ([ops]): a format's copy limit is a note, not a block, since
+     * testing/sideboard scenarios are legitimate.
      */
-    fun addCard(card: ScryfallCard, onWarning: ((String) -> Unit)? = null) {
-        deck.value?.let { d -> duplicateWarning(d, card)?.let { onWarning?.invoke(it) } }
-        viewModelScope.launch {
-            repository.addCardToDeck(deckId, card)
-            collectionRepository.takeIntoDeck(deck.value, card.id, card.name)
-        }
+    suspend fun addCard(card: ScryfallCard, ops: AddToOps) {
+        ops.addCard(card, AddToPick(here()))
     }
 
     // ---- Cut candidates, considering, swaps ----
@@ -614,21 +607,19 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.setReplaceable(deckId, scryfallId, replaceable) }
     }
 
-    fun moveToConsidering(scryfallId: String) {
-        viewModelScope.launch {
-            val before = deck.value
-            repository.moveToConsidering(deckId, scryfallId)
-            // Considering isn't the deck: its real copies are loose again.
-            before?.cards?.find { it.scryfallId == scryfallId }?.let { collectionRepository.returnFromDeck(before, it) }
-        }
+    /** Run by the add confirmation, which says so and can undo it. */
+    suspend fun moveToConsidering(scryfallId: String) {
+        val before = deck.value
+        repository.moveToConsidering(deckId, scryfallId)
+        // Considering isn't the deck: its real copies are loose again.
+        before?.cards?.find { it.scryfallId == scryfallId }?.let { collectionRepository.returnFromDeck(before, it) }
     }
 
-    fun addConsideredToDeck(scryfallId: String) {
-        viewModelScope.launch {
-            val entry = deck.value?.considering?.find { it.scryfallId == scryfallId }
-            repository.addConsideredToDeck(deckId, scryfallId)
-            if (entry != null) collectionRepository.takeIntoDeck(deck.value, entry.scryfallId, entry.name, entry.quantity)
-        }
+    /** Run by the add confirmation, which says so and can undo it. */
+    suspend fun addConsideredToDeck(scryfallId: String) {
+        val entry = deck.value?.considering?.find { it.scryfallId == scryfallId }
+        repository.addConsideredToDeck(deckId, scryfallId)
+        if (entry != null) collectionRepository.takeIntoDeck(deck.value, entry.scryfallId, entry.name, entry.quantity)
     }
 
     fun removeFromConsidering(scryfallId: String) {
@@ -646,21 +637,17 @@ class DeckDetailViewModel(
         }
     }
 
-    fun consider(card: ScryfallCard) {
-        viewModelScope.launch { repository.addToConsidering(deckId, card) }
-    }
-
-    /** Adds a card known only by name (EDHREC suggestions, combo pieces) to the considering list. */
-    fun considerByName(name: String, onResult: (String) -> Unit) {
-        viewModelScope.launch {
-            val card = lookupCard(name)
-            if (card == null) {
-                onResult("Couldn't find $name.")
-            } else {
-                repository.addToConsidering(deckId, card)
-                onResult("Added ${card.name} to Considering.")
-            }
+    /**
+     * A card known only by name (EDHREC suggestions, combo pieces) put into the deck or onto its
+     * Considering list, as [pick] says — run by the add confirmation ([ops]).
+     */
+    suspend fun addByName(name: String, pick: AddToPick, ops: AddToOps) {
+        val card = lookupCard(name)
+        if (card == null) {
+            ops.message = "Couldn't find $name."
+            return
         }
+        ops.addCard(card, pick)
     }
 
     // ---- Missing cards ----
@@ -814,26 +801,26 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.removeGameResult(deckId, resultId) }
     }
 
-    /** Move a card (all its copies) out of this deck into [target] deck or binder. */
-    fun moveCard(entry: DeckCardEntry, target: MoveTarget) {
-        viewModelScope.launch {
-            addCopyTo(entry, target)
-            repository.removeCardFromDeck(deckId, entry.scryfallId)
-        }
-    }
-
-    /** Add a copy of this card into [target], leaving it in this deck too (unlike [moveCard]). */
-    fun copyCard(entry: DeckCardEntry, target: MoveTarget) {
-        viewModelScope.launch { addCopyTo(entry, target) }
-    }
-
-    private suspend fun addCopyTo(entry: DeckCardEntry, target: MoveTarget) {
+    /**
+     * Sends [pick]'s quantity of [entry]'s copies to another deck (or its Considering list) or a
+     * binder — moving them out of this deck, or with [keep], copying them. Run by the add
+     * confirmation ([ops]), which can undo it.
+     */
+    suspend fun sendCard(entry: DeckCardEntry, pick: AddToPick, keep: Boolean, ops: AddToOps) {
+        val target = ops.resolve(pick)
+        val quantity = pick.quantity.coerceIn(1, entry.quantity.coerceAtLeast(1))
         when (target.kind) {
-            SourceKind.DECK -> repository.addEntry(target.id, entry)
+            SourceKind.DECK ->
+                if (pick.considering) repository.addConsideringEntry(target.id, entry.copy(quantity = 1))
+                else repository.addEntry(target.id, entry.copy(quantity = quantity))
             SourceKind.BINDER -> collectionRepository.addEntry(
                 target.id,
-                CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = entry.quantity, foilQuantity = 0, backImageUrl = entry.backImageUrl, tags = entry.tags)
+                CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = quantity, foilQuantity = 0, backImageUrl = entry.backImageUrl, tags = entry.tags)
             )
+        }
+        if (!keep) {
+            if (quantity >= entry.quantity) repository.removeCardFromDeck(deckId, entry.scryfallId)
+            else repository.setCardQuantity(deckId, entry.scryfallId, entry.quantity - quantity)
         }
     }
 

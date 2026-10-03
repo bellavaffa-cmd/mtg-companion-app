@@ -82,6 +82,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
@@ -170,7 +171,12 @@ import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.elevatedCard
 import com.mtgcompanion.app.ui.common.FlipBadge
 import com.mtgcompanion.app.ui.common.ManaSymbol
-import com.mtgcompanion.app.ui.common.MoveTargetDialog
+import com.mtgcompanion.app.ui.common.AddToPicker
+import com.mtgcompanion.app.ui.common.AddVerb
+import com.mtgcompanion.app.ui.common.LocalAddToFeedback
+import com.mtgcompanion.app.ui.common.addToMessage
+import com.mtgcompanion.app.ui.common.asTarget
+import com.mtgcompanion.app.ui.common.quantityLimits
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.pressScale
 import com.mtgcompanion.app.ui.theme.Bg
@@ -246,6 +252,10 @@ fun DeckDetailScreen(
     var copyTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     // Name of the card whose "find similar" overlay is open, if any.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
+    // A suggested card (by name, and the card itself when it's known) whose "into the deck or
+    // Considering?" picker is open.
+    var addSuggestion by remember { mutableStateOf<Pair<String, ScryfallCard?>?>(null) }
+    val addTo = LocalAddToFeedback.current
     // The art header shrinks from a full hero to a slim bar as any tab's list scrolls, and grows
     // back when you pull down at the top — driven by the same nested-scroll state a collapsing
     // Material app bar uses, so it works across every page of the pager.
@@ -359,7 +369,7 @@ fun DeckDetailScreen(
                                         else -> viewModel.setReplaceable(card.scryfallId, true)
                                     }
                                 },
-                                onMoveToConsidering = { viewModel.moveToConsidering(it.scryfallId); toast("Moved ${it.name} to Considering.") },
+                                onMoveToConsidering = { entry -> addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, considering = true)) { viewModel.moveToConsidering(entry.scryfallId) } },
                                 onSwap = { swapOut = it }
                             )
                         },
@@ -370,15 +380,15 @@ fun DeckDetailScreen(
                         analysis = analysis,
                         prices = prices,
                         onZoom = { zoom = "consider" to it },
-                        onAddToDeck = { viewModel.addConsideredToDeck(it.scryfallId); toast("Added ${it.name} to the deck.") },
+                        onAddToDeck = { entry -> addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name)) { viewModel.addConsideredToDeck(entry.scryfallId) } },
                         onSwapIn = { swapIn = it },
                         onRemove = { viewModel.removeFromConsidering(it.scryfallId) }
                     )
                     "Stats" -> StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck, onOpenBadge = onOpenBadge)
                     "Suggestions" -> AnalysisTab(
                         analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel,
-                        onConsiderName = { name -> viewModel.considerByName(name, toast) },
-                        onConsiderCard = { card -> viewModel.consider(card); toast("Added ${card.name} to Considering.") },
+                        onConsiderName = { name -> addSuggestion = name to null },
+                        onConsiderCard = { card -> addSuggestion = card.name to card },
                         onMarkCut = { entry -> viewModel.setReplaceable(entry.scryfallId, true) },
                         onViewDetails = onViewDetails
                     )
@@ -448,6 +458,8 @@ fun DeckDetailScreen(
                 val zoomCards = sug.map { suggestion ->
                     ZoomCard(
                         imageUrl = suggestion.scryfallImageUrl,
+                        cardName = suggestion.name,
+                        onAdd = { addSuggestion = suggestion.name to null },
                         onViewDetails = { zoom = null; onViewDetails(suggestion.name) }
                     )
                 }
@@ -461,27 +473,48 @@ fun DeckDetailScreen(
                 onDismiss = { similarSearchFor = null },
                 onAdd = { similar ->
                     similarSearchFor = null
-                    viewModel.addCard(similar) { warning -> Toast.makeText(context, warning, Toast.LENGTH_LONG).show() }
+                    addTo.perform(addToMessage(AddVerb.ADD, similar.name, currentDeck.name)) { viewModel.addCard(similar, this) }
                 },
                 onViewDetails = { similar -> similarSearchFor = null; onViewDetails(similar.name) }
             )
         }
 
-        moveTarget?.let { entry ->
-            MoveTargetDialog(
-                cardName = entry.name,
+        // Move or copy a card to another deck or binder: the same picker as everywhere else.
+        listOfNotNull(moveTarget?.let { it to AddVerb.MOVE }, copyTarget?.let { it to AddVerb.COPY }).firstOrNull()?.let { (entry, verb) ->
+            val close = { moveTarget = null; copyTarget = null }
+            AddToPicker(
+                verb = verb,
+                subject = entry.name,
+                imageUrl = entry.imageUrl,
                 targets = moveTargets,
-                onPick = { target -> viewModel.moveCard(entry, target); moveTarget = null },
-                onDismiss = { moveTarget = null }
+                quantity = quantityLimits(verb, entry.quantity),
+                onPick = { pick ->
+                    close()
+                    addTo.perform(addToMessage(verb, entry.name, pick.place, pick.considering, pick.quantity)) {
+                        viewModel.sendCard(entry, pick, keep = verb == AddVerb.COPY, ops = this)
+                    }
+                },
+                onDismiss = close
             )
         }
 
-        copyTarget?.let { entry ->
-            MoveTargetDialog(
-                cardName = entry.name,
-                targets = moveTargets,
-                onPick = { target -> viewModel.copyCard(entry, target); copyTarget = null },
-                onDismiss = { copyTarget = null }
+        addSuggestion?.let { (name, card) ->
+            // Into this deck or onto its Considering list — Considering first, as it's a suggestion.
+            AddToPicker(
+                verb = AddVerb.ADD,
+                subject = name,
+                targets = listOf(currentDeck.asTarget()),
+                canMakeBinder = false,
+                canMakeDeck = false,
+                considering = true,
+                quantity = null,
+                onPick = { pick ->
+                    addSuggestion = null
+                    addTo.perform(addToMessage(AddVerb.ADD, name, pick.place, pick.considering)) {
+                        if (card != null) addCard(card, pick) else viewModel.addByName(name, pick, this)
+                    }
+                },
+                onDismiss = { addSuggestion = null }
             )
         }
 
@@ -1160,6 +1193,7 @@ private fun CardsTab(
 ) {
     val query by viewModel.cardQuery.collectAsState()
     val trimmed = query.trim()
+    val addTo = LocalAddToFeedback.current
     val cardTags by viewModel.cardTags.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
     fun tagsOf(card: DeckCardEntry) = cardTags[card.name].orEmpty()
@@ -1251,8 +1285,7 @@ private fun CardsTab(
             }
             items(addable, key = { "add-" + it.id }) { card ->
                 AddToDeckRow(card) {
-                    viewModel.addCard(card) { warning -> Toast.makeText(context, warning, Toast.LENGTH_LONG).show() }
-                    Toast.makeText(context, "Added ${card.name}", Toast.LENGTH_SHORT).show()
+                    addTo.perform(addToMessage(AddVerb.ADD, card.name, deck.name)) { viewModel.addCard(card, this) }
                 }
             }
         }
@@ -1678,7 +1711,9 @@ private fun StatsTab(
             label = role.label,
             cards = ownedGaps[role.otag].orEmpty(),
             considering = deck.considering.map { RoleTags.key(it.name) }.toSet(),
-            onAdd = { card, considering -> viewModel.addOwned(card, considering) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } },
+            onAdd = { card, considering, feedback ->
+                feedback.perform(addToMessage(AddVerb.ADD, card.name, deck.name, considering)) { viewModel.addOwned(card, considering, this) }
+            },
             onDismiss = { ownedFor = null }
         )
     }
@@ -1974,7 +2009,7 @@ private fun SuggestionRow(view: EdhrecCardView, onClick: () -> Unit, onConsider:
                 color = TextMuted
             )
         }
-        TextButton(onClick = onConsider) { Text("Consider", color = Gold, style = MaterialTheme.typography.labelMedium) }
+        TextButton(onClick = onConsider) { Text("Add…", color = Gold, style = MaterialTheme.typography.labelMedium) }
     }
 }
 
@@ -2004,7 +2039,7 @@ private fun SuggestionTile(view: EdhrecCardView, onClick: () -> Unit, onConsider
                 modifier = Modifier.weight(1f)
             )
             Text(
-                "Consider",
+                "Add…",
                 style = MaterialTheme.typography.labelMedium,
                 color = Gold,
                 modifier = Modifier.clickable(onClick = onConsider).padding(vertical = 2.dp)
@@ -2228,8 +2263,8 @@ private fun deckCardActions(
             CardMenuAction("Set as partner commander", Icons.Outlined.Star) { onSetPartnerCommander(entry) }
         }
     }
-    actions += CardMenuAction("Add to another binder/deck", Icons.Filled.Add) { onCopy(entry) }
-    actions += CardMenuAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { onMove(entry) }
+    actions += CardMenuAction("Copy to…", Icons.Filled.ContentCopy) { onCopy(entry) }
+    actions += CardMenuAction("Move to…", Icons.AutoMirrored.Filled.DriveFileMove) { onMove(entry) }
     actions += CardMenuAction("Remove from deck", Icons.Filled.Close, destructive = true) { onRemove(entry) }
     actions += CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) }
     return actions

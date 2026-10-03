@@ -96,7 +96,13 @@ import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ConfirmDeleteDialog
 import com.mtgcompanion.app.ui.common.FlipBadge
-import com.mtgcompanion.app.ui.common.MoveTargetDialog
+import com.mtgcompanion.app.ui.common.AddToPick
+import com.mtgcompanion.app.ui.common.AddToPicker
+import com.mtgcompanion.app.ui.common.AddVerb
+import com.mtgcompanion.app.ui.common.LocalAddToFeedback
+import com.mtgcompanion.app.ui.common.addToMessage
+import com.mtgcompanion.app.ui.common.asTarget
+import com.mtgcompanion.app.ui.common.quantityLimits
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.cardGrid
 import com.mtgcompanion.app.ui.common.pressScale
@@ -161,14 +167,15 @@ fun CollectionDetailScreen(
     BackHandler(enabled = selecting) { selected = emptySet() }
     // Name of the card whose "find similar" overlay is open, if any.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
+    val addTo = LocalAddToFeedback.current
 
     Scaffold(
         containerColor = Bg,
         bottomBar = {
             if (selecting) SelectionActionBar(
                 listOf(
-                    SelectionAction("Move", Icons.AutoMirrored.Filled.DriveFileMove) { bulk = "move" },
-                    SelectionAction("Copy to", Icons.Filled.ContentCopy) { bulk = "copy" },
+                    SelectionAction("Move to…", Icons.AutoMirrored.Filled.DriveFileMove) { bulk = "move" },
+                    SelectionAction("Copy to…", Icons.Filled.ContentCopy) { bulk = "copy" },
                     SelectionAction("Export", Icons.Filled.IosShare) { bulk = "export" },
                     SelectionAction("Remove", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
                 )
@@ -407,18 +414,32 @@ fun CollectionDetailScreen(
         SimilarCardsDialog(
             cardName = name,
             onDismiss = { similarSearchFor = null },
-            onAdd = { similar -> similarSearchFor = null; viewModel.addCard(similar) },
+            onAdd = { similar ->
+                similarSearchFor = null
+                collection?.let { here ->
+                    addTo.perform(addToMessage(AddVerb.ADD, similar.name, here.name)) { addCard(similar, AddToPick(here.asTarget())) }
+                }
+            },
             onViewDetails = { similar -> similarSearchFor = null; onViewDetails(similar.name) }
         )
     }
 
     moveTarget?.let { entry ->
-        MoveTargetDialog(
-            cardName = entry.name,
+        AddToPicker(
+            verb = AddVerb.MOVE,
+            subject = entry.name,
+            imageUrl = entry.imageUrl,
             targets = moveTargets,
-            onPick = { target -> viewModel.moveEntry(entry, target); moveTarget = null },
-            onDismiss = { moveTarget = null },
-            onNewBinder = { name -> viewModel.moveToNewBinder(entry, name, keepHere = false); moveTarget = null }
+            quantity = quantityLimits(AddVerb.MOVE, entry.quantity + entry.foilQuantity),
+            onPick = { pick ->
+                moveTarget = null
+                // Onto a Considering list the copies stay here: it's added, not moved.
+                val verb = if (pick.considering) AddVerb.ADD else AddVerb.MOVE
+                addTo.perform(addToMessage(verb, entry.name, pick.place, pick.considering, pick.quantity)) {
+                    viewModel.sendEntry(entry, pick, keep = false, ops = this)
+                }
+            },
+            onDismiss = { moveTarget = null }
         )
     }
 
@@ -467,13 +488,23 @@ fun CollectionDetailScreen(
     when (bulk) {
         "move", "copy" -> {
             val keep = bulk == "copy"
-            MoveTargetDialog(
-                cardName = pickedLabel,
+            val verb = if (keep) AddVerb.COPY else AddVerb.MOVE
+            val ids = pickedIds
+            AddToPicker(
+                verb = verb,
+                subject = pickedLabel,
+                imageUrl = picked.singleOrNull()?.imageUrl,
                 targets = moveTargets,
-                onPick = { target -> viewModel.moveEntries(pickedIds, target, keepHere = keep); done() },
-                onDismiss = { bulk = null },
-                onNewBinder = { name -> viewModel.moveEntriesToNewBinder(pickedIds, name, keepHere = keep); done() },
-                title = if (keep) "Copy $pickedLabel to" else null
+                // Every copy of each picked card goes.
+                quantity = null,
+                onPick = { pick ->
+                    done()
+                    val said = if (pick.considering) AddVerb.ADD else verb
+                    addTo.perform(addToMessage(said, pickedLabel, pick.place, pick.considering)) {
+                        viewModel.sendEntries(ids, pick, keep = keep, ops = this)
+                    }
+                },
+                onDismiss = { bulk = null }
             )
         }
         "remove" -> {
