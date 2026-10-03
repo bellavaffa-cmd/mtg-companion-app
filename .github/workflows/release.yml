@@ -117,9 +117,16 @@ jobs:
       - name: Publish the tester pre-release
         if: steps.plan.outputs.kind == 'tester'
         run: |
-          gh release create "$TAG" out/*.apk --prerelease --latest=false \
-            --title "Manabind Tester build ${{ steps.plan.outputs.build }}" \
-            --notes "Tester build ${{ steps.plan.outputs.build }}. Installs alongside the real app; the tester app updates itself to this."
+          # A tag made on github.com (Releases › Draft a new release) comes with its release already
+          # there, so the APKs are added to it instead of making a second one.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" out/*.apk --clobber
+            gh release edit "$TAG" --prerelease --latest=false
+          else
+            gh release create "$TAG" out/*.apk --prerelease --latest=false \
+              --title "Manabind Tester build ${{ steps.plan.outputs.build }}" \
+              --notes "Tester build ${{ steps.plan.outputs.build }}. Installs alongside the real app; the tester app updates itself to this."
+          fi
 
       - name: Publish the release
         if: steps.plan.outputs.kind == 'release'
