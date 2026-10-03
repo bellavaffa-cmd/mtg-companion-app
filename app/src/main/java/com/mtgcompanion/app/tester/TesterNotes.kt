@@ -9,48 +9,58 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "trade-once",
-        "A trade's cards move only once",
-        "Accept a trade and tap \"Update my binders\", then try it again (or on a second phone that still shows the button). The cards move once; the second time it says your binders were already updated."
+        "add-to-search",
+        "One \"Add to…\" everywhere",
+        "In Search, long-press a card and pick \"Add to…\", then A deck and a deck. A bar at the bottom says \"Added … to …\". Tap Undo and the card leaves the deck. Try it from a card's page, a binder, All cards, a tag binder and the scanner too: it should look and work the same each time."
     ),
     TesterNote(
-        "sideboard-considering",
-        "Imported sideboards go to Considering",
-        "In a deck, use Import decklist with a list that has a \"Sideboard\" or \"Maybeboard\" section, \"SB:\" lines, or an Arena export. Those cards land in Considering, not the deck, and the summary says how many."
+        "add-to-copies",
+        "Copies and foil when adding",
+        "On a card's page, tap \"Add to binder\", turn on Foil, set 3 copies and pick a binder. The binder should have 3 foil copies."
     ),
     TesterNote(
-        "binder-commander",
-        "Cards from binders can be commanders",
-        "Add a legendary creature to a deck from All cards (To deck) or from a binder's Move or Copy. Open it in the deck: \"Set as commander\" is offered."
+        "add-to-new",
+        "Make a binder or deck while adding",
+        "In a deck, long-press a card, \"Move to…\", then \"New binder…\". Name it and confirm. Undo takes the card back and removes the new binder."
     ),
     TesterNote(
-        "brawl-commander",
-        "Brawl decks can pick their commander",
-        "In a Brawl deck, open a legendary creature's or legendary planeswalker's menu: \"Set as commander\" is there, and the star on the row works too."
+        "add-to-considering",
+        "Suggestions go to Considering first",
+        "In a deck's Suggestions, tap \"Add…\" on a card. Considering is already picked; switch to \"Into the deck\" to put it straight in the deck."
     ),
     TesterNote(
-        "search-order",
-        "Search results match the last search",
-        "Search for something, then quickly search for something else, or scroll for more and then search again. Only cards from the last search show."
+        "add-to-scan",
+        "Scans use the same sheet",
+        "Scan two cards, then \"Add all to…\" and pick a binder. Undo puts the scans back on the list."
     ),
     TesterNote(
-        "random-offline",
-        "Random card says when it can't",
-        "Turn on airplane mode and tap the random card button in Search. A message says it couldn't get one."
+        "wording",
+        "Same words everywhere",
+        "Menus now say Import list, Export list, Move to…, Copy to…, Delete deck, Remove from deck. Tell us if any old wording is left."
     ),
     TesterNote(
-        "card-retry",
-        "Try again on a card page",
-        "Open a card page while offline so it fails, go back online and tap \"Try again\". The card loads."
+        "scratch-commander",
+        "Start a deck from scratch",
+        "Decks, then \"Start from scratch\", then Commander. Commanders appear most-played first, with \"Loading more…\" until all are in. Tap one, then \"Build with …\". Name the deck and it opens on Suggestions with the commander set."
     ),
     TesterNote(
-        "game-delete",
-        "Deleting a logged game asks first",
-        "In a deck's match record, tap the ✕ beside a game. It asks \"Delete this game?\" before deleting."
+        "scratch-colours",
+        "Find a commander by colour",
+        "In the commander list, tap U and B: only commanders within blue and black show, plus colourless ones. Try searching by name or rules text, and the Name and Newest sorts."
     ),
     TesterNote(
-        "cleanup",
-        "Unused code removed",
-        "Nothing new to see. Just use the app as usual and report anything that looks or works differently from before."
+        "scratch-pair",
+        "Two commanders",
+        "Pick a commander with \"Choose a Background\" (for example Wilson, Refined Grizzly): an \"Add a Background\" step appears with Skip. Try a Partner commander too. The deck is named \"A & B\"."
+    ),
+    TesterNote(
+        "pair-existing",
+        "Backgrounds and partners in existing decks",
+        "In a deck whose commander has Partner or Choose a Background, open another such card's menu: \"Set as partner commander\" or \"Set as Background\" is offered, and Legality accepts the pair."
+    ),
+    TesterNote(
+        "scratch-other",
+        "Other formats",
+        "Start from scratch with Modern: it goes straight to the name (\"New Modern deck\") and opens an empty deck on Cards."
     ),
 )
