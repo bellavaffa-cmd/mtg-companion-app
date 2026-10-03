@@ -20,7 +20,9 @@ import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.SourceKind
 import com.mtgcompanion.app.ui.common.buildCardSources
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -233,6 +235,13 @@ class SearchViewModel(
     private var currentSort = SortOption.RELEVANCE
     private var currentDirection = SortDirection.ASCENDING
 
+    // The search and next-page requests in flight. A new search cancels both, and the generation
+    // goes up with it, so a page that still arrives for an older search is dropped rather than
+    // shown (or appended) under the new one.
+    private var searchJob: Job? = null
+    private var loadMoreJob: Job? = null
+    private var searchGeneration = 0
+
     init {
         // Search only ever runs explicitly now (the Search button, or picking a suggestion) — the
         // front page is just a form, so there's no live auto-search on every keystroke here.
@@ -318,24 +327,33 @@ class SearchViewModel(
 
     /** Immediate search (e.g. from the search icon / keyboard action), bypassing the debounce. */
     fun search() {
-        viewModelScope.launch {
-            runSearch(buildScryfallQuery(_query.value.trim(), _filters.value), _sortBy.value, _sortDirection.value)
+        searchJob?.cancel()
+        loadMoreJob?.cancel()
+        val generation = ++searchGeneration
+        searchJob = viewModelScope.launch {
+            runSearch(buildScryfallQuery(_query.value.trim(), _filters.value), _sortBy.value, _sortDirection.value, generation)
         }
     }
 
-    /** Fetch one random card, for the Search tab's discovery button. */
-    fun randomCard(onResult: (ScryfallCard) -> Unit) {
+    /**
+     * Fetch one random card, for the Search tab's discovery button. [onError] gets a line to show
+     * when it can't (offline, or Scryfall didn't answer) — before, the button just did nothing.
+     */
+    fun randomCard(onResult: (ScryfallCard) -> Unit, onError: (String) -> Unit = {}) {
         viewModelScope.launch {
             val card = try {
                 repository.getRandom()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                onError(if (isOffline(e)) "You're offline — a random card needs an internet connection." else "Couldn't get a random card — try again.")
                 null
             }
             card?.let { onResult(it) }
         }
     }
 
-    private suspend fun runSearch(query: String, sort: SortOption, direction: SortDirection) {
+    private suspend fun runSearch(query: String, sort: SortOption, direction: SortDirection, generation: Int) {
         _suggestions.value = emptyList()
         if (query.isBlank()) {
             _uiState.value = SearchUiState.Idle
@@ -346,10 +364,13 @@ class SearchViewModel(
         currentSort = sort
         currentDirection = direction
         _uiState.value = SearchUiState.Loading
-        _uiState.value = try {
+        val result = try {
             val dir = if (sort.order != null) direction.dir else null
             val page = repository.search(query, sort.order, dir, page = 1)
             SearchUiState.Success(page.cards, hasMore = page.hasMore)
+        } catch (e: CancellationException) {
+            // A newer search took over; it sets the screen.
+            throw e
         } catch (e: Exception) {
             if (isOffline(e)) {
                 // Fall back to the locally downloaded card database, if there is one.
@@ -365,24 +386,31 @@ class SearchViewModel(
                 SearchUiState.Error(e.message ?: "Something went wrong searching Scryfall.")
             }
         }
+        if (generation == searchGeneration) _uiState.value = result
     }
 
     /** Fetch the next page of the current search and append it, for infinite-scroll in the results list. */
     fun loadMore() {
         val state = _uiState.value
         if (state !is SearchUiState.Success || state.offline || !state.hasMore || state.loadingMore) return
-        viewModelScope.launch {
+        // The page belongs to the search showing now; if another search starts before it arrives, it's dropped.
+        val generation = searchGeneration
+        loadMoreJob = viewModelScope.launch {
             _uiState.value = state.copy(loadingMore = true)
             val nextPage = currentPage + 1
             try {
                 val dir = if (currentSort.order != null) currentDirection.dir else null
                 val page = repository.search(currentQueryString, currentSort.order, dir, page = nextPage)
+                if (generation != searchGeneration) return@launch
                 currentPage = nextPage
                 val latest = _uiState.value
                 if (latest is SearchUiState.Success) {
                     _uiState.value = latest.copy(cards = latest.cards + page.cards, hasMore = page.hasMore, loadingMore = false)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                if (generation != searchGeneration) return@launch
                 val latest = _uiState.value
                 if (latest is SearchUiState.Success) _uiState.value = latest.copy(loadingMore = false)
             }

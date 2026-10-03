@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.search
 
+import android.widget.Toast
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -63,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontStyle
@@ -103,6 +105,7 @@ fun SearchScreen(
     val sortBy by viewModel.sortBy.collectAsState()
     val sortDirection by viewModel.sortDirection.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
+    val context = LocalContext.current
 
     Scaffold(
         containerColor = Bg,
@@ -199,7 +202,7 @@ fun SearchScreen(
                             ),
                             modifier = Modifier.weight(1f)
                         )
-                        IconButton(onClick = { viewModel.randomCard(onCardClick) }) {
+                        IconButton(onClick = { viewModel.randomCard(onCardClick) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } }) {
                             Icon(Icons.Filled.Shuffle, contentDescription = "Random card", tint = TextMuted)
                         }
                     }
