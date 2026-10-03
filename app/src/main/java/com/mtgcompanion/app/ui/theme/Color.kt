@@ -115,16 +115,12 @@ val Surface2: Color @Composable get() = LocalAppColors.current.surface2
 val Surface3: Color @Composable get() = LocalAppColors.current.surface3
 
 val BorderColor: Color @Composable get() = LocalAppColors.current.border
-val BorderBright: Color @Composable get() = LocalAppColors.current.borderBright
 
 val TextPrimary: Color @Composable get() = LocalAppColors.current.textPrimary
 val TextMuted: Color @Composable get() = LocalAppColors.current.textMuted
 val TextDim: Color @Composable get() = LocalAppColors.current.textDim
 
-val SuccessColor: Color @Composable get() = LocalAppColors.current.success
-val WarningColor: Color @Composable get() = LocalAppColors.current.warning
 val CutColor: Color @Composable get() = LocalAppColors.current.cut
-val ErrorColor: Color @Composable get() = LocalAppColors.current.error
 
 /** Magic's five colours plus colorless, tuned to glow on the dark ground (identity strips, pips, fallback art). */
 object ManaColors {

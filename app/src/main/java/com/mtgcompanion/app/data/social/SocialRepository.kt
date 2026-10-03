@@ -75,8 +75,6 @@ class SocialRepository(private val auth: SupabaseAuth) {
         }
     }
 
-    fun refreshInBackground() { scope.launch { refresh() } }
-
     suspend fun refreshInbox() {
         val who = userId ?: return
         runCatching { api.inbox() }.onSuccess { if (userId == who) _inbox.value = it }

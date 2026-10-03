@@ -41,10 +41,6 @@ class DecksViewModel(
         viewModelScope.launch { onCreated(repository.createDeck(name, gameMode)) }
     }
 
-    fun deleteDeck(deckId: String) {
-        viewModelScope.launch { repository.deleteDeck(deckId) }
-    }
-
     class Factory(private val repository: DeckRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = DecksViewModel(repository) as T

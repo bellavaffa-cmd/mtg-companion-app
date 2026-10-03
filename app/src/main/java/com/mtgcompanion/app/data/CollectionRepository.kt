@@ -67,14 +67,6 @@ class CollectionRepository(private val context: Context) {
         update { collections -> withWishlistCardWantedAgain(collections, cardName) }
     }
 
-    /** Makes the Wishlist if it isn't there yet (it's kept up by [maintainStandingCollections] too). */
-    suspend fun ensureWishlist() {
-        update { collections ->
-            if (collections.any { it.isWishlist }) collections
-            else collections + Collection(WISHLIST_ID, WISHLIST_NAME, createdAt = 0, type = CollectionType.WISHLIST.name)
-        }
-    }
-
     suspend fun addCard(collectionId: String, card: ScryfallCard, foil: Boolean = false) {
         updateEntries(collectionId) { entries ->
             val existing = entries.find { it.scryfallId == card.id }

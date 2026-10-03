@@ -19,7 +19,3 @@ fun buyListUrl(cards: List<BuyLine>): String? {
     if (lines.isEmpty()) return null
     return "https://store.tcgplayer.com/massentry?c=" + URLEncoder.encode(lines.joinToString("||"), "UTF-8")
 }
-
-/** Where to buy the card named [name], when there's no printing to link to. */
-fun buyCardUrl(name: String): String =
-    "https://www.tcgplayer.com/search/magic/product?q=" + URLEncoder.encode(name.trim(), "UTF-8") + "&productLineName=magic"

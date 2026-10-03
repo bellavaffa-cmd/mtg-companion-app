@@ -424,6 +424,3 @@ class SupabaseAuth(private val context: Context) {
         }
     }
 }
-
-/** Thrown for network trouble so callers can show "offline" rather than a scary error. */
-internal fun isNetworkProblem(e: Throwable) = e is IOException
