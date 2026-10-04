@@ -106,8 +106,10 @@ jobs:
           # raw log isn't (a cloud session can read annotations but not download logs).
           gradle_or_report() {
             set -o pipefail
-            ./gradlew "$@" 2>&1 | tee build.log && return 0
-            grep -E -A6 "^e: |error:|What went wrong|Lint found|Errors found" build.log | head -60 \
+            # Packaging the APKs (onnxruntime's native library is large) has run out of the 2 GB
+            # gradle.properties gives on a runner with plenty to spare.
+            ./gradlew -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" "$@" 2>&1 | tee build.log && return 0
+            grep -E -A15 "^e: |error:|What went wrong|Caused by|OutOfMemory|Java heap|Lint found|Errors found" build.log | head -80 \
               | while IFS= read -r line; do [ -n "$line" ] && echo "::error::$line"; done
             return 1
           }
@@ -125,8 +127,10 @@ jobs:
           # raw log isn't (a cloud session can read annotations but not download logs).
           gradle_or_report() {
             set -o pipefail
-            ./gradlew "$@" 2>&1 | tee build.log && return 0
-            grep -E -A6 "^e: |error:|What went wrong|Lint found|Errors found" build.log | head -60 \
+            # Packaging the APKs (onnxruntime's native library is large) has run out of the 2 GB
+            # gradle.properties gives on a runner with plenty to spare.
+            ./gradlew -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" "$@" 2>&1 | tee build.log && return 0
+            grep -E -A15 "^e: |error:|What went wrong|Caused by|OutOfMemory|Java heap|Lint found|Errors found" build.log | head -80 \
               | while IFS= read -r line; do [ -n "$line" ] && echo "::error::$line"; done
             return 1
           }
