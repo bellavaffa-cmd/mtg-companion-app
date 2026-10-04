@@ -9,8 +9,8 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "add-check",
-        "Cards are checked before going into a deck",
-        "From your note. Add a card that's banned, not legal in the deck's format, outside the commander's colours, or over the copy limit: the app now asks first and says why. \"Add anyway\" adds it; Cancel doesn't. Adding several at once lists the ones that fail."
+        "singleton-plus",
+        "Singleton is checked on + too",
+        "From your note. In a Commander or Brawl deck, tap + on a card that isn't a basic land: the app asks first (\"Singleton: only 1 copy allowed\"). Cancel keeps one copy; Add anyway adds the second. Adding from search or a binder says the same."
     ),
 )
