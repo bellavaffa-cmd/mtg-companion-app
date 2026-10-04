@@ -24,7 +24,14 @@ jobs:
           distribution: microsoft
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew testDebugUnitTest
+      # A failure's own error lines become annotations, readable from the API where the raw log
+      # isn't (a cloud session can read annotations but not download logs or artifacts).
+      - run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest 2>&1 | tee build.log && exit 0
+          grep -E -A15 "^e: |error:|What went wrong|Caused by|FAILED|AssertionError|expected:" build.log | head -80 \
+            | while IFS= read -r line; do [ -n "$line" ] && echo "::error::$line"; done
+          exit 1
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
