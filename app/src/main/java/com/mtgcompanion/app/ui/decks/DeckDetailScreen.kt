@@ -487,7 +487,7 @@ fun DeckDetailScreen(
                         cardName = entry.name,
                         priceUsd = prices[entry.scryfallId],
                         quantity = entry.quantity,
-                        onIncrement = { viewModel.setCardQuantity(entry.scryfallId, entry.quantity + 1) },
+                        onIncrement = { addTo.oneMore(currentDeck, entry) { viewModel.setCardQuantity(entry.scryfallId, entry.quantity + 1) } },
                         onDecrement = { viewModel.setCardQuantity(entry.scryfallId, (entry.quantity - 1).coerceAtLeast(1)) },
                         onSelectPrinting = { chosen -> viewModel.changePrinting(entry.scryfallId, chosen) },
                         onMove = { zoom = null; moveTarget = entry },
@@ -511,7 +511,7 @@ fun DeckDetailScreen(
                         cardName = entry.name,
                         priceUsd = prices[entry.scryfallId],
                         quantity = entry.quantity,
-                        onIncrement = { viewModel.setSideboardQuantity(entry.scryfallId, entry.quantity + 1) },
+                        onIncrement = { addTo.oneMore(currentDeck, entry, sideboard = true) { viewModel.setSideboardQuantity(entry.scryfallId, entry.quantity + 1) } },
                         onDecrement = { viewModel.setSideboardQuantity(entry.scryfallId, (entry.quantity - 1).coerceAtLeast(1)) },
                         onViewDetails = { zoom = null; onViewDetails(entry.name) },
                         backImageUrl = entry.backImageUrl,
@@ -1461,7 +1461,7 @@ private fun CardsTab(
                         card = card,
                         onClick = { onZoomSideboard(card.scryfallId) },
                         actions = sideboardActions(card),
-                        onIncrement = { viewModel.setSideboardQuantity(card.scryfallId, card.quantity + 1) },
+                        onIncrement = { addTo.oneMore(deck, card, sideboard = true) { viewModel.setSideboardQuantity(card.scryfallId, card.quantity + 1) } },
                         onDecrement = { sideFewer(card) }
                     )
                 } else {
@@ -1472,7 +1472,7 @@ private fun CardsTab(
                         actions = sideboardActions(card),
                         canLead = false,
                         onToggleCommander = {},
-                        onIncrement = { viewModel.setSideboardQuantity(card.scryfallId, card.quantity + 1) },
+                        onIncrement = { addTo.oneMore(deck, card, sideboard = true) { viewModel.setSideboardQuantity(card.scryfallId, card.quantity + 1) } },
                         onDecrement = { sideFewer(card) }
                     )
                 }
@@ -1600,7 +1600,7 @@ private fun CardsTab(
                             actions = cardActions(card),
                             comboPiece = isComboPiece(card),
                             nearMiss = isNearMiss(card),
-                            onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
+                            onIncrement = { addTo.oneMore(deck, card) { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) } },
                             onDecrement = { fewer(card) }
                         )
                     }
@@ -1615,7 +1615,7 @@ private fun CardsTab(
                             onToggleCommander = {
                                 viewModel.setCommander(if (deck.commander?.scryfallId == card.scryfallId) null else card)
                             },
-                            onIncrement = { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) },
+                            onIncrement = { addTo.oneMore(deck, card) { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) } },
                             onDecrement = { fewer(card) },
                             comboPiece = isComboPiece(card),
                             nearMiss = isNearMiss(card)

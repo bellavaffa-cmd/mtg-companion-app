@@ -10,6 +10,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.CollectionRepository
+import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.GameMode
@@ -97,6 +98,18 @@ class AddToFeedback internal constructor(
                 lock.withLock { applyUndo(steps) }
                 onUndone?.invoke()
             }
+        }
+    }
+
+    /**
+     * One more copy of [entry], already in [deck]'s main deck or [sideboard] (a "+"). Only the copy
+     * limit is checked: past it — a second copy in a singleton deck — the user is asked first, and
+     * [add] runs only if they add it anyway. Within the limit [add] just runs, with no confirmation.
+     */
+    fun oneMore(deck: Deck, entry: DeckCardEntry, sideboard: Boolean = false, add: () -> Unit) {
+        scope.launch {
+            gate.run(AddCheck.forCopies(AddToPick(deck.asTarget()), listOf(entry.toAddItem(1, sideboard)))) ?: return@launch
+            add()
         }
     }
 

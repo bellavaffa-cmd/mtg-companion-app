@@ -105,9 +105,37 @@ class AddCheckTest {
     @Test
     fun `singleton formats allow one, and cards in the same add count together`() {
         val deck = commanderDeck(null, cards = listOf(entry("ring", name = "Sol Ring")))
-        assertEquals(listOf("Over the copy limit (1 max)"), one(deck, AddCandidate("ring2", "Sol Ring")).problems)
+        assertEquals(listOf("Singleton: only 1 copy allowed in Commander"), one(deck, AddCandidate("ring2", "Sol Ring")).problems)
         val results = checkAdd(commanderDeck(null), listOf(AddCandidate("a", "Ponder"), AddCandidate("b", "Ponder")), emptyMap())
         assertEquals(listOf(true, false), results.map { it.allowed })
+    }
+
+    @Test
+    fun `brawl says singleton too`() {
+        val deck = Deck("d", "Brawl deck", cards = listOf(entry("ring", name = "Sol Ring")), gameMode = GameMode.BRAWL.name)
+        assertEquals(listOf("Singleton: only 1 copy allowed in Brawl"), one(deck, AddCandidate("ring2", "Sol Ring")).problems)
+    }
+
+    @Test
+    fun `one more copy from a plus checks only the copy limit`() {
+        val atraxa = card("atraxa", "Atraxa", listOf("W", "U", "B", "G"))
+        val bad = card("bad", "Bad", listOf("R"), legal = mapOf("commander" to "banned"))
+        val deck = commanderDeck(
+            entry("atraxa", name = "Atraxa"),
+            cards = listOf(entry("bad", name = "Bad"), entry("mountain", 10, "Mountain", "Basic Land — Mountain"))
+        )
+        val known = cards(atraxa, bad)
+        assertEquals(
+            listOf("Singleton: only 1 copy allowed in Commander"),
+            checkAdd(deck, listOf(AddCandidate("bad", "Bad")), known, copiesOnly = true).single().problems
+        )
+        assertTrue(checkAdd(deck, listOf(AddCandidate("mountain", "Mountain")), known, copiesOnly = true).single().allowed)
+        val banned = card("bolt", "Lightning Bolt", legal = mapOf("modern" to "banned"))
+        assertTrue(checkAdd(modern(listOf(entry("bolt", 3, "Lightning Bolt"))), listOf(AddCandidate("bolt", "Lightning Bolt")), cards(banned), copiesOnly = true).single().allowed)
+        assertEquals(
+            listOf("Over the copy limit (4 max)"),
+            checkAdd(modern(listOf(entry("bolt", 4, "Lightning Bolt"))), listOf(AddCandidate("bolt", "Lightning Bolt")), cards(banned), copiesOnly = true).single().problems
+        )
     }
 
     @Test
@@ -125,7 +153,7 @@ class AddCheckTest {
     fun `without card data only the copy limit is checked`() {
         val deck = commanderDeck(entry("atraxa", name = "Atraxa"), cards = listOf(entry("ring", name = "Sol Ring")))
         assertTrue(one(deck, AddCandidate("bolt", "Lightning Bolt")).allowed)
-        assertEquals(listOf("Over the copy limit (1 max)"), one(deck, AddCandidate("ring2", "Sol Ring")).problems)
+        assertEquals(listOf("Singleton: only 1 copy allowed in Commander"), one(deck, AddCandidate("ring2", "Sol Ring")).problems)
         // The card known but not the commander: no colour check.
         assertTrue(one(deck, AddCandidate("bolt", "Lightning Bolt"), card("bolt", "Lightning Bolt", listOf("R"))).allowed)
     }
@@ -136,7 +164,7 @@ class AddCheckTest {
         val deck = commanderDeck(entry("atraxa", name = "Atraxa"), cards = listOf(entry("bad", name = "Bad")))
         val bad = card("bad2", "Bad", listOf("R"), legal = mapOf("commander" to "banned"))
         assertEquals(
-            listOf("Banned in Commander", "Outside Atraxa's colours", "Over the copy limit (1 max)"),
+            listOf("Banned in Commander", "Outside Atraxa's colours", "Singleton: only 1 copy allowed in Commander"),
             one(deck, AddCandidate("bad2", "Bad"), atraxa, bad).problems
         )
     }

@@ -65,6 +65,18 @@ fun CollectionEntry.toAddItem(quantity: Int = this.quantity + foilQuantity, side
  */
 class AddCheck(val into: AddToPick, val items: suspend (Deck) -> List<AddItem>) {
     constructor(into: AddToPick, items: List<AddItem>) : this(into, { _ -> items })
+
+    /** Whether only the copy limit is checked (see [forCopies]). */
+    var copiesOnly: Boolean = false
+        private set
+
+    companion object {
+        /**
+         * The check for one more copy of cards already in the deck (a "+"): only the copy limit, as
+         * their format and colours were checked when they went in.
+         */
+        fun forCopies(into: AddToPick, items: List<AddItem>) = AddCheck(into, items).apply { copiesOnly = true }
+    }
 }
 
 /** The check for putting [pick]'s copies of [card] (or of the printing chosen in the picker) where it says. */
@@ -119,6 +131,14 @@ class AddCheckGate internal constructor(
         }
         val items = check.items(deck)
         if (items.isEmpty()) return none
+        // One more copy in a singleton deck that's within the limit by name alone needs no lookup:
+        // what a lookup could add (a restricted card) allows one copy too, so a "+" isn't kept waiting.
+        if (check.copiesOnly && deck.mode.singleton) {
+            val handed = items.mapNotNull { item -> item.card?.let { item.candidate.scryfallId to it } }.toMap()
+            if (checkAdd(deck, items.map { it.candidate }, handed, copiesOnly = true).all { it.allowed }) {
+                return AddCheckOutcome(emptySet(), items.size)
+            }
+        }
 
         // What's needed to check: each card's legalities and colour identity, and the commanders'.
         val given = items.mapNotNull { it.card?.takeIf { c -> c.legalities != null && c.colorIdentity != null } }
@@ -131,7 +151,7 @@ class AddCheckGate internal constructor(
             val found = withTimeoutOrNull(LOOKUP_TIMEOUT_MILLIS) { cards.getCardsByIds(wanted) }.orEmpty()
             found.forEach { known[it.id] = it }
         }
-        val results = checkAdd(deck, items.map { it.candidate }, known)
+        val results = checkAdd(deck, items.map { it.candidate }, known, check.copiesOnly)
         if (results.all { it.allowed }) return AddCheckOutcome(emptySet(), results.size)
 
         val asked = AddCheckQuestion(

@@ -49,9 +49,16 @@ fun copyLimitOf(mode: GameMode, name: String, card: ScryfallCard?, typeLine: Str
  * identity — the cards being added and the deck's commanders. A card missing from [cards] (it
  * couldn't be looked up, offline say) skips the format and colour checks; the copy limit is still
  * checked, by name. Copies count every printing, the main deck and the sideboard together, and the
- * cards earlier in [adding]. One result per entry of [adding], in its order.
+ * cards earlier in [adding]. One result per entry of [adding], in its order. With [copiesOnly] (one
+ * more copy of a card already in, from a "+": its format and colours were accepted when it went in)
+ * only the copy limit is checked.
  */
-fun checkAdd(deck: Deck, adding: List<AddCandidate>, cards: Map<String, ScryfallCard>): List<AddCheckResult> {
+fun checkAdd(
+    deck: Deck,
+    adding: List<AddCandidate>,
+    cards: Map<String, ScryfallCard>,
+    copiesOnly: Boolean = false
+): List<AddCheckResult> {
     val mode = deck.mode
     val label = mode.label
 
@@ -72,12 +79,13 @@ fun checkAdd(deck: Deck, adding: List<AddCandidate>, cards: Map<String, Scryfall
         val card = cards[item.scryfallId]
         val problems = mutableListOf<String>()
         val legality = card?.legalities?.get(mode.scryfallFormat)
-        when (legality) {
-            null, "legal", "restricted" -> Unit
-            "banned" -> problems += "Banned in $label"
+        when {
+            copiesOnly -> Unit
+            legality == null || legality == "legal" || legality == "restricted" -> Unit
+            legality == "banned" -> problems += "Banned in $label"
             else -> problems += "Not legal in $label"
         }
-        if (identity != null && card != null && cardNameKey(item.name) !in commanderKeys) {
+        if (!copiesOnly && identity != null && card != null && cardNameKey(item.name) !in commanderKeys) {
             val own = card.colorIdentity.orEmpty().toSet()
             if (!identity.containsAll(own)) problems += "Outside $commanderNames's colours"
         }
@@ -86,7 +94,11 @@ fun checkAdd(deck: Deck, adding: List<AddCandidate>, cards: Map<String, Scryfall
         copies[key] = total
         val limit = copyLimitOf(mode, item.name, card, item.typeLine)
         if (limit != null && total > limit) {
-            problems += if (legality == "restricted") "Restricted in $label" else "Over the copy limit ($limit max)"
+            problems += when {
+                legality == "restricted" -> "Restricted in $label"
+                mode.singleton -> "Singleton: only 1 copy allowed in $label"
+                else -> "Over the copy limit ($limit max)"
+            }
         }
         AddCheckResult(item.scryfallId, item.name, problems)
     }
