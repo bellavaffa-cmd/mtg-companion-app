@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.grouped
+import com.mtgcompanion.app.ui.common.toAddItem
+import com.mtgcompanion.app.ui.common.AddCheck
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -622,7 +625,13 @@ fun ScanScreen(
             onPick = { pick ->
                 addingAll = false
                 showList = false
-                addTo.perform(addToMessage(AddVerb.ADD, label, pick.place), onUndone = { viewModel.restoreScans(rows) }) {
+                val check = AddCheck(pick, grouped(rows).map { it.card.toAddItem(it.quantity) })
+                addTo.perform(
+                    addToMessage(AddVerb.ADD, label, pick.place),
+                    onUndone = { viewModel.restoreScans(rows) },
+                    check = check,
+                    fewer = { kept -> addToMessage(AddVerb.ADD, cardsSubject(kept, null), pick.place) }
+                ) {
                     viewModel.putAllAway(pick, this)
                 }
             },
@@ -644,7 +653,11 @@ fun ScanScreen(
             canBeFoil = scanned.card.canBeFoil,
             onPick = { pick ->
                 addingRow = null
-                addTo.perform(addToMessage(AddVerb.ADD, scanned.card.name, pick.place, quantity = copies), onUndone = { viewModel.restoreScans(rows) }) {
+                addTo.perform(
+                    addToMessage(AddVerb.ADD, scanned.card.name, pick.place, quantity = copies),
+                    onUndone = { viewModel.restoreScans(rows) },
+                    check = AddCheck(pick, listOf(scanned.card.toAddItem(copies)))
+                ) {
                     viewModel.putAway(scanned.card, copies, pick, this)
                 }
             },

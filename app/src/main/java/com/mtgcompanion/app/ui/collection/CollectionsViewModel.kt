@@ -261,21 +261,23 @@ class CollectionsViewModel(
         val have = (if (pick.considering) deck?.considering else deck?.cards).orEmpty().map { it.scryfallId }.toSet()
         val picked = allCards.value.filter { it.scryfallId in ids && it.scryfallId !in have }
         val skipped = ids.size - picked.size
+        // Not allowed in the deck, and the user chose to leave them out (see AddCheck): said by the confirmation.
+        val allowed = if (pick.considering) picked else picked.filterNot { ops.leaves(it.name) }
         if (skipped > 0) ops.addNote("$skipped ${if (skipped == 1) "was" else "were"} already there.")
-        if (picked.isEmpty()) {
+        if (allowed.isEmpty()) {
             ops.message = "Nothing added to ${target.name}"
             return
         }
         // Looked up again so the deck knows each card's type and whether it can be the commander.
         val entries = cardRepository.withFullCardInfo(
-            picked.map { c -> DeckCardEntry(c.scryfallId, c.name, c.imageUrl, quantity = 1, backImageUrl = c.backImageUrl, tags = c.tags) }
+            allowed.map { c -> DeckCardEntry(c.scryfallId, c.name, c.imageUrl, quantity = 1, backImageUrl = c.backImageUrl, tags = c.tags) }
         )
         if (pick.considering) {
             deckRepository.addConsideringEntries(target.id, entries)
         } else {
             deckRepository.addEntries(target.id, entries)
             // A loose copy in the Unsorted pile is the one that went into the deck.
-            picked.forEach { c -> repository.takeIntoDeck(deck, c.scryfallId, c.name) }
+            allowed.forEach { c -> repository.takeIntoDeck(deck, c.scryfallId, c.name) }
         }
     }
 

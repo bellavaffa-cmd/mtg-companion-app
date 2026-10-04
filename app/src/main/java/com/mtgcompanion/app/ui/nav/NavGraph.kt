@@ -12,6 +12,7 @@ import com.mtgcompanion.app.ui.collection.SetCardsViewModel
 import com.mtgcompanion.app.ui.common.SyncPullResult
 import com.mtgcompanion.app.ui.common.PullToSyncBox
 import com.mtgcompanion.app.ui.common.CardZoomHost
+import com.mtgcompanion.app.ui.common.AddCheckDialogHost
 import com.mtgcompanion.app.ui.common.AddToSnackbarHost
 import com.mtgcompanion.app.ui.common.LocalAddToFeedback
 import com.mtgcompanion.app.ui.common.addToFeedback
@@ -922,6 +923,8 @@ fun MtgNavGraph(
         }
     }
     }
+    // Asks before a card that isn't allowed goes into a deck (see AddCheckGate), from any screen.
+    AddCheckDialogHost(addTo.gate)
     // Over the enlarged cards too: a card added from its zoom stays up, and the confirmation shows on it.
     AddToSnackbarHost(
         addToHost,

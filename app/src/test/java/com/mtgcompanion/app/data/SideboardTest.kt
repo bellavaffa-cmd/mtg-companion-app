@@ -116,9 +116,9 @@ class SideboardTest {
     }
 
     @Test
-    fun `adding a card warns about copies already in the sideboard`() {
+    fun `adding a card counts the copies already in the sideboard`() {
         val deck = modern(listOf(card("bolt", 2)), listOf(card("bolt", 2)))
-        val warning = duplicateWarning(deck, scry("bolt", "Lightning Bolt"))
-        assertTrue(warning!!.contains("you'll have 5"))
+        val result = checkAdd(deck, listOf(AddCandidate("bolt", "bolt")), mapOf("bolt" to scry("bolt", "bolt"))).single()
+        assertEquals(listOf("Over the copy limit (4 max)"), result.problems)
     }
 }

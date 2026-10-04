@@ -14,7 +14,7 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
-import com.mtgcompanion.app.data.duplicateWarning
+import com.mtgcompanion.app.data.cardNameKey
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.CancellationException
@@ -38,19 +38,35 @@ class AddToFeedback internal constructor(
     private val decks: DeckRepository,
     private val binders: CollectionRepository,
     // Shared by every copy (see withHost), so one change is read before and after on its own.
-    private val lock: Mutex = Mutex()
+    private val lock: Mutex = Mutex(),
+    /** The check before cards go into a deck, and its question (AddCheckDialogHost shows it). */
+    val gate: AddCheckGate = AddCheckGate(decks)
 ) {
     /** The same confirmation, shown in [other] — for a dialog that stays open over the screen. */
-    fun withHost(other: SnackbarHostState) = AddToFeedback(other, scope, decks, binders, lock)
+    fun withHost(other: SnackbarHostState) = AddToFeedback(other, scope, decks, binders, lock, gate)
 
     /**
-     * Does [change], then says [message] with Undo. [change] can say more ([AddToOps.note]: a
-     * format warning, "2 were already there") or something else ([AddToOps.message]). [onUndone]
+     * Does [change], then says [message] with Undo. [change] can say more ([AddToOps.note]:
+     * "2 were already there") or something else ([AddToOps.message]). [onUndone]
      * runs after an Undo, for a screen that also has to put something back (the scanner's pile).
+     *
+     * With a [check], the cards are checked against the deck first (AddCheckGate): when one fails,
+     * the user is asked, and Cancel does nothing. "Add only allowed" leaves the failing ones out
+     * ([AddToOps.leaveOut], which [AddToOps.addCard] honours); [fewer] then says the confirmation,
+     * given how many cards still go in.
      */
-    fun perform(message: String, onUndone: (() -> Unit)? = null, change: suspend AddToOps.() -> Unit) {
+    fun perform(
+        message: String,
+        onUndone: (() -> Unit)? = null,
+        check: AddCheck? = null,
+        fewer: ((kept: Int) -> String)? = null,
+        change: suspend AddToOps.() -> Unit
+    ) {
         scope.launch {
-            val ops = AddToOps(decks, binders, message)
+            val outcome = if (check == null) null else (gate.run(check) ?: return@launch)
+            val leaveOut = outcome?.leaveOut.orEmpty()
+            val ops = AddToOps(decks, binders, if (outcome != null && leaveOut.isNotEmpty() && fewer != null) fewer(outcome.kept) else message)
+            ops.leaveOut = leaveOut
             val steps = lock.withLock {
                 val beforeDecks = decks.decksFlow.first()
                 val beforeBinders = binders.collectionsFlow.first()
@@ -67,6 +83,7 @@ class AddToFeedback internal constructor(
                 }
                 undoSteps(beforeDecks, decks.decksFlow.first(), beforeBinders, binders.collectionsFlow.first(), ops.created)
             }
+            if (leaveOut.isNotEmpty()) ops.addNote("${leaveOut.size} not allowed in the deck, left out.")
             if (ops.takenFromPile > 0) ops.addNote("${ops.takenFromPile} taken from Unsorted.")
             val text = listOfNotNull(ops.message, ops.note).joinToString("\n")
             host.currentSnackbarData?.dismiss()
@@ -134,8 +151,18 @@ class AddToOps internal constructor(
     /** What the confirmation says; a change can replace it. */
     var message: String
 ) {
-    /** A second line under [message] — a format warning, cards skipped. */
+    /** A second line under [message] — cards skipped, taken from Unsorted. */
     var note: String? = null
+
+    /**
+     * The cards (by cardNameKey) the user chose to leave out, as they aren't allowed in the deck
+     * (see AddCheck). [addCard] skips them; a change that adds cards its own way asks [leaves].
+     */
+    var leaveOut: Set<String> = emptySet()
+        internal set
+
+    /** Whether the card [name] is one to leave out. */
+    fun leaves(name: String): Boolean = cardNameKey(name) in leaveOut
 
     /** Copies taken out of the Unsorted pile into a deck by [addCard]; said once, at the end. */
     internal var takenFromPile = 0
@@ -162,27 +189,25 @@ class AddToOps internal constructor(
 
     /**
      * Puts [pick]'s quantity of [card] (or of the printing chosen in the picker, [AddToPick.printing])
-     * where [pick] says: into a deck (with a note when the format's copy limit is passed — the card
-     * goes in either way), its sideboard, its Considering list, or into a binder (foil or not). A
-     * deck that holds the user's own copies takes its copies out of the Unsorted pile, unless
-     * [fromPile] is false (the scanner's cards are new copies in hand). The sideboard doesn't: it's
-     * kept out of what a deck holds, like Considering.
+     * where [pick] says: into a deck (checked first, see [AddToFeedback.perform] — a card the user
+     * chose to leave out is skipped), its sideboard, its Considering list, or into a binder (foil or
+     * not). A deck that holds the user's own copies takes its copies out of the Unsorted pile,
+     * unless [fromPile] is false (the scanner's cards are new copies in hand). The sideboard doesn't:
+     * it's kept out of what a deck holds, like Considering.
      */
     suspend fun addCard(card: ScryfallCard, pick: AddToPick, fromPile: Boolean = true) {
         @Suppress("NAME_SHADOWING")
         val card = pick.printing ?: card
+        if (pick.target.kind == SourceKind.DECK && !pick.considering && leaves(card.name)) return
         val target = resolve(pick)
         val quantity = pick.quantity.coerceAtLeast(1)
         when (target.kind) {
             SourceKind.DECK -> if (pick.considering) {
                 decks.addConsideringEntry(target.id, card.asDeckEntry(1))
             } else if (pick.sideboard) {
-                val deck = decks.decksFlow.first().firstOrNull { it.id == target.id }
-                deck?.let { duplicateWarning(it, card, quantity) }?.let { addNote(it) }
                 decks.addSideboardEntry(target.id, card.asDeckEntry(quantity))
             } else {
                 val deck = decks.decksFlow.first().firstOrNull { it.id == target.id }
-                deck?.let { duplicateWarning(it, card, quantity) }?.let { addNote(it) }
                 decks.addEntry(target.id, card.asDeckEntry(quantity))
                 if (fromPile) takenFromPile += binders.takeIntoDeck(deck, card.id, card.name, quantity)
             }

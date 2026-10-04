@@ -65,7 +65,6 @@ import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
-import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.CardIndexRepository
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.canBeFoil
@@ -1091,7 +1090,17 @@ class ScanViewModel(
                 if (target.id == UNSORTED_COLLECTION_ID) collectionRepository.addUnsorted(entries)
                 else collectionRepository.addEntries(target.id, entries)
             }
-            SourceKind.DECK -> deckRepository.addEntries(target.id, pile.map { deckEntry(it.card, it.quantity) })
+            SourceKind.DECK -> {
+                // Cards the user chose to leave out, as they aren't allowed in the deck (see
+                // AddCheck), stay on the list to go somewhere else.
+                val kept = pile.filterNot { ops.leaves(it.card.name) }
+                deckRepository.addEntries(target.id, kept.map { deckEntry(it.card, it.quantity) })
+                if (kept.size < pile.size) {
+                    setScanned(_uiState.value.scannedCards.filter { ops.leaves(it.card.name) })
+                    lastAddedCard = null
+                    return
+                }
+            }
         }
         setScanned(emptyList())
         lastAddedCard = null

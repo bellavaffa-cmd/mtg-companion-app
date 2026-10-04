@@ -31,6 +31,9 @@ private val BASIC_LAND_NAMES = setOf(
     "Snow-Covered Mountain", "Snow-Covered Forest"
 )
 
+/** Whether [name] is a basic land's (snow-covered and Wastes included). */
+fun isBasicLandName(name: String): Boolean = name in BASIC_LAND_NAMES
+
 private fun ScryfallCard?.isBasicLand(name: String): Boolean =
     name in BASIC_LAND_NAMES || this?.typeLine?.contains("Basic", ignoreCase = true) == true
 
@@ -137,7 +140,7 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
 
     issues += copyLimitIssues(deck, cards)
 
-        return LegalityReport(mode = mode, totalCards = totalCards, legal = issues.isEmpty(), issues = issues)
+    return LegalityReport(mode = mode, totalCards = totalCards, legal = issues.isEmpty(), issues = issues)
 }
 
 /**
@@ -157,11 +160,8 @@ private fun copyLimitIssues(deck: Deck, cards: Map<String, ScryfallCard>): List<
         val card = (mainRows + sideRows).firstNotNullOfOrNull { cards[it.scryfallId] }
         if (card.isBasicLand(first.name)) continue
         val restricted = (mainRows + sideRows).any { cards[it.scryfallId]?.legalities?.get(mode.scryfallFormat) == "restricted" }
-        val limit = when {
-            restricted -> 1
-            mode.singleton -> 1
-            else -> mode.maxCopies
-        }
+        // No limit for a card a deck can have any number of (Relentless Rats).
+        val limit = (if (restricted) 1 else copyLimitOf(mode, first.name, card, first.typeLine)) ?: continue
         val inMain = mainRows.sumOf { it.quantity }
         val inSide = sideRows.sumOf { it.quantity }
         val total = inMain + inSide
@@ -181,24 +181,4 @@ private fun copyLimitIssues(deck: Deck, cards: Map<String, ScryfallCard>): List<
         )
     }
     return issues
-}
-
-/**
- * Null if adding [addingQuantity] more cop(ies) of [card] to [deck] stays within its format's copy
- * limit; otherwise a short warning to show the user (the card is still added — this is informational,
- * not a block, since testing/sideboard scenarios are legitimate). Basic lands are always unlimited.
- */
-fun duplicateWarning(deck: Deck, card: ScryfallCard, addingQuantity: Int = 1): String? {
-    val mode = deck.mode
-    if (card.isBasicLand(card.name)) return null
-    // The sideboard's copies count toward the same limit.
-    val existingQuantity = (deck.cards + deck.sideboard).filter { it.scryfallId == card.id }.sumOf { it.quantity }
-    val newQuantity = existingQuantity + addingQuantity
-    return when {
-        mode.singleton && newQuantity > 1 ->
-            "${mode.label} is singleton — you'll have $newQuantity copies of \"${card.name}\"."
-        !mode.singleton && newQuantity > mode.maxCopies ->
-            "Max ${mode.maxCopies} copies allowed in ${mode.label} — you'll have $newQuantity of \"${card.name}\"."
-        else -> null
-    }
 }

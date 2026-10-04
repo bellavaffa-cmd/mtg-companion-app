@@ -258,12 +258,14 @@ class CollectionDetailViewModel(
         when (target.kind) {
             SourceKind.BINDER -> repository.transferEntries(collectionId, ids, target.id, keep)
             SourceKind.DECK -> {
-                val picked = collection.value?.entries.orEmpty().filter { it.scryfallId in ids }
+                // Less any the user chose to leave out, as they aren't allowed in the deck (AddCheck).
+                val picked = collection.value?.entries.orEmpty().filter { it.scryfallId in ids && (pick.considering || !ops.leaves(it.name)) }
+                if (picked.isEmpty()) return
                 // One lookup for all the picked cards, rather than one each.
                 val entries = cardRepository.withFullCardInfo(picked.map { it.toDeckEntry() })
                 if (pick.considering) deckRepository.addConsideringEntries(target.id, entries.map { it.copy(quantity = 1) })
                 else deckRepository.addEntries(target.id, entries)
-                if (!keep && !pick.considering) repository.removeEntries(collectionId, ids)
+                if (!keep && !pick.considering) repository.removeEntries(collectionId, picked.map { it.scryfallId }.toSet())
             }
         }
     }

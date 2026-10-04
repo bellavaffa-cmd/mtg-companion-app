@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.cardsSubject
+import com.mtgcompanion.app.data.AddCandidate
+import com.mtgcompanion.app.ui.common.AddItem
+import com.mtgcompanion.app.ui.common.AddCheck
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.filled.Handshake
 import com.mtgcompanion.app.data.social.TradeCard
@@ -315,7 +319,17 @@ fun CollectionsScreen(
                     done()
                     // A binder gathers the copies from the others: they're moved, not added.
                     val verb = if (pick.target.kind == SourceKind.BINDER) AddVerb.MOVE else AddVerb.ADD
-                    addTo.perform(addToMessage(verb, pickedLabel, pick.place, pick.considering)) { viewModel.sendPicked(ids, pick, this) }
+                    // One of each goes into a deck; those already in it are skipped, so aren't checked.
+                    val chosen = picked
+                    val check = AddCheck(pick) { deck ->
+                        chosen.filter { c -> deck.cards.none { it.scryfallId == c.scryfallId } }
+                            .map { AddItem(AddCandidate(it.scryfallId, it.name, 1, pick.sideboard)) }
+                    }
+                    addTo.perform(
+                        addToMessage(verb, pickedLabel, pick.place, pick.considering),
+                        check = check,
+                        fewer = { kept -> addToMessage(verb, cardsSubject(kept, null), pick.place, pick.considering) }
+                    ) { viewModel.sendPicked(ids, pick, this) }
                 },
                 onDismiss = { bulk = null }
             )

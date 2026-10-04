@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.cardsSubject
+import com.mtgcompanion.app.ui.common.toAddItem
+import com.mtgcompanion.app.ui.common.AddCheck
 import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.openUrl
 import com.mtgcompanion.app.ui.common.CopyBadge
@@ -462,7 +465,8 @@ fun CollectionDetailScreen(
                 moveTarget = null
                 // Onto a Considering list the copies stay here: it's added, not moved.
                 val verb = if (pick.considering) AddVerb.ADD else AddVerb.MOVE
-                addTo.perform(addToMessage(verb, entry.name, pick.place, pick.considering, pick.quantity)) {
+                val check = AddCheck(pick, listOf(entry.toAddItem(pick.quantity, pick.sideboard)))
+                addTo.perform(addToMessage(verb, entry.name, pick.place, pick.considering, pick.quantity), check = check) {
                     viewModel.sendEntry(entry, pick, keep = false, ops = this)
                 }
             },
@@ -528,7 +532,12 @@ fun CollectionDetailScreen(
                 onPick = { pick ->
                     done()
                     val said = if (pick.considering) AddVerb.ADD else verb
-                    addTo.perform(addToMessage(said, pickedLabel, pick.place, pick.considering)) {
+                    val check = AddCheck(pick, picked.map { it.toAddItem(sideboard = pick.sideboard) })
+                    addTo.perform(
+                        addToMessage(said, pickedLabel, pick.place, pick.considering),
+                        check = check,
+                        fewer = { kept -> addToMessage(said, cardsSubject(kept, null), pick.place, pick.considering) }
+                    ) {
                         viewModel.sendEntries(ids, pick, keep = keep, ops = this)
                     }
                 },

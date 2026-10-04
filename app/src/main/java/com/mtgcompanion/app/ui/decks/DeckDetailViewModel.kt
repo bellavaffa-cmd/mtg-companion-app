@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.cardNameKey
+import com.mtgcompanion.app.ui.common.toAddItem
+import com.mtgcompanion.app.ui.common.AddCheckOutcome
+import com.mtgcompanion.app.ui.common.AddItem
 import com.mtgcompanion.app.data.tokensNeeded
 import com.mtgcompanion.app.data.TokenNeeded
 import com.mtgcompanion.app.data.userTagsOf
@@ -54,7 +58,6 @@ import com.mtgcompanion.app.data.importPart
 import com.mtgcompanion.app.data.isOwnedName
 import com.mtgcompanion.app.data.ownedNameKeys
 import com.mtgcompanion.app.data.SettingsRepository
-import com.mtgcompanion.app.data.duplicateWarning
 import com.mtgcompanion.app.data.evaluateLegality
 import com.mtgcompanion.app.data.withPairingFrom
 import com.mtgcompanion.app.data.parseCardList
@@ -640,8 +643,8 @@ class DeckDetailViewModel(
 
     /**
      * Adds [card] to this deck — one picked from "find similar", or found by the Cards tab's search
-     * — through the add confirmation ([ops]): a format's copy limit is a note, not a block, since
-     * testing/sideboard scenarios are legitimate.
+     * — through the add confirmation ([ops]), which checks it against the deck's rules first and
+     * asks when it fails (the user can still add it).
      */
     suspend fun addCard(card: ScryfallCard, ops: AddToOps) {
         ops.addCard(card, AddToPick(here()))
@@ -691,15 +694,14 @@ class DeckDetailViewModel(
         viewModelScope.launch { repository.setSideboardQuantity(deckId, scryfallId, quantity) }
     }
 
-    fun swap(outScryfallId: String, inScryfallId: String) {
-        viewModelScope.launch {
-            val before = deck.value
-            val incoming = before?.considering?.find { it.scryfallId == inScryfallId }
-            val outgoing = before?.cards?.find { it.scryfallId == outScryfallId }
-            repository.swap(deckId, outScryfallId, inScryfallId)
-            if (outgoing != null) collectionRepository.returnFromDeck(before, outgoing)
-            if (incoming != null) collectionRepository.takeIntoDeck(before, incoming.scryfallId, incoming.name, incoming.quantity)
-        }
+    /** Run by the add confirmation, which checks the card first, says so and can undo it. */
+    suspend fun swap(outScryfallId: String, inScryfallId: String) {
+        val before = deck.value
+        val incoming = before?.considering?.find { it.scryfallId == inScryfallId }
+        val outgoing = before?.cards?.find { it.scryfallId == outScryfallId }
+        repository.swap(deckId, outScryfallId, inScryfallId)
+        if (outgoing != null) collectionRepository.returnFromDeck(before, outgoing)
+        if (incoming != null) collectionRepository.takeIntoDeck(before, incoming.scryfallId, incoming.name, incoming.quantity)
     }
 
     /**
@@ -707,13 +709,20 @@ class DeckDetailViewModel(
      * Considering list, as [pick] says — run by the add confirmation ([ops]).
      */
     suspend fun addByName(name: String, pick: AddToPick, ops: AddToOps) {
-        val card = lookupCard(name)
+        val card = findByName(name)
         if (card == null) {
             ops.message = "Couldn't find $name."
             return
         }
         ops.addCard(card, pick)
     }
+
+    // Cards found by name (for the check before adding, then the add itself), so they're looked up once.
+    private val foundByName = mutableMapOf<String, ScryfallCard>()
+
+    /** The card named [name] (fuzzy), or null when Scryfall can't find it or can't be reached. */
+    suspend fun findByName(name: String): ScryfallCard? =
+        foundByName[name] ?: lookupCard(name)?.also { foundByName[name] = it }
 
     // ---- Missing cards ----
 
@@ -947,10 +956,16 @@ class DeckDetailViewModel(
      * headers/comments, and reports how many copies were added and which lines couldn't be
      * matched. Sideboard cards go into the sideboard for a format that has one, onto the Considering
      * list for Commander and Brawl; maybeboard cards onto Considering (see importPart).
+     *
+     * Before anything is written, the main deck and sideboard cards go through [check] (AddCheck):
+     * null means the user cancelled, and nothing is added ([onCancelled]); otherwise the cards it
+     * says to leave out are left out, and the counts are of what went in.
      */
     fun importDecklist(
         text: String,
         onProgress: (done: Int, total: Int) -> Unit,
+        check: suspend (List<AddItem>) -> AddCheckOutcome?,
+        onCancelled: () -> Unit,
         onResult: (added: Int, considering: Int, sideboard: Int, failed: List<String>) -> Unit
     ) {
         viewModelScope.launch {
@@ -960,6 +975,8 @@ class DeckDetailViewModel(
             val resolved = mutableListOf<DeckCardEntry>()
             val consideringEntries = mutableListOf<DeckCardEntry>()
             val sideboardEntries = mutableListOf<DeckCardEntry>()
+            // The cards going into the deck or its sideboard, for the check before they're written.
+            val checking = mutableListOf<AddItem>()
             val unresolved = mutableListOf<ParsedLine>()
             val failed = mutableListOf<String>()
             var done = 0
@@ -977,10 +994,12 @@ class DeckDetailViewModel(
                     DeckPart.SIDEBOARD -> {
                         sideboardEntries += line.toEntry(card)
                         sided += line.quantity
+                        checking += card.toAddItem(line.quantity, sideboard = true)
                     }
                     DeckPart.MAIN -> {
                         resolved += line.toEntry(card)
                         added += line.quantity
+                        checking += card.toAddItem(line.quantity)
                     }
                 }
             }
@@ -1020,11 +1039,22 @@ class DeckDetailViewModel(
                 delay(120)
             }
 
+            // Asked before anything goes in; Cancel adds nothing and goes back to the list.
+            val outcome = check(checking)
+            if (outcome == null) {
+                onCancelled()
+                return@launch
+            }
+            val keptMain = resolved.filterNot { cardNameKey(it.name) in outcome.leaveOut }
+            val keptSide = sideboardEntries.filterNot { cardNameKey(it.name) in outcome.leaveOut }
+            added = keptMain.sumOf { it.quantity }
+            sided = keptSide.sumOf { it.quantity }
+
             // One write for the whole import: writing per card would re-trigger the deck analysis
             // (and its Scryfall lookup) on every single card.
-            repository.addEntries(deckId, resolved)
+            repository.addEntries(deckId, keptMain)
             repository.addConsideringEntries(deckId, consideringEntries)
-            repository.addSideboardEntries(deckId, sideboardEntries)
+            repository.addSideboardEntries(deckId, keptSide)
             onResult(added, considered, sided, failed)
         }
     }

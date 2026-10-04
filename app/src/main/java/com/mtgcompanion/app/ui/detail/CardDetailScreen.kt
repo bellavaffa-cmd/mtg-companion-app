@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.detail
 
+import com.mtgcompanion.app.ui.common.checkFor
 import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.AddToPicker
 import com.mtgcompanion.app.ui.common.AddVerb
@@ -394,7 +395,7 @@ fun CardDetailScreen(
             printing = card,
             onPick = { pick ->
                 adding = null
-                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick)) { addCard(card, pick) }
+                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick), check = checkFor(card, pick)) { addCard(card, pick) }
             },
             onDismiss = { adding = null }
         )

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.search
 
+import com.mtgcompanion.app.ui.common.checkFor
 import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.zoomSource
@@ -236,7 +237,7 @@ fun SearchResultsScreen(
             printing = card,
             onPick = { pick ->
                 addTarget = null
-                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick)) { addCard(card, pick) }
+                addTo.perform(addToMessage(AddVerb.ADD, card.name, pick), check = checkFor(card, pick)) { addCard(card, pick) }
             },
             onDismiss = { addTarget = null }
         )

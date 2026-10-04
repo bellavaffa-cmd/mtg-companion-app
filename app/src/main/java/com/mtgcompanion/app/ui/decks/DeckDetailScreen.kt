@@ -1,5 +1,11 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.common.AddToPick
+import com.mtgcompanion.app.data.AddCandidate
+import com.mtgcompanion.app.ui.common.toAddItem
+import com.mtgcompanion.app.ui.common.checkFor
+import com.mtgcompanion.app.ui.common.AddItem
+import com.mtgcompanion.app.ui.common.AddCheck
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.lazy.LazyRow
 import com.mtgcompanion.app.data.madeByLabel
@@ -295,6 +301,8 @@ fun DeckDetailScreen(
     // The card pending a remove-confirmation, if any.
     var removeCardTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
     var showImport by remember { mutableStateOf(false) }
+    // The pasted list, kept so Cancel on the check before importing goes back to it.
+    var importText by remember { mutableStateOf("") }
     var showExport by remember { mutableStateOf(false) }
     var showGoldfish by remember { mutableStateOf(false) }
     // "Compare with…": first the picker (a deck or a saved version), then the comparison itself.
@@ -354,6 +362,13 @@ fun DeckDetailScreen(
         }
     ) { padding ->
         val currentDeck = deck ?: return@Scaffold
+        // A considered card swapped in for one in the deck: checked first, like any card going in.
+        val swapChecked = { outgoing: DeckCardEntry, incoming: DeckCardEntry ->
+            addTo.perform(
+                "Swapped in ${incoming.name} for ${outgoing.name}",
+                check = AddCheck(AddToPick(currentDeck.asTarget()), listOf(incoming.toAddItem()))
+            ) { viewModel.swap(outgoing.scryfallId, incoming.scryfallId) }
+        }
 
         Row(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -429,7 +444,12 @@ fun DeckDetailScreen(
                         analysis = analysis,
                         prices = prices,
                         onZoom = { zoom = "consider" to it },
-                        onAddToDeck = { entry -> addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name)) { viewModel.addConsideredToDeck(entry.scryfallId) } },
+                        onAddToDeck = { entry ->
+                            addTo.perform(
+                                addToMessage(AddVerb.MOVE, entry.name, currentDeck.name),
+                                check = AddCheck(AddToPick(currentDeck.asTarget()), listOf(entry.toAddItem()))
+                            ) { viewModel.addConsideredToDeck(entry.scryfallId) }
+                        },
                         onSwapIn = { swapIn = it },
                         onRemove = { viewModel.removeFromConsidering(it.scryfallId) }
                     )
@@ -540,7 +560,7 @@ fun DeckDetailScreen(
                 onDismiss = { similarSearchFor = null },
                 onAdd = { similar ->
                     similarSearchFor = null
-                    addTo.perform(addToMessage(AddVerb.ADD, similar.name, currentDeck.name)) { viewModel.addCard(similar, this) }
+                    addTo.perform(addToMessage(AddVerb.ADD, similar.name, currentDeck.name), check = checkFor(similar, AddToPick(currentDeck.asTarget()))) { viewModel.addCard(similar, this) }
                 },
                 onViewDetails = { similar -> similarSearchFor = null; onViewDetails(similar.name) }
             )
@@ -558,7 +578,7 @@ fun DeckDetailScreen(
                 offerSideboard = true,
                 onPick = { pick ->
                     close()
-                    addTo.perform(addToMessage(verb, entry.name, pick)) {
+                    addTo.perform(addToMessage(verb, entry.name, pick), check = AddCheck(pick, listOf(entry.toAddItem(pick.quantity, pick.sideboard)))) {
                         viewModel.sendCard(entry, pick, keep = verb == AddVerb.COPY, ops = this)
                     }
                 },
@@ -580,7 +600,10 @@ fun DeckDetailScreen(
                 printing = card,
                 onPick = { pick ->
                     addSuggestion = null
-                    addTo.perform(addToMessage(AddVerb.ADD, name, pick)) {
+                    // A suggestion known only by name is looked up for the check (and then added as that card).
+                    val check = if (card != null) checkFor(card, pick)
+                    else AddCheck(pick) { _ -> listOfNotNull(viewModel.findByName(name)?.toAddItem(pick.quantity, pick.sideboard)) }
+                    addTo.perform(addToMessage(AddVerb.ADD, name, pick), check = check) {
                         if (card != null) addCard(card, pick) else viewModel.addByName(name, pick, this)
                     }
                 },
@@ -624,16 +647,24 @@ fun DeckDetailScreen(
         }
         if (showImport) {
             ImportDialog(
-                onDismiss = { showImport = false },
+                initial = importText,
+                onDismiss = { showImport = false; importText = "" },
                 onImport = { text ->
                     showImport = false
+                    importText = text
                     importState = ImportState()
                     viewModel.importDecklist(
                         text = text,
                         onProgress = { done, total ->
                             importState = ImportState(done = done, total = total)
                         },
+                        check = { items -> addTo.gate.run(AddCheck(AddToPick(currentDeck.asTarget()), items)) },
+                        onCancelled = {
+                            importState = null
+                            showImport = true
+                        },
                         onResult = { added, considering, sideboard, failed ->
+                            importText = ""
                             importState = ImportState(summary = importSummary(added, considering, sideboard, failed))
                         }
                     )
@@ -716,8 +747,7 @@ fun DeckDetailScreen(
                     message = "${outgoing.name} moves to Considering, so you can swap it back later.",
                     options = currentDeck.considering,
                     onPick = { incoming ->
-                        viewModel.swap(outgoing.scryfallId, incoming.scryfallId)
-                        toast("Swapped in ${incoming.name} for ${outgoing.name}.")
+                        swapChecked(outgoing, incoming)
                         swapOut = null
                     },
                     onDismiss = { swapOut = null }
@@ -732,8 +762,7 @@ fun DeckDetailScreen(
                 message = "The card you pick moves to Considering. Cut candidates are listed first.",
                 options = currentDeck.cards.filterNot { it.scryfallId in commanderIds },
                 onPick = { outgoing ->
-                    viewModel.swap(outgoing.scryfallId, incoming.scryfallId)
-                    toast("Swapped in ${incoming.name} for ${outgoing.name}.")
+                    swapChecked(outgoing, incoming)
                     swapIn = null
                 },
                 onDismiss = { swapIn = null }
@@ -895,8 +924,8 @@ private fun ImportResultDialog(state: ImportState, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
-    var text by remember { mutableStateOf("") }
+private fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit, initial: String = "") {
+    var text by remember { mutableStateOf(initial) }
     AlertDialog(
         containerColor = Surface,
         onDismissRequest = onDismiss,
@@ -1394,7 +1423,7 @@ private fun CardsTab(
             }
             items(addable, key = { "add-" + it.id }) { card ->
                 AddToDeckRow(card) {
-                    addTo.perform(addToMessage(AddVerb.ADD, card.name, deck.name)) { viewModel.addCard(card, this) }
+                    addTo.perform(addToMessage(AddVerb.ADD, card.name, deck.name), check = checkFor(card, AddToPick(deck.asTarget()))) { viewModel.addCard(card, this) }
                 }
             }
         }
@@ -1925,7 +1954,8 @@ private fun StatsTab(
             cards = ownedGaps[role.otag].orEmpty(),
             considering = deck.considering.map { RoleTags.key(it.name) }.toSet(),
             onAdd = { card, considering, feedback ->
-                feedback.perform(addToMessage(AddVerb.ADD, card.name, deck.name, considering)) { viewModel.addOwned(card, considering, this) }
+                val check = AddCheck(AddToPick(deck.asTarget(), considering = considering), listOf(AddItem(AddCandidate(card.scryfallId, card.name))))
+                feedback.perform(addToMessage(AddVerb.ADD, card.name, deck.name, considering), check = check) { viewModel.addOwned(card, considering, this) }
             },
             onDismiss = { ownedFor = null }
         )

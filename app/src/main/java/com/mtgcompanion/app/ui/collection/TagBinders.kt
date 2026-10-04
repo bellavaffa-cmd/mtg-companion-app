@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.AddCandidate
+import com.mtgcompanion.app.ui.common.AddItem
+import com.mtgcompanion.app.ui.common.AddCheck
 import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -275,6 +278,7 @@ class TagBinderViewModel(
         val fresh = cards.filter { it.key !in have }.distinctBy { it.key }
         // A deck entry needs the full card (type, commander-ness…), which a binder entry doesn't keep.
         val full = if (fresh.isEmpty()) emptyList() else cardRepository.getCardsByIds(fresh.map { it.scryfallId })
+        // addCard leaves out any the user chose to (see AddCheck); the confirmation says so.
         full.forEach { card -> ops.addCard(card, pick.copy(target = target, isNew = false, quantity = 1)) }
         val skipped = cards.size - full.size
         if (full.isEmpty()) ops.message = "Nothing added to ${target.name}"
@@ -436,7 +440,17 @@ fun TagBinderScreen(viewModel: TagBinderViewModel, onBack: () -> Unit, onOpenTag
             onPick = { pick ->
                 adding = null
                 selected = emptySet()
-                addTo.perform(addToMessage(AddVerb.ADD, label, pick.place, pick.considering)) { viewModel.addToDeck(toAdd, pick, this) }
+                // One of each; those the deck already has are skipped, so aren't checked.
+                val check = AddCheck(pick) { deck ->
+                    val have = deck.cards.map { RoleTags.key(it.name) }.toSet()
+                    toAdd.filter { it.key !in have }.distinctBy { it.key }
+                        .map { AddItem(AddCandidate(it.scryfallId, it.name, 1, pick.sideboard)) }
+                }
+                addTo.perform(
+                    addToMessage(AddVerb.ADD, label, pick.place, pick.considering),
+                    check = check,
+                    fewer = { kept -> addToMessage(AddVerb.ADD, cardsSubject(kept, null), pick.place, pick.considering) }
+                ) { viewModel.addToDeck(toAdd, pick, this) }
             },
             onDismiss = { adding = null }
         )
