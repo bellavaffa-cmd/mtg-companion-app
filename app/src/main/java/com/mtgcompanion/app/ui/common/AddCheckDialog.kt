@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.AddCandidate
+import com.mtgcompanion.app.data.AddCheckResult
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
