@@ -174,8 +174,18 @@ jobs:
       - name: Publish the release
         if: steps.plan.outputs.kind == 'release'
         run: |
-          if [ -f "release-notes/$TAG.md" ]; then
-            gh release create "$TAG" out/*.apk --latest --title "$TAG" --notes-file "release-notes/$TAG.md"
+          notes=(--generate-notes)
+          [ -f "release-notes/$TAG.md" ] && notes=(--notes-file "release-notes/$TAG.md")
+          # A tag made on github.com (Releases › Draft a new release, ticked as a pre-release so the
+          # app's updater can't see it yet) comes with its release already there: the APKs go onto
+          # it first, and only then does it become the latest full release.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" out/*.apk --clobber
+            if [ -f "release-notes/$TAG.md" ]; then
+              gh release edit "$TAG" --title "$TAG" --notes-file "release-notes/$TAG.md" --prerelease=false --latest
+            else
+              gh release edit "$TAG" --title "$TAG" --prerelease=false --latest
+            fi
           else
-            gh release create "$TAG" out/*.apk --latest --title "$TAG" --generate-notes
+            gh release create "$TAG" out/*.apk --latest --title "$TAG" "${notes[@]}"
           fi
