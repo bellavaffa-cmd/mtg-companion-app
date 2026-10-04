@@ -38,7 +38,7 @@ filter wording — so a change to one usually needs the same change in the other
   CI publishes a pre-release with `manabind-tester-{arm64-v8a,armeabi-v7a,universal}.apk`. The
   tester app updates itself to the highest `tester-N` above its own build.
   Where tags can't be pushed (a cloud session can push branches but not tags), push the commit to
-  the `tester` branch instead (`git push origin HEAD:tester`, force if it's behind): the Release
+  the `tester-build` branch instead (`git push origin HEAD:tester-build`, force if it's behind): the Release
   workflow takes the next `tester-N`, tags the commit and publishes it. A commit that's already a
   tester build isn't built again. The owner approved this route; real releases still need a tag.
 - **Real release**, only on the owner's go-ahead: merge the tester branch into `master`

@@ -9,7 +9,7 @@ name: Release
 #              must already say X.Y.Z. Its notes come from release-notes/vX.Y.Z.md when that file
 #              exists.
 #
-# A push to the `tester` branch is a tester build too, for whoever can push but can't make tags
+# A push to the `tester-build` branch is a tester build too, for whoever can push but can't make tags
 # (a cloud session, say): the run takes the next tester number, makes that tag on the pushed commit
 # and publishes as above. A commit that already has a tester-N tag isn't built twice. Real releases
 # still only come from a vX.Y.Z tag.
@@ -23,7 +23,7 @@ name: Release
 on:
   push:
     branches:
-      - tester
+      - tester-build
     tags:
       - 'tester-[0-9]*'
       - 'v[0-9]*.[0-9]*.[0-9]*'
@@ -71,7 +71,7 @@ jobs:
       - name: Work out what to build
         id: plan
         run: |
-          if [ "$GITHUB_REF" = "refs/heads/tester" ]; then
+          if [ "$GITHUB_REF" = "refs/heads/tester-build" ]; then
             tags=$(git ls-remote --tags origin 'refs/tags/tester-*' | grep -v '\^{}$')
             if echo "$tags" | grep -q "^$GITHUB_SHA"; then
               echo "This commit is already a tester build:"; echo "$tags" | grep "^$GITHUB_SHA"
