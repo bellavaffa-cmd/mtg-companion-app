@@ -9,6 +9,11 @@ name: Release
 #              must already say X.Y.Z. Its notes come from release-notes/vX.Y.Z.md when that file
 #              exists.
 #
+# A push to the `tester` branch is a tester build too, for whoever can push but can't make tags
+# (a cloud session, say): the run takes the next tester number, makes that tag on the pushed commit
+# and publishes as above. A commit that already has a tester-N tag isn't built twice. Real releases
+# still only come from a vX.Y.Z tag.
+#
 # The signing key and the gitignored config files come from repository secrets, each one a whole
 # file (scripts/set-ci-secrets.ps1 uploads them from a machine that has them):
 #   KEYSTORE_BASE64       the release keystore, base64
@@ -17,6 +22,8 @@ name: Release
 #   GOOGLE_SERVICES_JSON  google-services.json
 on:
   push:
+    branches:
+      - tester
     tags:
       - 'tester-[0-9]*'
       - 'v[0-9]*.[0-9]*.[0-9]*'
@@ -34,7 +41,6 @@ jobs:
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ github.ref_name }}
       # Every release so far is signed by this key; an update signed by another can't install.
       CERT_SHA256_PREFIX: c3626947
     steps:
@@ -65,6 +71,19 @@ jobs:
       - name: Work out what to build
         id: plan
         run: |
+          if [ "$GITHUB_REF" = "refs/heads/tester" ]; then
+            tags=$(git ls-remote --tags origin 'refs/tags/tester-*' | grep -v '\^{}$')
+            if echo "$tags" | grep -q "^$GITHUB_SHA"; then
+              echo "This commit is already a tester build:"; echo "$tags" | grep "^$GITHUB_SHA"
+              echo "kind=none" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            last=$(echo "$tags" | sed -nE 's#.*refs/tags/tester-([0-9]+)$#\1#p' | sort -n | tail -n 1)
+            TAG="tester-$(( ${last:-0} + 1 ))"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "Building $TAG"
           if [[ "$TAG" == tester-* ]]; then
             echo "kind=tester" >> "$GITHUB_OUTPUT"
             echo "build=${TAG#tester-}" >> "$GITHUB_OUTPUT"
@@ -77,6 +96,7 @@ jobs:
           fi
 
       - name: Unit tests
+        if: steps.plan.outputs.kind != 'none'
         run: ./gradlew testDebugUnitTest
 
       - name: Build the tester app
@@ -102,6 +122,7 @@ jobs:
           cp $src/app-universal-release.apk   out/app-universal-release.apk
 
       - name: Check the signature
+        if: steps.plan.outputs.kind != 'none'
         run: |
           apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner
           for apk in out/*.apk; do
@@ -123,7 +144,7 @@ jobs:
             gh release upload "$TAG" out/*.apk --clobber
             gh release edit "$TAG" --prerelease --latest=false
           else
-            gh release create "$TAG" out/*.apk --prerelease --latest=false \
+            gh release create "$TAG" out/*.apk --prerelease --latest=false --target "$GITHUB_SHA" \
               --title "Manabind Tester build ${{ steps.plan.outputs.build }}" \
               --notes "Tester build ${{ steps.plan.outputs.build }}. Installs alongside the real app; the tester app updates itself to this."
           fi
