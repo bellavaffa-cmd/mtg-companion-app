@@ -102,7 +102,16 @@ jobs:
       - name: Build the tester app
         if: steps.plan.outputs.kind == 'tester'
         run: |
-          ./gradlew assembleBeta -PtesterBuild=${{ steps.plan.outputs.build }}
+          # A failed build's own error lines become annotations, readable from the API where the
+          # raw log isn't (a cloud session can read annotations but not download logs).
+          gradle_or_report() {
+            set -o pipefail
+            ./gradlew "$@" 2>&1 | tee build.log && return 0
+            grep -E -A6 "^e: |error:|What went wrong|Lint found|Errors found" build.log | head -60 \
+              | while IFS= read -r line; do [ -n "$line" ] && echo "::error::$line"; done
+            return 1
+          }
+          gradle_or_report assembleBeta -PtesterBuild=${{ steps.plan.outputs.build }}
           mkdir out
           src=app/build/outputs/apk/beta
           cp $src/app-arm64-v8a-beta.apk   out/manabind-tester-arm64-v8a.apk
@@ -112,7 +121,16 @@ jobs:
       - name: Build the real app
         if: steps.plan.outputs.kind == 'release'
         run: |
-          ./gradlew assembleRelease
+          # A failed build's own error lines become annotations, readable from the API where the
+          # raw log isn't (a cloud session can read annotations but not download logs).
+          gradle_or_report() {
+            set -o pipefail
+            ./gradlew "$@" 2>&1 | tee build.log && return 0
+            grep -E -A6 "^e: |error:|What went wrong|Lint found|Errors found" build.log | head -60 \
+              | while IFS= read -r line; do [ -n "$line" ] && echo "::error::$line"; done
+            return 1
+          }
+          gradle_or_report assembleRelease
           mkdir out
           src=app/build/outputs/apk/release
           # The in-app updater matches a trailing -<abi>.apk, and manabind.com links the arm64 name.
