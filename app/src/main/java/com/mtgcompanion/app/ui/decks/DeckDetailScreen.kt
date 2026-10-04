@@ -421,7 +421,11 @@ fun DeckDetailScreen(
                                 onSwap = { swapOut = it },
                                 hasSideboard = currentDeck.mode.hasSideboard,
                                 onMoveToSideboard = { entry ->
-                                    addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity, sideboard = true)) { viewModel.moveToSideboard(entry.scryfallId) }
+                                    addTo.perform(
+                                        addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity, sideboard = true),
+                                        // Asked first when the sideboard would go past its 15 cards.
+                                        check = AddCheck.forMove(AddToPick(currentDeck.asTarget()), listOf(entry.toAddItem(entry.quantity, sideboard = true)))
+                                    ) { viewModel.moveToSideboard(entry.scryfallId) }
                                 }
                             )
                         },

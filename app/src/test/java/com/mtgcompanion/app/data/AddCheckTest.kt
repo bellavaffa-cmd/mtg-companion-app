@@ -189,4 +189,25 @@ class AddCheckTest {
         assertTrue(addCheckOffersAllowedOnly(results))
         assertFalse(addCheckOffersAllowedOnly(failing))
     }
+
+    @Test
+    fun `the sideboard holds 15 - adding or moving past it is asked about`() {
+        val full = modern(sideboard = listOf(entry("a", 4), entry("b", 4), entry("c", 4), entry("d", 2)))
+        fun into(id: String, quantity: Int = 1) = AddCandidate(id, id, quantity, sideboard = true)
+        assertTrue(one(full, into("e")).allowed)
+        assertEquals(listOf("Sideboard is full (15 max)"), one(full, into("e", 2)).problems)
+        // Several at once: the one that tips it over is the one flagged.
+        val both = checkAdd(full, listOf(into("e"), into("f")), emptyMap())
+        assertTrue(both[0].allowed)
+        assertEquals(listOf("Sideboard is full (15 max)"), both[1].problems)
+        // Into the main deck the sideboard's size doesn't matter.
+        assertTrue(one(full, AddCandidate("e", "e", 2)).allowed)
+        // A move from the main deck checks only the size, not copies already counted.
+        val moving = modern(cards = listOf(entry("bolt", 4)), sideboard = listOf(entry("a", 4), entry("b", 4), entry("c", 4)))
+        assertEquals(listOf("Sideboard is full (15 max)"), checkAdd(moving, listOf(into("bolt", 4)), emptyMap(), moving = true).single().problems)
+        assertTrue(checkAdd(moving, listOf(into("bolt", 3)), emptyMap(), moving = true).single().allowed)
+        // Commander decks have no sideboard, so no limit to speak of.
+        val commander = Deck("d", "Atraxa", sideboard = listOf(entry("a", 15)), gameMode = GameMode.COMMANDER.name)
+        assertTrue(one(commander, into("e")).allowed)
+    }
 }

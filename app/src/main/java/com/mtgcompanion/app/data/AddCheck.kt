@@ -51,13 +51,16 @@ fun copyLimitOf(mode: GameMode, name: String, card: ScryfallCard?, typeLine: Str
  * checked, by name. Copies count every printing, the main deck and the sideboard together, and the
  * cards earlier in [adding]. One result per entry of [adding], in its order. With [copiesOnly] (one
  * more copy of a card already in, from a "+": its format and colours were accepted when it went in)
- * only the copy limit is checked.
+ * only the copy limit is checked. Going into the sideboard, it may hold at most
+ * [GameMode.MAX_SIDEBOARD] cards. With [moving] (from the main deck to the sideboard: the same cards,
+ * so nothing about them changes) only the sideboard's size is checked.
  */
 fun checkAdd(
     deck: Deck,
     adding: List<AddCandidate>,
     cards: Map<String, ScryfallCard>,
-    copiesOnly: Boolean = false
+    copiesOnly: Boolean = false,
+    moving: Boolean = false
 ): List<AddCheckResult> {
     val mode = deck.mode
     val label = mode.label
@@ -75,9 +78,16 @@ fun checkAdd(
     val copies = mutableMapOf<String, Int>()
     (deck.cards + deck.sideboard).forEach { copies.merge(cardNameKey(it.name), it.quantity, Int::plus) }
 
+    var sideboardCount = deck.sideboard.sumOf { it.quantity }
+
     return adding.map { item ->
         val card = cards[item.scryfallId]
         val problems = mutableListOf<String>()
+        if (item.sideboard && mode.hasSideboard) {
+            sideboardCount += item.quantity.coerceAtLeast(1)
+            if (sideboardCount > GameMode.MAX_SIDEBOARD) problems += "Sideboard is full (${GameMode.MAX_SIDEBOARD} max)"
+        }
+        if (moving) return@map AddCheckResult(item.scryfallId, item.name, problems)
         val legality = card?.legalities?.get(mode.scryfallFormat)
         when {
             copiesOnly -> Unit

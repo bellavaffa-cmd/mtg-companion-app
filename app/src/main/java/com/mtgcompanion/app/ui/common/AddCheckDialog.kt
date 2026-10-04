@@ -70,12 +70,22 @@ class AddCheck(val into: AddToPick, val items: suspend (Deck) -> List<AddItem>) 
     var copiesOnly: Boolean = false
         private set
 
+    /** Whether only the sideboard's size is checked (see [forMove]). */
+    var moving: Boolean = false
+        private set
+
     companion object {
         /**
          * The check for one more copy of cards already in the deck (a "+"): only the copy limit, as
          * their format and colours were checked when they went in.
          */
         fun forCopies(into: AddToPick, items: List<AddItem>) = AddCheck(into, items).apply { copiesOnly = true }
+
+        /**
+         * The check for moving cards from the main deck to the sideboard: the same cards, so only
+         * the sideboard's size — it needs no lookup.
+         */
+        fun forMove(into: AddToPick, items: List<AddItem>) = AddCheck(into, items).apply { moving = true }
     }
 }
 
@@ -131,12 +141,23 @@ class AddCheckGate internal constructor(
         }
         val items = check.items(deck)
         if (items.isEmpty()) return none
+        val results = if (check.moving) {
+            checkAdd(deck, items.map { it.candidate }, emptyMap(), moving = true)
+        } else {
+            checkCards(deck, items, check) ?: return AddCheckOutcome(emptySet(), items.size)
+        }
+        if (results.all { it.allowed }) return AddCheckOutcome(emptySet(), results.size)
+        return ask(deck, results)
+    }
+
+    /** The cards' results, or null when a "+" in a singleton deck is plainly within the limit. */
+    private suspend fun checkCards(deck: Deck, items: List<AddItem>, check: AddCheck): List<AddCheckResult>? {
         // One more copy in a singleton deck that's within the limit by name alone needs no lookup:
         // what a lookup could add (a restricted card) allows one copy too, so a "+" isn't kept waiting.
         if (check.copiesOnly && deck.mode.singleton) {
             val handed = items.mapNotNull { item -> item.card?.let { item.candidate.scryfallId to it } }.toMap()
             if (checkAdd(deck, items.map { it.candidate }, handed, copiesOnly = true).all { it.allowed }) {
-                return AddCheckOutcome(emptySet(), items.size)
+                return null
             }
         }
 
@@ -151,9 +172,11 @@ class AddCheckGate internal constructor(
             val found = withTimeoutOrNull(LOOKUP_TIMEOUT_MILLIS) { cards.getCardsByIds(wanted) }.orEmpty()
             found.forEach { known[it.id] = it }
         }
-        val results = checkAdd(deck, items.map { it.candidate }, known, check.copiesOnly)
-        if (results.all { it.allowed }) return AddCheckOutcome(emptySet(), results.size)
+        return checkAdd(deck, items.map { it.candidate }, known, check.copiesOnly)
+    }
 
+    /** Puts the question up for [results] and waits for the answer. */
+    private suspend fun ask(deck: Deck, results: List<AddCheckResult>): AddCheckOutcome? {
         val asked = AddCheckQuestion(
             title = addCheckTitle(results, deck.name),
             lines = addCheckLines(results),

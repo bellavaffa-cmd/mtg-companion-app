@@ -9,8 +9,8 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "singleton-plus",
-        "Singleton is checked on + too",
-        "From your note. In a Commander or Brawl deck, tap + on a card that isn't a basic land: the app asks first (\"Singleton: only 1 copy allowed\"). Cancel keeps one copy; Add anyway adds the second. Adding from search or a binder says the same."
+        "sideboard-limit",
+        "The sideboard's 15 cards are checked too",
+        "In a Modern or Standard deck with a sideboard of 15, add one more card to the sideboard (Add to…, its +, Import list) or use Move to sideboard: the app asks first (\"Sideboard is full (15 max)\"). Cancel leaves it as it was; Add anyway adds it."
     ),
 )
