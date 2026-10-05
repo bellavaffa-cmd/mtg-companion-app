@@ -15,6 +15,7 @@ import com.mtgcompanion.app.data.PriceAlerts
 import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.data.Prices
 import com.mtgcompanion.app.data.ValueHistory
+import com.mtgcompanion.app.data.DeckValueHistory
 import com.mtgcompanion.app.data.social.SocialRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +88,7 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         // Prices in the chosen currency, at the day's exchange rate; and the collection's value over time.
         Prices.init(this, settingsRepository, appScope)
         ValueHistory.init(this)
+        DeckValueHistory.init(this)
         PriceMovers.init(this)
         // Each card's own price over time — read from the device only when a chart wants it.
         CardPriceHistory.init(this)

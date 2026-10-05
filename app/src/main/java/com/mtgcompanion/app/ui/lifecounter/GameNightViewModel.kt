@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.mtgcompanion.app.data.activeDecks
+import kotlinx.coroutines.flow.map
 
 /**
  * Game night (GameNightScreen): the players, their decks and the pods, kept in [GameNightStore].
@@ -31,7 +33,8 @@ class GameNightViewModel(
     init { GameNightStore.init(context) }
 
     val nights: StateFlow<SavedGameNights> = GameNightStore.nights
-    val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    // Archived decks aren't offered (DeckFolders.kt).
+    val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.map { activeDecks(it) }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     /** Friends and the decks they share with the user; null while signed out or not loaded. */
     val overview: StateFlow<Overview?> = social.overview
     /** The life counter's finished games, for each pod's result. */

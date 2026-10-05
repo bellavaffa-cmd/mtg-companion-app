@@ -24,11 +24,13 @@ data class MoveTarget(
     /** A deck whose format has a sideboard — the picker can put cards there. */
     val hasSideboard: Boolean = false,
     /** A draft or sealed deck, whose sideboard is its pool and is called that. */
-    val pool: Boolean = false
+    val pool: Boolean = false,
+    /** An archived deck: put away, so not offered (DeckFolders.kt). */
+    val archived: Boolean = false
 )
 
 /** A deck as a place to put cards, with its commander's picture. */
-fun Deck.asTarget() = MoveTarget(SourceKind.DECK, id, name, imageUrl = commander?.imageUrl, cards = cards.sumOf { it.quantity }, hasSideboard = mode.hasSideboard, pool = mode.limited)
+fun Deck.asTarget() = MoveTarget(SourceKind.DECK, id, name, imageUrl = commander?.imageUrl, cards = cards.sumOf { it.quantity }, hasSideboard = mode.hasSideboard, pool = mode.limited, archived = archived == true)
 
 /** A binder as a place to put cards. */
 fun Binder.asTarget() = MoveTarget(SourceKind.BINDER, id, name, cards = entries.sumOf { it.quantity + it.foilQuantity })

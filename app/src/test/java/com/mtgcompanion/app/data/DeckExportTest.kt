@@ -73,4 +73,15 @@ class DeckExportTest {
         assertEquals("Fire // Ice", clientCardName(fire, DeckExportFormat.ARENA))
         assertEquals("Fire // Ice", clientCardName(fire, DeckExportFormat.SIMPLE))
     }
+
+    @Test
+    fun `simple and exact start with the deck's primer as comments, which read back as nothing`() {
+        val primed = burn.copy(description = "# Burn\n\nBolt **face**.")
+        val text = deckExportText(primed, DeckExportFormat.SIMPLE)
+        assertEquals("// # Burn\n//\n// Bolt **face**.", text.split("\n\n")[0])
+        assertEquals(true, deckExportText(primed, DeckExportFormat.EXACT, printings).startsWith("// # Burn"))
+        assertEquals(deckExportText(burn, DeckExportFormat.ARENA, printings), deckExportText(primed, DeckExportFormat.ARENA, printings))
+        assertEquals(deckExportText(burn, DeckExportFormat.MTGO), deckExportText(primed, DeckExportFormat.MTGO))
+        assertEquals(parseCardList(deckExportText(burn, DeckExportFormat.SIMPLE)).lines.map { it.name }, parseCardList(text).lines.map { it.name })
+    }
 }

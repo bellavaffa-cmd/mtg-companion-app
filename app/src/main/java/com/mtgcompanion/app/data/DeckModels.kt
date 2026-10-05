@@ -105,7 +105,13 @@ data class DeckCardEntry(
      * How many of this entry's copies are proxies (see Proxies.kt). Null means "whatever the deck
      * is": all of them in a deck marked Proxy, none in any other.
      */
-    val proxyQuantity: Int? = null
+    val proxyQuantity: Int? = null,
+    /**
+     * The user's own groups for this card in this deck — "Ramp", "Removal", "Win cons"; a card can be
+     * in several (DeckCategories.kt). Null (left out of the JSON) when it has none. Merged like
+     * [userTags]. The web app's DeckCardEntry.categories.
+     */
+    val categories: List<String>? = null
 )
 
 /**
@@ -202,11 +208,38 @@ data class Deck(
      * "cameFrom" key was written by an app that doesn't know about it. The web app's Deck.cameFrom,
      * line for line.
      */
-    val cameFrom: List<CameFrom>? = null
+    val cameFrom: List<CameFrom>? = null,
+    /**
+     * The deck's primer: how it plays, what to mulligan, its key cards — light markdown, with
+     * [[Card Name]] as links (Primer.kt). At most MAX_DESCRIPTION characters.
+     */
+    val description: String? = null,
+    /** The folder it's filed in on the decks list (DeckFolders.kt); "" for none. */
+    val folder: String? = null,
+    /** Put away: kept, but out of the decks list and every deck picker (DeckFolders.kt). */
+    val archived: Boolean? = null,
+    /** The companion's name: a card in the sideboard, outside the starting deck (Companion.kt); "" for none. */
+    val companion: String? = null,
+    /**
+     * How many cards the user wants in each of their categories ("Ramp": 12). Also says the deck's
+     * cards' "categories" are known: it's there, as {} with no targets, once any card has had a
+     * category (see DeckExtras.kt).
+     */
+    val categoryTargets: Map<String, Int>? = null
 ) {
     val mode: GameMode get() = GameMode.fromName(gameMode)
     val ownershipType: DeckOwnership get() = DeckOwnership.fromName(ownership)
 }
+
+// The deck's own words and filing, as JSON — locally, in sync and in shared decks. All left out until
+// first set (null), then kept even when emptied ("", false, {}), so a deck with none of these keys was
+// saved by an app that doesn't know them, and its save can't clear them on other devices (DeckExtras.kt):
+//   "description": "## How it plays\nRamp into [[Craterhoof Behemoth]]…"
+//   "folder": "Modern" | ""          "archived": true | false
+//   "companion": "Lurrus of the Dream-Den" | ""
+//   "categoryTargets": { "Ramp": 12, "Draw": 10 }
+// and on each card: "categories": ["Ramp", "Draw"], left out when it has none. The web app's
+// src/types/models.ts, key for key.
 
 // The deck's "cameFrom" as JSON — locally and in sync:
 //   "cameFrom": [{ "name": "Sol Ring", "placeId": "…", "qty": 1, "section": "Colourless" }, { "name": "Purphoros, God of the Forge", "placeId": "…", "qty": 1, "page": 5, "slot": 1, "foil": true }]

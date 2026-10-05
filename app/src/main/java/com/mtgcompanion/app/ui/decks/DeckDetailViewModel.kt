@@ -1,6 +1,13 @@
 package com.mtgcompanion.app.ui.decks
 
 import com.mtgcompanion.app.data.cardNameKey
+import com.mtgcompanion.app.data.DeckGrouping
+import com.mtgcompanion.app.data.DeckValueHistory
+import com.mtgcompanion.app.data.ValuePoint
+import com.mtgcompanion.app.data.companionEntry
+import com.mtgcompanion.app.data.deckValueOf
+import com.mtgcompanion.app.data.withCompanion
+import com.mtgcompanion.app.data.withSideboardCopies
 import com.mtgcompanion.app.ui.common.toAddItem
 import com.mtgcompanion.app.ui.common.AddCheckOutcome
 import com.mtgcompanion.app.ui.common.AddItem
@@ -211,6 +218,60 @@ class DeckDetailViewModel(
     val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)
 
+    /** How the Cards tab groups the deck (DeckCategories.kt), the same for every deck. */
+    val grouping: StateFlow<DeckGrouping> = settingsRepository.deckGrouping
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DeckGrouping.TYPE)
+
+    fun setGrouping(grouping: DeckGrouping) {
+        viewModelScope.launch { settingsRepository.setDeckGrouping(grouping) }
+    }
+
+    /** Changes this deck in one step: its primer, categories, companion, folder or archive flag. */
+    fun changeDeck(transform: (Deck) -> Deck) {
+        viewModelScope.launch { repository.change { decks -> decks.map { if (it.id == deckId) transform(it) else it } } }
+    }
+
+    /** The deck's value over time, noted on this device (DeckValueHistory.kt). */
+    val valueHistory: StateFlow<List<ValuePoint>> = DeckValueHistory.points.map { it[deckId].orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Makes [name] the deck's companion, adding it to the sideboard when it isn't there yet; null takes
+     * the mark off (and, in Commander, which keeps no sideboard, the card with it). False when the
+     * card couldn't be looked up.
+     */
+    suspend fun chooseCompanion(name: String?): Boolean {
+        val d = deck.value ?: return false
+        val sided = d.mode.hasSideboard
+        if (name == null) {
+            repository.change { decks ->
+                decks.map { x ->
+                    if (x.id != deckId) return@map x
+                    val entry = companionEntry(x)
+                    val next = x.withCompanion(null)
+                    if (!sided && entry != null) next.copy(sideboard = next.sideboard.filterNot { it.scryfallId == entry.scryfallId }) else next
+                }
+            }
+            return true
+        }
+        val there = d.sideboard.any { it.name.equals(name, ignoreCase = true) }
+        val added = if (there) null else {
+            val card = runCatching { cardRepository.getByExactName(name) }.getOrNull() ?: return false
+            DeckCardEntry(card.id, card.name, card.displayImageUrl, 1, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl, card.tags)
+        }
+        repository.change { decks ->
+            decks.map { x ->
+                if (x.id != deckId) return@map x
+                // A Commander deck's old companion goes when a new one comes.
+                val old = if (!sided) companionEntry(x) else null
+                var next = if (old != null) x.copy(sideboard = x.sideboard.filterNot { it.scryfallId == old.scryfallId }) else x
+                if (added != null) next = next.withSideboardCopies(added)
+                next.withCompanion(name)
+            }
+        }
+        return true
+    }
+
     /** The user's other decks — for "Compare with…". */
     val otherDecks: StateFlow<List<Deck>> = repository.decksFlow.map { decks -> decks.filter { it.id != deckId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -256,7 +317,12 @@ class DeckDetailViewModel(
     val analysis: StateFlow<DeckAnalysis> = deck.mapLatest { d ->
         if (d == null) return@mapLatest DeckAnalysis(loading = false)
         if (d.cards.isEmpty()) return@mapLatest DeckAnalysis(loading = false, legality = evaluateLegality(d, emptyMap()))
-        buildAnalysis(d)
+        buildAnalysis(d).also { a ->
+            // Today's value, for the deck's value over time (DeckValueHistory.kt).
+            deckValueOf(d, a.cardsById.mapValues { it.value.prices?.usd?.toDoubleOrNull() })?.let { (usd, cards) ->
+                runCatching { DeckValueHistory.record(deckId, usd, cards) }
+            }
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DeckAnalysis(loading = true))
 
     /** scryfallId -> USD price for the deck's and considering list's cards. */

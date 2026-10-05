@@ -23,6 +23,8 @@ import com.mtgcompanion.app.ui.social.GoldButton
 import com.mtgcompanion.app.data.ProxySwap
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
+import com.mtgcompanion.app.data.CardGroup
+import com.mtgcompanion.app.data.isLandType
 import com.mtgcompanion.app.data.DeckRole
 import com.mtgcompanion.app.ui.common.zoomSource
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -60,6 +62,29 @@ import androidx.compose.animation.core.Animatable
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Pets
+import com.mtgcompanion.app.data.DeckGrouping
+import com.mtgcompanion.app.data.GroupingFacts
+import com.mtgcompanion.app.data.categoryCounts
+import com.mtgcompanion.app.data.companionEntry
+import com.mtgcompanion.app.data.companionNamed
+import com.mtgcompanion.app.data.folderNames
+import com.mtgcompanion.app.data.folderOf
+import com.mtgcompanion.app.data.groupCards
+import com.mtgcompanion.app.data.isArchived
+import com.mtgcompanion.app.data.removedCategory
+import com.mtgcompanion.app.data.renamedCategory
+import com.mtgcompanion.app.data.tidyCategory
+import com.mtgcompanion.app.data.tidyDescription
+import com.mtgcompanion.app.data.withArchived
+import com.mtgcompanion.app.data.withCardCategories
+import com.mtgcompanion.app.data.withCategoryTarget
+import com.mtgcompanion.app.data.withCompanion
+import com.mtgcompanion.app.data.withFolder
+import com.mtgcompanion.app.data.withSuggestedCategories
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -331,6 +356,14 @@ fun DeckDetailScreen(
     var poolToBinder by remember { mutableStateOf(false) }
     // Progress while an import runs, then its summary ("Imported N; M couldn't be matched…").
     var importState by remember { mutableStateOf<ImportState?>(null) }
+    // A card whose categories are being picked, a category being set up, the companion picker and
+    // the folder picker (DeckExtrasUi.kt).
+    var categoriesFor by remember { mutableStateOf<DeckCardEntry?>(null) }
+    var categoryOpen by remember { mutableStateOf<String?>(null) }
+    var companionPicking by remember { mutableStateOf(false) }
+    var companionError by remember { mutableStateOf<String?>(null) }
+    var filing by remember { mutableStateOf(false) }
+    val allDecks by viewModel.otherDecks.collectAsState()
 
     Scaffold(
         containerColor = Bg,
@@ -376,6 +409,21 @@ fun DeckDetailScreen(
                             add(CardMenuAction("Import list", Icons.AutoMirrored.Filled.PlaylistAdd, description = "Paste a decklist") { showImport = true })
                             add(CardMenuAction("Export list", Icons.Filled.IosShare, description = "Simple, exact printing, Arena or MTGO") { showExport = true })
                             add(CardMenuAction("Deck settings", Icons.Filled.Tune, description = "Format, ownership and tags") { showSettings = true })
+                            if (!d.mode.limited) {
+                                add(CardMenuAction("Companion", Icons.Filled.Pets, description = companionNamed(d.companion)?.name ?: "One of the ten, outside the deck") { companionError = null; companionPicking = true })
+                            }
+                            add(CardMenuAction("Move to folder…", Icons.Filled.Folder, description = folderOf(d)?.let { "In $it" } ?: "File it on your decks list") { filing = true })
+                            if (d.isArchived) {
+                                add(CardMenuAction("Back on the decks list", Icons.Filled.Unarchive, description = "Out of Archived, and offered in pickers again") {
+                                    viewModel.changeDeck { it.withArchived(false) }
+                                    toast("Back on your decks list.")
+                                })
+                            } else {
+                                add(CardMenuAction("Archive", Icons.Filled.Archive, description = "Kept, but hidden from the list and from pickers") {
+                                    viewModel.changeDeck { it.withArchived(true) }
+                                    toast("Archived. Find it under Archived on your decks list.")
+                                })
+                            }
                             add(CardMenuAction("Delete deck", Icons.Filled.Delete, destructive = true) { confirmDelete = true })
                         }
                         val cardCount = d.cards.sumOf { it.quantity }
@@ -450,6 +498,7 @@ fun DeckDetailScreen(
                                 },
                                 onMoveToConsidering = { entry -> addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, considering = true)) { viewModel.moveToConsidering(entry.scryfallId) } },
                                 onSwap = { swapOut = it },
+                                onCategories = { categoriesFor = it },
                                 hasSideboard = currentDeck.mode.hasSideboard,
                                 sideboardName = sideboardName(currentDeck.mode),
                                 onMoveToSideboard = { entry ->
@@ -471,10 +520,14 @@ fun DeckDetailScreen(
                                     addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity)) { viewModel.moveToMain(entry.scryfallId) }
                                 },
                                 onRemove = { removeSideboardTarget = entry },
-                                onViewDetails = onViewDetails
+                                onViewDetails = onViewDetails,
+                                isCompanion = companionEntry(currentDeck)?.scryfallId == entry.scryfallId,
+                                companionRule = companionNamed(entry.name)?.rule,
+                                onCompanion = { on -> viewModel.changeDeck { it.withCompanion(if (on) entry.name else null) } }
                             )
                         },
-                        onRemoveLastSideboardCopy = { removeSideboardTarget = it }
+                        onRemoveLastSideboardCopy = { removeSideboardTarget = it },
+                        onCategory = { categoryOpen = it }
                     )
                     "Considering" -> ConsideringTab(
                         deck = currentDeck,
@@ -490,7 +543,7 @@ fun DeckDetailScreen(
                         onSwapIn = { swapIn = it },
                         onRemove = { viewModel.removeFromConsidering(it.scryfallId) }
                     )
-                    "Stats" -> StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck, onOpenBadge = onOpenBadge)
+                    "Stats" -> StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck, onOpenBadge = onOpenBadge, onCard = onViewDetails)
                     "Suggestions" -> AnalysisTab(
                         analysis, suggestions, onZoomSugg = { zoom = "sugg" to it }, viewModel,
                         onConsiderName = { name -> addSuggestion = name to null },
@@ -505,7 +558,7 @@ fun DeckDetailScreen(
         if (layout == LayoutSize.DESKTOP) {
             // Stats beside the cards, the way the web app's deck page shows them.
             Box(Modifier.width(360.dp).fillMaxHeight()) {
-                StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck, onOpenBadge = onOpenBadge)
+                StatsTab(analysis, currentDeck, viewModel, onTag = searchTag, onOpenDeck = onOpenDeck, onOpenBadge = onOpenBadge, onCard = onViewDetails)
             }
         }
         }
@@ -783,6 +836,52 @@ fun DeckDetailScreen(
                 realCopies = realCopiesOf(currentDeck).sumOf { it.quantity },
                 onDelete = { keepCards -> confirmDelete = false; viewModel.deleteDeck(keepCards, onBack) },
                 onDismiss = { confirmDelete = false }
+            )
+        }
+        categoriesFor?.let { entry ->
+            CardCategoriesDialog(
+                deck = currentDeck,
+                entry = currentDeck.cards.firstOrNull { it.scryfallId == entry.scryfallId } ?: entry,
+                onSave = { chosen -> viewModel.changeDeck { it.withCardCategories(entry.scryfallId, chosen) }; categoriesFor = null },
+                onDismiss = { categoriesFor = null }
+            )
+        }
+        categoryOpen?.let { name ->
+            CategoryDialog(
+                deck = currentDeck,
+                name = name,
+                onSave = { target, rename ->
+                    viewModel.changeDeck { d ->
+                        val next = d.withCategoryTarget(name, target)
+                        if (tidyCategory(rename).isNotEmpty() && tidyCategory(rename) != name) next.renamedCategory(name, rename) else next
+                    }
+                    categoryOpen = null
+                },
+                onRemove = { viewModel.changeDeck { it.removedCategory(name) }; categoryOpen = null },
+                onDismiss = { categoryOpen = null }
+            )
+        }
+        if (companionPicking) {
+            CompanionDialog(
+                current = companionNamed(currentDeck.companion),
+                sided = currentDeck.mode.hasSideboard,
+                error = companionError,
+                onPick = { name ->
+                    scope.launch {
+                        if (viewModel.chooseCompanion(name)) companionPicking = false
+                        else companionError = "Couldn't reach Scryfall — try again when you're online."
+                    }
+                },
+                onDismiss = { companionPicking = false }
+            )
+        }
+        if (filing) {
+            FolderDialog(
+                deckName = currentDeck.name,
+                folders = folderNames(allDecks + currentDeck),
+                current = folderOf(currentDeck),
+                onMove = { folder -> viewModel.changeDeck { it.withFolder(folder) }; filing = false },
+                onDismiss = { filing = false }
             )
         }
         if (showExport) {
@@ -1401,9 +1500,12 @@ private fun CardsTab(
     onZoomSideboard: (String) -> Unit = {},
     sideboardActions: (DeckCardEntry) -> List<CardMenuAction> = { emptyList() },
     /** The − on a sideboard card's last copy: asked about first, as in the main deck. */
-    onRemoveLastSideboardCopy: (DeckCardEntry) -> Unit = {}
+    onRemoveLastSideboardCopy: (DeckCardEntry) -> Unit = {},
+    /** A category's heading tapped: its target, name and removal. */
+    onCategory: (String) -> Unit = {}
 ) {
     val query by viewModel.cardQuery.collectAsState()
+    val grouping by viewModel.grouping.collectAsState()
     val trimmed = query.trim()
     val addTo = LocalAddToFeedback.current
     val cardTags by viewModel.cardTags.collectAsState()
@@ -1472,6 +1574,35 @@ private fun CardsTab(
         listOf(TypeGroup("Commander", ordered)) + otherGroups
     } else otherGroups
 
+    // Grouped another way than by type (DeckCategories.kt): the commanders stay pinned on top.
+    val listedCards = groups.flatMap { it.cards }.filter { it.scryfallId !in commanderIds }
+    fun factsOf(e: DeckCardEntry): GroupingFacts? {
+        val roles = tagsOf(e).map(RoleTags::label)
+        val card = analysis.cardsById[e.scryfallId]
+        if (card == null) return if (grouping == DeckGrouping.ROLE) GroupingFacts(null, null, false, roles) else null
+        return GroupingFacts(card.cmc, card.colors ?: card.cardFaces?.firstOrNull()?.colors, isLandType(card.typeLine ?: e.typeLine), roles)
+    }
+    val searching = trimmed.isNotEmpty() || filter != CardFilter.ALL
+    val categoryTotals = if (grouping == DeckGrouping.CATEGORY && !searching) categoryCounts(deck) else emptyMap()
+    val shownGroups: List<CardGroup> = if (grouping == DeckGrouping.TYPE) {
+        groups.map { g -> CardGroup("type:" + g.type, g.type, g.cards, g.cards.sumOf { it.quantity }) }
+    } else {
+        groups.filter { it.type == "Commander" }.map { g -> CardGroup("type:Commander", g.type, g.cards, g.cards.sumOf { it.quantity }) } +
+            groupCards(listedCards, grouping, ::factsOf, if (searching) emptyMap() else deck.categoryTargets.orEmpty())
+    }
+    val toastContext = LocalContext.current
+    val suggestCategories: (() -> Unit)? = if (grouping == DeckGrouping.CATEGORY && deck.cards.any { it.categories.isNullOrEmpty() }) {
+        {
+            val filled = deck.withSuggestedCategories { name -> cardTags[name].orEmpty() }.second
+            if (filled == 0) {
+                Toast.makeText(toastContext, if (tagging != null) "Still finding what the cards do — try again in a moment." else "No role tags to suggest from.", Toast.LENGTH_SHORT).show()
+            } else {
+                viewModel.changeDeck { it.withSuggestedCategories { name -> cardTags[name].orEmpty() }.first }
+                Toast.makeText(toastContext, "Filled in categories for $filled ${if (filled == 1) "card" else "cards"}.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    } else null
+
     // Taking the last copy out removes the card, which is easy to do by accident on a small − button:
     // it's asked about first. The card being asked about, while the question is up.
     var removing by remember { mutableStateOf<DeckCardEntry?>(null) }
@@ -1525,7 +1656,9 @@ private fun CardsTab(
         if (showSideboard && (sideboardShown.isNotEmpty() || (trimmed.isEmpty() && filter == CardFilter.ALL))) {
             item(key = "sideboard-header") {
                 Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp, start = 2.dp, end = 4.dp)) {
-                    Text("${sideboardName(deck.mode)} (${deck.sideboardCount})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    // In Commander the companion waits here, outside the 100.
+                    val sideTitle = if (!deck.mode.hasSideboard && companionEntry(deck) != null && deck.sideboard.size == 1) "Companion" else sideboardName(deck.mode)
+                    Text("$sideTitle (${deck.sideboardCount})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     val limit = deck.mode.sideboardLimit
                     if (deck.mode.hasSideboard && limit != null) Text("up to $limit", style = MaterialTheme.typography.labelMedium, color = TextMuted)
                 }
@@ -1649,6 +1782,9 @@ private fun CardsTab(
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp)
                 )
             }
+            if (deck.cards.isNotEmpty()) {
+                GroupByRow(grouping, viewModel::setGrouping, suggestCategories, Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp))
+            }
         }
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -1689,15 +1825,40 @@ private fun CardsTab(
                 return@LazyColumn
             }
 
-            groups.forEach { group ->
-                item {
-                    Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp, start = 2.dp, end = 4.dp)) {
-                        Text(group.type, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        Text("${group.cards.sumOf { it.quantity }}", style = NumberStyle(20), color = TextMuted)
+            shownGroups.forEach { group ->
+                // A category's heading opens its target and name; its count is the whole deck's against the target.
+                val category = if (grouping == DeckGrouping.CATEGORY && group.key.startsWith("cat:") && group.key != "cat:") group.label else null
+                item(key = "h-" + group.key) {
+                    val count = category?.let { categoryTotals[it] } ?: group.count
+                    val app = LocalAppColors.current
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (category != null) Modifier.clickable { onCategory(category) } else Modifier)
+                            .padding(top = 12.dp, bottom = 2.dp, start = 2.dp, end = 4.dp)
+                    ) {
+                        Text(group.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        val target = group.target
+                        Text(
+                            if (target != null) "$count/$target" else "$count",
+                            style = NumberStyle(20),
+                            color = when {
+                                target == null -> TextMuted
+                                count < target -> app.warning
+                                count > target -> app.cut
+                                else -> app.success
+                            }
+                        )
+                    }
+                }
+                if (group.cards.isEmpty()) {
+                    item(key = "e-" + group.key) {
+                        Text("None yet — long-press a card and choose Categories.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                     }
                 }
                 if (viewMode == CardViewMode.GRID) {
-                    cardGrid(group.cards, columns = gridCols, key = { it.scryfallId }) { card ->
+                    cardGrid(group.cards, columns = gridCols, key = { group.key + "|" + it.scryfallId }) { card ->
                         DeckCardTile(
                             card = card,
                             isCommander = card.scryfallId == deck.commander?.scryfallId || card.scryfallId == deck.partnerCommander?.scryfallId,
@@ -1711,7 +1872,7 @@ private fun CardsTab(
                         )
                     }
                 } else {
-                    cardGrid(group.cards, columns = listCols, key = { it.scryfallId }) { card ->
+                    cardGrid(group.cards, columns = listCols, key = { group.key + "|" + it.scryfallId }) { card ->
                         DeckCardRow(
                             card = card,
                             isCommander = card.scryfallId == deck.commander?.scryfallId || card.scryfallId == deck.partnerCommander?.scryfallId,
@@ -1773,12 +1934,15 @@ private fun StatsTab(
     viewModel: DeckDetailViewModel,
     onTag: (String) -> Unit,
     onOpenDeck: ((String) -> Unit)? = null,
-    onOpenBadge: (() -> Unit)? = null
+    onOpenBadge: (() -> Unit)? = null,
+    /** A [[card]] in the primer tapped. */
+    onCard: (String) -> Unit = {}
 ) {
     if (analysis.loading) {
         LoadingBox()
         return
     }
+    val valueHistory by viewModel.valueHistory.collectAsState()
     var showLogResult by remember { mutableStateOf(false) }
     val roles by viewModel.roles.collectAsState()
     val ownedGaps by viewModel.ownedGaps.collectAsState()
@@ -1805,6 +1969,18 @@ private fun StatsTab(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // The primer, and the deck's value over time (DeckExtrasUi.kt).
+        item(key = "about") {
+            AboutPanel(
+                deck,
+                onSave = { text ->
+                    val next = tidyDescription(text)
+                    if (next != deck.description.orEmpty()) viewModel.changeDeck { d -> if (next.isNotEmpty() || d.description != null) d.copy(description = next) else d }
+                },
+                onCard = onCard
+            )
+        }
+        item(key = "value") { DeckValuePanel(valueHistory, money) }
         item(key = "summary") {
             val cards = deck.cards.sumOf { it.quantity }
             CollapsibleStat("Summary", isOpen("summary"), { toggle("summary") }, summary = "$cards cards · ${money.format(analysis.totalUsd)}") {
@@ -2714,6 +2890,7 @@ private fun deckCardActions(
     onToggleReplaceable: (DeckCardEntry) -> Unit,
     onMoveToConsidering: (DeckCardEntry) -> Unit,
     onSwap: (DeckCardEntry) -> Unit,
+    onCategories: (DeckCardEntry) -> Unit = {},
     hasSideboard: Boolean = false,
     /** "Sideboard", or "Pool" for a Limited deck. */
     sideboardName: String = "Sideboard",
@@ -2755,6 +2932,12 @@ private fun deckCardActions(
             actions += CardMenuAction("Move to ${sideboardName.lowercase()}", Icons.AutoMirrored.Filled.DriveFileMove, section = inDeck) { onMoveToSideboard(entry) }
         }
     }
+    // The user's own groups for it in this deck (DeckCategories.kt).
+    actions += CardMenuAction(
+        "Categories…", Icons.Filled.Category,
+        description = entry.categories?.joinToString(", ") ?: "Your own groups: Ramp, Removal, Win cons…",
+        section = inDeck
+    ) { onCategories(entry) }
     // Elsewhere: other decks and binders, and the card's own page.
     val elsewhere = "Elsewhere"
     actions += CardMenuAction("Move to…", Icons.AutoMirrored.Filled.DriveFileMove, description = "Out of this deck, into another or a binder", section = elsewhere) { onMove(entry) }
@@ -2772,8 +2955,18 @@ private fun sideboardCardActions(
     sideboardName: String = "Sideboard",
     onMoveToMain: () -> Unit,
     onRemove: () -> Unit,
-    onViewDetails: (String) -> Unit
-): List<CardMenuAction> = listOf(
+    onViewDetails: (String) -> Unit,
+    /** It's the deck's companion (Companion.kt). */
+    isCompanion: Boolean = false,
+    /** Its companion condition, when it's one of the ten. */
+    companionRule: String? = null,
+    onCompanion: (Boolean) -> Unit = {}
+): List<CardMenuAction> = listOfNotNull(
+    when {
+        isCompanion -> CardMenuAction("Not the companion", Icons.Filled.Pets, description = "Stays in the sideboard") { onCompanion(false) }
+        companionRule != null -> CardMenuAction("Make it the companion", Icons.Filled.Pets, description = companionRule) { onCompanion(true) }
+        else -> null
+    },
     CardMenuAction("Move to main deck", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToMain() },
     CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) },
     CardMenuAction("Remove from ${sideboardName.lowercase()}", Icons.Filled.Close, destructive = true) { onRemove() }

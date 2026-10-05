@@ -101,6 +101,7 @@ import com.mtgcompanion.app.ui.badge.BadgeSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.mtgcompanion.app.data.activeDecks
 
 // The remote's own dark look, the same as the web app's (src/lifecounter/remote.css).
 private val RmBg = Color(0xFF0B0B0D)
@@ -259,7 +260,8 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
             RemoteSheet.BACKGROUND -> if (mine != null) BackgroundSheet(viewModel, mine, deck, onPickDeck = { sheet = RemoteSheet.DECK }, onClose = { sheet = null })
             RemoteSheet.DECK -> RmSheetBox("Your deck", { sheet = null }) {
                 if (decks.isEmpty()) Text("You have no decks yet.", color = RmMuted)
-                decks.forEach { d ->
+                // Archived decks aren't offered (DeckFolders.kt).
+                activeDecks(decks).forEach { d ->
                     Option(d.name, d.commander?.name ?: "No commander", selected = d.id == deckId, swatchUrl = d.commander?.imageUrl.toArtCropUrl()) {
                         viewModel.chooseDeck(d)
                         viewModel.logAfterPicking()

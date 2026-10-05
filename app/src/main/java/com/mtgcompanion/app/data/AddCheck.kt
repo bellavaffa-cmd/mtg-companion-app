@@ -102,6 +102,10 @@ fun checkAdd(
             val own = card.colorIdentity.orEmpty().toSet()
             if (!identity.containsAll(own)) problems += "Outside $commanderNames's colours"
         }
+        // Into the starting deck: the companion's condition (Companion.kt), when the card is known.
+        if (!copiesOnly && !item.sideboard && card != null) {
+            companionAddProblem(deck, companionCard(item.name, item.quantity, card.typeLine, card))?.let { problems += it }
+        }
         val key = cardNameKey(item.name)
         val total = (copies[key] ?: 0) + item.quantity.coerceAtLeast(1)
         copies[key] = total

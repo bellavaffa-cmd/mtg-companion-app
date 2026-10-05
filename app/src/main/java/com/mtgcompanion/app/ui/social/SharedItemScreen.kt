@@ -75,6 +75,10 @@ import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.readableWidth
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.launch
+import com.mtgcompanion.app.data.tidyDescription
+import com.mtgcompanion.app.ui.decks.PrimerText
+import androidx.compose.ui.platform.LocalUriHandler
+import java.net.URLEncoder
 
 private sealed interface Loaded {
     data object Loading : Loaded
@@ -218,8 +222,30 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
                 }
             } else {
                 LineButton("Copy to my decks", {
-                    scope.launch { copied = deckRepository.createDeckWithCards(deck.name, deck.mode, deck.cards, deck.commander, deck.partnerCommander).id }
+                    scope.launch {
+                        val made = deckRepository.createDeckWithCards(deck.name, deck.mode, deck.cards, deck.commander, deck.partnerCommander)
+                        // The primer comes along: it's how the deck is meant to play.
+                        val primer = tidyDescription(deck.description.orEmpty())
+                        if (primer.isNotEmpty()) deckRepository.change { all -> all.map { if (it.id == made.id) it.copy(description = primer) else it } }
+                        copied = made.id
+                    }
                 }, icon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) })
+            }
+        }
+        // The owner's primer (Primer.kt): a card it names opens in the zoom when it's in the deck, on Scryfall when not.
+        val primer = deck.description.orEmpty()
+        if (primer.isNotBlank()) item(key = "about") {
+            val uri = LocalUriHandler.current
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(colors.surface).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("About", style = MaterialTheme.typography.titleMedium)
+                PrimerText(primer, onCard = { name ->
+                    val inDeck = deck.cards.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                    if (inDeck != null) zoom = inDeck
+                    else runCatching { uri.openUri("https://scryfall.com/search?q=" + URLEncoder.encode("!\"$name\"", "UTF-8")) }
+                })
             }
         }
         if (deck.cards.size > 8) item { NameTagSearch(query, { query = it }, shown.map { it.name }, tagging) }
