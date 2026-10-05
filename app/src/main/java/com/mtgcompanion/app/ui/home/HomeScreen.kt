@@ -1,6 +1,10 @@
 package com.mtgcompanion.app.ui.home
 
 import androidx.compose.material.icons.filled.EventSeat
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.mtgcompanion.app.ui.common.recordWords
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.material.icons.filled.NotificationsActive
 import com.mtgcompanion.app.data.AlertDirection
 import com.mtgcompanion.app.data.AlertHit
@@ -169,7 +173,13 @@ fun HomeScreen(
         StatFigure(
             value = {
                 if (matchSummary.total > 0) {
-                    Text("${matchSummary.wins}–${matchSummary.losses}" + if (matchSummary.draws > 0) "–${matchSummary.draws}" else "", style = NumberStyle(statSize), color = colors.textPrimary)
+                    Text(
+                        "${matchSummary.wins}–${matchSummary.losses}" + if (matchSummary.draws > 0) "–${matchSummary.draws}" else "",
+                        style = NumberStyle(statSize),
+                        color = colors.textPrimary,
+                        // "3 wins, 2 losses" rather than "3 dash 2".
+                        modifier = Modifier.semantics { contentDescription = recordWords(matchSummary.wins, matchSummary.losses, matchSummary.draws) }
+                    )
                 } else {
                     Text("—", style = NumberStyle(statSize), color = colors.textDim)
                 }
@@ -328,7 +338,8 @@ fun HomeScreen(
                     Text(
                         "${matchSummary.wins}–${matchSummary.losses}" + if (matchSummary.draws > 0) "–${matchSummary.draws}" else "",
                         style = NumberStyle(30),
-                        color = colors.textPrimary
+                        color = colors.textPrimary,
+                        modifier = Modifier.semantics { contentDescription = recordWords(matchSummary.wins, matchSummary.losses, matchSummary.draws) }
                     )
                     Column(Modifier.weight(1f)) {
                         Text("Match record", style = MaterialTheme.typography.titleSmall)
@@ -474,7 +485,7 @@ private fun ContinueHero(deck: Deck, colors: List<String>, isLast: Boolean, onCl
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, 0.45f to Color.Black.copy(alpha = 0.25f), 1f to Color.Black.copy(alpha = 0.92f))))
         Column(Modifier.align(Alignment.BottomStart).padding(start = 18.dp, end = 76.dp, bottom = 18.dp)) {
             Text((if (isLast) "Continue building" else "Your deck").uppercase(), style = EyebrowStyle, color = Color.White.copy(alpha = 0.75f))
-            Text(deck.name, style = MaterialTheme.typography.headlineSmall, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(deck.name, style = MaterialTheme.typography.headlineSmall, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.a11yHeading())
             Text(
                 listOfNotNull(deck.commander?.name, "${deck.cards.sumOf { it.quantity }} cards", deck.considering.size.takeIf { it > 0 }?.let { "$it considering" }).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,

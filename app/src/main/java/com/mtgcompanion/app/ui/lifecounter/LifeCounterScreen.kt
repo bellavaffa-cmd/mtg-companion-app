@@ -65,6 +65,7 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -1020,7 +1021,7 @@ private fun DayNightPill(state: DayNight, onToggle: () -> Unit, onStop: () -> Un
             Icon(if (isDay) Icons.Filled.LightMode else Icons.Filled.DarkMode, contentDescription = null, tint = ink, modifier = Modifier.size(20.dp))
             TableLabel(if (isDay) "Day" else "Night", 26.sp, color = ink)
         }
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp).clickable(onClick = onStop)) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.minimumInteractiveComponentSize().size(32.dp).clickable(onClick = onStop)) {
             Icon(Icons.Filled.Close, contentDescription = "Stop tracking day and night", tint = ink, modifier = Modifier.size(16.dp))
         }
     }

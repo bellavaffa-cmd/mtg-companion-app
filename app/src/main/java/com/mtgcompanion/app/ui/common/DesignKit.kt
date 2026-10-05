@@ -16,6 +16,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -81,7 +90,8 @@ fun <T> popSpring() = spring<T>(dampingRatio = 0.55f, stiffness = Spring.Stiffne
  * so items scrolled into view later don't re-animate.
  */
 fun Modifier.riseIn(index: Int = 0, enabled: Boolean = true): Modifier = composed {
-    if (!enabled) return@composed this
+    // "Remove animations": everything is simply there.
+    if (!enabled || rememberReduceMotion()) return@composed this
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         delay((index.coerceAtMost(10) * 45L))
@@ -104,6 +114,7 @@ fun rememberEntranceWindow(millis: Long = 900): Boolean {
 
 /** Scales a badge or chip in from nothing with [popSpring] the first time it appears. */
 fun Modifier.popIn(): Modifier = composed {
+    if (rememberReduceMotion()) return@composed this
     val scale = remember { Animatable(0.3f) }
     LaunchedEffect(Unit) { scale.animateTo(1f, popSpring()) }
     this.graphicsLayer { scaleX = scale.value; scaleY = scale.value; alpha = ((scale.value - 0.3f) / 0.7f).coerceIn(0f, 1f) }
@@ -121,8 +132,12 @@ fun CountUpText(
     modifier: Modifier = Modifier,
     format: (Double) -> String = { "%,.0f".format(it) }
 ) {
-    val anim = remember { Animatable(0f) }
-    LaunchedEffect(value) { anim.animateTo(value.toFloat(), tween(if (anim.value == 0f) 900 else 500, easing = FastOutSlowInEasing)) }
+    val reduceMotion = rememberReduceMotion()
+    val anim = remember { Animatable(if (reduceMotion) value.toFloat() else 0f) }
+    LaunchedEffect(value) {
+        if (reduceMotion) anim.snapTo(value.toFloat())
+        else anim.animateTo(value.toFloat(), tween(if (anim.value == 0f) 900 else 500, easing = FastOutSlowInEasing))
+    }
     Text(format(anim.value.toDouble()), style = style, color = color, modifier = modifier, maxLines = 1)
 }
 
@@ -131,7 +146,9 @@ fun CountUpText(
 fun IdentityStrip(colors: List<String>, modifier: Modifier = Modifier, thickness: Dp = 3.dp) {
     val cs = colors.ifEmpty { listOf("C") }.map { ManaColors.of(it) }
     val brush = if (cs.size == 1) Brush.horizontalGradient(listOf(cs[0], cs[0])) else Brush.horizontalGradient(cs)
-    Box(modifier.height(thickness + 6.dp)) {
+    // Colour alone says which colours: TalkBack gets the words.
+    val name = colourIdentityName(colors)
+    Box(modifier.height(thickness + 6.dp).semantics { contentDescription = name }) {
         // Soft glow underneath, then the crisp bar.
         Box(Modifier.fillMaxWidth().height(thickness + 6.dp).graphicsLayer { alpha = 0.35f }.clip(RoundedCornerShape(50)).background(brush))
         Box(Modifier.align(Alignment.Center).fillMaxWidth().height(thickness).clip(RoundedCornerShape(50)).background(brush))
@@ -144,7 +161,9 @@ fun IdentityStrip(colors: List<String>, modifier: Modifier = Modifier, thickness
  */
 @Composable
 fun ManaPips(colors: List<String>, modifier: Modifier = Modifier, size: Dp = 16.dp) {
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = modifier) {
+    // One name for the set ("white and blue"), rather than a letter and a picture per pip.
+    val name = colourIdentityName(colors)
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = modifier.clearAndSetSemantics { contentDescription = name }) {
         colors.ifEmpty { listOf("C") }.forEach { c ->
             val code = c.uppercase().take(1)
             Box(
@@ -221,10 +240,12 @@ fun PillChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Mo
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
+            // A 48dp target round the 34dp pill; TalkBack reads it as a tickable choice.
+            .minimumInteractiveComponentSize()
             .pressScale(interaction)
             .clip(RoundedCornerShape(50))
             .background(if (selected) colors.textPrimary else colors.surface)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .toggleable(value = selected, interactionSource = interaction, indication = null, role = Role.Checkbox, onValueChange = { onClick() })
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
         Text(label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), color = if (selected) colors.bg else colors.textMuted, maxLines = 1)
@@ -274,9 +295,14 @@ fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 @Composable
 fun SectionHeader(title: String, modifier: Modifier = Modifier, action: String? = null, onAction: (() -> Unit)? = null) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier.fillMaxWidth()) {
-        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).a11yHeading(), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (action != null && onAction != null) {
-            Text(action, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), color = Gold, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAction).padding(6.dp))
+            Text(
+                action,
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
+                color = Gold,
+                modifier = Modifier.minimumInteractiveComponentSize().clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onAction).padding(6.dp)
+            )
         }
     }
 }
@@ -291,6 +317,8 @@ fun SegmentedTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, 
     val density = LocalDensity.current
     val xs = remember(labels.size) { mutableStateListOf(*Array(labels.size) { 0f }) }
     val ws = remember(labels.size) { mutableStateListOf(*Array(labels.size) { 0f }) }
+    // The tabs' height: 38dp, taller when a large font needs it — the highlight follows.
+    var tabHeight by remember { mutableStateOf(0) }
     val indX by animateDpAsState(with(density) { xs.getOrElse(selected) { 0f }.toDp() }, popSpring(), label = "tabX")
     val indW by animateDpAsState(with(density) { ws.getOrElse(selected) { 0f }.toDp() }, popSpring(), label = "tabW")
     Box(
@@ -301,19 +329,20 @@ fun SegmentedTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, 
             .padding(4.dp)
     ) {
         if (ws.getOrElse(selected) { 0f } > 0f) {
-            Box(Modifier.offset(x = indX).width(indW).height(38.dp).clip(RoundedCornerShape(12.dp)).background(colors.surface3))
+            val indH = with(density) { tabHeight.toDp() }.coerceAtLeast(38.dp)
+            Box(Modifier.offset(x = indX).width(indW).height(indH).clip(RoundedCornerShape(12.dp)).background(colors.surface3))
         }
-        Row {
+        Row(Modifier.selectableGroup()) {
             labels.forEachIndexed { i, label ->
                 val isSel = i == selected
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                     modifier = Modifier
-                        .height(38.dp)
-                        .onGloballyPositioned { xs[i] = it.positionInParentX(); ws[i] = it.size.width.toFloat() }
+                        .heightIn(min = 38.dp)
+                        .onGloballyPositioned { xs[i] = it.positionInParentX(); ws[i] = it.size.width.toFloat(); tabHeight = maxOf(tabHeight, it.size.height) }
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable { onSelect(i) }
+                        .selectable(selected = isSel, role = Role.Tab) { onSelect(i) }
                         .padding(horizontal = 14.dp)
                 ) {
                     Text(label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp), color = if (isSel) colors.textPrimary else colors.textMuted, maxLines = 1)
@@ -374,7 +403,7 @@ fun SearchPill(query: String, onQueryChange: (String) -> Unit, placeholder: Stri
         }
         if (query.isNotEmpty()) {
             Box(
-                Modifier.size(38.dp).clip(CircleShape).clickable { onQueryChange("") },
+                Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button) { onQueryChange("") },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Filled.Close, contentDescription = "Clear search", tint = app.textMuted, modifier = Modifier.size(18.dp))

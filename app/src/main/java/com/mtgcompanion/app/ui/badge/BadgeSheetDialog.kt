@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.badge
 
 import androidx.compose.foundation.background
+import com.mtgcompanion.app.ui.common.a11yPane
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +45,7 @@ fun BadgeSheetDialog(deck: Deck, initialTokenId: String?, onDismiss: () -> Unit)
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(
             Modifier
+                .a11yPane("Badge")
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.55f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)

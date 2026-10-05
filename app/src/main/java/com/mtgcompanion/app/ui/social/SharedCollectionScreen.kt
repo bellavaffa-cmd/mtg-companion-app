@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
 import com.mtgcompanion.app.ui.common.BackButton
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -118,7 +119,7 @@ fun SharedCollectionScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text(if (name != null) "$name's collection" else "Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { Text(if (name != null) "$name's collection" else "Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
@@ -149,7 +150,7 @@ fun SharedCollectionScreen(
                             item {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(if (l.shared.whole) "WHOLE COLLECTION" else "EVERYTHING SHARED WITH YOU", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-                                    Text("${l.shared.owner.displayName}'s collection", style = MaterialTheme.typography.headlineSmall)
+                                    Text("${l.shared.owner.displayName}'s collection", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.a11yHeading())
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Avatar(l.shared.owner, 28.dp)
                                         Text("Shared by ${l.shared.owner.displayName} ${l.shared.owner.handle}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)

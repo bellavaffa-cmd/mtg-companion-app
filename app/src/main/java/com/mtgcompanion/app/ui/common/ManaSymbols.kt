@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import coil.compose.AsyncImage
 
 /**
@@ -48,7 +50,8 @@ fun ManaSymbol(code: String, size: Dp = 14.dp, modifier: Modifier = Modifier) {
     Box(modifier = modifier.size(size).clipToBounds()) {
         AsyncImage(
             model = manaSymbolUrl(code),
-            contentDescription = code,
+            // Read as words ("white mana"), not "W" (A11yText.kt).
+            contentDescription = manaSymbolName(code),
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize()
         )
@@ -60,7 +63,9 @@ fun ManaSymbol(code: String, size: Dp = 14.dp, modifier: Modifier = Modifier) {
 fun ManaCost(cost: String, size: Dp = 16.dp, modifier: Modifier = Modifier) {
     val symbols = Regex("\\{([^}]+)\\}").findAll(cost).map { it.groupValues[1] }.toList()
     if (symbols.isEmpty()) return
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = modifier) {
+    // The whole cost in one go: "2 generic mana, white mana, white mana".
+    val spoken = remember(cost) { manaCostName(cost) }
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = modifier.clearAndSetSemantics { contentDescription = spoken }) {
         symbols.forEach { ManaSymbol(it, size = size) }
     }
 }
@@ -92,7 +97,8 @@ fun InlineManaText(
         matches.forEach { m ->
             append(text.substring(last, m.range.first))
             val code = m.value.removePrefix("{").removeSuffix("}")
-            appendInlineContent(code, m.value)
+            // The alternate text is what TalkBack reads in place of the picture: "Add green mana".
+            appendInlineContent(code, manaSymbolName(code))
             last = m.range.last + 1
         }
         append(text.substring(last))
@@ -104,7 +110,7 @@ fun InlineManaText(
         ) {
             AsyncImage(
                 model = manaSymbolUrl(code),
-                contentDescription = m.value,
+                contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()
             )

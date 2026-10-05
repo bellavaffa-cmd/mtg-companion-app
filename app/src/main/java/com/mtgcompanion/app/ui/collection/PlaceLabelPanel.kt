@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
 import androidx.compose.foundation.background
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -85,7 +86,7 @@ fun PlaceLabelPanel(
         }
         Column {
             if (where.isNotEmpty()) Text(where.uppercase(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = colors.textMuted)
-            Text(place.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = colors.textPrimary)
+            Text(place.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = colors.textPrimary, modifier = Modifier.a11yHeading())
             Text("$copies ${if (copies == 1) "copy" else "copies"}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
         }
         Button(

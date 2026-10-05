@@ -1,6 +1,9 @@
 package com.mtgcompanion.app.ui.collection
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -132,11 +135,13 @@ fun CollectionFilterPanel(
                 val isSelected = color in filter.colors
                 Box(
                     modifier = Modifier
+                        // 48dp to tap; TalkBack: "white mana, ticked".
+                        .minimumInteractiveComponentSize()
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(if (isSelected) Gold.copy(alpha = 0.22f) else Surface)
                         .border(BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) Gold else BorderColor), CircleShape)
-                        .clickable { onChange(filter.copy(colors = filter.colors.toggle(color))) },
+                        .toggleable(value = isSelected, role = Role.Checkbox) { onChange(filter.copy(colors = filter.colors.toggle(color))) },
                     contentAlignment = Alignment.Center
                 ) {
                     ManaSymbol(color.toString(), size = 24.dp)

@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
 import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.EmptyPrompt
 import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Inventory2
@@ -178,7 +179,7 @@ fun LoansScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Loans", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Loans", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )

@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.search
 
 import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.EmptyPrompt
 import com.mtgcompanion.app.ui.common.checkFor
 import com.mtgcompanion.app.ui.common.BackButton
@@ -132,7 +133,7 @@ fun SearchResultsScreen(
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text("Results", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                title = { Text("Results", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = {
                     BackButton(onClick = onBack)
                 },

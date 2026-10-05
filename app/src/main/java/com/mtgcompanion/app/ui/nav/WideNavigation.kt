@@ -1,6 +1,9 @@
 package com.mtgcompanion.app.ui.nav
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -267,10 +270,11 @@ private fun SideItem(icon: ImageVector, label: String, selected: Boolean, accent
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .height(46.dp)
+            // 48dp tall, so the row is a full finger target; TalkBack hears which one is current.
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(if (selected) app.accentGlow else androidx.compose.ui.graphics.Color.Transparent)
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 12.dp)
     ) {
         Icon(icon, contentDescription = null, tint = if (selected || accent) app.accent else app.textMuted, modifier = Modifier.size(21.dp))

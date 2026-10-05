@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
 import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.EmptyPrompt
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Star
@@ -206,7 +207,7 @@ fun CollectionDetailScreen(
                 onSelectAll = { selected = pickedIds + entries.map { it.scryfallId } },
                 onClear = { selected = emptySet() }
             ) else TopAppBar(
-                title = { Text(collection?.name ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                title = { Text(collection?.name ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = {
                     BackButton(onClick = onBack)
                 },

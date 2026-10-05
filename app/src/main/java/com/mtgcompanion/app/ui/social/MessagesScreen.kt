@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
 import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.ui.common.EmptyAction
 import com.mtgcompanion.app.ui.common.EmptyPrompt
@@ -103,7 +104,7 @@ fun MessagesScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Messages", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Messages", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
@@ -192,7 +193,7 @@ fun ConversationScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text(overview?.person(friendId)?.displayName ?: "Messages", style = MaterialTheme.typography.titleLarge) },
+                title = { Text(overview?.person(friendId)?.displayName ?: "Messages", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 actions = {
                     overview?.person(friendId)?.let { p ->

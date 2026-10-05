@@ -1,6 +1,10 @@
 package com.mtgcompanion.app.ui.decks
 
 import com.mtgcompanion.app.ui.common.BackButton
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -109,7 +113,7 @@ fun NewDeckScreen(viewModel: NewDeckViewModel, onBack: () -> Unit, onCreated: (d
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = {
                     BackButton(onClick = goBack)
                 },
@@ -213,11 +217,13 @@ private fun PickerStep(viewModel: NewDeckViewModel, state: NewDeckState) {
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
+                                .minimumInteractiveComponentSize()
                                 .size(40.dp)
                                 .clip(CircleShape)
                                 .background(if (selected) app.accent else app.surface)
-                                .border(1.dp, if (selected) app.accent else BorderColor, CircleShape)
-                                .clickable {
+                                // Picked: a thicker ring as well as the fill, so it isn't colour alone.
+                                .border(if (selected) 2.5.dp else 1.dp, if (selected) app.textPrimary else BorderColor, CircleShape)
+                                .toggleable(value = selected, role = Role.Checkbox) {
                                     val colours = if (selected) state.filter.colours - code else state.filter.colours + code
                                     viewModel.setFilter(state.filter.copy(colours = colours))
                                 }

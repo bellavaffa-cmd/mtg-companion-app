@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.ui.social
 
 import com.mtgcompanion.app.ui.common.BackButton
+import androidx.compose.material3.minimumInteractiveComponentSize
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -128,7 +130,7 @@ fun SharedItemScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 actions = {
                     // Block or report whoever shared it (not the user's own).
@@ -210,7 +212,7 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
                 deck.commander?.imageUrl?.let { AsyncImage(model = it.toArtCropUrl(), contentDescription = null, contentScale = ContentScale.Crop, alpha = 0.5f, modifier = Modifier.fillMaxSize()) }
                 Column(Modifier.align(Alignment.BottomStart).padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("${deck.mode.label} deck".uppercase(), style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-                    Text(deck.name, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(deck.name, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.a11yHeading())
                     OwnerLine(item)
                 }
             }
@@ -329,7 +331,7 @@ private fun SharedBinder(social: SocialRepository, item: SharedItem, ownerId: St
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(if (collection.type == "WISHLIST") "WISHLIST" else "BINDER", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-                    Text(collection.name, style = MaterialTheme.typography.headlineSmall)
+                    Text(collection.name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.a11yHeading())
                     OwnerLine(item)
                     Text(
                         "${collection.entries.sumOf { it.quantity }} cards · ${collection.entries.sumOf { it.foilQuantity }} foils · ${collection.entries.size} unique",
@@ -422,11 +424,11 @@ private fun MiniStepper(label: String, max: Int, value: Int, name: String, foil:
         Text(" $label ", style = MaterialTheme.typography.labelMedium)
         Text("of $max", style = MaterialTheme.typography.labelSmall, color = colors.textDim)
         val kind = if (foil) "foil " else ""
-        IconButton(onClick = { onChange(value - 1) }, enabled = value > 0, modifier = Modifier.size(34.dp).semantics { contentDescription = "One fewer $kind$name" }) {
+        IconButton(onClick = { onChange(value - 1) }, enabled = value > 0, modifier = Modifier.minimumInteractiveComponentSize().size(34.dp).semantics { contentDescription = "One fewer $kind$name" }) {
             Text("−", style = MaterialTheme.typography.titleMedium, color = if (value > 0) colors.textPrimary else colors.textDim)
         }
         Text("$value", style = MaterialTheme.typography.titleSmall)
-        IconButton(onClick = { onChange(value + 1) }, enabled = value < max, modifier = Modifier.size(34.dp).semantics { contentDescription = "One more $kind$name" }) {
+        IconButton(onClick = { onChange(value + 1) }, enabled = value < max, modifier = Modifier.minimumInteractiveComponentSize().size(34.dp).semantics { contentDescription = "One more $kind$name" }) {
             Text("+", style = MaterialTheme.typography.titleMedium, color = if (value < max) colors.textPrimary else colors.textDim)
         }
         Spacer(Modifier.size(2.dp))

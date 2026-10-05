@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
 import androidx.compose.foundation.background
+import com.mtgcompanion.app.ui.common.a11yPane
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -140,6 +141,7 @@ internal fun CompareScreen(deck: Deck, target: CompareTarget, onDismiss: () -> U
     val diff = diffDecks(deckCounts(deck), target.counts)
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(
+            modifier = Modifier.a11yPane("Compare"),
             containerColor = Bg,
             topBar = {
                 TopAppBar(

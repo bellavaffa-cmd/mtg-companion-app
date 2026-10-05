@@ -3,6 +3,13 @@ package com.mtgcompanion.app.ui.lifecounter
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import com.mtgcompanion.app.ui.common.SeatDamage
+import com.mtgcompanion.app.ui.common.seatDescription
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import com.mtgcompanion.app.data.social.Giphy
@@ -57,6 +64,7 @@ import androidx.compose.material.icons.filled.Castle
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -235,6 +243,15 @@ fun PlayerTile(
         }
     }
 
+    // The seat in words, whichever way the tile is turned. TalkBack reads it out (politely) once a run
+    // of taps has settled, not on every tap, and not when the tile first shows.
+    val description = seatDescriptionOf(player, opponents, out = defeatMessage != null)
+    var spoken by remember(player.id) { mutableStateOf(description) }
+    LaunchedEffect(description) {
+        delay(SETTLE_MILLIS)
+        spoken = description
+    }
+
     Box(
         modifier
             .fillMaxSize()
@@ -284,6 +301,21 @@ fun PlayerTile(
                 }
                 .clip(TileShape)
                 .background(if (hasImage) Color.Black else seat.color)
+                // One TalkBack stop for the seat; its buttons stay stops of their own. The cards the
+                // tile slides away to show are swipes, so they're offered as actions too.
+                .semantics(mergeDescendants = true) {
+                    contentDescription = spoken
+                    liveRegion = LiveRegionMode.Polite
+                    customActions = if (reveal == Reveal.NONE) {
+                        listOf(
+                            CustomAccessibilityAction("Options") { settle(Reveal.OPTIONS); true },
+                            CustomAccessibilityAction("Appearance") { settle(Reveal.APPEARANCE); true },
+                            CustomAccessibilityAction("Commander damage") { settle(Reveal.DAMAGE_END); true }
+                        )
+                    } else {
+                        listOf(CustomAccessibilityAction("Back to the life total") { settle(Reveal.NONE); true })
+                    }
+                }
                 .pointerInput(player.id) {
                     var horizontal: Boolean? = null
                     detectDragGestures(
@@ -458,7 +490,8 @@ fun PlayerTile(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { settle(Reveal.NONE) }
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "go back to the life total") { settle(Reveal.NONE) }
+                        .semantics { contentDescription = "Back to the life total" }
                 )
             }
         }
@@ -473,6 +506,25 @@ fun PlayerTile(
 }
 
 private const val OPEN_THRESHOLD = 0.22f
+
+/** How long a seat's life and damage must hold still before TalkBack reads them out. */
+private const val SETTLE_MILLIS = 1_200L
+
+/** The seat in words for TalkBack (A11yText.kt seatDescription; the web's PlayerTile.tsx seatSummaryOf). */
+internal fun seatDescriptionOf(player: PlayerLife, opponents: List<PlayerLife>, out: Boolean): String =
+    seatDescription(
+        seat = player.id,
+        name = player.name,
+        life = player.life,
+        poison = player.counter(PlayerCounter.POISON),
+        commanderDamage = opponents.flatMap { o ->
+            listOf(
+                SeatDamage(o.commander?.trim()?.takeIf { it.isNotEmpty() } ?: o.displayName, player.commanderDamage[CommanderSource(o.id, 0)] ?: 0),
+                SeatDamage("${o.displayName}'s partner", player.commanderDamage[CommanderSource(o.id, 1)] ?: 0)
+            )
+        },
+        out = out
+    )
 
 // ---- Turn and high roll ----
 
@@ -735,20 +787,24 @@ private fun LifeFace(
                 tween(TableMotion.FAST),
                 label = "feedbackAlpha"
             )
+            val verb = if (sign > 0) "Gain" else "Lose"
             Box(
                 contentAlignment = alignment,
-                modifier = areaModifier.combinedClickable(
-                    enabled = interactive,
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { change(sign * settings.tapAmount) },
-                    onLongClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        change(sign * settings.longPressAmount)
-                    }
-                )
+                modifier = areaModifier
+                    .combinedClickable(
+                        enabled = interactive,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onLongClickLabel = "${verb.lowercase()} ${settings.longPressAmount}",
+                        onClick = { change(sign * settings.tapAmount) },
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            change(sign * settings.longPressAmount)
+                        }
+                    )
+                    .semantics { contentDescription = "$verb ${settings.tapAmount} life, ${player.displayName}" }
             ) {
-                Text(label, style = tableText(feedbackSize, ink), modifier = edgePadding.graphicsLayer { this.alpha = alpha })
+                Text(label, style = tableText(feedbackSize, ink), modifier = edgePadding.graphicsLayer { this.alpha = alpha }.clearAndSetSemantics { })
             }
         }
 
@@ -792,9 +848,13 @@ private fun LifeFace(
                         it.clip(RoundedCornerShape(20.dp)).clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
+                            onClickLabel = "type a life total",
                             onClick = actions.openKeypad
-                        )
-                    } else it
+                        ).semantics { contentDescription = "${player.life} life" }
+                    } else {
+                        // The seat's own description already says it.
+                        it.clearAndSetSemantics { }
+                    }
                 }
         )
 
@@ -809,6 +869,7 @@ private fun LifeFace(
                     .align(Alignment.Center)
                     .fillMaxWidth(0.78f)
                     .graphicsLayer { translationY = (h / 4.2f).toPx(); alpha = numberAlpha }
+                    .clearAndSetSemantics { }
             )
         }
     }
@@ -917,20 +978,33 @@ private fun TileTopRow(
         if (isMonarch) TokenBadge(TokenKind.MONARCH, onClick = { onTokenTap(TokenKind.MONARCH) })
         if (hasInitiative) TokenBadge(TokenKind.INITIATIVE, onClick = { onTokenTap(TokenKind.INITIATIVE) })
         if (showDamage) {
+            val sorted = taken.entries.sortedBy { it.key.opponentId * 2 + it.key.slot }
+            // The dots only say whose by colour: TalkBack gets the names.
+            val spoken = "Commander damage received: " + sorted.joinToString(", ") { (source, damage) ->
+                val opponent = opponents.firstOrNull { it.id == source.opponentId }
+                val from = when {
+                    opponent == null -> "an opponent"
+                    source.slot == 1 -> "${opponent.displayName}'s partner"
+                    else -> opponent.commander?.trim()?.takeIf { it.isNotEmpty() } ?: opponent.displayName
+                }
+                "$damage from $from"
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(50))
                     .background(ink.copy(alpha = 0.14f))
-                    .clickable(onClick = onOpenDamage)
+                    .clickable(onClickLabel = "open commander damage", onClick = onOpenDamage)
+                    .semantics { contentDescription = spoken }
                     .padding(horizontal = 9.dp, vertical = 3.dp)
             ) {
-                Icon(Icons.Filled.Whatshot, contentDescription = "Commander damage received", tint = ink, modifier = Modifier.size(13.dp))
-                taken.entries.sortedBy { it.key.opponentId * 2 + it.key.slot }.forEach { (source, damage) ->
+                Icon(Icons.Filled.Whatshot, contentDescription = null, tint = ink, modifier = Modifier.size(13.dp))
+                sorted.forEach { (source, damage) ->
                     val opponent = opponents.firstOrNull { it.id == source.opponentId }
                     Box(Modifier.size(9.dp).clip(CircleShape).background(opponent?.let { paletteColor(it.colorIndex) } ?: ink))
-                    Text("$damage", style = tableText(17.sp, ink))
+                    Text("$damage", style = tableText(17.sp, ink), modifier = Modifier.clearAndSetSemantics { })
                 }
             }
         }
@@ -942,6 +1016,8 @@ private fun TokenBadge(kind: TokenKind, onClick: () -> Unit) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
+            // A 48dp target round the 32dp token.
+            .minimumInteractiveComponentSize()
             .popIn()
             .size(32.dp)
             .clip(CircleShape)
@@ -1231,6 +1307,7 @@ private fun CommanderDamageCard(
                     ) {
                         Row(Modifier.fillMaxSize()) {
                             listOf(-1, 1).forEach { delta ->
+                                val from = if (source.slot == 1) "${opponent.displayName}'s partner" else opponent.commander?.trim()?.takeIf { it.isNotEmpty() } ?: opponent.displayName
                                 Box(
                                     contentAlignment = if (delta < 0) Alignment.CenterStart else Alignment.CenterEnd,
                                     modifier = Modifier
@@ -1239,11 +1316,13 @@ private fun CommanderDamageCard(
                                         .combinedClickable(
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null,
+                                            onLongClickLabel = if (delta < 0) "5 less" else "5 more",
                                             onClick = { onAdjust(source, delta) },
                                             onLongClick = { onAdjust(source, delta * 5) }
                                         )
+                                        .semantics { contentDescription = "${if (delta < 0) "1 less" else "1 more"} commander damage from $from, now $damage" }
                                 ) {
-                                    TableLabel(if (delta < 0) "−" else "+", 22.sp, color = ink.copy(alpha = 0.3f), modifier = Modifier.padding(horizontal = 8.dp))
+                                    TableLabel(if (delta < 0) "−" else "+", 22.sp, color = ink.copy(alpha = 0.3f), modifier = Modifier.padding(horizontal = 8.dp).clearAndSetSemantics { })
                                 }
                             }
                         }
@@ -1315,20 +1394,33 @@ private fun CardTextField(value: String, placeholder: String, onValueChange: (St
 @Composable
 private fun StepperRow(label: String, value: Int, step: Int = 1, onAdjust: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        TableLabel(label, 22.sp, modifier = Modifier.weight(1f), maxLines = 1)
-        RoundStep("−") { onAdjust(-step) }
-        TableLabel("$value", 28.sp, align = TextAlign.Center, modifier = Modifier.width(44.dp))
-        RoundStep("+") { onAdjust(step) }
+        TableLabel(label, 22.sp, modifier = Modifier.weight(1f).clearAndSetSemantics { }, maxLines = 1)
+        RoundStep("−", "$step less, $label") { onAdjust(-step) }
+        // The count, read out (politely) as it changes: "Poison, 3".
+        TableLabel(
+            "$value",
+            28.sp,
+            align = TextAlign.Center,
+            modifier = Modifier.width(44.dp).semantics { contentDescription = "$label, $value"; liveRegion = LiveRegionMode.Polite }
+        )
+        RoundStep("+", "$step more, $label") { onAdjust(step) }
     }
 }
 
 @Composable
-private fun RoundStep(symbol: String, onClick: () -> Unit) {
+private fun RoundStep(symbol: String, description: String, onClick: () -> Unit) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(36.dp).clip(CircleShape).background(TableColors.SurfaceRaised).clickable(onClick = onClick)
+        modifier = Modifier
+            // A 48dp target round the 36dp circle.
+            .minimumInteractiveComponentSize()
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(TableColors.SurfaceRaised)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = description }
     ) {
-        TableLabel(symbol, 26.sp)
+        TableLabel(symbol, 26.sp, modifier = Modifier.clearAndSetSemantics { })
     }
 }
 

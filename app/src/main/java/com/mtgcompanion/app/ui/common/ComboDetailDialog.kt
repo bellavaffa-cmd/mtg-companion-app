@@ -62,10 +62,11 @@ fun ComboDetailDialog(combo: Variant, onDismiss: () -> Unit) {
     val context = LocalContext.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(
+            modifier = Modifier.a11yPane("Combo"),
             containerColor = Bg,
             topBar = {
                 TopAppBar(
-                    title = { Text("Combo", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    title = { Text("Combo", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                     navigationIcon = {
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Filled.Close, contentDescription = "Close", tint = Gold)

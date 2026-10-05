@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.ui.nav
 
 import com.mtgcompanion.app.data.usage.Usage
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
 import com.mtgcompanion.app.data.libraryFacts
 import com.mtgcompanion.app.tester.Tester
 import com.mtgcompanion.app.tester.TesterToolsScreen
@@ -1785,7 +1787,7 @@ private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean
         modifier = Modifier
             .weight(1f)
             .fillMaxHeight()
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .selectable(selected = selected, interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Tab, onClick = onClick)
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(23.dp))
         Spacer(Modifier.height(4.dp))

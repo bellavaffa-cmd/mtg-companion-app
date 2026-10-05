@@ -1,6 +1,9 @@
 package com.mtgcompanion.app.ui.social
 
 import com.mtgcompanion.app.data.usage.Usage
+import androidx.compose.material3.minimumInteractiveComponentSize
+import com.mtgcompanion.app.ui.common.a11yPane
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.background
@@ -110,7 +113,7 @@ fun TradesScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Trades", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Trades", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
@@ -333,7 +336,7 @@ fun TradeCardList(cards: List<TradeCard>, empty: String, onRemove: ((TradeCard) 
                     Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = colors.accent, modifier = Modifier.size(14.dp))
                     Text("Foil", style = MaterialTheme.typography.labelMedium, color = colors.accent)
                 }
-                if (onRemove != null) IconButton(onClick = { onRemove(c) }, modifier = Modifier.size(32.dp)) {
+                if (onRemove != null) IconButton(onClick = { onRemove(c) }, modifier = Modifier.minimumInteractiveComponentSize().size(32.dp)) {
                     Icon(Icons.Filled.Close, contentDescription = "Remove ${c.name}", tint = colors.textMuted, modifier = Modifier.size(18.dp))
                 }
             }
@@ -488,7 +491,7 @@ fun TradeComposerScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Propose a trade", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Propose a trade", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
@@ -613,7 +616,7 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
             }
         }
         Dialog(onDismissRequest = { picking = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Column(Modifier.fillMaxSize().background(colors.bg)) {
+            Column(Modifier.a11yPane(if (theirs) "${friend.displayName}'s binders" else "Your binders").fillMaxSize().background(colors.bg)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text(if (theirs) "${friend.displayName}'s binders" else "Your binders", style = MaterialTheme.typography.titleLarge)
