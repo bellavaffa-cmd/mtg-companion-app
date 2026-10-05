@@ -88,3 +88,18 @@ fun realCopiesLeaving(deck: Deck, entry: DeckCardEntry, newQuantity: Int): Int {
 /** [count] copies of [entry] as an Unsorted entry — a deck's card going back to the pile. */
 fun pileEntryOf(entry: DeckCardEntry, count: Int) =
     CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = count, backImageUrl = entry.backImageUrl, tags = entry.tags)
+
+/**
+ * The Unsorted pile's [entries] with [added] put in: copies of a printing already there are added to
+ * it. Mirrors the web app's intoPile in src/collection/unsorted.ts.
+ */
+fun intoPile(entries: List<CollectionEntry>, added: List<CollectionEntry>): List<CollectionEntry> {
+    var out = entries
+    for (a in added) {
+        val existing = out.firstOrNull { it.scryfallId == a.scryfallId }
+        out = if (existing != null) {
+            out.map { if (it === existing) it.copy(quantity = it.quantity + a.quantity, foilQuantity = it.foilQuantity + a.foilQuantity) else it }
+        } else out + a
+    }
+    return out
+}

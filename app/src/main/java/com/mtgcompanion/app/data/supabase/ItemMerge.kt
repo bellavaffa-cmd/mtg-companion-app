@@ -6,7 +6,9 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckVersion
 import com.mtgcompanion.app.data.GameResult
+import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
+import com.mtgcompanion.app.data.mergeCameFrom
 import com.mtgcompanion.app.data.mergeCopyPlaces
 import com.mtgcompanion.app.data.mergePlaceLists
 import com.mtgcompanion.app.data.tidied
@@ -28,6 +30,8 @@ import com.mtgcompanion.app.data.tidied
  *  - Where a binder card's copies are kept (its "places") merges line by line like the cards do, and
  *    the storage places themselves (on the Unsorted pile) place by place — see StoragePlaces.kt. A
  *    binder saved by an app that doesn't know about places leaves them as they were.
+ *  - Where a deck's copies came from (its "cameFrom", see PullList.kt) merges card by card the same
+ *    way; a deck saved by an app that doesn't know about it leaves it as it was.
  * The web app merges the same way — see MtgCompanionWeb/src/sync/mergeItems.ts.
  */
 object ItemMerge {
@@ -146,7 +150,12 @@ object ItemMerge {
     private const val MAX_VERSIONS = 40
 
     /** [minePreferred]: this device's edit is the more recent one, so it wins any field both changed. */
-    fun mergeDecks(base: Deck, mine: Deck, theirs: Deck, minePreferred: Boolean): Deck = theirs.copy(
+    fun mergeDecks(base: Deck, mine: Deck, theirs: Deck, minePreferred: Boolean): Deck =
+        // A side saved by an app that doesn't know where the deck's copies came from left that as it was.
+        mergeDecksKnowingCameFrom(base, keepCameFromFromOlderApp(base, mine), keepCameFromFromOlderApp(base, theirs), minePreferred)
+
+    private fun mergeDecksKnowingCameFrom(base: Deck, mine: Deck, theirs: Deck, minePreferred: Boolean): Deck = theirs.copy(
+        cameFrom = mergeCameFrom(base.cameFrom, mine.cameFrom, theirs.cameFrom),
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         gameMode = pick(base.gameMode, mine.gameMode, theirs.gameMode, minePreferred),
         ownership = pick(base.ownership, mine.ownership, theirs.ownership, minePreferred),

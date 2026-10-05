@@ -2,6 +2,7 @@ package com.mtgcompanion.app.data.supabase
 
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
 import com.squareup.moshi.JsonAdapter
 
@@ -246,9 +247,10 @@ internal class SyncCore(
         val inPull = rows.mapTo(HashSet()) { it.key }
         (again.filter { it.key !in inPull } + rows).forEach { row ->
             val taken = if (row.kind == "deck") {
+                // A deck saved by an app that doesn't know where its copies came from keeps this device's note.
                 takeRow(row, deckAdapter, deckChanges, { mine ->
-                    mine.copy(cards = emptyList(), considering = emptyList(), sideboard = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList())
-                }, merge = { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) })
+                    mine.copy(cards = emptyList(), considering = emptyList(), sideboard = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList(), cameFrom = null)
+                }, merge = { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) }, heal = { mine, theirs -> keepCameFromFromOlderApp(mine, theirs) })
             } else {
                 // First meeting: the places too are each device's own, kept as additions.
                 takeRow(
@@ -366,7 +368,7 @@ internal fun SyncCore.captureRescue(
  */
 internal fun rescueDecks(decks: List<Deck>, rescue: Rescue, adapter: JsonAdapter<Deck>): List<Deck> =
     rescueItems(decks, rescue, "deck", adapter, { it.id }, { mine ->
-        mine.copy(cards = emptyList(), considering = emptyList(), sideboard = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList())
+        mine.copy(cards = emptyList(), considering = emptyList(), sideboard = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList(), cameFrom = null)
     }) { b, m, t -> ItemMerge.mergeDecks(b, m, t, minePreferred = true) }
 
 /** The same, for binders. */

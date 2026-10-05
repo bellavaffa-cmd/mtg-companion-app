@@ -194,10 +194,39 @@ data class Deck(
      * together). JSON key "sideboard"; data saved before it existed reads as empty. Synced and
      * merged exactly like [considering].
      */
-    val sideboard: List<DeckCardEntry> = emptyList()
+    val sideboard: List<DeckCardEntry> = emptyList(),
+    /**
+     * Where the deck's real copies came from when they were pulled from storage with its pull list
+     * (PullList.kt), so taking it apart can put each back there. Null (left out of the JSON) until a
+     * card is first pulled into it; then kept, as an empty list once none are left — so a deck with no
+     * "cameFrom" key was written by an app that doesn't know about it. The web app's Deck.cameFrom,
+     * line for line.
+     */
+    val cameFrom: List<CameFrom>? = null
 ) {
     val mode: GameMode get() = GameMode.fromName(gameMode)
     val ownershipType: DeckOwnership get() = DeckOwnership.fromName(ownership)
+}
+
+// The deck's "cameFrom" as JSON — locally and in sync:
+//   "cameFrom": [{ "name": "Sol Ring", "placeId": "…", "qty": 1, "section": "Colourless" }, { "name": "Purphoros, God of the Forge", "placeId": "…", "qty": 1, "page": 5, "slot": 1, "foil": true }]
+// "foil", "section", "page" and "slot" left out when not said, as in a binder entry's "places".
+
+/**
+ * Copies of the card called [name] that were pulled into a deck from one spot of a storage place: a
+ * [CopyPlace] with the card's name. The web app's CameFrom, field for field (src/types/models.ts).
+ */
+data class CameFrom(
+    val name: String,
+    val placeId: String,
+    val qty: Int = 0,
+    val foil: Boolean? = null,
+    val section: String? = null,
+    val page: Int? = null,
+    val slot: Int? = null
+) {
+    /** The same without the name. */
+    val line: CopyPlace get() = CopyPlace(placeId, qty, foil, section, page, slot)
 }
 
 data class DeckStore(
