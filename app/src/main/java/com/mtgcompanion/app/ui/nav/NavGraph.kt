@@ -465,19 +465,7 @@ fun MtgNavGraph(
                     viewModel = viewModel,
                     onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
                     onOpenResults = { navController.navigate(Routes.SEARCH_RESULTS) },
-                    onOpenRules = { navController.navigateToTab(Routes.RULES) },
-                    onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } }
-                )
-            }
-
-            destination(Routes.GAME_NIGHT) {
-                val viewModel: GameNightViewModel = viewModel(
-                    factory = GameNightViewModel.Factory(LocalContext.current, deckRepository, socialRepository, lifeCounterSettingsRepository)
-                )
-                GameNightScreen(
-                    viewModel = viewModel,
-                    onBack = { navController.popBackStack() },
-                    onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) }
+                    onOpenRules = { navController.navigateToTab(Routes.RULES) }
                 )
             }
 
@@ -747,7 +735,19 @@ fun MtgNavGraph(
                     onStartGame = { navController.navigate(Routes.LIFE_COUNTER) },
                     onJoinTable = { navController.navigate(Routes.QR_SCAN) },
                     onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
-                    onOpenRules = { navController.navigateToTab(Routes.RULES) }
+                    onOpenRules = { navController.navigateToTab(Routes.RULES) },
+                    onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } }
+                )
+            }
+
+            destination(Routes.GAME_NIGHT) {
+                val viewModel: GameNightViewModel = viewModel(
+                    factory = GameNightViewModel.Factory(LocalContext.current, deckRepository, socialRepository, lifeCounterSettingsRepository)
+                )
+                GameNightScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) }
                 )
             }
 
