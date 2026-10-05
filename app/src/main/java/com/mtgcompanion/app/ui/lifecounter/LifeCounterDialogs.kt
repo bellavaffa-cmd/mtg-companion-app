@@ -342,6 +342,13 @@ private fun describeHistoryEntry(entry: HistoryEntry, nameOf: (Int) -> String): 
         is HistoryEvent.Rolled -> if (event.sides == 2) "$who flipped a coin: ${event.result}" else "$who rolled a d${event.sides}: ${event.result}"
         HistoryEvent.Conceded -> "$who conceded"
         is HistoryEvent.DeckToken -> "$who · ${event.name} tokens$change"
+        is HistoryEvent.Ventured -> if (event.completed) "$who completed the dungeon in ${event.room}" else "$who ventured into ${event.room}"
+        HistoryEvent.DungeonsCompleted -> "$who · dungeons completed$change"
+        is HistoryEvent.Mulligans -> when (event.value) {
+            null -> "$who · mulligans not recorded"
+            0 -> "$who kept seven"
+            else -> "$who · mulligans: ${event.value}"
+        }
     }
 }
 

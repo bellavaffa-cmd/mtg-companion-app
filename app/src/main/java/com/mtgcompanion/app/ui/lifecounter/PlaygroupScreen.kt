@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.data.mulliganSummary
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
@@ -201,6 +202,9 @@ private fun JustMe(decks: List<Deck>, onOpenDeck: (String) -> Unit) {
                 val length = listOfNotNull(stats.averageMinutes?.let { "$it min" }, stats.averageTurns?.let { "$it turns" })
                 if (length.isNotEmpty()) {
                     Text("A game takes about ${length.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(top = 4.dp))
+                }
+                mulliganSummary(stats.mulligans)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(top = 4.dp))
                 }
             }
         }

@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.ui.lifecounter
 
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -168,6 +170,7 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
     var highRoll by remember { mutableStateOf<HighRollResult?>(null) }
     var showHistory by remember { mutableStateOf(false) }
     var showTableGames by remember { mutableStateOf(false) }
+    var showChart by remember { mutableStateOf(false) }
     var commanderFor by remember { mutableStateOf<Int?>(null) }
     var meFor by remember { mutableStateOf<Int?>(null) }
     val decks by viewModel.decks.collectAsState()
@@ -293,7 +296,9 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                                     searchGiphy = { giphyPlayerId = player.id },
                                     pickCommander = { commanderFor = player.id },
                                     pickMe = if (decks.isNotEmpty()) ({ meFor = player.id }) else null,
-                                    meDeck = if (settings.meSeat == player.id) decks.firstOrNull { it.id == settings.meDeckId }?.name ?: "" else null
+                                    meDeck = if (settings.meSeat == player.id) decks.firstOrNull { it.id == settings.meDeckId }?.name ?: "" else null,
+                                    hasInitiative = player.id == initiativePlayerId,
+                                    freeMulligan = players.size > 2
                                 ),
                                 onTokenTap = { kind ->
                                     tokenStart = seatBounds[player.id]?.center
@@ -362,7 +367,8 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
                                 ToolItem("Exit", Icons.AutoMirrored.Filled.ExitToApp, onClick = onBack),
                                 ToolItem("High roll", Icons.Filled.Casino) { highRoll = viewModel.rollHighRoll() },
                                 ToolItem("Seating", Icons.Filled.EventSeat) { showSeating = true },
-                                ToolItem("Games", Icons.Filled.EmojiEvents) { showTableGames = true }
+                                ToolItem("Games", Icons.Filled.EmojiEvents) { showTableGames = true },
+                                ToolItem("Life chart", Icons.Filled.BarChart) { showChart = true }
                             )),
                             MenuSection("Table", listOf(
                                 ToolItem("Monarch", Icons.Filled.WorkspacePremium) {
@@ -473,6 +479,17 @@ fun LifeCounterScreen(viewModel: LifeCounterViewModel, onBack: () -> Unit) {
         }
         if (showHistory) {
             GameHistoryOverlay(entries = history, players = players, onDismiss = { showHistory = false })
+        }
+        if (showChart) {
+            TableOverlay(title = "Life chart", onClose = { showChart = false }) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
+                    GameChartView(
+                        log = viewModel.gameLog(),
+                        seats = players.map { ChartSeat(it.id, it.displayName, it.colorIndex) },
+                        ink = Color.White, muted = TableColors.TextMuted, line = TableColors.SurfaceRaised
+                    )
+                }
+            }
         }
         if (showTableGames) {
             TableGamesOverlay(tableGames, onDelete = { viewModel.deleteTableGame(it) }, onClear = { viewModel.clearTableGames() }, onDismiss = { showTableGames = false })
@@ -699,7 +716,9 @@ private fun LifeCounterViewModel.actionsFor(
     searchGiphy: () -> Unit,
     pickCommander: () -> Unit,
     pickMe: (() -> Unit)?,
-    meDeck: String?
+    meDeck: String?,
+    hasInitiative: Boolean,
+    freeMulligan: Boolean
 ) = PlayerTileActions(
     adjustLife = { adjust(id, it) },
     openKeypad = openKeypad,
@@ -723,7 +742,14 @@ private fun LifeCounterViewModel.actionsFor(
     pickCommander = pickCommander,
     pickMe = pickMe,
     meDeck = meDeck,
-    adjustToken = { tokenId, delta -> adjustToken(id, tokenId, delta) }
+    adjustToken = { tokenId, delta -> adjustToken(id, tokenId, delta) },
+    venture = { to, undercity -> ventureTo(id, to, undercity) },
+    leaveDungeon = { leaveDungeon(id) },
+    adjustDungeonsCompleted = { adjustDungeonsCompleted(id, it) },
+    setRingBearer = { setRingBearer(id, it) },
+    setMulligans = { setMulligans(id, it) },
+    hasInitiative = hasInitiative,
+    freeMulligan = freeMulligan
 )
 
 // ---- Defeat & victory messages ----

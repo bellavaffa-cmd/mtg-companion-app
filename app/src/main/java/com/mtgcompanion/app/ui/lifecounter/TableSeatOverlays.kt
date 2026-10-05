@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.mulliganText
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import kotlinx.coroutines.delay
@@ -167,6 +168,7 @@ internal fun MeSeatOverlay(
 @Composable
 internal fun TableGamesOverlay(games: List<TableGame>, onDelete: (String) -> Unit, onClear: () -> Unit, onDismiss: () -> Unit) {
     var confirmClear by remember { mutableStateOf(false) }
+    var charted by remember { mutableStateOf<String?>(null) }
     TableOverlay(title = "Games at this table", onClose = onDismiss) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             if (games.isEmpty()) {
@@ -203,12 +205,24 @@ internal fun TableGamesOverlay(games: List<TableGame>, onDelete: (String) -> Uni
                         )
                         game.players.forEach { p ->
                             TableLabel(
-                                (if (p.seat == game.winnerSeat) "★ " else "   ") + p.name + (p.commander?.let { " · $it" } ?: "") + (if (p.me) " · you" else ""),
+                                (if (p.seat == game.winnerSeat) "★ " else "   ") + p.name + (p.commander?.let { " · $it" } ?: "") + (if (p.me) " · you" else "") +
+                                    (p.mulligans?.let { " · ${mulliganText(it, game.players.size > 2)}" } ?: ""),
                                 17.sp,
                                 color = if (p.out == null) Color.White else TableColors.TextMuted,
                                 maxLines = 1,
                                 modifier = Modifier.padding(top = 3.dp)
                             )
+                        }
+                        game.log?.let { log ->
+                            TableLabel(
+                                if (charted == game.id) "Hide the chart" else "Life chart and recap",
+                                18.sp,
+                                color = TableColors.Yellow,
+                                modifier = Modifier.padding(top = 6.dp).clickable { charted = if (charted == game.id) null else game.id }.padding(vertical = 4.dp)
+                            )
+                            if (charted == game.id) {
+                                GameChartView(log, chartSeats(game), ink = Color.White, muted = TableColors.TextMuted, line = TableColors.SurfaceRaised, modifier = Modifier.padding(top = 6.dp))
+                            }
                         }
                     }
                 }

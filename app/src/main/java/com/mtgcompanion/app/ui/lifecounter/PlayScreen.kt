@@ -22,7 +22,15 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -134,10 +142,28 @@ private fun PlayRow(icon: ImageVector, title: String, subtitle: String, highligh
 @Composable
 private fun RecentGameRow(game: TableGame) {
     val colors = LocalAppColors.current
+    var chart by remember { mutableStateOf(false) }
+    val title = game.winner?.let { "${it.name} won" } ?: "Nobody left standing"
+    if (chart && game.log != null) {
+        AlertDialog(
+            onDismissRequest = { chart = false },
+            confirmButton = { TextButton(onClick = { chart = false }) { Text("Close") } },
+            title = { Text(title) },
+            text = {
+                game.log?.let { log ->
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        GameChartView(log, chartSeats(game), ink = colors.textPrimary, muted = colors.textMuted, line = colors.border)
+                    }
+                }
+            }
+        )
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface).padding(12.dp)
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface)
+            .then(if (game.log != null) Modifier.clickable(onClickLabel = "Life chart and recap") { chart = true } else Modifier)
+            .padding(12.dp)
     ) {
         Icon(Icons.Filled.EmojiEvents, contentDescription = null, tint = if (game.winner != null) colors.accent else colors.textDim, modifier = Modifier.size(20.dp))
         Column(Modifier.weight(1f)) {

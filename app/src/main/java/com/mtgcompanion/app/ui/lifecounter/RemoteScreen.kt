@@ -31,6 +31,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import com.mtgcompanion.app.data.mulliganText
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -253,9 +257,62 @@ fun RemoteScreen(viewModel: RemoteViewModel, onBack: () -> Unit) {
             RemoteSheet.COUNTERS -> if (mine != null) RmSheetBox("Counters", { sheet = null }) {
                 Stepper("Poison", mine.poison) { viewModel.send(RemoteActions.counter("poison", it)) }
                 PlayerCounter.entries.filter { it != PlayerCounter.POISON }.forEach { kind ->
-                    Stepper(kind.label, mine.counters[kind.wire()] ?: 0) { viewModel.send(RemoteActions.counter(kind.wire(), it)) }
+                    val value = mine.counters[kind.wire()] ?: 0
+                    val label = when {
+                        kind == PlayerCounter.SPEED && isMaxSpeed(value) -> "Speed · max speed"
+                        kind == PlayerCounter.RING -> "The Ring tempts you"
+                        else -> kind.label
+                    }
+                    Stepper(label, value) { viewModel.send(RemoteActions.counter(kind.wire(), it)) }
                 }
-                Text("Storm goes back to 0 when the turn passes.", color = RmMuted, fontSize = 13.sp)
+                Text("Storm goes back to 0 when the turn passes. Speed goes up at most once a turn and stops at 4.", color = RmMuted, fontSize = 13.sp)
+                val ring = mine.counters[PlayerCounter.RING.wire()] ?: 0
+                // Only from a table that knows the Ring-bearer, dungeons and mulligans (it says how many dungeons are done).
+                if (mine.dungeonsCompleted != null) {
+                    if (ring > 0) {
+                        Label("Your Ring-bearer")
+                        ringAbilities(ring).forEachIndexed { i, a -> Text("${i + 1}. $a", color = RmMuted, fontSize = 13.sp) }
+                        var bearer by remember(s?.gameId) { mutableStateOf(mine.ringBearer ?: "") }
+                        BasicTextField(
+                            value = bearer,
+                            onValueChange = { bearer = it.take(60) },
+                            singleLine = true,
+                            textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                            cursorBrush = SolidColor(RmGold),
+                            keyboardActions = KeyboardActions(onDone = { viewModel.send(RemoteActions.ringBearer(cleanRingBearer(bearer))) }),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            decorationBox = { inner ->
+                                Box {
+                                    if (bearer.isEmpty()) Text("Ring-bearer's name", color = RmMuted, fontSize = 16.sp)
+                                    inner()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(RmSurface).padding(12.dp)
+                        )
+                        if (cleanRingBearer(bearer) != mine.ringBearer) {
+                            RmButton("Save Ring-bearer", outlined = true) { viewModel.send(RemoteActions.ringBearer(cleanRingBearer(bearer))) }
+                        }
+                    }
+                    Label("Mulligans")
+                    val m = mine.mulligans
+                    Stepper(if (m == null) "Not recorded" else mulliganText(m, (s?.players?.size ?: 0) > 2), m ?: 0) { d ->
+                        val next = when {
+                            m == null -> if (d > 0) 1 else 0
+                            m + d < 0 -> null
+                            else -> minOf(7, m + d)
+                        }
+                        viewModel.send(RemoteActions.mulligan(next))
+                    }
+                    Label("Dungeon")
+                    VentureSection(
+                        dungeon = mine.dungeon,
+                        completed = mine.dungeonsCompleted ?: 0,
+                        hasInitiative = s?.initiative == mine.seat,
+                        ink = DungeonInk(RmText, RmMuted, RmRaised, RmYellow),
+                        onVenture = { to, undercity -> viewModel.send(RemoteActions.venture(to, undercity)) },
+                        onLeave = { viewModel.send(RemoteActions.leaveDungeon()) }
+                    )
+                }
             }
             RemoteSheet.BACKGROUND -> if (mine != null) BackgroundSheet(viewModel, mine, deck, onPickDeck = { sheet = RemoteSheet.DECK }, onClose = { sheet = null })
             RemoteSheet.DECK -> RmSheetBox("Your deck", { sheet = null }) {
