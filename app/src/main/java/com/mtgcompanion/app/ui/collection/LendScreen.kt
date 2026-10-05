@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -133,6 +135,7 @@ fun LendScreen(
         onChange { current -> lend(current, picks, loan) }
         val made = loansOf(after).firstOrNull { it.id == loan.id }
         if (made != null) {
+            Usage.action(UsageAction.LOAN_CREATED)
             val due = loanDue(made, dayOf(now), emptyList()).label
             CopyHistoryStore.record(picks.map { p ->
                 lentMove(now, MoveCard(p.source.name, p.source.scryfallId), p.qty, to, p.source.from, p.source.line?.placeId, if (due == "No date") null else due)

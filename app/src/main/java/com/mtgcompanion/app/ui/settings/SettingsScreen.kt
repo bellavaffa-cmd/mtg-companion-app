@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.settings
 
+import com.mtgcompanion.app.data.usage.Usage
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Block
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.ui.social.BlockedPeopleSection
@@ -126,7 +128,8 @@ enum class SettingsSection(val id: String, val title: String, val icon: ImageVec
     OFFLINE_SEARCH("offline-search", "Offline Search", Icons.Filled.CloudOff),
     CARD_RECOGNITION("card-recognition", "Card Recognition", Icons.Filled.CameraAlt),
     APP_UPDATES("app-updates", "App Updates", Icons.Filled.Autorenew),
-    BLOCKED("blocked", "Blocked people", Icons.Filled.Block);
+    BLOCKED("blocked", "Blocked people", Icons.Filled.Block),
+    PRIVACY("privacy", "Privacy", Icons.Filled.Shield);
 
     companion object {
         fun fromId(id: String?): SettingsSection? = entries.firstOrNull { it.id == id }
@@ -164,6 +167,7 @@ fun SettingsScreen(
     val offline by offlineCardRepository.status.collectAsState()
     val recognition by cardIndexRepository.status.collectAsState()
     val update by updateManager.state.collectAsState()
+    val usageOn by Usage.enabled.collectAsState()
 
     fun summaryOf(section: SettingsSection): String = when (section) {
         SettingsSection.ACCOUNT -> when {
@@ -192,6 +196,7 @@ fun SettingsScreen(
         SettingsSection.CARD_RECOGNITION -> if (recognition.ready) "${recognition.cardCount} card pictures" else "Downloads the first time you scan"
         SettingsSection.APP_UPDATES -> update.available?.let { "${it.headline} is available" } ?: "Version ${BuildConfig.VERSION_NAME}"
         SettingsSection.BLOCKED -> "People who can't see your things or contact you"
+        SettingsSection.PRIVACY -> if (usageOn) "Sharing anonymous usage counts" else "Not sharing usage counts"
     }
 
     Scaffold(
@@ -308,6 +313,7 @@ fun SettingsSectionScreen(
                 SettingsSection.CARD_RECOGNITION -> CardRecognitionSection(cardIndexRepository)
                 SettingsSection.APP_UPDATES -> AppUpdatesSection(updateManager)
                 SettingsSection.BLOCKED -> if (socialRepository != null) BlockedPeopleSection(socialRepository) else Text("Not available yet.", color = TextMuted)
+                SettingsSection.PRIVACY -> PrivacySection()
             }
         }
         }

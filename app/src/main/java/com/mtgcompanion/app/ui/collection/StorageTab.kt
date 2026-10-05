@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -340,6 +342,7 @@ fun PlaceDialog(place: StoragePlace?, parentId: String?, places: List<StoragePla
         if (name.isNotBlank()) {
             val list = sections.split(",").map { it.trim() }.filter { it.isNotEmpty() }
             val pocketCount = pockets.toIntOrNull()?.takeIf { it > 0 && it != DEFAULT_POCKETS }
+            if (place == null) Usage.action(UsageAction.PLACE_CREATED)
             onSave(StoragePlace(
                 id = place?.id ?: UUID.randomUUID().toString(),
                 name = name.trim(),

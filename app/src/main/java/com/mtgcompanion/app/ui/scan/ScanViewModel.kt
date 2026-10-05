@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.scan
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.tester.ScanOutcome
 import com.mtgcompanion.app.tester.Tester
 import kotlinx.coroutines.withTimeoutOrNull
@@ -1196,6 +1198,7 @@ class ScanViewModel(
     private fun addScannedCard(card: ScryfallCard, exact: Boolean = false): Long {
         // While a box label's sheet is up, cards wait.
         if (_labelPlace.value != null) return nextScanId++
+        Usage.action(UsageAction.CARD_SCANNED)
         _sort.value?.let { return sortCard(card, it) }
         _tickList.value?.let { return tickCard(card, it) }
         _putAwayTarget.value?.let { return putAwayCard(card, it) }

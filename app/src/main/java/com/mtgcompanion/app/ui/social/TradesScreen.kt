@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -553,6 +555,7 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
                     scope.launch {
                         try {
                             social.api.proposeTrade(friendId, draft.want, draft.give, draft.message.trim(), replying?.id)
+                            Usage.action(UsageAction.TRADE_PROPOSED)
                             social.draft = null
                             social.refresh()
                             onSent()

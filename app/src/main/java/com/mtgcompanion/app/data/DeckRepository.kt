@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.data
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.data.supabase.noteDeleted
 import android.content.Context
 import androidx.datastore.preferences.core.edit
@@ -27,6 +29,7 @@ class DeckRepository(private val context: Context) {
     suspend fun createDeck(name: String, gameMode: GameMode = GameMode.DEFAULT): Deck {
         val deck = Deck(id = UUID.randomUUID().toString(), name = name, gameMode = gameMode.name)
         update { it + deck }
+        Usage.action(UsageAction.DECK_CREATED)
         return deck
     }
 
@@ -54,6 +57,7 @@ class DeckRepository(private val context: Context) {
             partnerCommander = partnerCommander
         )
         update { it + deck }
+        Usage.action(UsageAction.DECK_CREATED)
         return deck
     }
 

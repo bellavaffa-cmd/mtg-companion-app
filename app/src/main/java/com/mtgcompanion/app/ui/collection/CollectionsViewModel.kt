@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.data.spares
 import com.mtgcompanion.app.data.spreadThin
 import com.mtgcompanion.app.data.Spare
@@ -176,6 +178,7 @@ class CollectionsViewModel(
     fun saveFilter(name: String, basic: CollectionFilter, advanced: AdvancedFilter) {
         val n = name.trim()
         if (n.isEmpty()) return
+        Usage.action(UsageAction.FILTER_SAVED)
         viewModelScope.launch {
             settingsRepository.updateSavedFiltersJson { json ->
                 val list = savedFiltersFromJson(json)

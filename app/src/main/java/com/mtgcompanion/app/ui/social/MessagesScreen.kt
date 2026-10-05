@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -253,6 +255,7 @@ private fun ConversationThread(social: SocialRepository, overview: Overview, oth
         scope.launch {
             try {
                 val sent = social.more.send(other, body)
+                Usage.action(UsageAction.MESSAGE_SENT)
                 stick = true
                 messages = mergeMessages(messages.orEmpty(), listOf(sent))
                 draft = ""
