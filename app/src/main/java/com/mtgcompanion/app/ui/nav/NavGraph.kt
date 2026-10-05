@@ -178,6 +178,9 @@ import com.mtgcompanion.app.ui.home.HomeScreen
 import com.mtgcompanion.app.ui.home.HomeViewModel
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterScreen
 import com.mtgcompanion.app.ui.lifecounter.PlayScreen
+import com.mtgcompanion.app.ui.lifecounter.GameNightStore
+import com.mtgcompanion.app.ui.lifecounter.LifeCounterSettings
+import com.mtgcompanion.app.ui.lifecounter.playGroupStatus
 import com.mtgcompanion.app.ui.tournament.EventScreen
 import com.mtgcompanion.app.ui.tournament.EventsScreen
 import com.mtgcompanion.app.ui.tournament.NewEventScreen
@@ -364,7 +367,7 @@ fun MtgNavGraph(
     // Scan's camera and the life counter's table run edge to edge, without the rail or sidebar.
     val showWideNav = layoutSize.isWide && currentRoute != Routes.SCAN && currentRoute != Routes.LIFE_COUNTER && currentRoute != Routes.REMOTE
 
-    // A tapped notification: open Friends, or Trades on top of it.
+    // A tapped notification: open Friends on the tab it's about.
     val openRequest by pendingOpen.collectAsState()
     LaunchedEffect(openRequest) {
         val open = openRequest ?: return@LaunchedEffect
@@ -383,9 +386,9 @@ fun MtgNavGraph(
             navController.navigate(Routes.collectionDetail(open.removePrefix("binder:"))) { launchSingleTop = true }
             return@LaunchedEffect
         }
+        // Friends, on the tab the notification is about ("friends" / "trades" / "messages"; FriendsTabs.kt).
+        socialRepository.openFriendsTab.value = open
         navController.navigateToTab(Routes.FRIENDS)
-        if (open == "trades") navController.navigate(Routes.TRADES) { launchSingleTop = true }
-        if (open == "messages") navController.navigate(Routes.MESSAGES) { launchSingleTop = true }
     }
 
     // Check GitHub for a newer release once on launch; the dialog below shows if one is found.
@@ -1119,9 +1122,21 @@ fun MtgNavGraph(
             }
 
             destination(Routes.PLAY) {
+                val context = LocalContext.current
                 val games by lifeCounterSettingsRepository.tableGamesFlow.collectAsState(initial = emptyList())
                 val remoteSeat by settingsRepository.remoteSeat.collectAsState(initial = null)
+                // What Play's start card and Your group tiles say: the table a game starts with,
+                // tonight's game night, the playgroup's games and the events on this phone.
+                val lifeSettings by lifeCounterSettingsRepository.settingsFlow.collectAsState(initial = LifeCounterSettings())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                val tournaments = remember { TournamentRepository(context.applicationContext) }
+                val events by tournaments.events.collectAsState(initial = emptyList())
+                remember { GameNightStore.init(context) }
+                val nights by GameNightStore.nights.collectAsState()
+                val status = remember(nights, decks, events) { playGroupStatus(nights.current, decks, events) }
                 PlayScreen(
+                    settings = lifeSettings,
+                    status = status,
                     games = games,
                     remoteSeat = remoteSeat,
                     onStartGame = { navController.navigate(Routes.LIFE_COUNTER) },
@@ -1230,17 +1245,18 @@ fun MtgNavGraph(
             destination(Routes.FRIENDS) {
                 FriendsScreen(
                     social = socialRepository,
+                    collectionRepository = collectionRepository,
                     onBack = { navController.popBackStack() },
                     onSignIn = signIn,
                     onScanQr = { navController.navigate(Routes.QR_SCAN) },
                     onOpenFriend = { id -> navController.navigate(Routes.friend(id)) },
                     onOpenShared = openShared,
                     onOpenSharedCollection = { owner -> navController.navigate(Routes.sharedCollection(owner)) },
-                    onOpenTrades = { navController.navigate(Routes.TRADES) },
                     onOpenSharedTab = { socialRepository.openSharedTab = true; navController.navigateToTab(Routes.COLLECTION) },
                     onOpenLoans = { navController.navigate(Routes.loans(borrowed = true)) },
+                    onCounterTrade = { id -> navController.navigate(Routes.tradeNew(id)) },
                     more = FriendsMoreActions(
-                        onOpenMessages = { navController.navigate(Routes.MESSAGES) },
+                        onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) },
                         onOpenForTrade = { navController.navigate(Routes.FOR_TRADE) },
                         onOpenActivity = { item ->
                             val owner = item.actor.userId

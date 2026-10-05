@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,10 +27,12 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -41,14 +46,35 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.SeatMemory
+import com.mtgcompanion.app.data.playgroupStats
+import com.mtgcompanion.app.data.tournament.Tournament
+import com.mtgcompanion.app.data.tournament.playoffChampion
 import com.mtgcompanion.app.ui.common.SectionHeader
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 
+/** What the Play tab's Your group tiles say about Game night, Playgroup and Events. */
+data class PlayGroupStatus(val gameNight: String, val playgroup: String, val events: String)
+
+/** Each of Your group's status lines (PlayHub.kt), from what's kept on this phone. */
+fun playGroupStatus(night: GameNight, decks: List<Deck>, events: List<Tournament>, now: Long = System.currentTimeMillis()): PlayGroupStatus {
+    val stats = playgroupStats(decks)
+    val running = events.count { !it.finished || (it.playoff != null && playoffChampion(it) == null) }
+    return PlayGroupStatus(
+        gameNight = gameNightStatus(night.players.size, night.pods.size, now - night.createdAt > NIGHT_STALE_MS),
+        playgroup = playgroupStatus(stats.games, stats.nemesis?.name),
+        events = eventsStatus(running, events.size)
+    )
+}
+
 /**
- * The Play tab: start a life counter game on this phone, join someone else's table with your phone
- * as the remote for your seat (or go back to the seat you're in), run a small event, and the games
- * played here.
+ * The Play tab, in three parts. Play now: start a game on this phone (the table it starts with, and
+ * who played last), join someone else's table with your phone as the remote for your seat, or go
+ * back to the seat you're in. Your group: Game night, Playgroup and Events, each with a line on where
+ * it stands. Recent games, each opening its life chart. Rules sits in the header (it has its own
+ * place in the wide layouts' rail too). The web app's twin is src/lifecounter/PlayPage.tsx; the
+ * status lines are PlayHub.kt (playHub.ts).
  */
 @Composable
 fun PlayScreen(
@@ -61,17 +87,27 @@ fun PlayScreen(
     /** Every deck's games together. */
     onOpenPlaygroup: () -> Unit = {},
     onOpenEvents: (() -> Unit)? = null,
-    onOpenGameNight: () -> Unit = {}
+    onOpenGameNight: () -> Unit = {},
+    settings: LifeCounterSettings = LifeCounterSettings(),
+    status: PlayGroupStatus? = null
 ) {
     val colors = LocalAppColors.current
+    var allGames by rememberSaveable { mutableStateOf(false) }
+    val players = TableLayouts.byId(settings.layoutId).playerCount
+    val startLine = startGameLine(players, settings.startingLifeFor(players)) +
+        (games.firstOrNull()?.let { g -> lastPlayersLine(g.players.map { it.name }) }?.let { " · $it" } ?: "")
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
     ) {
         item {
-            Text("Play", style = MaterialTheme.typography.headlineMedium, color = colors.textPrimary, modifier = Modifier.padding(top = 18.dp, bottom = 4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp)) {
+                Text("Play", style = MaterialTheme.typography.headlineMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+                IconButton(onClick = onOpenRules) { Icon(Icons.Filled.MenuBook, contentDescription = "Rules", tint = colors.textPrimary) }
+            }
         }
-        item { StartGameCard(onStartGame) }
+        item { SectionHeader("Play now") }
+        item { StartGameCard(startLine, onStartGame) }
         remoteSeat?.let { seat ->
             item {
                 PlayRow(Icons.Filled.EventSeat, "Back to seat ${seat.seat}", "You're still at a table — open your remote", highlight = true) {
@@ -79,24 +115,35 @@ fun PlayScreen(
                 }
             }
         }
-        item { PlayRow(Icons.Filled.Groups, "Game night", "Who's here, fair pods by power, and each pod's game") { onOpenGameNight() } }
         item { PlayRow(Icons.Filled.QrCodeScanner, "Join a table", "Scan a seat's QR code: your phone becomes your remote") { onJoinTable() } }
-        item { PlayRow(Icons.Filled.Leaderboard, "Playgroup", "Your record across every deck: who you play, your nemesis, your best decks") { onOpenPlaygroup() } }
-        onOpenEvents?.let { open ->
-            item { PlayRow(Icons.Filled.EmojiEvents, "Events", "Run a Swiss or Commander pod event: pairings, round clock, standings") { open() } }
+
+        item { SectionHeader("Your group", modifier = Modifier.padding(top = 10.dp)) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                PlayTile(Icons.Filled.Groups, "Game night", status?.gameNight ?: "Fair pods by power", onOpenGameNight)
+                PlayTile(Icons.Filled.Leaderboard, "Playgroup", status?.playgroup ?: "Your record", onOpenPlaygroup)
+                onOpenEvents?.let { open -> PlayTile(Icons.Filled.EmojiEvents, "Events", status?.events ?: "Swiss or Commander pods", open) }
+            }
         }
-        item { PlayRow(Icons.Filled.MenuBook, "Rules", "Look up a rule or a card's rulings") { onOpenRules() } }
-        item { SectionHeader("Recent games", modifier = Modifier.padding(top = 10.dp)) }
+
+        item {
+            SectionHeader(
+                "Recent games",
+                modifier = Modifier.padding(top = 10.dp),
+                action = if (games.size > RECENT_SHOWN) (if (allGames) "Fewer" else "All games") else null,
+                onAction = { allGames = !allGames }
+            )
+        }
         if (games.isEmpty()) {
             item { Text("Games played on this phone's life counter show up here.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted) }
         }
-        items(games.take(20), key = { it.id }) { game -> RecentGameRow(game) }
+        items(if (allGames) games else games.take(RECENT_SHOWN), key = { it.id }) { game -> RecentGameRow(game) }
         item { Box(Modifier.height(24.dp)) }
     }
 }
 
 @Composable
-private fun StartGameCard(onClick: () -> Unit) {
+private fun StartGameCard(line: String, onClick: () -> Unit) {
     val colors = LocalAppColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -112,8 +159,8 @@ private fun StartGameCard(onClick: () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             seats.forEach { c -> Box(Modifier.weight(1f).height(30.dp).clip(RoundedCornerShape(9.dp)).background(c)) }
         }
-        Text("Life counter", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-        Text("Start a game on this phone · up to 8 players, turn timer, deck tokens", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        Text("Start a game", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+        Text(line, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
     }
 }
 
@@ -136,6 +183,26 @@ private fun PlayRow(icon: ImageVector, title: String, subtitle: String, highligh
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = colors.textMuted, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** One of Your group's three: an icon, its name and a line on where it stands. */
+@Composable
+private fun RowScope.PlayTile(icon: ImageVector, title: String, status: String, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.surface)
+            .clickable(onClick = onClick)
+            .padding(12.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = colors.accent, modifier = Modifier.size(22.dp))
+        Text(title, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(status, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -176,6 +243,7 @@ private fun RecentGameRow(game: TableGame) {
         Column(horizontalAlignment = Alignment.End) {
             Text("${game.minutes} min", style = MaterialTheme.typography.bodySmall, color = colors.textPrimary)
             Text(clockDate(game.endedAt), style = MaterialTheme.typography.bodySmall, color = colors.textDim)
+            if (game.log != null) Text("Life chart", style = MaterialTheme.typography.bodySmall, color = colors.accent)
         }
     }
 }

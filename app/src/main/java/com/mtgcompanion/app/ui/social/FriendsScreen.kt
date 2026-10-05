@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
 import com.mtgcompanion.app.ui.common.BackButton
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
@@ -26,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Collections
@@ -51,6 +53,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +65,7 @@ import com.mtgcompanion.app.ui.common.SegmentedTabs
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -69,7 +73,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.social.ActivityItem
+import com.mtgcompanion.app.data.social.FriendsTab
+import com.mtgcompanion.app.data.social.FriendsWaiting
+import com.mtgcompanion.app.data.social.friendsTabCounts
+import com.mtgcompanion.app.data.social.friendsTabFor
+import com.mtgcompanion.app.data.social.friendsTabs
 import com.mtgcompanion.app.data.social.Overview
 import com.mtgcompanion.app.data.social.TradeMatch
 import com.mtgcompanion.app.data.social.Pod
@@ -84,42 +94,53 @@ import com.mtgcompanion.app.ui.common.readableWidth
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.launch
 
-/** Where the Friends screen's messages, activity, cards for trade and trade matches lead. */
+/** Where the Friends screen's conversations, activity, cards for trade and trade matches lead. */
 data class FriendsMoreActions(
-    val onOpenMessages: () -> Unit = {},
+    val onOpenConversation: (friendId: String) -> Unit = {},
     val onOpenForTrade: () -> Unit = {},
     val onOpenActivity: (ActivityItem) -> Unit = {},
     val onOpenMatch: (TradeMatch) -> Unit = {}
 )
 
 /**
- * Friends: the user's profile, adding friends by username or QR code, requests, pods, what friends
- * have shared, and trades.
+ * Friends, in four tabs (FriendsTabs.kt): People — adding friends, requests, friends, pods and
+ * what's shared with you; Messages; Trades — trades, cards for trade, trade matches and loans; and
+ * Activity. Messages and Activity need the server's social_more functions. The user's own profile and
+ * QR code open from the top bar. A tapped notification picks the tab (SocialRepository.openFriendsTab).
+ * The web app's twin is src/pages/FriendsPage.tsx.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendsScreen(
     social: SocialRepository,
+    collectionRepository: CollectionRepository,
     onBack: () -> Unit,
     onSignIn: () -> Unit,
     onScanQr: () -> Unit,
     onOpenFriend: (String) -> Unit,
     onOpenShared: (SharedSummary) -> Unit,
-    onOpenTrades: () -> Unit,
     onOpenSharedCollection: (String) -> Unit = {},
     onOpenSharedTab: () -> Unit = {},
     /** Loans: what friends have lent the user, and what the user lent (LoansScreen.kt). */
     onOpenLoans: () -> Unit = {},
+    /** A counter-offer to a trade: the composer, for that friend. */
+    onCounterTrade: (friendId: String) -> Unit = {},
     more: FriendsMoreActions = FriendsMoreActions()
 ) {
     val colors = LocalAppColors.current
+    // The user's own profile, over the tabs; Back closes it.
+    var profile by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = profile) { profile = false }
     Scaffold(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Friends", style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = { BackButton(onClick = onBack) },
-                actions = { IconButton(onClick = onScanQr) { Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan a QR code", tint = colors.textPrimary) } },
+                title = { Text(if (profile) "Your profile" else "Friends", style = MaterialTheme.typography.titleLarge) },
+                navigationIcon = { BackButton(onClick = { if (profile) profile = false else onBack() }) },
+                actions = {
+                    IconButton(onClick = onScanQr) { Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan a QR code", tint = colors.textPrimary) }
+                    if (!profile) IconButton(onClick = { profile = true }) { Icon(Icons.Filled.AccountCircle, contentDescription = "Your profile and QR code", tint = colors.textPrimary) }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
         }
@@ -127,7 +148,11 @@ fun FriendsScreen(
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.readableWidth(680.dp)) {
                 SocialGate(social, onSignIn) { overview ->
-                    FriendsContent(social, overview, onOpenFriend, onOpenShared, onOpenTrades, onOpenSharedCollection, onOpenSharedTab, onOpenLoans, more)
+                    if (profile) ProfileTab(social, overview.me!!)
+                    else FriendsContent(
+                        social, collectionRepository, overview, onOpenFriend, onOpenSharedTab, onOpenLoans, onCounterTrade, more,
+                        onShowQr = { profile = true }
+                    )
                 }
             }
         }
@@ -137,31 +162,65 @@ fun FriendsScreen(
 @Composable
 private fun FriendsContent(
     social: SocialRepository,
+    collectionRepository: CollectionRepository,
     overview: Overview,
     onOpenFriend: (String) -> Unit,
-    onOpenShared: (SharedSummary) -> Unit,
-    onOpenTrades: () -> Unit,
-    onOpenSharedCollection: (String) -> Unit,
     onOpenSharedTab: () -> Unit,
     onOpenLoans: () -> Unit,
-    more: FriendsMoreActions
+    onCounterTrade: (String) -> Unit,
+    more: FriendsMoreActions,
+    onShowQr: () -> Unit
+) {
+    val me = overview.me!!
+    val withMore = rememberSocialMore(social)
+    // The tab asked for (a FriendsTab key); shown only among the tabs there are.
+    var asked by rememberSaveable { mutableStateOf(FriendsTab.PEOPLE.key) }
+    val pending by social.openFriendsTab.collectAsState()
+    LaunchedEffect(pending) {
+        pending?.let { asked = it; social.openFriendsTab.value = null }
+    }
+    val tabs = friendsTabs(withMore)
+    val tab = friendsTabFor(asked, withMore)
+
+    var unread by remember { mutableIntStateOf(0) }
+    LaunchedEffect(withMore, overview, tab) { if (withMore == true) unread = runCatching { social.more.unread() }.getOrDefault(0) }
+    val requests = overview.friends.count { !it.accepted && it.incoming }
+    val inbox = overview.trades.count { com.mtgcompanion.app.data.social.waitingOnMe(it, me.userId) }
+
+    Column(Modifier.fillMaxSize()) {
+        SegmentedTabs(
+            labels = tabs.map { it.label },
+            selected = tabs.indexOf(tab).coerceAtLeast(0),
+            onSelect = { asked = tabs[it].key },
+            counts = friendsTabCounts(tabs, FriendsWaiting(requests = requests, unread = unread, trades = inbox)),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 6.dp)
+        )
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            when (tab) {
+                FriendsTab.PEOPLE -> PeopleTab(social, overview, onOpenFriend, onOpenSharedTab, onShowQr)
+                FriendsTab.MESSAGES -> ConversationList(social, overview, more.onOpenConversation)
+                FriendsTab.TRADES -> TradesTab(social, collectionRepository, overview, withMore == true, onOpenLoans, onCounterTrade, more)
+                FriendsTab.ACTIVITY -> ActivityList(social, header = {}, onOpen = more.onOpenActivity)
+            }
+        }
+    }
+}
+
+/** People: adding a friend, requests, friends, requests the user sent, pods, and the way to what's shared. */
+@Composable
+private fun PeopleTab(
+    social: SocialRepository,
+    overview: Overview,
+    onOpenFriend: (String) -> Unit,
+    onOpenSharedTab: () -> Unit,
+    onShowQr: () -> Unit
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
-    // What friends have lent the user (supabase/migrations/20261006010000_loans.sql) — nothing if the server can't say.
-    var borrowed by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) { runCatching { social.api.myBorrowedLoans() }.onSuccess { l -> borrowed = l.sumOf { b -> b.cards.sumOf { it.qty } } } }
     val me = overview.me!!
-    // 0: friends, 1: activity (when the server has it), then the user's own profile.
-    var tab by rememberSaveable { mutableIntStateOf(0) }
-    val withMore = rememberSocialMore(social) == true
-    val profileTab = if (withMore) 2 else 1
-    var unread by remember { mutableIntStateOf(0) }
-    LaunchedEffect(withMore, overview) { if (withMore) unread = runCatching { social.more.unread() }.getOrDefault(0) }
     var podDialog by remember { mutableStateOf<Pod?>(null) }
     var newPod by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val inbox = overview.trades.count { com.mtgcompanion.app.data.social.waitingOnMe(it, me.userId) }
 
     val incoming = overview.friends.filter { !it.accepted && it.incoming }
     val outgoing = overview.friends.filter { !it.accepted && !it.incoming }
@@ -174,68 +233,8 @@ private fun FriendsContent(
         }
     }
 
-    val waiting = incoming.size + inbox + unread
-    val tabs: @Composable () -> Unit = {
-        SegmentedTabs(
-            labels = if (withMore) listOf("Friends", "Activity", "Profile") else listOf("Friends", "Profile"),
-            selected = tab.coerceAtMost(profileTab),
-            onSelect = { tab = it },
-            counts = if (waiting > 0) mapOf(0 to waiting) else emptyMap(),
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-    }
-    if (tab >= profileTab) {
-        ProfileTab(social, me, tabs)
-        return
-    }
-    if (withMore && tab == 1) {
-        ActivityList(social, tabs, more.onOpenActivity)
-        return
-    }
-
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { tabs() }
-        item { AddFriend(social) }
-        item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.accentGlow).clickable(onClick = onOpenTrades).padding(14.dp)
-            ) {
-                Icon(Icons.Filled.SwapHoriz, contentDescription = null, tint = colors.accent)
-                Text("Trades", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                if (inbox > 0) CountBadge(inbox)
-                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
-            }
-        }
-        item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).clickable(onClick = onOpenLoans).padding(14.dp)
-            ) {
-                Icon(Icons.Filled.Handshake, contentDescription = null, tint = colors.accent)
-                Text(
-                    if (borrowed > 0) "Borrowed from friends: $borrowed ${if (borrowed == 1) "card" else "cards"}" else "Loans",
-                    style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f)
-                )
-                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
-            }
-        }
-        if (withMore) {
-            item(key = "messages") { MessagesRow(unread, more.onOpenMessages) }
-            item(key = "for-trade") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).clickable(onClick = more.onOpenForTrade).padding(14.dp)
-                ) {
-                    Icon(Icons.Filled.Sell, contentDescription = null, tint = colors.accent)
-                    Text("Your cards for trade", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
-                }
-            }
-        }
+        item { AddFriend(social, onShowQr) }
         error?.let { item { Notice(it, warn = true) } }
 
         if (incoming.isNotEmpty()) {
@@ -262,8 +261,6 @@ private fun FriendsContent(
                 }
             }
         }
-
-        if (withMore) item(key = "matches") { TradeMatchesBlock(social, overview, more.onOpenMatch) }
 
         if (outgoing.isNotEmpty()) {
             item { SectionHeader("Waiting for an answer") }
@@ -332,16 +329,62 @@ private fun FriendsContent(
     }
 }
 
+/** Trades: the way to the user's cards for trade and to loans, the trades themselves, and trade matches. */
+@Composable
+private fun TradesTab(
+    social: SocialRepository,
+    collectionRepository: CollectionRepository,
+    overview: Overview,
+    withMore: Boolean,
+    onOpenLoans: () -> Unit,
+    onCounterTrade: (String) -> Unit,
+    more: FriendsMoreActions
+) {
+    // What friends have lent the user (supabase/migrations/20261006010000_loans.sql) — nothing if the server can't say.
+    var borrowed by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { runCatching { social.api.myBorrowedLoans() }.onSuccess { l -> borrowed = l.sumOf { b -> b.cards.sumOf { it.qty } } } }
+    TradeList(
+        social, collectionRepository, overview, onCounterTrade, more.onOpenConversation,
+        header = {
+            if (withMore) item(key = "for-trade") { LinkRow(Icons.Filled.Sell, "Your cards for trade", more.onOpenForTrade) }
+            item(key = "loans") {
+                LinkRow(
+                    Icons.Filled.Handshake,
+                    if (borrowed > 0) "Borrowed / Lent · $borrowed ${if (borrowed == 1) "card" else "cards"} borrowed" else "Borrowed / Lent",
+                    onOpenLoans
+                )
+            }
+        },
+        footer = {
+            if (withMore) item(key = "matches") { TradeMatchesBlock(social, overview, more.onOpenMatch) }
+        }
+    )
+}
+
+/** A row that leads somewhere else: an icon, its name and a chevron. */
+@Composable
+private fun LinkRow(icon: ImageVector, title: String, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).clickable(onClick = onClick).padding(14.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = colors.accent)
+        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
+    }
+}
+
 /** The user's own profile: how others see them, their QR code, editing it, and notifications. */
 @Composable
-private fun ProfileTab(social: SocialRepository, me: Profile, tabs: @Composable () -> Unit) {
+private fun ProfileTab(social: SocialRepository, me: Profile) {
     val colors = LocalAppColors.current
     var editing by rememberSaveable { mutableStateOf(false) }
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)
     ) {
-        tabs()
         val card = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(colors.surface)
         if (editing) {
             Column(card.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -421,7 +464,7 @@ fun SharedRow(item: SharedSummary, owner: Profile?, onClick: () -> Unit) {
 }
 
 @Composable
-private fun AddFriend(social: SocialRepository) {
+private fun AddFriend(social: SocialRepository, onShowQr: () -> Unit) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     var username by remember { mutableStateOf("") }
@@ -466,6 +509,7 @@ private fun AddFriend(social: SocialRepository) {
             GoldButton("Add", ::add, enabled = !busy && username.isNotBlank())
         }
         message?.let { (ok, text) -> Text(text, style = MaterialTheme.typography.bodySmall, color = if (ok) colors.textMuted else colors.error) }
+        TextButton(onClick = onShowQr) { Text("Show my QR code", color = colors.accent) }
     }
 }
 
