@@ -84,7 +84,16 @@ data class ScryfallCard(
     /** "2024-08-02" — when this printing came out. The commander picker's "Newest" sort. */
     @Json(name = "released_at") val releasedAt: String? = null,
     /** Where EDHREC ranks the card by how many decks play it (1 = most). Absent for unplayed cards. */
-    @Json(name = "edhrec_rank") val edhrecRank: Int? = null
+    @Json(name = "edhrec_rank") val edhrecRank: Int? = null,
+    // Read by the All cards Advanced filters (ui/collection/AdvancedFilter.kt). A double-faced card
+    // keeps power, toughness, loyalty, artist and flavour text on its faces instead.
+    val loyalty: String? = null,
+    /** On the Reserved List: never to be reprinted. */
+    val reserved: Boolean? = null,
+    /** Printed with art over the whole card. */
+    @Json(name = "full_art") val fullArt: Boolean? = null,
+    val artist: String? = null,
+    @Json(name = "flavor_text") val flavorText: String? = null
 ) {
     val displayImageUrl: String?
         get() = imageUris?.normal ?: cardFaces?.firstOrNull()?.imageUris?.normal
@@ -185,7 +194,14 @@ data class ScryfallCardFace(
     @Json(name = "image_uris") val imageUris: ScryfallImageUris? = null,
     @Json(name = "oracle_text") val oracleText: String? = null,
     @Json(name = "type_line") val typeLine: String? = null,
-    @Json(name = "mana_cost") val manaCost: String? = null
+    @Json(name = "mana_cost") val manaCost: String? = null,
+    // Each face's own, for the All cards Advanced filters (ui/collection/AdvancedFilter.kt).
+    val colors: List<String>? = null,
+    val power: String? = null,
+    val toughness: String? = null,
+    val loyalty: String? = null,
+    val artist: String? = null,
+    @Json(name = "flavor_text") val flavorText: String? = null
 )
 
 data class ScryfallImageUris(

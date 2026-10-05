@@ -15,7 +15,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -94,9 +101,19 @@ val COLLECTION_FILTER_RARITIES = listOf("common", "uncommon", "rare", "mythic")
 
 private fun <T> Set<T>.toggle(item: T): Set<T> = if (item in this) this - item else this + item
 
-/** The filter's controls, shown under All cards' search field while it's opened. */
+/**
+ * The filter's controls, shown under All cards' search field while it's opened. At the bottom, the
+ * way to the Advanced filters screen (AdvancedFilterScreen.kt) and, while any filter is on
+ * ([anyOn]), Clear — which clears the advanced ones too.
+ */
 @Composable
-fun CollectionFilterPanel(filter: CollectionFilter, onChange: (CollectionFilter) -> Unit) {
+fun CollectionFilterPanel(
+    filter: CollectionFilter,
+    onChange: (CollectionFilter) -> Unit,
+    onAdvanced: () -> Unit,
+    onClear: () -> Unit,
+    anyOn: Boolean
+) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
@@ -106,14 +123,6 @@ fun CollectionFilterPanel(filter: CollectionFilter, onChange: (CollectionFilter)
             .border(BorderStroke(1.dp, BorderColor), RoundedCornerShape(8.dp))
             .padding(12.dp)
     ) {
-        if (filter.active) {
-            Text(
-                "Clear filters",
-                style = MaterialTheme.typography.labelMedium,
-                color = Gold,
-                modifier = Modifier.clickable { onChange(CollectionFilter()) }.padding(vertical = 4.dp)
-            )
-        }
         // Named as in Search.
         FilterText("Type", filter.type, "e.g. legendary creature") { onChange(filter.copy(type = it)) }
         FilterText("Text", filter.text, "e.g. draw a card") { onChange(filter.copy(text = it)) }
@@ -136,6 +145,16 @@ fun CollectionFilterPanel(filter: CollectionFilter, onChange: (CollectionFilter)
         }
         Text("Rarity", style = MaterialTheme.typography.labelMedium, color = GoldDim)
         FilterChips(COLLECTION_FILTER_RARITIES, filter.rarities) { onChange(filter.copy(rarities = filter.rarities.toggle(it))) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+            OutlinedButton(onClick = onAdvanced, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, BorderColor)) {
+                Icon(Icons.Filled.Tune, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Advanced filters", color = TextPrimary)
+            }
+            if (anyOn) {
+                TextButton(onClick = onClear) { Text("Clear", color = Gold) }
+            }
+        }
     }
 }
 

@@ -67,6 +67,7 @@ class SettingsRepository(private val context: Context) {
     private val cardOfDayNameKey = stringPreferencesKey("card_of_day_name")
     private val cardOfDayImageUrlKey = stringPreferencesKey("card_of_day_image_url")
     private val statsPanelsKey = stringSetPreferencesKey("deck_stats_panels")
+    private val savedFiltersKey = stringPreferencesKey("saved_filters")
 
 
     val searchViewMode: Flow<CardViewMode> = context.dataStore.data.map { CardViewMode.fromName(it[searchViewModeKey]) }
@@ -143,6 +144,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setStatsPanelOpen(id: String, open: Boolean) {
         context.dataStore.edit { it[statsPanelsKey] = StatsPanels.encode(StatsPanels.decode(it[statsPanelsKey]) + (id to open)) }
+    }
+
+    /**
+     * All cards' saved filters ("Save as…" on Advanced filters), as JSON — written and read by
+     * ui/collection/AdvancedFilter.kt, the same text the web app keeps. On this device only, like
+     * every other setting.
+     */
+    val savedFiltersJson: Flow<String?> = context.dataStore.data.map { it[savedFiltersKey] }
+
+    /** Rewrites the saved filters' JSON from what's stored now, in one edit. */
+    suspend fun updateSavedFiltersJson(transform: (String?) -> String) {
+        context.dataStore.edit { it[savedFiltersKey] = transform(it[savedFiltersKey]) }
     }
 
     suspend fun setGridColumns(columns: Int) {

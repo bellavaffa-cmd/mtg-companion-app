@@ -63,6 +63,8 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -114,6 +116,8 @@ import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
 import com.mtgcompanion.app.ui.theme.GoldDim
 import com.mtgcompanion.app.ui.theme.GoldLight
+import com.mtgcompanion.app.ui.theme.OnGold
+import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
@@ -176,17 +180,31 @@ fun CollectionsScreen(
     // Color, type and rarity, as in Search — narrowing the same list the search field does.
     var cardFilter by remember { mutableStateOf(CollectionFilter()) }
     val cardFacts by viewModel.cardFacts.collectAsState()
-    val filtered = remember(allCards, query, tagVersion, sparesOnly, spares, cardFilter, cardFacts) {
-        val spareIds = spares.map { it.entry.scryfallId }.toSet()
+    // The Advanced filters (a screen of their own, AdvancedFilterScreen.kt), on top of the panel's.
+    var advFilter by remember { mutableStateOf(AdvancedFilter()) }
+    var advancedOpen by remember { mutableStateOf(false) }
+    val advancedFacts by viewModel.advancedFacts.collectAsState()
+    val copyFacts by viewModel.copyFacts.collectAsState()
+    val savedFilters by viewModel.savedFilters.collectAsState()
+    val money = rememberMoney()
+    val filtering = cardFilter.active || advFilter.active
+    val spareIds = remember(spares) { spares.map { it.entry.scryfallId }.toSet() }
+    val named = remember(allCards, query, tagVersion) {
         // "proxy" reads as a tag of its own, so a search finds the cards standing in for real ones.
-        val named = if (query.isBlank()) allCards
+        if (query.isBlank()) allCards
         else allCards.filter { card ->
             val tags = RoleTags.tagsOf(card.name).orEmpty() + if (card.proxies > 0) listOf("proxy") else emptyList()
             RoleTags.matches(card.name, tags, query)
         }
-        val matching = if (cardFilter.active) named.filter { cardFilter.matches(cardFacts[it.scryfallId]) } else named
-        if (sparesOnly) matching.filter { it.scryfallId in spareIds } else matching
     }
+    // The panel's filters and the advanced ones; a card whose data hasn't loaded is left out while either is on.
+    fun passes(card: AllCardEntry, basic: CollectionFilter, adv: AdvancedFilter): Boolean =
+        basic.matches(cardFacts[card.scryfallId]) &&
+            advancedMatches(adv, advancedFacts[card.scryfallId], copyFacts[card.scryfallId]) { money.toUsd(it) }
+    val filtered = remember(named, sparesOnly, spareIds, cardFilter, cardFacts, advFilter, advancedFacts, copyFacts, money) {
+        named.filter { (!filtering || passes(it, cardFilter, advFilter)) && (!sparesOnly || it.scryfallId in spareIds) }
+    }
+    val clearFilters = { cardFilter = CollectionFilter(); advFilter = AdvancedFilter() }
     // Cards picked on All cards by pressing and holding (scryfall ids), and the action open for
     // them: "binder", "deck", "export" or "remove". Cards no longer owned drop from the pick.
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -275,6 +293,12 @@ fun CollectionsScreen(
                         onQueryChange = { query = it },
                         cardFilter = cardFilter,
                         onCardFilterChange = { cardFilter = it },
+                        filtersOn = cardFilter.count + advFilter.count,
+                        filtering = filtering,
+                        chips = filterChips(cardFilter, advFilter, { id -> collections.firstOrNull { it.id == id }?.name }) { money.formatLocal(it) },
+                        onRemoveChip = { key -> val (b, a) = removeChip(cardFilter, advFilter, key); cardFilter = b; advFilter = a },
+                        onClearFilters = clearFilters,
+                        onOpenAdvanced = { advancedOpen = true },
                         filtered = filtered,
                         selecting = selecting,
                         pickedIds = pickedIds,
@@ -306,6 +330,23 @@ fun CollectionsScreen(
                 }
             }
         }
+    }
+
+    if (advancedOpen) {
+        AdvancedFilterScreen(
+            basic = cardFilter,
+            advanced = advFilter,
+            countFor = { b, a -> named.count { passes(it, b, a) && (!sparesOnly || it.scryfallId in spareIds) } },
+            binders = collections.filter { it.kind == CollectionType.OWNED }.sortedBy { it.name.lowercase() }.map { it.id to it.name },
+            sets = allCards.mapNotNull { c -> cardFacts[c.scryfallId]?.takeIf { it.set.isNotBlank() }?.let { it.set to it.setName.ifBlank { it.set.uppercase() } } }
+                .distinctBy { it.first }.sortedBy { it.second.lowercase() },
+            saved = savedFilters,
+            onSave = viewModel::saveFilter,
+            onRename = viewModel::renameFilter,
+            onDelete = viewModel::deleteFilter,
+            onApply = { b, a -> cardFilter = b; advFilter = a; advancedOpen = false },
+            onDismiss = { advancedOpen = false }
+        )
     }
 
     val pickedLabel = if (picked.size == 1) picked.first().name else "${picked.size} cards"
@@ -437,6 +478,13 @@ private fun AllCardsTab(
     onQueryChange: (String) -> Unit,
     cardFilter: CollectionFilter,
     onCardFilterChange: (CollectionFilter) -> Unit,
+    /** Basic and advanced filters on, for the badge; whether any is; and a chip for each. */
+    filtersOn: Int,
+    filtering: Boolean,
+    chips: List<ActiveChip>,
+    onRemoveChip: (String) -> Unit,
+    onClearFilters: () -> Unit,
+    onOpenAdvanced: () -> Unit,
     filtered: List<AllCardEntry>,
     selecting: Boolean,
     pickedIds: Set<String>,
@@ -454,6 +502,7 @@ private fun AllCardsTab(
     // Name of the card whose "find similar" overlay is open, if any.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
     var filterOpen by remember { mutableStateOf(false) }
+    val money = rememberMoney()
     val gridCols = adaptiveGridColumns(gridColumns)
     val listCols = adaptiveListColumns()
 
@@ -499,18 +548,22 @@ private fun AllCardsTab(
                     ),
                     trailingIcon = {
                         IconButton(onClick = { filterOpen = !filterOpen }) {
-                            Icon(
-                                Icons.Filled.FilterList,
-                                contentDescription = if (cardFilter.active) "Filters, ${cardFilter.count} on" else "Filters",
-                                tint = if (cardFilter.active || filterOpen) Gold else TextMuted
-                            )
+                            BadgedBox(badge = { if (filtersOn > 0) Badge(containerColor = Gold, contentColor = OnGold) { Text("$filtersOn") } }) {
+                                Icon(
+                                    Icons.Filled.FilterList,
+                                    contentDescription = if (filtering) "Filters, $filtersOn on" else "Filters",
+                                    tint = if (filtering || filterOpen) Gold else TextMuted
+                                )
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
             if (filterOpen) {
-                item { CollectionFilterPanel(cardFilter, onCardFilterChange) }
+                item { CollectionFilterPanel(cardFilter, onCardFilterChange, onAdvanced = onOpenAdvanced, onClear = onClearFilters, anyOn = filtering) }
+            } else if (filtering) {
+                item { ActiveFilterChips(chips, onRemoveChip, onClearFilters) }
             }
             if (spares > 0) {
                 item {
@@ -546,7 +599,11 @@ private fun AllCardsTab(
                 }
             }
             item {
-                val label = if (query.isBlank() && !cardFilter.active) {
+                val label = if (filtering) {
+                    // The cards shown and what they're worth (proxies are worth nothing).
+                    val value = filtered.sumOf { (prices[it.scryfallId] ?: 0.0) * (it.total - it.proxies) }
+                    "${filtered.size} ${if (filtered.size == 1) "card" else "cards"}" + if (prices.isNotEmpty()) " · ${money.format(value)}" else ""
+                } else if (query.isBlank()) {
                     "${allCards.sumOf { it.total }} cards · ${allCards.size} unique (across all binders & decks)"
                 } else {
                     "${filtered.size} of ${allCards.size} unique match"
@@ -555,7 +612,7 @@ private fun AllCardsTab(
             }
             if (filtered.isEmpty()) {
                 item {
-                    Text(if (cardFilter.active) "No cards match these filters." else "No cards match \"$query\".", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    Text(if (filtering) "No cards match these filters." else "No cards match \"$query\".", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 }
             } else {
                 if (viewMode == CardViewMode.GRID) {

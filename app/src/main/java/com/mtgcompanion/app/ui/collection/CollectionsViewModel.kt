@@ -149,11 +149,56 @@ class CollectionsViewModel(
         fetchPrices(cardRepository, entries.map { it.scryfallId })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    /** scryfallId -> colors, type and rarity of each owned card, for the All cards filter. */
-    val cardFacts: StateFlow<Map<String, CardFacts>> = allCards.mapLatest { entries ->
+    /** scryfallId -> Scryfall's data for each owned card, for the All cards filters. Empty until loaded. */
+    private val ownedCards: StateFlow<Map<String, ScryfallCard>> = allCards.mapLatest { entries ->
         if (entries.isEmpty()) emptyMap()
-        else cardRepository.getCardsByIds(entries.map { it.scryfallId }).associate { it.id to CardFacts.of(it) }
+        else cardRepository.getCardsByIds(entries.map { it.scryfallId }).associateBy { it.id }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** scryfallId -> colors, type and rarity of each owned card, for the All cards filter. */
+    val cardFacts: StateFlow<Map<String, CardFacts>> = ownedCards.map { cards -> cards.mapValues { CardFacts.of(it.value) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** scryfallId -> what the Advanced filters judge each owned card by (see AdvancedFilter.kt). */
+    val advancedFacts: StateFlow<Map<String, AdvancedFacts>> = ownedCards.map { cards -> cards.mapValues { advancedFactsOf(it.value) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** scryfallId -> the copies owned (finish, condition, language, binders, decks), for Your copies. */
+    val copyFacts: StateFlow<Map<String, CopyFacts>> =
+        combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks -> copyFactsOf(collections, decks) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** The filters saved by name on Advanced filters, kept on this device. */
+    val savedFilters: StateFlow<List<SavedFilter>> = settingsRepository.savedFiltersJson.map { savedFiltersFromJson(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Saves the filters under [name]; one already called that is replaced. */
+    fun saveFilter(name: String, basic: CollectionFilter, advanced: AdvancedFilter) {
+        val n = name.trim()
+        if (n.isEmpty()) return
+        viewModelScope.launch {
+            settingsRepository.updateSavedFiltersJson { json ->
+                val list = savedFiltersFromJson(json)
+                val same = list.firstOrNull { it.name.equals(n, ignoreCase = true) }
+                val item = SavedFilter(same?.id ?: java.util.UUID.randomUUID().toString(), n, basic, advanced)
+                savedFiltersToJson(if (same != null) list.map { if (it.id == same.id) item else it } else list + item)
+            }
+        }
+    }
+
+    fun renameFilter(id: String, name: String) {
+        val n = name.trim()
+        if (n.isEmpty()) return
+        viewModelScope.launch {
+            settingsRepository.updateSavedFiltersJson { json -> savedFiltersToJson(savedFiltersFromJson(json).map { if (it.id == id) it.copy(name = n) else it }) }
+        }
+    }
+
+    fun deleteFilter(id: String) {
+        viewModelScope.launch {
+            settingsRepository.updateSavedFiltersJson { json -> savedFiltersToJson(savedFiltersFromJson(json).filterNot { it.id == id }) }
+        }
+    }
 
     /**
      * Where the collection's value sits (by set, colour, rarity, type) and its dearest cards, for the
