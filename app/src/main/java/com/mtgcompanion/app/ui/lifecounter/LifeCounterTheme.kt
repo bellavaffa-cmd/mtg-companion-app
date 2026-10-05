@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -122,15 +123,32 @@ fun seatColor(index: Int): SeatColor = PlayerPalette[Math.floorMod(index, Player
 
 fun paletteColor(index: Int): Color = seatColor(index).color
 
+/**
+ * A cubic-bezier easing that can't crash. Compose's own [CubicBezierEasing] throws "has no solution"
+ * for some curves at a fraction a hair below 1 (a float rounding bug; tester crash report from build
+ * 13, the 0.36/0.62/0.48/1 slide), which takes the whole app down mid-animation. The ends are pinned,
+ * and if the solver still gives up the animation just jumps to where it was going.
+ */
+fun safeCubicEasing(a: Float, b: Float, c: Float, d: Float): Easing {
+    val curve = CubicBezierEasing(a, b, c, d)
+    return Easing { fraction ->
+        when {
+            fraction <= 0f -> 0f
+            fraction >= 0.9999f -> 1f
+            else -> try { curve.transform(fraction) } catch (_: IllegalArgumentException) { fraction }
+        }
+    }
+}
+
 object TableMotion {
     const val FAST = 300
     const val MENU_CHIPS = 500
     /** Springy pop with a visible overshoot — buttons appearing. */
-    val PopOvershoot = CubicBezierEasing(0.49f, 0.2f, 0.19f, 1.48f)
+    val PopOvershoot = safeCubicEasing(0.49f, 0.2f, 0.19f, 1.48f)
     /** A gentler pop — result text appearing. */
-    val Pop = CubicBezierEasing(0.5f, 0.3f, 0.2f, 1.4f)
+    val Pop = safeCubicEasing(0.5f, 0.3f, 0.2f, 1.4f)
     /** Panels sliding up from the bottom. */
-    val SlideIn = CubicBezierEasing(0.36f, 0.62f, 0.48f, 1f)
+    val SlideIn = safeCubicEasing(0.36f, 0.62f, 0.48f, 1f)
 }
 
 fun tableText(size: TextUnit, color: Color = Color.White) =
@@ -158,7 +176,7 @@ fun TableLabel(
 
 /** Scales from 0 to full size with an overshoot the first time it appears. */
 @Composable
-fun Modifier.popIn(delayMillis: Int = 0, easing: CubicBezierEasing = TableMotion.PopOvershoot): Modifier {
+fun Modifier.popIn(delayMillis: Int = 0, easing: Easing = TableMotion.PopOvershoot): Modifier {
     val scale = remember { Animatable(0f) }
     LaunchedEffect(Unit) { scale.animateTo(1f, tween(TableMotion.FAST, delayMillis, easing)) }
     return graphicsLayer { scaleX = scale.value; scaleY = scale.value; alpha = scale.value.coerceIn(0f, 1f) }

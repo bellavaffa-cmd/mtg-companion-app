@@ -8,7 +8,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -813,7 +812,7 @@ private fun MenuButton(open: Boolean, onClick: () -> Unit, modifier: Modifier = 
 private class ToolItem(val label: String, val icon: ImageVector, val enabled: Boolean = true, val onClick: () -> Unit)
 
 /** CSS ease-out, which Lotus's chip entrance runs its keyframes on. */
-private val EaseOut = CubicBezierEasing(0f, 0f, 0.58f, 1f)
+private val EaseOut = safeCubicEasing(0f, 0f, 0.58f, 1f)
 
 /** (progress, rise as a fraction of the chip's height, rotation°) — each chip springs up and wobbles to rest. */
 private val ChipKeys = listOf(

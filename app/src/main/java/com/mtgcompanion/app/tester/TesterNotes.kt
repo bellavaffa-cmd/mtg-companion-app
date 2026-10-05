@@ -9,6 +9,21 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "binder-pages",
+        "Binder pages and fitting cards in order",
+        "Open a binder in Storage › Pages: flip through (arrows or swipe), tap a card, try Move and Edit (swap two pockets). Give the binder an order in Change place, put a few cards away into it, then Fit in order: follow the steps with real cards and check Show on pages matches your binder."
+    ),
+    TesterNote(
+        "box-check",
+        "Checking a box",
+        "Open a box › Check, pick a section, and scan everything in it, including a card that belongs elsewhere. Finish check: the missing and extra cards should be right. Try Record them here, then check Last checked shows on the box."
+    ),
+    TesterNote(
+        "lifecounter-crash",
+        "Life counter crash fixed",
+        "Build 13 could crash while a life counter panel slid in. Open and close the life counter menus and dialogs a few times: nothing should crash."
+    ),
+    TesterNote(
         "pull-list",
         "Pull lists and putting a deck back",
         "On a Virtual or Prototype deck tap Build this deck: cards are grouped by place with where to find them. Tick some (or Scan to tick), then Move pulled into deck box and check the deck and places changed. On a Physical deck try Take apart: each card should go back where it came from."
