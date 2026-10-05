@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,10 +17,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.QrCode2
@@ -43,8 +45,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,7 +60,17 @@ import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.PlaceKind
+import com.mtgcompanion.app.data.CheckSessions
 import com.mtgcompanion.app.data.PlacedCard
+import com.mtgcompanion.app.data.PocketMove
+import com.mtgcompanion.app.data.binderPockets
+import com.mtgcompanion.app.data.closeGapsMoves
+import com.mtgcompanion.app.data.fitSteps
+import com.mtgcompanion.app.data.lastCheckedLabel
+import com.mtgcompanion.app.data.looseCopies
+import com.mtgcompanion.app.data.relocate
+import com.mtgcompanion.app.data.undoMoves
+import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.data.cardsIn
 import com.mtgcompanion.app.data.childrenOf
 import com.mtgcompanion.app.data.copiesWithin
@@ -77,13 +91,13 @@ import com.mtgcompanion.app.ui.common.StatFigure
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.theme.NumberStyle
-import kotlin.math.ceil
-import kotlin.math.sqrt
 
 /**
  * One storage place, the web app's PlacePage (src/pages/PlacePage.tsx): its copies, their value and
- * its sections — a box's sections with their cards, a binder's pages of pockets — the places inside
- * it, "Put cards away" into it with the scanner, and a label to stick on it (PlaceLabelScreen).
+ * its sections — a box's sections with their cards, a binder one page at a time or as a list
+ * (BinderPagesView.kt) — the places inside it, "Put cards away" into it with the scanner, Check (scan
+ * everything in it, see PlaceCheck.kt) and when it was last checked, and a label to stick on it
+ * (PlaceLabelScreen). A binder has Close the gaps and Add cards in order (BinderFitScreen).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,7 +111,13 @@ fun PlaceScreen(
     onOpenCard: (String) -> Unit,
     onChange: (StorageChange) -> Unit,
     /** The place's label to print (PlaceLabelScreen). */
-    onLabel: (String) -> Unit
+    onLabel: (String) -> Unit,
+    /** The scanner checking the place (PlaceCheck.kt); the check to run is in CheckSessions. */
+    onCheck: (String) -> Unit = {},
+    /** A binder's Add cards in order (BinderFitScreen). */
+    onFit: (String) -> Unit = {},
+    /** The page a binder opens at. */
+    startPage: Int = 1
 ) {
     val colors = LocalAppColors.current
     val money = rememberMoney()
@@ -108,14 +128,20 @@ fun PlaceScreen(
     // Every copy in it and in the places inside it, for its value.
     val within = remember(collections, placeId) { placeAndInside(places, placeId).flatMap { cardsIn(collections, it) } }
     val ids = remember(within) { within.map { it.entry.scryfallId }.distinct().sorted() }
-    // scryfallId → (plain, foil) price in US dollars; null until they've loaded.
-    var prices by remember { mutableStateOf<Map<String, Pair<Double?, Double?>>?>(null) }
+    // Scryfall's data for the cards here — their prices, and the sets and numbers a binder's order
+    // and its pages' summaries use; null until it's loaded.
+    var cardData by remember { mutableStateOf<Map<String, ScryfallCard>?>(null) }
     LaunchedEffect(ids) {
-        if (ids.isEmpty()) { prices = emptyMap(); return@LaunchedEffect }
-        prices = runCatching {
-            CardRepository().getCardsByIds(ids).associate { it.id to (it.prices?.usd?.toDoubleOrNull() to it.prices?.usdFoil?.toDoubleOrNull()) }
-        }.getOrDefault(emptyMap())
+        if (ids.isEmpty()) { cardData = emptyMap(); return@LaunchedEffect }
+        cardData = runCatching { CardRepository().getCardsByIds(ids).associateBy { it.id } }.getOrDefault(emptyMap())
     }
+    // scryfallId → (plain, foil) price in US dollars; null until they've loaded.
+    val prices = cardData?.mapValues { (_, c) -> c.prices?.usd?.toDoubleOrNull() to c.prices?.usdFoil?.toDoubleOrNull() }
+    var listView by rememberSaveable { mutableStateOf(false) }
+    var page by rememberSaveable(placeId) { mutableIntStateOf(startPage) }
+    var choosingCheck by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf<List<PocketMove>?>(null) }
+    var closed by remember { mutableStateOf<List<PocketMove>?>(null) }
     var open by remember { mutableStateOf(setOf<String>()) }
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
@@ -205,6 +231,19 @@ fun PlaceScreen(
                         Text("Put cards away", fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(start = 8.dp))
                     }
                     Button(
+                        onClick = {
+                            val named = place.sections.orEmpty().isNotEmpty() || cards.any { it.line.section != null }
+                            if (named || CheckSessions.load(place.id) != null) choosingCheck = true
+                            else { CheckSessions.save(CheckSessions.Session(place.id, null, emptyList())); onCheck(place.id) }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
+                        modifier = Modifier.height(48.dp)
+                    ) {
+                        Icon(Icons.Filled.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Check", modifier = Modifier.padding(start = 6.dp))
+                    }
+                    Button(
                         onClick = { onLabel(place.id) },
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
@@ -215,7 +254,7 @@ fun PlaceScreen(
                     }
                 }
             }
-            place.rule?.let { rule ->
+            if (binder == null) place.rule?.let { rule ->
                 item {
                     Text(
                         "Sorted ${rule.label.replaceFirstChar { it.lowercase() }}. New cards get a section by this rule.",
@@ -225,7 +264,16 @@ fun PlaceScreen(
                 }
             }
             if (binder != null) item {
-                Text("${place.pockets} pockets a page. New cards go in the next free pocket.", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                val rule = place.rule
+                Text(
+                    "${place.pockets} pockets a page" + if (rule != null) ", in order ${rule.label.replaceFirstChar { it.lowercase() }}. Add cards in order says where new cards go."
+                    else ". New cards go in the next free pocket.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted
+                )
+            }
+            place.lastChecked?.let { at ->
+                item { Text("Last checked: ${lastCheckedLabel(at, System.currentTimeMillis())}", style = MaterialTheme.typography.labelMedium, color = colors.textMuted) }
             }
             items(inside, key = { "inside:" + it.id }) { p ->
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface2).padding(horizontal = 12.dp, vertical = 10.dp)) {
@@ -233,46 +281,54 @@ fun PlaceScreen(
                 }
             }
             if (binder != null) {
-                items(binder.first, key = { "page:" + it.page }) { page ->
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(12.dp)) {
-                        Text("Page ${page.page}", style = MaterialTheme.typography.labelLarge, color = colors.textMuted, modifier = Modifier.padding(bottom = 8.dp))
-                        val columns = ceil(sqrt(page.slots.size.toDouble())).toInt().coerceAtLeast(1)
-                        page.slots.chunked(columns).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                                row.forEach { slot ->
-                                    val first = slot.firstOrNull()
-                                    Box(
-                                        Modifier
-                                            .weight(1f)
-                                            .aspectRatio(63f / 88f)
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(colors.surface2)
-                                            .border(1.dp, colors.border, RoundedCornerShape(6.dp))
-                                            .then(if (first != null) Modifier.clickable { onOpenCard(first.entry.name) } else Modifier)
-                                    ) {
-                                        if (first != null) {
-                                            ArtImage(first.entry.imageUrl, first.entry.name, Modifier.fillMaxSize(), contentDescription = first.entry.name)
-                                            val n = slot.sumOf { it.line.qty }
-                                            if (n > 1) Text(
-                                                "×$n",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = colors.textPrimary,
-                                                modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp).clip(RoundedCornerShape(6.dp)).background(colors.bg.copy(alpha = 0.8f)).padding(horizontal = 4.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                                // Keep the last row's pockets the same size as the others.
-                                repeat(columns - row.size) { Box(Modifier.weight(1f)) }
-                            }
-                        }
+                val pocketsInUse = binderPockets(place, cards)
+                val waiting = looseCopies(place, cards).size
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                        ViewChip("Pages", !listView) { listView = false }
+                        ViewChip("List", listView) { listView = true }
+                        Box(Modifier.weight(1f))
+                        val pageWord = if (binder.first.size == 1) "page" else "pages"
+                        Text("${cards.sumOf { it.line.qty }} cards · ${binder.first.size} $pageWord", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
                     }
                 }
-                if (binder.second.isNotEmpty()) item {
+                item {
+                    if (listView) BinderList(place, cards, onOpenCard)
+                    else BinderPagesView(place, collections, cardData, page, { page = it }, onChange, onOpenCard)
+                }
+                if (!listView && binder.second.isNotEmpty()) item {
                     CardGroup("Not in a pocket yet", binder.second.sumOf { it.line.qty }, binder.second, true, {}, onOpenCard)
                 }
                 if (cards.isEmpty()) item {
                     Text("Nothing here yet. Put cards away to fill it, pocket by pocket.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
+                }
+                closed?.let { moves ->
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface2).padding(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text("Closed the gaps — ${moves.size} ${if (moves.size == 1) "card" else "cards"} moved", style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { onChange { relocate(it, place, undoMoves(moves)) }; closed = null }) { Text("Undo", color = colors.accent) }
+                        }
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Button(
+                            onClick = { closing = closeGapsMoves(pocketsInUse.map { it.index }) },
+                            enabled = pocketsInUse.isNotEmpty(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
+                            modifier = Modifier.weight(1f).height(48.dp)
+                        ) { Text("Close the gaps", fontWeight = FontWeight.Bold) }
+                        Button(
+                            onClick = { onFit(place.id) },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.accent, contentColor = colors.onAccent),
+                            modifier = Modifier.weight(1f).height(48.dp)
+                        ) { Text("Add cards in order" + if (waiting > 0) " ($waiting)" else "", fontWeight = FontWeight.ExtraBold, maxLines = 1) }
+                    }
                 }
             } else {
                 items(sections, key = { "section:" + (it.name ?: "") }) { s ->
@@ -293,6 +349,71 @@ fun PlaceScreen(
         }
     }
 
+    if (place != null && choosingCheck) {
+        val going = CheckSessions.load(place.id)
+        val what = when (place.placeKind) { PlaceKind.BINDER -> "binder"; PlaceKind.BOX -> "box"; else -> "place" }
+        val names = sectionsOf(place, cards).mapNotNull { it.name }
+        val start = { section: String? ->
+            choosingCheck = false
+            CheckSessions.save(CheckSessions.Session(place.id, section, emptyList()))
+            onCheck(place.id)
+        }
+        AlertDialog(
+            onDismissRequest = { choosingCheck = false },
+            containerColor = colors.surface,
+            title = { Text("Check ${place.name}", color = colors.accentLight) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Scan everything in it, then see what's missing and what's extra.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                    if (going != null) TextButton(onClick = { choosingCheck = false; onCheck(place.id) }) {
+                        Text("Carry on checking · ${going.section ?: "whole $what"} · ${going.scans.size} scanned", color = colors.accent)
+                    }
+                    TextButton(onClick = { start(null) }) { Text("Whole $what", color = colors.textPrimary) }
+                    names.forEach { name -> TextButton(onClick = { start(name) }) { Text(name, color = colors.textPrimary) } }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { choosingCheck = false }) { Text("Cancel", color = colors.textMuted) } }
+        )
+    }
+    val closingMoves = closing
+    if (place != null && closingMoves != null) {
+        val pocketsInUse = binderPockets(place, cards)
+        AlertDialog(
+            onDismissRequest = { closing = null },
+            containerColor = colors.surface,
+            title = { Text("Close the gaps?", color = colors.accentLight) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    if (closingMoves.isEmpty()) {
+                        Text("There are no empty pockets between the cards.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                    } else {
+                        Text(
+                            "${closingMoves.size} ${if (closingMoves.size == 1) "card moves" else "cards move"} back to fill the empty pockets, in the same order. You can undo it.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textMuted
+                        )
+                        fitSteps(
+                            com.mtgcompanion.app.data.FitPlan(closingMoves, emptyList()),
+                            place.pockets,
+                            { i -> pocketsInUse.firstOrNull { it.index == i }?.cards?.firstOrNull()?.entry?.name ?: "the card" },
+                            { "" to "" }
+                        ).forEachIndexed { i, st ->
+                            Text("${i + 1}. ${st.title}" + if (st.detail.isNotEmpty()) " — ${st.detail}" else "", style = MaterialTheme.typography.bodySmall, color = colors.textPrimary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (closingMoves.isNotEmpty()) TextButton(onClick = {
+                    onChange { relocate(it, place, closingMoves) }
+                    closed = closingMoves
+                    closing = null
+                }) { Text("Close the gaps", color = colors.accent) }
+            },
+            dismissButton = { TextButton(onClick = { closing = null }) { Text("Cancel", color = colors.textMuted) } }
+        )
+    }
     if (place != null && editing) {
         PlaceDialog(place = place, parentId = null, places = places, onDismiss = { editing = false }) { changed ->
             onChange { savePlace(it, changed) }
@@ -375,4 +496,17 @@ private fun CardGroup(
             }
         }
     }
+}
+
+/** A chip that's on or off: "Pages" / "List". */
+@Composable
+private fun ViewChip(label: String, on: Boolean, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Text(
+        label,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+        color = if (on) colors.onAccent else colors.textMuted,
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) colors.accent else colors.surface2).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp)
+    )
 }

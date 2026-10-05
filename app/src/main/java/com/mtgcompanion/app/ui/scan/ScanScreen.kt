@@ -38,6 +38,12 @@ import com.mtgcompanion.app.data.onlyRepeats
 import com.mtgcompanion.app.data.copyNumber
 import com.mtgcompanion.app.data.ScanRow
 import com.mtgcompanion.app.data.placesOf
+import com.mtgcompanion.app.data.CheckScope
+import com.mtgcompanion.app.data.PlaceKind
+import com.mtgcompanion.app.data.cardsIn
+import com.mtgcompanion.app.data.looseCopies
+import com.mtgcompanion.app.data.placePath
+import com.mtgcompanion.app.data.reconcile
 import com.mtgcompanion.app.ui.collection.PlacePickerDialog
 import com.mtgcompanion.app.ui.collection.PlaceLabelPanel
 import com.mtgcompanion.app.data.placeIdFromLabel
@@ -172,7 +178,11 @@ fun ScanScreen(
     /** A scanned box label's "Open box". */
     onOpenPlace: (String) -> Unit = {},
     /** A scanned box label's "Pull from here": the open pull list, only what's in that place. */
-    onPullFrom: (deckId: String, placeId: String) -> Unit = { _, _ -> }
+    onPullFrom: (deckId: String, placeId: String) -> Unit = { _, _ -> },
+    /** Check mode's Finish check: the results (CheckResultsScreen). */
+    onFinishCheck: (String) -> Unit = {},
+    /** Put-away into a binder in order: Add cards in order (BinderFitScreen). */
+    onFit: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -190,6 +200,12 @@ fun ScanScreen(
     val tickDeck = tickList?.let { t -> decks.firstOrNull { it.id == t.deckId } }
     // A box label the camera read: its sheet (PlaceLabelPanel).
     val labelPlace by viewModel.labelPlace.collectAsState()
+    // Check mode: each card is matched against what's listed in a place (CheckPanel.kt).
+    val check by viewModel.check.collectAsState()
+    val checkPlace = check?.let { c -> placesOf(collections).firstOrNull { it.id == c.placeId } }
+    val checkResult = remember(check, collections, decks) {
+        check?.let { c -> reconcile(collections, decks, CheckScope(c.placeId, c.section), c.scans) }
+    }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -220,9 +236,9 @@ fun ScanScreen(
     // Cards scanned but not put away yet: leaving would throw them away, so it asks first.
     var confirmLeave by remember { mutableStateOf(false) }
     val leave = {
-        if (putAwayTarget != null || tickList != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
+        if (putAwayTarget != null || tickList != null || check != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
     }
-    BackHandler(enabled = putAwayTarget == null && tickList == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
+    BackHandler(enabled = putAwayTarget == null && tickList == null && check == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
     var showManualAdd by remember { mutableStateOf(false) }
 
     // Bound once the camera provider resolves, so the torch button has something to control.
@@ -462,6 +478,15 @@ fun ScanScreen(
                 ScrimIconButton(onClick = leave, icon = Icons.AutoMirrored.Filled.ArrowBack, desc = "Back")
                 if (putAwayPlace != null) {
                     PutAwayTarget(putAwayPlace.name, onClick = { choosingPlace = true }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                } else if (check != null) {
+                    val c = check
+                    val what = when (checkPlace?.placeKind) { PlaceKind.BINDER -> "binder"; PlaceKind.BOX -> "box"; else -> "place" }
+                    CheckTarget(
+                        "Checking: " + listOfNotNull(checkPlace?.let { placePath(placesOf(collections), it.id) } ?: "a place", c?.section).joinToString(" › "),
+                        wholeLabel = if (c?.section != null) "Whole $what" else null,
+                        onWhole = viewModel::checkWholePlace,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                    )
                 } else if (tickList != null) {
                     TickTarget(
                         (if (tickList?.pull == true) "Ticking off: pull list for " else "Ticking off: put back list for ") + (tickDeck?.name ?: "a deck") +
@@ -565,16 +590,33 @@ fun ScanScreen(
 
         // Put-away mode: the card just put away and the session, instead of the pile.
         if (putAwayTarget != null) {
+            // A binder in order: the cards wait beside it, to be fitted in (BinderFitScreen).
+            val waiting = putAwayPlace?.takeIf { it.placeKind == PlaceKind.BINDER && it.rule != null }
+                ?.let { looseCopies(it, cardsIn(collections, it.id)).size } ?: 0
             PutAwayPanel(
                 session = session,
                 onUndoLast = viewModel::undoLastPutAway,
                 onAnotherCopy = viewModel::anotherCopy,
+                waitingToFit = waiting,
+                onFit = { putAwayPlace?.let { onFit(it.id) } },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        // Check mode: how far it's got, the last card and the ones that don't belong.
+        val checking = check
+        if (checking != null && checkResult != null && putAwayTarget == null) {
+            CheckPanel(
+                result = checkResult,
+                scanned = checking.scans.size,
+                onUndoLast = viewModel::undoLastCheckScan,
+                onFinish = { onFinishCheck(checking.placeId) },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
 
         // Bottom overlay: view-list button.
-        if (putAwayTarget == null && tickList == null) Button(
+        if (putAwayTarget == null && tickList == null && check == null) Button(
             onClick = { showList = true },
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),

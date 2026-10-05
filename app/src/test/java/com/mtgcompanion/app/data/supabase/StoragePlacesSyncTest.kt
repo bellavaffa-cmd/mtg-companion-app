@@ -50,6 +50,21 @@ class StoragePlacesSyncTest {
     }
 
     @Test
+    fun `an older app's save of a place doesn't lose when it was last checked`() {
+        val checked = red.copy(lastChecked = 1_790_000_000_000L)
+        val mine = pile(listOf(card("x", 2, listOf(CopyPlace("red", 2)))), listOf(checked))
+        val mineJson = adapter.toJson(mine)
+        // An older app renamed the box and saved the place without the key it doesn't know.
+        val older = pile(listOf(card("x", 2, listOf(CopyPlace("red", 2)))), listOf(red.copy(name = "Red box, top")))
+        val row = RemoteRow("collection", UNSORTED_COLLECTION_ID, adapter.toJson(older), 200L, false, "2026-09-18T000000000002")
+        val result = core.pull(agreed(mineJson), core.localJson(emptyList(), listOf(mine)), listOf(row), emptyList(), 300L)
+        val healed = result.collectionChanges[UNSORTED_COLLECTION_ID]!!
+        assertEquals(listOf(checked.copy(name = "Red box, top")), healed.storagePlaces)
+        // ...and pushed back, so every other device has it again.
+        assertTrue(key in result.state.pending)
+    }
+
+    @Test
     fun `copies given places on two devices at once keep both`() {
         val base = pile(listOf(card("x", 3)), listOf(red))
         val mine = pile(listOf(card("x", 3, listOf(CopyPlace("red", 1)))), listOf(red))

@@ -86,9 +86,15 @@ data class StoragePlace(
     val sections: List<String>? = null,
     /** A binder's pockets per page (9 when null). */
     val pocketsPerPage: Int? = null,
-    /** A box's sorting rule. */
+    /** A box's sorting rule, or a binder's order (see BinderPages.kt). */
     val sortRule: String? = null,
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    /**
+     * When the place was last checked by scanning everything in it (PlaceCheck.kt), in milliseconds;
+     * null (left out) until then. It only moves on: two devices' checks merge to the later one, and a
+     * place saved by an app that doesn't know it keeps it.
+     */
+    val lastChecked: Long? = null
 ) {
     val placeKind: PlaceKind get() = PlaceKind.fromName(kind)
     val rule: SortRule? get() = SortRule.fromName(sortRule)

@@ -50,7 +50,8 @@ fun storagePlace(p: StoragePlace): StoragePlace = p.copy(
     note = p.note?.trim()?.takeIf { it.isNotEmpty() },
     sections = p.sections?.takeIf { it.isNotEmpty() },
     pocketsPerPage = p.pocketsPerPage?.takeIf { it > 0 },
-    sortRule = SortRule.fromName(p.sortRule)?.name
+    sortRule = SortRule.fromName(p.sortRule)?.name,
+    lastChecked = p.lastChecked?.takeIf { it > 0 }
 )
 
 /** [collections] with [place] added, or put in place of the one with its id. */
@@ -575,6 +576,8 @@ fun ruleSection(rule: SortRule, f: CardFacts, sections: List<String> = emptyList
 /** Where a card should go in [place], and that as words: "Red › around “L”", "Page 3, slot 6". */
 fun suggestSpot(place: StoragePlace, f: CardFacts?, collections: List<Collection>): Pair<Spot, String?> {
     if (place.placeKind == PlaceKind.BINDER) {
+        // A binder in order: the card waits beside it, to be fitted in with Add cards in order (BinderPages.kt).
+        if (place.rule != null) return Spot(place.id) to null
         val (page, slot) = nextPocket(place, collections)
         return Spot(place.id, page = page, slot = slot) to pocketLabel(page, slot)
     }
@@ -808,10 +811,26 @@ fun mergePlaceLists(base: List<StoragePlace>?, mine: List<StoragePlace>?, theirs
             sections = pick(bp.sections, mp.sections, tp.sections, minePreferred),
             pocketsPerPage = pick(bp.pocketsPerPage, mp.pocketsPerPage, tp.pocketsPerPage, minePreferred),
             sortRule = pick(bp.sortRule, mp.sortRule, tp.sortRule, minePreferred),
-            createdAt = minOf(mp.createdAt, tp.createdAt)
+            createdAt = minOf(mp.createdAt, tp.createdAt),
+            // Only ever moves on, so the later check wins — and a side that dropped it didn't clear it.
+            lastChecked = maxOf(bp.lastChecked ?: 0L, mp.lastChecked ?: 0L, tp.lastChecked ?: 0L).takeIf { it > 0 }
         ))
     }
     return out
+}
+
+/**
+ * [theirs] with each place's "lastChecked" no older than [source]'s — a place saved by an app that
+ * doesn't know about checks comes without it. The same object when nothing changes.
+ */
+fun keepLastChecked(source: Collection, theirs: Collection): Collection {
+    val theirPlaces = theirs.storagePlaces ?: return theirs
+    val mine = source.storagePlaces?.associate { it.id to (it.lastChecked ?: 0L) } ?: return theirs
+    if (theirPlaces.none { (mine[it.id] ?: 0L) > (it.lastChecked ?: 0L) }) return theirs
+    return theirs.copy(storagePlaces = theirPlaces.map { p ->
+        val kept = mine[p.id] ?: 0L
+        if (kept > (p.lastChecked ?: 0L)) p.copy(lastChecked = kept) else p
+    })
 }
 
 // ---- The Advanced filters' "Place" ----

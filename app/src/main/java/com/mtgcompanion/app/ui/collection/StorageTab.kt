@@ -336,8 +336,11 @@ fun PlaceDialog(place: StoragePlace?, parentId: String?, places: List<StoragePla
                 note = note.trim().ifEmpty { null },
                 sections = if (kind == PlaceKind.BOX && list.isNotEmpty()) list else null,
                 pocketsPerPage = if (kind == PlaceKind.BINDER) pocketCount else null,
-                sortRule = if (kind == PlaceKind.BOX) rule.ifEmpty { null } else null,
-                createdAt = place?.createdAt ?: System.currentTimeMillis()
+                // A box's sorting rule, or a binder's order (BinderPages.kt).
+                sortRule = if (kind == PlaceKind.BOX || kind == PlaceKind.BINDER) rule.ifEmpty { null } else null,
+                createdAt = place?.createdAt ?: System.currentTimeMillis(),
+                // When it was last checked (PlaceCheck.kt) isn't changed here.
+                lastChecked = place?.lastChecked
             ))
         }
     }
@@ -392,6 +395,12 @@ fun PlaceDialog(place: StoragePlace?, parentId: String?, places: List<StoragePla
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = fieldColors
+                    )
+                    PickField("In order", rule, listOf("" to "No order — new cards go in the next free pocket") + SortRule.entries.map { it.name to it.label }) { rule = it }
+                    Text(
+                        "With an order, Add cards in order says where new cards go and what to shift.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.textMuted
                     )
                 }
                 if (kind == PlaceKind.BOX) {

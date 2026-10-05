@@ -32,8 +32,8 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
 /*
  * The scanner's put-away mode: the place cards are going into, at the top (tap to change), and at the
  * bottom the card just put away — where to file it and what happened to it — with this session's
- * cards and Undo last. The logic is putAway() in data/StoragePlaces.kt; the web app's ScanPage.tsx
- * shows the same.
+ * cards and Undo last; for a binder in order, how many cards wait to be fitted in (BinderPages.kt). The
+ * logic is putAway() in data/StoragePlaces.kt; the web app's ScanPage.tsx shows the same.
  */
 
 /** "Putting away into: Red box", the button that changes the place. */
@@ -93,7 +93,10 @@ fun PutAwayPanel(
     session: List<PutAwayRow>,
     onUndoLast: () -> Unit,
     onAnotherCopy: (PutAwayRow) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** A binder in order: how many cards wait to be fitted in, and Add cards in order. */
+    waitingToFit: Int = 0,
+    onFit: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     Column(
@@ -104,6 +107,24 @@ fun PutAwayPanel(
             .background(colors.bg.copy(alpha = 0.94f))
             .padding(16.dp)
     ) {
+        if (waitingToFit > 0) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("$waitingToFit ${if (waitingToFit == 1) "card" else "cards"} to fit in order", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                    Text("Keep them beside the binder — the steps say where each goes.", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                }
+                Text(
+                    "Fit in order",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.onAccent,
+                    modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(16.dp)).background(colors.accent).clickable(onClick = onFit).padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
         val last = session.firstOrNull()
         if (last == null) {
             Text("Scan a card and it's put away here — given its place, moved from another, or added to your collection.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)

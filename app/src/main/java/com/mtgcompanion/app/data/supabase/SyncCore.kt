@@ -3,6 +3,7 @@ package com.mtgcompanion.app.data.supabase
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
+import com.mtgcompanion.app.data.keepLastChecked
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
 import com.squareup.moshi.JsonAdapter
 
@@ -256,7 +257,8 @@ internal class SyncCore(
                 takeRow(
                     row, collectionAdapter, collectionChanges, { mine -> mine.copy(entries = emptyList(), storagePlaces = null) },
                     { b, m, t, p -> ItemMerge.mergeCollections(b, m, t, minePreferred = p) },
-                    heal = { mine, theirs -> keepPlacesFromOlderApp(mine, theirs) }
+                    // ...and a place saved without when it was last checked (PlaceCheck.kt) keeps this device's.
+                    heal = { mine, theirs -> keepLastChecked(mine, keepPlacesFromOlderApp(mine, theirs)) }
                 )
             }
             // A row this version can't read is read back by key every pass until an update can; the

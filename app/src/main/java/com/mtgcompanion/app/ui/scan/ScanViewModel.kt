@@ -49,7 +49,11 @@ import com.mtgcompanion.app.data.Confirmation
 import com.mtgcompanion.app.data.scannedTwiceOver
 import com.mtgcompanion.app.data.copyNumber
 import com.mtgcompanion.app.data.ScanRow
+import com.mtgcompanion.app.data.CheckScan
+import com.mtgcompanion.app.data.CheckScope
+import com.mtgcompanion.app.data.CheckSessions
 import com.mtgcompanion.app.data.PutAwayResult
+import com.mtgcompanion.app.data.reconcile
 import com.mtgcompanion.app.data.PutAwayStep
 import com.mtgcompanion.app.data.Spot
 import com.mtgcompanion.app.data.addedHere
@@ -204,7 +208,9 @@ class ScanViewModel(
     /** Put-away mode: each card scanned is put away into this storage place at once (see StoragePlaces.kt). */
     putAwayPlaceId: String? = null,
     /** Scan-to-tick mode: each card scanned ticks its row on this deck's pull list or put-back list (PullList.kt). */
-    tickList: TickList? = null
+    tickList: TickList? = null,
+    /** Check mode: each card scanned is matched against what's listed in this storage place (PlaceCheck.kt). */
+    checkPlaceId: String? = null
 ) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -924,8 +930,51 @@ class ScanViewModel(
 
     fun setPutAwayTarget(placeId: String) {
         _putAwayTarget.value = placeId
-        // Putting away is what the scanner does now, not ticking a list.
+        // Putting away is what the scanner does now, not ticking a list or checking a place.
         _tickList.value = null
+        _check.value = null
+    }
+
+    // ---- Check mode ----
+
+    private val _check = MutableStateFlow(checkPlaceId?.let { id ->
+        CheckSessions.load(id) ?: CheckSessions.Session(id, null, emptyList()).also { CheckSessions.save(it) }
+    })
+    /**
+     * The check going on (PlaceCheck.kt): the place, the section or null for all of it, and the cards
+     * scanned so far — kept in CheckSessions too, so the results screen sees them. The web app's
+     * ScanPage.tsx check mode.
+     */
+    val check: StateFlow<CheckSessions.Session?> = _check.asStateFlow()
+
+    private fun setCheck(session: CheckSessions.Session) {
+        CheckSessions.save(session)
+        _check.value = session
+    }
+
+    /** Matches [card] against what's listed in the place, and says what it is: "belongs here", "should be in Blue"… */
+    private fun checkCard(card: ScryfallCard, exact: Boolean, session: CheckSessions.Session): Long {
+        val id = nextScanId++
+        // The scanner can't see foil, so a scan matches plain or foil copies.
+        val next = session.copy(scans = session.scans + CheckScan(card.id, card.name, card.displayImageUrl, null, exact))
+        setCheck(next)
+        val line = reconcile(collections.value, decks.value, CheckScope(next.placeId, next.section), next.scans).lines.lastOrNull()
+        _uiState.update { it.copy(status = "${card.name} — ${line?.label ?: "scanned"}", successToken = it.successToken + 1) }
+        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        return id
+    }
+
+    /** Checks the whole place rather than one section, keeping what's been scanned. */
+    fun checkWholePlace() {
+        _check.value?.let { setCheck(it.copy(section = null)) }
+    }
+
+    /** Takes back the last card scanned in the check. */
+    fun undoLastCheckScan() {
+        val now = _check.value ?: return
+        if (now.scans.isEmpty()) return
+        setCheck(now.copy(scans = now.scans.dropLast(1)))
+        _uiState.update { it.copy(status = "Last scan taken back") }
     }
 
     // ---- Scan-to-tick mode ----
@@ -1057,6 +1106,7 @@ class ScanViewModel(
         if (_labelPlace.value != null) return nextScanId++
         _tickList.value?.let { return tickCard(card, it) }
         _putAwayTarget.value?.let { return putAwayCard(card, it) }
+        _check.value?.let { return checkCard(card, exact, it) }
         val row = ScanRow(nextScanId++, card, System.currentTimeMillis(), exact)
         val rows = listOf(row) + _uiState.value.scannedCards
         val copy = copyNumber(rows, row)
@@ -1305,7 +1355,8 @@ class ScanViewModel(
         private val cardIndexRepository: CardIndexRepository,
         private val settingsRepository: SettingsRepository,
         private val putAwayPlaceId: String? = null,
-        private val tickList: TickList? = null
+        private val tickList: TickList? = null,
+        private val checkPlaceId: String? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1317,7 +1368,8 @@ class ScanViewModel(
                 cardIndexRepository = cardIndexRepository,
                 settingsRepository = settingsRepository,
                 putAwayPlaceId = putAwayPlaceId,
-                tickList = tickList
+                tickList = tickList,
+                checkPlaceId = checkPlaceId
             ) as T
         }
     }

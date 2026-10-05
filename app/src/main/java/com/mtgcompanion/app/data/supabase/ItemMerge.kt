@@ -29,7 +29,8 @@ import com.mtgcompanion.app.data.tidied
  *  - A field both sides changed differently (a deck's name, say) goes to the more recent edit.
  *  - Where a binder card's copies are kept (its "places") merges line by line like the cards do, and
  *    the storage places themselves (on the Unsorted pile) place by place — see StoragePlaces.kt. A
- *    binder saved by an app that doesn't know about places leaves them as they were.
+ *    binder saved by an app that doesn't know about places leaves them as they were. When a place was
+ *    last checked (PlaceCheck.kt) merges to the later check.
  *  - Where a deck's copies came from (its "cameFrom", see PullList.kt) merges card by card the same
  *    way; a deck saved by an app that doesn't know about it leaves it as it was.
  * The web app merges the same way — see MtgCompanionWeb/src/sync/mergeItems.ts.

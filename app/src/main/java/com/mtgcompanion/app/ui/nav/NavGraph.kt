@@ -8,6 +8,8 @@ import com.mtgcompanion.app.ui.collection.TagBinderScreen
 import com.mtgcompanion.app.ui.collection.ValueHistoryScreen
 import com.mtgcompanion.app.ui.collection.SpreadThinScreen
 import com.mtgcompanion.app.ui.collection.PlaceScreen
+import com.mtgcompanion.app.ui.collection.BinderFitScreen
+import com.mtgcompanion.app.ui.collection.CheckResultsScreen
 import com.mtgcompanion.app.ui.collection.PlaceLabelScreen
 import com.mtgcompanion.app.ui.decks.PullListScreen
 import com.mtgcompanion.app.ui.decks.PutBackScreen
@@ -259,9 +261,19 @@ private object Routes {
     /** [tab]: the tab to open on ("Suggestions"), when not the first. */
     const val DECK_DETAIL = "deck/{deckId}?tab={tab}"
     const val COLLECTION_DETAIL = "collection/{collectionId}"
-    /** A storage place's page — from the Collection's Storage page. */
-    const val PLACE = "place/{placeId}"
-    fun place(placeId: String) = "place/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
+    /** A storage place's page — from the Collection's Storage page. [page]: the page a binder opens at. */
+    const val PLACE = "place/{placeId}?page={page}"
+    fun place(placeId: String, page: Int? = null) =
+        "place/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name()) + (page?.let { "?page=$it" } ?: "")
+    /** The scanner checking a storage place (PlaceCheck.kt); what's checked is in CheckSessions. */
+    const val CHECK = "check/{placeId}"
+    fun check(placeId: String) = "check/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
+    /** A check's results. */
+    const val CHECK_RESULTS = "check_results/{placeId}"
+    fun checkResults(placeId: String) = "check_results/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
+    /** A binder's Add cards in order (BinderPages.kt). */
+    const val PLACE_FIT = "place_fit/{placeId}"
+    fun placeFit(placeId: String) = "place_fit/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
     /** The scanner putting cards away into a storage place. */
     const val PUT_AWAY = "put_away/{placeId}"
     fun putAway(placeId: String) = "put_away/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
@@ -497,8 +509,15 @@ fun MtgNavGraph(
                 ValueHistoryScreen(onBack = { navController.popBackStack() })
             }
 
-            destination(Routes.PLACE, arguments = listOf(navArgument("placeId") { type = NavType.StringType })) { entry ->
+            destination(
+                Routes.PLACE,
+                arguments = listOf(
+                    navArgument("placeId") { type = NavType.StringType },
+                    navArgument("page") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { entry ->
                 val placeId = entry.arguments?.getString("placeId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val startPage = entry.arguments?.getString("page")?.toIntOrNull() ?: 1
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
                 PlaceScreen(
@@ -511,7 +530,69 @@ fun MtgNavGraph(
                     onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
                     // The app's scope, so the change is saved even if the screen is left at once.
                     onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
-                    onLabel = { id -> navController.navigate(Routes.placeLabel(id)) }
+                    onLabel = { id -> navController.navigate(Routes.placeLabel(id)) },
+                    onCheck = { id -> navController.navigate(Routes.check(id)) },
+                    onFit = { id -> navController.navigate(Routes.placeFit(id)) },
+                    startPage = startPage
+                )
+            }
+
+            destination(Routes.PLACE_FIT, arguments = listOf(navArgument("placeId") { type = NavType.StringType })) { entry ->
+                val placeId = entry.arguments?.getString("placeId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                BinderFitScreen(
+                    placeId = placeId,
+                    collections = collections,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onScanIn = { id -> navController.navigate(Routes.putAway(id)) },
+                    // Back to the binder, open at the page the first new card went in.
+                    onDone = { id, page -> navController.navigate(Routes.place(id, page)) { popUpTo(Routes.PLACE) { inclusive = true } } }
+                )
+            }
+
+            destination(Routes.CHECK, arguments = listOf(navArgument("placeId") { type = NavType.StringType })) { entry ->
+                val placeId = entry.arguments?.getString("placeId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val viewModel: ScanViewModel = viewModel(
+                    key = "check",
+                    factory = ScanViewModel.Factory(
+                        LocalContext.current.applicationContext,
+                        collectionRepository,
+                        deckRepository,
+                        cardIndexRepository,
+                        settingsRepository,
+                        checkPlaceId = placeId
+                    )
+                )
+                ScanScreen(
+                    viewModel = viewModel,
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) },
+                    onFinishCheck = { id -> navController.navigate(Routes.checkResults(id)) },
+                    onFit = { id -> navController.navigate(Routes.placeFit(id)) }
+                )
+            }
+
+            destination(Routes.CHECK_RESULTS, arguments = listOf(navArgument("placeId") { type = NavType.StringType })) { entry ->
+                val placeId = entry.arguments?.getString("placeId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                CheckResultsScreen(
+                    placeId = placeId,
+                    collections = collections,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    // Both stores are written, so a card is never in two places at once (as the pull list does).
+                    onApply = { cols, ds -> addToScope.launch { collectionRepository.changeStorage { cols }; deckRepository.change { ds } } },
+                    onFindIt = { name -> navController.navigate(Routes.detail(name)) },
+                    // Back to the place's page, past the scanner.
+                    onSaved = { id -> if (!navController.popBackStack(Routes.PLACE, inclusive = false)) navController.navigate(Routes.place(id)) }
                 )
             }
 
@@ -609,7 +690,8 @@ fun MtgNavGraph(
                     onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
                     onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
                     onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
-                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) }
+                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) },
+                    onFit = { id -> navController.navigate(Routes.placeFit(id)) }
                 )
             }
 
