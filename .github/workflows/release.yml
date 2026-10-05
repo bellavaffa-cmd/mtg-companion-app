@@ -11,8 +11,11 @@ name: Release
 #
 # A push to the `tester-build` branch is a tester build too, for whoever can push but can't make tags
 # (a cloud session, say): the run takes the next tester number, makes that tag on the pushed commit
-# and publishes as above. A commit that already has a tester-N tag isn't built twice. Real releases
-# still only come from a vX.Y.Z tag.
+# and publishes as above. A commit that already has a tester-N tag isn't built twice.
+#
+# A push to the `release-build` branch is the same for a real release: the tag is v + the
+# versionName in app/build.gradle, release-notes/vX.Y.Z.md must exist, and a version that's already
+# tagged isn't released again. Only on the owner's go-ahead, like a vX.Y.Z tag.
 #
 # The signing key and the gitignored config files come from repository secrets, each one a whole
 # file (scripts/set-ci-secrets.ps1 uploads them from a machine that has them):
@@ -24,6 +27,7 @@ on:
   push:
     branches:
       - tester-build
+      - release-build
     tags:
       - 'tester-[0-9]*'
       - 'v[0-9]*.[0-9]*.[0-9]*'
@@ -79,6 +83,16 @@ jobs:
             fi
             last=$(echo "$tags" | sed -nE 's#.*refs/tags/tester-([0-9]+)$#\1#p' | sort -n | tail -n 1)
             TAG="tester-$(( ${last:-0} + 1 ))"
+          elif [ "$GITHUB_REF" = "refs/heads/release-build" ]; then
+            version=$(grep -E "^\s*versionName '" app/build.gradle | head -n 1 | sed -E "s/.*'(.*)'.*/\1/")
+            TAG="v$version"
+            if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+              echo "$TAG is already released"
+              echo "kind=none" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            if [ ! -f "release-notes/$TAG.md" ]; then
+              echo "::error::release-notes/$TAG.md is missing"; exit 1
+            fi
           else
             TAG="$GITHUB_REF_NAME"
           fi
@@ -187,5 +201,5 @@ jobs:
               gh release edit "$TAG" --title "$TAG" --prerelease=false --latest
             fi
           else
-            gh release create "$TAG" out/*.apk --latest --title "$TAG" "${notes[@]}"
+            gh release create "$TAG" out/*.apk --latest --target "$GITHUB_SHA" --title "$TAG" "${notes[@]}"
           fi

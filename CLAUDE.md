@@ -49,6 +49,10 @@ filter wording — so a change to one usually needs the same change in the other
   with `app-release-<abi>.apk` and `app-universal-release.apk`. Those names matter: the in-app
   updater picks its APK by the trailing `-<abi>.apk`, and manabind.com links
   `app-release-arm64-v8a.apk`.
+  Where tags can't be pushed, push that "Release vX.Y.Z" commit to the `release-build` branch
+  instead (`git push origin HEAD:release-build`, force if it's behind): the Release workflow tags it
+  `vX.Y.Z` from `versionName`, needs `release-notes/vX.Y.Z.md`, and skips a version already tagged.
+  Same rule as the tag — only on the owner's go-ahead.
 
 After pushing a tag, watch the run (`gh run watch`, or the repo's Actions tab) and confirm the
 release exists with its APKs before telling the owner it is ready. The real app only ever reads
