@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
 import com.mtgcompanion.app.data.spares
+import com.mtgcompanion.app.data.spreadThin
 import com.mtgcompanion.app.data.Spare
 import com.mtgcompanion.app.data.proxyCopies
 import com.mtgcompanion.app.data.DeckOwnership
@@ -234,6 +235,12 @@ class CollectionsViewModel(
         combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
             spares(collections, decks)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** How many cards the decks use more copies of than the user owns (see SpreadThin.kt); null with no decks. */
+    val thinCount: StateFlow<Int?> =
+        combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
+            if (decks.isEmpty()) null else spreadThin(collections, decks).size
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** Binders picked cards can be gathered into: owned ones and the Unsorted pile, not wishlists. */
     val binderTargets: StateFlow<List<MoveTarget>> = repository.collectionsFlow

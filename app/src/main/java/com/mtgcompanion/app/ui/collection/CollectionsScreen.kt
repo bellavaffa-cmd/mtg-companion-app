@@ -135,7 +135,9 @@ fun CollectionsScreen(
     /** Offers these spares to a friend in a trade (picking who comes next); null without an account. */
     onOfferSpares: ((List<TradeCard>) -> Unit)? = null,
     /** Opens a set's cards, owned and missing (from the Sets page), by set code. */
-    onOpenSet: (String) -> Unit = {}
+    onOpenSet: (String) -> Unit = {},
+    /** Opens the cards the decks use more copies of than the user owns. */
+    onOpenSpreadThin: () -> Unit = {}
 ) {
     val tagBinders by viewModel.tagBinders.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
@@ -143,6 +145,7 @@ fun CollectionsScreen(
     val collections by viewModel.collections.collectAsState()
     val allCards by viewModel.allCards.collectAsState()
     val spares by viewModel.spares.collectAsState()
+    val thinCount by viewModel.thinCount.collectAsState()
     // Spares only: binder cards no deck of yours plays.
     var sparesOnly by remember { mutableStateOf(false) }
     val dashboard by viewModel.dashboard.collectAsState()
@@ -262,6 +265,8 @@ fun CollectionsScreen(
                         sparesOnly = sparesOnly,
                         onSparesOnly = { sparesOnly = it },
                         onOfferSpares = onOfferSpares?.let { offer -> { offer(offerCards(spares, viewModel.prices.value)) } },
+                        thinCount = thinCount,
+                        onOpenSpreadThin = onOpenSpreadThin,
                         unsorted = unsorted,
                         onOpenUnsorted = { onCollectionClick(it) },
                         onImport = { viewModel.resetImport(); showImport = true },
@@ -420,6 +425,9 @@ private fun AllCardsTab(
     onSparesOnly: (Boolean) -> Unit,
     /** Offers the spares in a trade (see offerCards); null when there's no account to trade from. */
     onOfferSpares: (() -> Unit)?,
+    /** How many cards are spread thin (null with no decks), and opening their page. */
+    thinCount: Int?,
+    onOpenSpreadThin: () -> Unit,
     unsorted: Collection?,
     onOpenUnsorted: (String) -> Unit,
     onImport: () -> Unit,
@@ -523,6 +531,18 @@ private fun AllCardsTab(
                             Text("Offer in a trade", color = Gold)
                         }
                     }
+                }
+            }
+            // Spread thin: cards the decks use more copies of than the user owns — a page of its own.
+            if (thinCount != null) {
+                item {
+                    Text(
+                        if (thinCount > 0) "Spread thin · $thinCount ${if (thinCount == 1) "card" else "cards"} your decks use more copies of than you own"
+                        else "Spread thin · every deck has its own copies",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Gold,
+                        modifier = Modifier.clickable { onOpenSpreadThin() }.padding(vertical = 4.dp)
+                    )
                 }
             }
             item {

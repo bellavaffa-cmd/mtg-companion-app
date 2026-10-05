@@ -6,6 +6,8 @@ import com.mtgcompanion.app.ui.social.OfferSparesDialog
 import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.ui.collection.TagBinderScreen
 import com.mtgcompanion.app.ui.collection.ValueHistoryScreen
+import com.mtgcompanion.app.ui.collection.SpreadThinScreen
+import com.mtgcompanion.app.ui.lifecounter.PlaygroupScreen
 import com.mtgcompanion.app.ui.collection.TagBinderViewModel
 import com.mtgcompanion.app.ui.collection.SetCardsScreen
 import com.mtgcompanion.app.ui.collection.SetCardsViewModel
@@ -212,6 +214,10 @@ private object Routes {
     /** The Play tab: start a life counter game, join a table, recent games. */
     const val PLAY = "play"
     const val VALUE_HISTORY = "value_history"
+    /** Cards the decks use more copies of than the user owns — from the Collection's All cards. */
+    const val SPREAD_THIN = "spread_thin"
+    /** Every deck's games together — from the Play tab. */
+    const val PLAYGROUP = "playgroup"
     const val FRIENDS = "friends"
     const val FRIEND = "friend/{userId}"
     const val TRADES = "trades"
@@ -445,6 +451,27 @@ fun MtgNavGraph(
                 ValueHistoryScreen(onBack = { navController.popBackStack() })
             }
 
+            destination(Routes.SPREAD_THIN) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                SpreadThinScreen(
+                    collections = collections,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) }
+                )
+            }
+
+            destination(Routes.PLAYGROUP) {
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                PlaygroupScreen(
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    // A deck opens on its Stats, where its match record is.
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id, "Stats")) }
+                )
+            }
+
             destination(Routes.SEARCH) {
                 val viewModel: SearchViewModel = viewModel(
                     factory = SearchViewModel.Factory(offlineCardRepository, settingsRepository, collectionRepository, deckRepository)
@@ -521,7 +548,8 @@ fun MtgNavGraph(
                     onSharedOpened = { openShared = false; socialRepository.openSharedTab = false },
                     onOpenTag = { id -> navController.navigate(Routes.tagBinder(id)) },
                     onOfferSpares = if (supabaseSync.auth.configured) ({ cards -> offering = cards }) else null,
-                    onOpenSet = { code -> navController.navigate(Routes.setCards(code)) }
+                    onOpenSet = { code -> navController.navigate(Routes.setCards(code)) },
+                    onOpenSpreadThin = { navController.navigate(Routes.SPREAD_THIN) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(
@@ -723,7 +751,8 @@ fun MtgNavGraph(
                     onStartGame = { navController.navigate(Routes.LIFE_COUNTER) },
                     onJoinTable = { navController.navigate(Routes.QR_SCAN) },
                     onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
-                    onOpenRules = { navController.navigateToTab(Routes.RULES) }
+                    onOpenRules = { navController.navigateToTab(Routes.RULES) },
+                    onOpenPlaygroup = { navController.navigate(Routes.PLAYGROUP) }
                 )
             }
 
