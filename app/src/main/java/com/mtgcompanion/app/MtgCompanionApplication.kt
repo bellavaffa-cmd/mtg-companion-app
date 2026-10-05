@@ -7,6 +7,7 @@ import com.mtgcompanion.app.data.ComboCache
 import com.mtgcompanion.app.data.withWishlist
 import com.mtgcompanion.app.data.PriceMovers
 import com.mtgcompanion.app.data.CardPriceHistory
+import com.mtgcompanion.app.data.CopyHistoryStore
 import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
 import com.mtgcompanion.app.data.social.PushNotifications
@@ -89,6 +90,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         PriceMovers.init(this)
         // Each card's own price over time — read from the device only when a chart wants it.
         CardPriceHistory.init(this)
+        // Where each copy has been, on this phone (CopyHistory.kt).
+        CopyHistoryStore.init(this)
         ComboCache.init(this)
         ScanPile.init(this)
         // The Wishlist, always there, holding what decks are considering that isn't owned; and the

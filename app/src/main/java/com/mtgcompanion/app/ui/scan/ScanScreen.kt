@@ -202,6 +202,8 @@ fun ScanScreen(
     val labelPlace by viewModel.labelPlace.collectAsState()
     // Check mode: each card is matched against what's listed in a place (CheckPanel.kt).
     val check by viewModel.check.collectAsState()
+    // Sort mode: each card goes in a pile by the piles' rules (SortPanel.kt).
+    val sort by viewModel.sort.collectAsState()
     val checkPlace = check?.let { c -> placesOf(collections).firstOrNull { it.id == c.placeId } }
     val checkResult = remember(check, collections, decks) {
         check?.let { c -> reconcile(collections, decks, CheckScope(c.placeId, c.section), c.scans) }
@@ -236,9 +238,9 @@ fun ScanScreen(
     // Cards scanned but not put away yet: leaving would throw them away, so it asks first.
     var confirmLeave by remember { mutableStateOf(false) }
     val leave = {
-        if (putAwayTarget != null || tickList != null || check != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
+        if (putAwayTarget != null || tickList != null || check != null || sort != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
     }
-    BackHandler(enabled = putAwayTarget == null && tickList == null && check == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
+    BackHandler(enabled = putAwayTarget == null && tickList == null && check == null && sort == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
     var showManualAdd by remember { mutableStateOf(false) }
 
     // Bound once the camera provider resolves, so the torch button has something to control.
@@ -615,8 +617,19 @@ fun ScanScreen(
             )
         }
 
+        // Sort mode: the card's pile, big, and the piles so far.
+        sort?.let { sorting ->
+            SortPanel(
+                session = sorting,
+                collections = collections,
+                onChange = viewModel::setSort,
+                onDone = viewModel::fileSort,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
         // Bottom overlay: view-list button.
-        if (putAwayTarget == null && tickList == null && check == null) Button(
+        if (putAwayTarget == null && tickList == null && check == null && sort == null) Button(
             onClick = { showList = true },
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),

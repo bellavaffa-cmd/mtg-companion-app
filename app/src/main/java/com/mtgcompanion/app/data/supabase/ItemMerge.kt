@@ -7,9 +7,11 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckVersion
 import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
+import com.mtgcompanion.app.data.keepLoansFromOlderApp
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
 import com.mtgcompanion.app.data.mergeCameFrom
 import com.mtgcompanion.app.data.mergeCopyPlaces
+import com.mtgcompanion.app.data.mergeLoans
 import com.mtgcompanion.app.data.mergePlaceLists
 import com.mtgcompanion.app.data.tidied
 
@@ -33,6 +35,9 @@ import com.mtgcompanion.app.data.tidied
  *    last checked (PlaceCheck.kt) merges to the later check.
  *  - Where a deck's copies came from (its "cameFrom", see PullList.kt) merges card by card the same
  *    way; a deck saved by an app that doesn't know about it leaves it as it was.
+ *  - The loans (on the Unsorted pile, see Loans.kt) merge loan by loan, their cards card by card, and
+ *    the copies back only go up; a pile saved by an app that doesn't know about loans leaves them as
+ *    they were.
  * The web app merges the same way — see MtgCompanionWeb/src/sync/mergeItems.ts.
  */
 object ItemMerge {
@@ -172,11 +177,18 @@ object ItemMerge {
     )
 
     fun mergeCollections(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection =
-        // A side saved by an app that doesn't know about places left them as they were.
-        mergeCollectionsKnowingPlaces(base, keepPlacesFromOlderApp(base, mine), keepPlacesFromOlderApp(base, theirs), minePreferred)
+        // A side saved by an app that doesn't know about places left them as they were, and one that
+        // doesn't know about loans left those as they were.
+        mergeCollectionsKnowingPlaces(
+            base,
+            keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine)),
+            keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs)),
+            minePreferred
+        )
 
     private fun mergeCollectionsKnowingPlaces(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection = theirs.copy(
         storagePlaces = mergePlaceLists(base.storagePlaces, mine.storagePlaces, theirs.storagePlaces, minePreferred),
+        loans = mergeLoans(base.loans, mine.loans, theirs.loans, minePreferred),
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         type = pick(base.type, mine.type, theirs.type, minePreferred),
         createdAt = minOf(mine.createdAt, theirs.createdAt),

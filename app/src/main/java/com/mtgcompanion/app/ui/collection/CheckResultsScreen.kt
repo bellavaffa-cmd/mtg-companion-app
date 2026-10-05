@@ -210,6 +210,12 @@ fun CheckResultsScreen(
             Button(
                 onClick = {
                     onChange { markChecked(it, place.id, System.currentTimeMillis()) }
+                    // Each card found where it should be, in its history (CopyHistory.kt).
+                    val at = System.currentTimeMillis()
+                    val spot = com.mtgcompanion.app.data.MoveSpot(place.id, listOfNotNull(place.name, session?.section).joinToString(" › "))
+                    com.mtgcompanion.app.data.CopyHistoryStore.record(result.lines.filter { it.kind == com.mtgcompanion.app.data.CheckKind.HERE }.map {
+                        com.mtgcompanion.app.data.checkedMove(at, com.mtgcompanion.app.data.MoveCard(it.scan.name, it.scan.scryfallId), spot, "where it should be")
+                    })
                     CheckSessions.clear()
                     onSaved(place.id)
                 },

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -44,6 +45,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +60,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.CopyHistoryStore
+import com.mtgcompanion.app.data.movesOfPlace
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.PlaceKind
 import com.mtgcompanion.app.data.CheckSessions
@@ -117,9 +121,14 @@ fun PlaceScreen(
     /** A binder's Add cards in order (BinderFitScreen). */
     onFit: (String) -> Unit = {},
     /** The page a binder opens at. */
-    startPage: Int = 1
+    startPage: Int = 1,
+    /** Lend cards from the place (LendScreen.kt). */
+    onLend: (String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
+    val historyContext = androidx.compose.ui.platform.LocalContext.current
+    remember { CopyHistoryStore.init(historyContext) }
+    val history by CopyHistoryStore.moves.collectAsState()
     val money = rememberMoney()
     val places = placesOf(collections)
     val place = places.firstOrNull { it.id == placeId }
@@ -173,6 +182,11 @@ fun PlaceScreen(
                                 text = { Text("New place inside", color = colors.textPrimary) },
                                 leadingIcon = { Icon(Icons.Filled.Add, null, tint = colors.textMuted) },
                                 onClick = { menu = false; adding = true }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Lend cards from here", color = colors.textPrimary) },
+                                leadingIcon = { Icon(Icons.Filled.Handshake, null, tint = colors.textMuted) },
+                                onClick = { menu = false; onLend(place.id) }
                             )
                             DropdownMenuItem(
                                 text = { Text("Delete place", color = colors.error) },
@@ -345,6 +359,14 @@ fun PlaceScreen(
                 if (cards.isEmpty() && sections.isEmpty()) item {
                     Text("Nothing here yet. Put cards away to fill it.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
                 }
+            }
+            // What came and went lately, on this phone (CopyHistory.kt).
+            val recent = movesOfPlace(history, placeAndInside(places, placeId), 10)
+            if (recent.isNotEmpty()) {
+                item {
+                    Text("RECENT MOVES", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = colors.textMuted, modifier = Modifier.padding(top = 18.dp))
+                }
+                item { MoveList(recent, named = true) }
             }
         }
     }

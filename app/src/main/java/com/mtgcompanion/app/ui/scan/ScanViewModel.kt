@@ -63,6 +63,18 @@ import com.mtgcompanion.app.data.pocketLabel
 import com.mtgcompanion.app.data.suggestSpot
 import com.mtgcompanion.app.data.undoPutAway
 import com.mtgcompanion.app.data.putAway as putAwayInto
+import com.mtgcompanion.app.data.CopyHistoryStore
+import com.mtgcompanion.app.data.MoveCard
+import com.mtgcompanion.app.data.MoveSpot
+import com.mtgcompanion.app.data.SortScan
+import com.mtgcompanion.app.data.SortSession
+import com.mtgcompanion.app.data.SortSessionStore
+import com.mtgcompanion.app.data.addedMove
+import com.mtgcompanion.app.data.fileEveryPile
+import com.mtgcompanion.app.data.nextPile
+import com.mtgcompanion.app.data.ownedCounts
+import com.mtgcompanion.app.data.putAwayMove
+import com.mtgcompanion.app.data.wantedByDecks
 import com.mtgcompanion.app.data.PullProgress
 import com.mtgcompanion.app.data.PullSource
 import com.mtgcompanion.app.data.placeIdFromLabel
@@ -210,7 +222,9 @@ class ScanViewModel(
     /** Scan-to-tick mode: each card scanned ticks its row on this deck's pull list or put-back list (PullList.kt). */
     tickList: TickList? = null,
     /** Check mode: each card scanned is matched against what's listed in this storage place (PlaceCheck.kt). */
-    checkPlaceId: String? = null
+    checkPlaceId: String? = null,
+    /** Sort mode: each card scanned goes in the first pile whose rule fits it (SortPiles.kt). */
+    sortPile: Boolean = false
 ) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -977,6 +991,69 @@ class ScanViewModel(
         _uiState.update { it.copy(status = "Last scan taken back") }
     }
 
+    // ---- Sort mode ----
+
+    private val sortStore = SortSessionStore(appContext)
+    private val _sort = MutableStateFlow(if (sortPile) sortStore.session() ?: SortSession(rules = emptyList()) else null)
+    /**
+     * Sorting a new pile (SortPiles.kt): the piles' rules and the cards scanned so far, each in its
+     * pile; kept in SortSessionStore too, so leaving the scanner doesn't lose it. The web app's
+     * ScanPage.tsx sort mode.
+     */
+    val sort: StateFlow<SortSession?> = _sort.asStateFlow()
+
+    init {
+        // A first sort starts from the piles last used here, or the default ones for the user's places.
+        if (sortPile && _sort.value?.rules.isNullOrEmpty()) viewModelScope.launch {
+            val cols = collectionRepository.collectionsFlow.first()
+            _sort.value?.let { setSort(it.copy(rules = sortStore.piles(cols))) }
+        }
+        CopyHistoryStore.init(appContext)
+    }
+
+    /** Changes the sort: its source, its rules (kept for next time), new cards or not, or Undo last. */
+    fun setSort(session: SortSession) {
+        if (session.rules != _sort.value?.rules && session.rules.isNotEmpty()) sortStore.savePiles(session.rules)
+        _sort.value = session
+        sortStore.saveSession(session)
+    }
+
+    /** Puts [card] in the first pile whose rule fits it, and says which. */
+    private fun sortCard(card: ScryfallCard, session: SortSession): Long {
+        val id = nextScanId++
+        val now = if (session.rules.isEmpty()) session.copy(rules = sortStore.piles(collections.value)) else session
+        val usd = card.prices?.usd?.toDoubleOrNull() ?: card.prices?.usdFoil?.toDoubleOrNull()
+        val choice = nextPile(now, card.name, card.rarity, usd, ownedCounts(collections.value, decks.value), wantedByDecks(collections.value, decks.value))
+        val scan = SortScan(
+            id, card.id, card.name, card.rarity, usd, cardFactsOf(card), newEntryOf(card),
+            choice?.index ?: -1, choice?.why.orEmpty(), choice?.decks?.takeIf { it.isNotEmpty() }
+        )
+        setSort(now.copy(scans = now.scans + scan))
+        _uiState.update { it.copy(status = if (choice != null) "${card.name} — pile ${choice.index + 1}" else "${card.name} — no pile fits", successToken = it.successToken + 1) }
+        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        return id
+    }
+
+    /** "Done: file every pile": every card in at its pile's place, and the sort starts again with the same piles. */
+    fun fileSort() {
+        val now = _sort.value ?: return
+        if (now.scans.isEmpty()) return
+        val at = System.currentTimeMillis()
+        val filed = fileEveryPile(collections.value, now)
+        val places = placesOf(filed.collections)
+        CopyHistoryStore.record(filed.steps.map { f ->
+            val place = f.step?.to?.placeId?.let { id -> places.firstOrNull { it.id == id } }
+            val where = place?.let { MoveSpot(it.id, f.to) }
+            val card = MoveCard(f.scan.name, f.scan.scryfallId)
+            if (now.newCards || f.step == null) addedMove(at, card, 1, where, now.source.trim().ifEmpty { null })
+            else putAwayMove(at, card, 1, where ?: MoveSpot("", f.to), f.step.from?.let { from -> places.firstOrNull { it.id == from.placeId }?.let { MoveSpot(it.id, it.name) } }, "sorting a pile")
+        })
+        viewModelScope.launch { collectionRepository.changeStorage { fileEveryPile(it, now).collections } }
+        val n = now.scans.size
+        setSort(now.copy(scans = emptyList()))
+        _uiState.update { it.copy(status = "Filed $n ${if (n == 1) "card" else "cards"}" + now.source.trim().let { s -> if (s.isNotEmpty()) " from $s" else "" }) }
+    }
+
     // ---- Scan-to-tick mode ----
 
     private val pullProgress = PullProgress(appContext)
@@ -1070,6 +1147,21 @@ class ScanViewModel(
                 outcome.collections
             }
             val done = row ?: return@launch
+            // The copy's history (CopyHistory.kt): put away from where it was, or added here.
+            val places = placesOf(collections.value)
+            val here = places.firstOrNull { it.id == placeId }?.let { MoveSpot(it.id, listOfNotNull(it.name, done.spot.section).joinToString(" › ")) }
+            if (here != null) {
+                val moveCard = MoveCard(card.name, card.id)
+                when (done.result) {
+                    PutAwayResult.NEW -> CopyHistoryStore.record(listOf(addedMove(System.currentTimeMillis(), moveCard, 1, here, "by scanning")))
+                    PutAwayResult.HERE -> Unit
+                    else -> {
+                        val from = done.step?.from?.let { f -> places.firstOrNull { it.id == f.placeId }?.let { MoveSpot(it.id, it.name) } }
+                            ?: if (done.step?.collectionId == UNSORTED_COLLECTION_ID) MoveSpot("", "Unsorted") else null
+                        CopyHistoryStore.record(listOf(putAwayMove(System.currentTimeMillis(), moveCard, 1, here, from, "by scanning")))
+                    }
+                }
+            }
             _session.update { listOf(done) + it }
             _uiState.update { it.copy(status = "${card.name} — ${done.label}", successToken = it.successToken + 1) }
         }
@@ -1104,6 +1196,7 @@ class ScanViewModel(
     private fun addScannedCard(card: ScryfallCard, exact: Boolean = false): Long {
         // While a box label's sheet is up, cards wait.
         if (_labelPlace.value != null) return nextScanId++
+        _sort.value?.let { return sortCard(card, it) }
         _tickList.value?.let { return tickCard(card, it) }
         _putAwayTarget.value?.let { return putAwayCard(card, it) }
         _check.value?.let { return checkCard(card, exact, it) }
@@ -1356,7 +1449,8 @@ class ScanViewModel(
         private val settingsRepository: SettingsRepository,
         private val putAwayPlaceId: String? = null,
         private val tickList: TickList? = null,
-        private val checkPlaceId: String? = null
+        private val checkPlaceId: String? = null,
+        private val sortPile: Boolean = false
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1369,7 +1463,8 @@ class ScanViewModel(
                 settingsRepository = settingsRepository,
                 putAwayPlaceId = putAwayPlaceId,
                 tickList = tickList,
-                checkPlaceId = checkPlaceId
+                checkPlaceId = checkPlaceId,
+                sortPile = sortPile
             ) as T
         }
     }

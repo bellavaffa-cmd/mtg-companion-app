@@ -11,6 +11,10 @@ import com.mtgcompanion.app.ui.collection.PlaceScreen
 import com.mtgcompanion.app.ui.collection.BinderFitScreen
 import com.mtgcompanion.app.ui.collection.CheckResultsScreen
 import com.mtgcompanion.app.ui.collection.PlaceLabelScreen
+import com.mtgcompanion.app.ui.collection.LoansScreen
+import com.mtgcompanion.app.ui.collection.LendScreen
+import com.mtgcompanion.app.ui.collection.CopyHistoryScreen
+import com.mtgcompanion.app.ui.collection.ValueByPlaceScreen
 import com.mtgcompanion.app.ui.decks.PullListScreen
 import com.mtgcompanion.app.ui.decks.PutBackScreen
 import com.mtgcompanion.app.ui.scan.TickList
@@ -42,6 +46,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.mtgcompanion.app.ui.common.LocalSyncControl
 import com.mtgcompanion.app.ui.common.SyncControl
@@ -277,6 +282,20 @@ private object Routes {
     /** The scanner putting cards away into a storage place. */
     const val PUT_AWAY = "put_away/{placeId}"
     fun putAway(placeId: String) = "put_away/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
+    /** Loans: lent out and borrowed (LoansScreen.kt); [tab] "borrowed" opens on what friends lent. */
+    const val LOANS = "loans?tab={tab}"
+    fun loans(borrowed: Boolean = false) = "loans" + if (borrowed) "?tab=borrowed" else ""
+    /** Lending one card's copies ([card]) or cards from a place ([place]). */
+    const val LEND = "lend?card={card}&place={place}"
+    fun lendCard(name: String) = "lend?card=" + URLEncoder.encode(name, StandardCharsets.UTF_8.name())
+    fun lendFrom(placeId: String) = "lend?place=" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
+    /** A card's history on this phone (CopyHistory.kt). */
+    const val COPY_HISTORY = "copy_history/{cardName}"
+    fun copyHistory(name: String) = "copy_history/" + URLEncoder.encode(name, StandardCharsets.UTF_8.name())
+    /** Value by place (ValueByPlace.kt). */
+    const val VALUE_BY_PLACE = "value_by_place"
+    /** The scanner sorting a new pile into piles (SortPiles.kt). */
+    const val SORT_PILE = "sort_pile"
     /** A storage place's label to print (and "All labels" from there). */
     const val PLACE_LABEL = "place_label/{placeId}"
     fun placeLabel(placeId: String) = "place_label/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
@@ -533,7 +552,8 @@ fun MtgNavGraph(
                     onLabel = { id -> navController.navigate(Routes.placeLabel(id)) },
                     onCheck = { id -> navController.navigate(Routes.check(id)) },
                     onFit = { id -> navController.navigate(Routes.placeFit(id)) },
-                    startPage = startPage
+                    startPage = startPage,
+                    onLend = { id -> navController.navigate(Routes.lendFrom(id)) }
                 )
             }
 
@@ -695,6 +715,85 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(
+                Routes.LOANS,
+                arguments = listOf(navArgument("tab") { type = NavType.StringType; nullable = true; defaultValue = null })
+            ) { entry ->
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                LoansScreen(
+                    collections = collections,
+                    decks = decks,
+                    social = socialRepository,
+                    startBorrowed = entry.arguments?.getString("tab") == "borrowed",
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onRetag = { id, tags -> addToScope.launch { collectionRepository.setUserTags(id, tags); deckRepository.setUserTags(id, tags) } },
+                    onLendFromPlace = { navController.navigateToTab(Routes.COLLECTION) }
+                )
+            }
+
+            destination(
+                Routes.LEND,
+                arguments = listOf(
+                    navArgument("card") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("place") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { entry ->
+                val card = entry.arguments?.getString("card")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
+                val place = entry.arguments?.getString("place")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                // What can be lent is read once, so wait for the library to load.
+                var loaded by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { collectionRepository.collectionsFlow.first(); deckRepository.decksFlow.first(); loaded = true }
+                if (loaded) LendScreen(
+                    cardName = card,
+                    placeId = place,
+                    collections = collections,
+                    decks = decks,
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onLent = { navController.navigate(Routes.loans()) { popUpTo(Routes.LEND) { inclusive = true } } }
+                )
+            }
+
+            destination(Routes.COPY_HISTORY, arguments = listOf(navArgument("cardName") { type = NavType.StringType })) { entry ->
+                val name = entry.arguments?.getString("cardName")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                CopyHistoryScreen(cardName = name, onBack = { navController.popBackStack() })
+            }
+
+            destination(Routes.VALUE_BY_PLACE) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                ValueByPlaceScreen(collections = collections, decks = decks, onBack = { navController.popBackStack() })
+            }
+
+            destination(Routes.SORT_PILE) {
+                val viewModel: ScanViewModel = viewModel(
+                    key = "sort-pile",
+                    factory = ScanViewModel.Factory(
+                        LocalContext.current.applicationContext,
+                        collectionRepository,
+                        deckRepository,
+                        cardIndexRepository,
+                        settingsRepository,
+                        sortPile = true
+                    )
+                )
+                ScanScreen(
+                    viewModel = viewModel,
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) }
+                )
+            }
+
             destination(Routes.SPREAD_THIN) {
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
@@ -801,7 +900,10 @@ fun MtgNavGraph(
                     onOpenSpreadThin = { navController.navigate(Routes.SPREAD_THIN) },
                     onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
                     onPutAway = { id -> navController.navigate(Routes.putAway(id)) },
-                    onOpenDecks = { navController.navigateToTab(Routes.DECKS) }
+                    onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
+                    onOpenLoans = { navController.navigate(Routes.loans()) },
+                    onSortPile = { navController.navigate(Routes.SORT_PILE) },
+                    onOpenValue = { navController.navigate(Routes.VALUE_BY_PLACE) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(
@@ -982,7 +1084,10 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() },
                     onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
                     onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
-                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) }
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
+                    onLend = { name -> navController.navigate(Routes.lendCard(name)) },
+                    onHistory = { name -> navController.navigate(Routes.copyHistory(name)) },
+                    onOpenLoans = { navController.navigate(Routes.loans()) }
                 )
             }
 
@@ -1118,7 +1223,8 @@ fun MtgNavGraph(
                     onOpenShared = openShared,
                     onOpenSharedCollection = { owner -> navController.navigate(Routes.sharedCollection(owner)) },
                     onOpenTrades = { navController.navigate(Routes.TRADES) },
-                    onOpenSharedTab = { socialRepository.openSharedTab = true; navController.navigateToTab(Routes.COLLECTION) }
+                    onOpenSharedTab = { socialRepository.openSharedTab = true; navController.navigateToTab(Routes.COLLECTION) },
+                    onOpenLoans = { navController.navigate(Routes.loans(borrowed = true)) }
                 )
             }
 

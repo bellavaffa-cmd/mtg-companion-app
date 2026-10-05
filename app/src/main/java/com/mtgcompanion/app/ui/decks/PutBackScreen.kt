@@ -199,6 +199,17 @@ fun PutBackScreen(
                     TextButton(onClick = {
                         val result = takeApart(deck, list, collections)
                         onApply(result.collections, decks.map { if (it.id == deck.id) result.deck else it })
+                        // The copies' history: each back in its place, or out of the deck with none (CopyHistory.kt).
+                        val at = System.currentTimeMillis()
+                        val places = com.mtgcompanion.app.data.placesOf(collections)
+                        com.mtgcompanion.app.data.CopyHistoryStore.record(list.groups.flatMap { it.rows }.map { r ->
+                            val dest = r.dest
+                            val place = dest?.let { d -> places.firstOrNull { it.id == d.placeId } }
+                            com.mtgcompanion.app.data.putBackMove(
+                                at, com.mtgcompanion.app.data.MoveCard(r.name, r.scryfallId), r.qty, deck.name,
+                                place?.let { com.mtgcompanion.app.data.MoveSpot(it.id, listOfNotNull(it.name, dest?.section).joinToString(" › ")) }
+                            )
+                        })
                         progress.clearPutBack(deck.id)
                         confirming = false
                         done = result

@@ -148,7 +148,12 @@ fun CardDetailScreen(
     onViewDetails: (String) -> Unit,
     /** Opens a storage place's page, from "Where it is". */
     onOpenPlace: (String) -> Unit = {},
-    onOpenDeck: (String) -> Unit = {}
+    onOpenDeck: (String) -> Unit = {},
+    /** Lend copies of a card, by name (LendScreen.kt). */
+    onLend: (String) -> Unit = {},
+    /** A card's history on this phone, by name (CopyHistoryScreen.kt). */
+    onHistory: (String) -> Unit = {},
+    onOpenLoans: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
@@ -246,7 +251,10 @@ fun CardDetailScreen(
                             decks = decks,
                             onOpenPlace = onOpenPlace,
                             onOpenDeck = onOpenDeck,
-                            onChange = viewModel::changeStorage
+                            onChange = viewModel::changeStorage,
+                            onLend = { onLend(card.name) },
+                            onHistory = { onHistory(card.name) },
+                            onOpenLoans = onOpenLoans
                         )
                     }
 

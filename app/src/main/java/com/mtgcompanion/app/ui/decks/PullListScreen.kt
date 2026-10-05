@@ -294,7 +294,24 @@ fun PullListScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         val result = movePulled(deck, list, ticked, collections, decks)
-                        if (result.moved > 0) onApply(result.collections, result.decks)
+                        if (result.moved > 0) {
+                            onApply(result.collections, result.decks)
+                            // The copies' history: each ticked row pulled from its place (CopyHistory.kt).
+                            val at = System.currentTimeMillis()
+                            val places = com.mtgcompanion.app.data.placesOf(collections)
+                            com.mtgcompanion.app.data.CopyHistoryStore.record(list.groups.flatMap { it.rows }.filter { it.key in ticked }.mapNotNull { r ->
+                                val from = when (val src = r.source) {
+                                    is com.mtgcompanion.app.data.PullSource.Place -> com.mtgcompanion.app.data.MoveSpot(
+                                        src.line.placeId,
+                                        listOfNotNull(places.firstOrNull { it.id == src.line.placeId }?.name ?: "a place", src.line.section).joinToString(" › ")
+                                    )
+                                    is com.mtgcompanion.app.data.PullSource.InDeck -> com.mtgcompanion.app.data.MoveSpot("", "${decks.firstOrNull { it.id == src.deckId }?.name ?: "another"} deck")
+                                    is com.mtgcompanion.app.data.PullSource.Loose -> null
+                                    else -> return@mapNotNull null
+                                }
+                                com.mtgcompanion.app.data.pulledMove(at, com.mtgcompanion.app.data.MoveCard(r.name, r.scryfallId), r.qty, deck.name, from)
+                            })
+                        }
                         save(emptySet())
                         progress.openPullDeck = null
                         moving = false

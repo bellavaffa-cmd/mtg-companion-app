@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.data.social
 
 import com.mtgcompanion.app.BuildConfig
+import com.mtgcompanion.app.data.Loan
+import com.mtgcompanion.app.data.ServerCard
 import com.mtgcompanion.app.data.PodGame
 import com.mtgcompanion.app.data.PodPlayer
 import com.mtgcompanion.app.data.parsePodGames
@@ -207,6 +209,52 @@ class SocialApi(private val auth: SupabaseAuth) {
     /** Whoever recorded a game, or the pod's owner, deletes it. */
     suspend fun deletePodGame(gameId: String) { call("delete_pod_game", JSONObject().put("p_game", gameId)) }
 
+    // ---- Loans to friends (supabase/migrations/20261006010000_loans.sql) ----
+    // The loan itself is the library's (Loans.kt); these only let the friend see it. Every call is
+    // best effort: the server may not have them yet, or the user may be offline.
+
+    /** Sends a loan to a friend (again): [cards] are the copies still out. */
+    suspend fun upsertLoan(loan: Loan, friendId: String, cards: List<ServerCard>): String =
+        call(
+            "upsert_loan",
+            JSONObject().put("p_client_id", loan.id).put("p_borrower", friendId)
+                .put("p_cards", JSONArray().apply { cards.forEach { put(JSONObject().put("name", it.name).put("qty", it.qty).put("printingId", it.printingId)) } })
+                .put("p_back_by", loan.backBy ?: JSONObject.NULL)
+                .put("p_game_night", loan.gameNight == true)
+                .put("p_note", loan.note ?: JSONObject.NULL)
+                .put("p_lent_at", java.time.Instant.ofEpochMilli(loan.lentAt).toString())
+        ).trim().trim('"')
+
+    /** Every card is back. */
+    suspend fun markLoanReturned(clientId: String) { call("mark_loan_returned", JSONObject().put("p_client_id", clientId)) }
+
+    /** What the user has borrowed from friends and not given back. */
+    suspend fun myBorrowedLoans(): List<BorrowedLoan> {
+        val text = call("my_borrowed_loans").trim()
+        if (text.isEmpty() || text == "null") return emptyList()
+        val a = JSONArray(text)
+        return (0 until a.length()).map { i ->
+            val o = a.getJSONObject(i)
+            val cards = o.optJSONArray("cards") ?: JSONArray()
+            BorrowedLoan(
+                id = o.getString("id"),
+                clientId = o.optString("clientId"),
+                lender = o.optJSONObject("lender")?.let { runCatching { parseProfile(it) }.getOrNull() },
+                cards = (0 until cards.length()).map { j ->
+                    val c = cards.getJSONObject(j)
+                    ServerCard(c.optString("name"), c.optInt("qty", 1), if (c.isNull("printingId")) "" else c.optString("printingId"))
+                },
+                backBy = if (o.isNull("backBy")) null else o.optString("backBy"),
+                gameNight = o.optBoolean("gameNight"),
+                note = if (o.isNull("note")) null else o.optString("note"),
+                lentAt = o.optLong("lentAt")
+            )
+        }
+    }
+
+    /** Asks the friend for the cards back, by a notification. False: one already went in the last 12 hours. */
+    suspend fun remindLoan(clientId: String): Boolean = call("remind_loan", JSONObject().put("p_client_id", clientId)).trim() == "true"
+
     // ---- Sharing ----
 
     suspend fun setShare(kind: ShareKind, itemId: String, allFriends: Boolean, podIds: List<String>, link: Boolean): Share? =
@@ -397,7 +445,8 @@ class SocialApi(private val auth: SupabaseAuth) {
             "not_host" to "Only the table can do that.",
             "not_in_pod" to "You're not in that pod any more.",
             "bad_players" to "Check the players: 2 to 10, each with a name, and one winner at most.",
-            "too_many_games" to "This pod has 5,000 games recorded — delete some old ones first."
+            "too_many_games" to "This pod has 5,000 games recorded — delete some old ones first.",
+            "too_many_loans" to "You have 500 loans open — get some cards back first."
         )
     }
 }

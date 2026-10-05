@@ -102,7 +102,13 @@ fun StorageTab(
     onOpenPlace: (String) -> Unit,
     onPutAway: (String) -> Unit,
     onOpenDecks: () -> Unit,
-    onChange: (StorageChange) -> Unit
+    onChange: (StorageChange) -> Unit,
+    /** The Loans screen (LoansScreen.kt). */
+    onOpenLoans: () -> Unit = {},
+    /** The scanner sorting a new pile into piles (SortPanel.kt). */
+    onSortPile: () -> Unit = {},
+    /** Value by place (ValueByPlaceScreen.kt). */
+    onOpenValue: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -213,7 +219,13 @@ fun StorageTab(
         }
         item {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                PlaceRow(Icons.Filled.Handshake, "Lent out", "Copies you've tagged “lent to …”", count(summary.lent), gold = false, onClick = null)
+                PlaceRow(Icons.Filled.Handshake, "Lent out", "Your loans, and what friends lent you", count(summary.lent), gold = false, onClick = onOpenLoans)
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                LoanButton("Sort a new pile", primary = false, modifier = Modifier.weight(1f), onClick = onSortPile)
+                LoanButton("Value by place", primary = false, modifier = Modifier.weight(1f), onClick = onOpenValue)
             }
         }
     }

@@ -45,6 +45,11 @@ import com.mtgcompanion.app.data.PlaceKind
 import com.mtgcompanion.app.data.WhereKind
 import com.mtgcompanion.app.data.WhereLine
 import com.mtgcompanion.app.data.CardFacts
+import com.mtgcompanion.app.data.CopyHistoryStore
+import com.mtgcompanion.app.data.MoveCard
+import com.mtgcompanion.app.data.MoveSpot
+import com.mtgcompanion.app.data.movedMove
+import com.mtgcompanion.app.data.putAwayMove
 import com.mtgcompanion.app.data.cardFactsOf
 import com.mtgcompanion.app.data.moveCopies
 import com.mtgcompanion.app.data.placeTree
@@ -60,8 +65,8 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
 
 /*
  * "Where it is" on a card's page: every copy of the card, by where it's physically kept — a place
- * (and its section or pocket), a deck box, lent out, or no place yet — with "Move a copy" and "Give it
- * a place". The logic is whereItIs() in data/StoragePlaces.kt. Mirrors the web app's
+ * (and its section or pocket), a deck box, lent out (a loan each), or no place yet — with "Move a
+ * copy", "Give it a place", "Lend" (LendScreen.kt) and "History" (CopyHistoryScreen.kt). The logic is whereItIs() in data/StoragePlaces.kt. Mirrors the web app's
  * src/collection/WhereItIs.tsx.
  */
 
@@ -73,7 +78,13 @@ fun WhereItIsPanel(
     decks: List<Deck>,
     onOpenPlace: (String) -> Unit,
     onOpenDeck: (String) -> Unit,
-    onChange: (StorageChange) -> Unit
+    onChange: (StorageChange) -> Unit,
+    /** Lend copies of the card (LendScreen.kt). */
+    onLend: () -> Unit = {},
+    /** The card's history on this phone (CopyHistoryScreen.kt). */
+    onHistory: () -> Unit = {},
+    /** The Loans screen, from a line of copies lent out. */
+    onOpenLoans: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -103,6 +114,7 @@ fun WhereItIsPanel(
             val open: (() -> Unit)? = when (line.kind) {
                 WhereKind.PLACE -> line.placeId?.let { id -> { onOpenPlace(id) } }
                 WhereKind.DECK -> line.deckId?.let { id -> { onOpenDeck(id) } }
+                WhereKind.LENT -> onOpenLoans
                 else -> null
             }
             Row(
@@ -140,11 +152,29 @@ fun WhereItIsPanel(
                 ) { Text("Give it a place") }
             }
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onLend,
+                enabled = lines.any { it.kind == WhereKind.PLACE || it.kind == WhereKind.DECK || it.kind == WhereKind.NONE },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
+                modifier = Modifier.weight(1f).height(44.dp)
+            ) { Text("Lend") }
+            Button(
+                onClick = onHistory,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
+                modifier = Modifier.weight(1f).height(44.dp)
+            ) { Text("History") }
+        }
     }
 
     if (giving) {
         PlacePickerDialog("Give $name a place", places, onDismiss = { giving = false }) { placeId ->
             giving = false
+            placesOf(collections).firstOrNull { it.id == placeId }?.let { place ->
+                CopyHistoryStore.record(listOf(putAwayMove(System.currentTimeMillis(), MoveCard(name, card?.id), 1, MoveSpot(place.id, place.name), null)))
+            }
             onChange { current ->
                 val place = placesOf(current).firstOrNull { it.id == placeId }
                 if (place == null) current else placeUnplaced(current, name, card?.id, suggestSpot(place, facts, current).first, 1).first
@@ -218,6 +248,11 @@ private fun MoveCopyDialog(
                 onClick = {
                     val target = to
                     val line = source?.first
+                    val toPlace = target?.let { id -> places.firstOrNull { it.id == id } }
+                    CopyHistoryStore.record(listOf(movedMove(
+                        System.currentTimeMillis(), MoveCard(name, preferId), count,
+                        line?.let { l -> l.placeId?.let { MoveSpot(it, l.title) } }, toPlace?.let { MoveSpot(it.id, it.name) }
+                    )))
                     onChange { current ->
                         val place = target?.let { id -> placesOf(current).firstOrNull { it.id == id } }
                         val spot = place?.let { suggestSpot(it, facts, current).first }

@@ -221,6 +221,18 @@ class DeckDetailViewModel(
             decks.filter { it.id != deckId }.map { it.asTarget() } + collections.map { it.asTarget() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /**
+     * This deck's copies out on loan (Loans.kt), by lower-cased card name: the deck still lists them,
+     * marked lent out.
+     */
+    val lentOut: StateFlow<Map<String, Int>> =
+        combine(collectionRepository.collectionsFlow, repository.decksFlow) { collections, decks ->
+            com.mtgcompanion.app.data.lentCopies(collections, decks.filter { it.id == deckId })
+                .filter { it.card.deckId == deckId }
+                .groupBy { it.card.name.trim().lowercase() }
+                .mapValues { (_, l) -> l.sumOf { it.qty } }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     /** scryfallId -> every other binder/deck holding that card, for the zoom overlay's "also in" list. */
     val cardSources: StateFlow<Map<String, List<CardSource>>> =
         combine(collectionRepository.collectionsFlow, repository.decksFlow) { collections, decks ->

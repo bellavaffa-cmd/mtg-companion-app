@@ -151,6 +151,18 @@ data class MatchSeat(val seat: Int, val profile: Profile)
 
 data class Match(val id: String, val code: String)
 
+/** A loan a friend made to the user, as the server keeps it (see Loans.kt). [backBy]: "2026-10-12". */
+data class BorrowedLoan(
+    val id: String,
+    val clientId: String,
+    val lender: Profile?,
+    val cards: List<com.mtgcompanion.app.data.ServerCard>,
+    val backBy: String?,
+    val gameNight: Boolean,
+    val note: String?,
+    val lentAt: Long
+)
+
 // ---- Parsing ----
 
 private fun JSONObject.str(name: String): String? = if (isNull(name)) null else optString(name)

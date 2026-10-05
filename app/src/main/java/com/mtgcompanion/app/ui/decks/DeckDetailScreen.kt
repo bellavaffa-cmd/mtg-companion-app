@@ -1417,6 +1417,9 @@ private fun CardsTab(
     fun isNearMiss(card: DeckCardEntry) = cardNameKeys(card.name).any { it in analysis.nearMissPieces }
     val cutCount = deck.cards.count { it.replaceable }
     val comboCount = deck.cards.count { isComboPiece(it) }
+    // Copies lent out from the deck (Loans.kt): still listed, marked lent out.
+    val lentOut by viewModel.lentOut.collectAsState()
+    fun lentOf(card: DeckCardEntry) = lentOut[card.name.trim().lowercase()] ?: 0
 
     // Grouped by type instantly from cached data, refined once analysis resolves from Scryfall;
     // only falls back to one flat list for entries with no type info at all yet.
@@ -1703,7 +1706,8 @@ private fun CardsTab(
                             comboPiece = isComboPiece(card),
                             nearMiss = isNearMiss(card),
                             onIncrement = { addTo.oneMore(deck, card) { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) } },
-                            onDecrement = { fewer(card) }
+                            onDecrement = { fewer(card) },
+                            lent = lentOf(card)
                         )
                     }
                 } else {
@@ -1720,7 +1724,8 @@ private fun CardsTab(
                             onIncrement = { addTo.oneMore(deck, card) { viewModel.setCardQuantity(card.scryfallId, card.quantity + 1) } },
                             onDecrement = { fewer(card) },
                             comboPiece = isComboPiece(card),
-                            nearMiss = isNearMiss(card)
+                            nearMiss = isNearMiss(card),
+                            lent = lentOf(card)
                         )
                     }
                 }
@@ -2531,7 +2536,9 @@ private fun DeckCardRow(
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
     comboPiece: Boolean = false,
-    nearMiss: Boolean = false
+    nearMiss: Boolean = false,
+    /** Copies lent out from the deck (Loans.kt). */
+    lent: Int = 0
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -2573,7 +2580,7 @@ private fun DeckCardRow(
                 card.typeLine?.let {
                     Text(it, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.padding(top = 3.dp))
+                DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.padding(top = 3.dp), lent = lent, quantity = card.quantity)
             }
             if (canLead) {
                 IconButton(onClick = onToggleCommander, modifier = Modifier.size(30.dp)) {
@@ -2610,7 +2617,9 @@ private fun DeckCardTile(
     nearMiss: Boolean = false,
     /** With these, the tile carries its own − and +, so copies change without opening the card. */
     onIncrement: (() -> Unit)? = null,
-    onDecrement: (() -> Unit)? = null
+    onDecrement: (() -> Unit)? = null,
+    /** Copies lent out from the deck (Loans.kt). */
+    lent: Int = 0
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -2670,7 +2679,7 @@ private fun DeckCardTile(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
             )
-            DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.fillMaxWidth().padding(top = 2.dp))
+            DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.fillMaxWidth().padding(top = 2.dp), lent = lent, quantity = card.quantity)
             if (onIncrement != null && onDecrement != null) {
                 Box(Modifier.padding(top = 4.dp)) { QuantityStepper(card.quantity, onDecrement = onDecrement, onIncrement = onIncrement) }
             }

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -48,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -94,7 +96,9 @@ fun FriendsScreen(
     onOpenShared: (SharedSummary) -> Unit,
     onOpenTrades: () -> Unit,
     onOpenSharedCollection: (String) -> Unit = {},
-    onOpenSharedTab: () -> Unit = {}
+    onOpenSharedTab: () -> Unit = {},
+    /** Loans: what friends have lent the user, and what the user lent (LoansScreen.kt). */
+    onOpenLoans: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     Scaffold(
@@ -111,7 +115,7 @@ fun FriendsScreen(
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.readableWidth(680.dp)) {
                 SocialGate(social, onSignIn) { overview ->
-                    FriendsContent(social, overview, onOpenFriend, onOpenShared, onOpenTrades, onOpenSharedCollection, onOpenSharedTab)
+                    FriendsContent(social, overview, onOpenFriend, onOpenShared, onOpenTrades, onOpenSharedCollection, onOpenSharedTab, onOpenLoans)
                 }
             }
         }
@@ -126,10 +130,14 @@ private fun FriendsContent(
     onOpenShared: (SharedSummary) -> Unit,
     onOpenTrades: () -> Unit,
     onOpenSharedCollection: (String) -> Unit,
-    onOpenSharedTab: () -> Unit
+    onOpenSharedTab: () -> Unit,
+    onOpenLoans: () -> Unit
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
+    // What friends have lent the user (supabase/migrations/20261006010000_loans.sql) — nothing if the server can't say.
+    var borrowed by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { runCatching { social.api.myBorrowedLoans() }.onSuccess { l -> borrowed = l.sumOf { b -> b.cards.sumOf { it.qty } } } }
     val me = overview.me!!
     // 0: friends, 1: the user's own profile.
     var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -176,6 +184,20 @@ private fun FriendsContent(
                 Icon(Icons.Filled.SwapHoriz, contentDescription = null, tint = colors.accent)
                 Text("Trades", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 if (inbox > 0) CountBadge(inbox)
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
+            }
+        }
+        item {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).clickable(onClick = onOpenLoans).padding(14.dp)
+            ) {
+                Icon(Icons.Filled.Handshake, contentDescription = null, tint = colors.accent)
+                Text(
+                    if (borrowed > 0) "Borrowed from friends: $borrowed ${if (borrowed == 1) "card" else "cards"}" else "Loans",
+                    style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f)
+                )
                 Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
             }
         }

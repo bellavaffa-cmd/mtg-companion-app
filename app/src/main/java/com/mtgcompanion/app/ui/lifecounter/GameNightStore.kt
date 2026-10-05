@@ -47,6 +47,17 @@ object GameNightStore {
     /** Changes tonight's night as it stands now. */
     fun update(transform: (GameNight) -> GameNight) = save(_nights.value.copy(current = transform(_nights.value.current)))
 
+    /**
+     * Game nights kept here, for a loan due back "next game night" (Loans.kt): whether there's been
+     * one (a night with players seated in pods, now or before, or players gathered), and when each
+     * started.
+     */
+    fun gameNights(): Pair<Boolean, List<Long>> {
+        val saved = _nights.value
+        val all = listOfNotNull(saved.current, saved.previous).filter { it.pods.isNotEmpty() }
+        return (all.isNotEmpty() || saved.current.players.size > 1) to all.map { it.createdAt }
+    }
+
     /** A new night with tonight's players; tonight becomes the one before (when its pods were made). */
     fun startNewNight() {
         val old = _nights.value.current

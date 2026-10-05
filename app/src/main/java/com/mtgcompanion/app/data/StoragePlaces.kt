@@ -12,8 +12,9 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
  *    the same id on every device, so they sync with the library like any binder does.
  *  - Which copies are where: each binder entry's "places", [{placeId, qty, foil?, section?, page?,
  *    slot?}]. Never more than the entry's copies, plain and foil apart; the rest have no place yet.
- *  - Physical decks and copies tagged "lent to …" count as places of their own, read from the decks
- *    and the tags rather than stored.
+ *  - Physical decks and copies out on loan count as places of their own, read from the decks and the
+ *    loans (the Unsorted pile's "loans", see Loans.kt) rather than stored — and, until they're turned
+ *    into loans, copies tagged "lent to …".
  *
  * Pure, so it can be tested. Mirrors the web app's src/collection/storagePlaces.ts rule for rule,
  * with the same tests (StoragePlacesTest.kt ↔ tests/collection/storagePlaces.test.ts).
@@ -280,7 +281,7 @@ fun splitPlaces(entry: CollectionEntry, plain: Int, foil: Int): Pair<List<CopyPl
     return staying.filter { it.qty > 0 } to going
 }
 
-// ---- How much has a place ----
+// ---- Copies out on loan ----
 
 private val LENT = Regex("^lent\\b", RegexOption.IGNORE_CASE)
 
@@ -289,15 +290,102 @@ fun lentTag(entry: CollectionEntry): String? = entry.userTags.firstOrNull { LENT
 
 private fun owned(collections: List<Collection>) = collections.filter { it.kind != CollectionType.WISHLIST }
 
+/** The user's loans, kept on the Unsorted pile (see Loans.kt). */
+fun loansOf(collections: List<Collection>): List<Loan> = collections.firstOrNull { it.isUnsorted }?.loans.orEmpty()
+
+/** Copies of a loan's card not back yet. */
+fun stillOut(card: LoanCard): Int = maxOf(0, card.qty - maxOf(0, card.back ?: 0))
+
+/** Whether some of a loan's cards are still out. */
+fun isOpen(loan: Loan): Boolean = loan.cards.any { stillOut(it) > 0 }
+
+/**
+ * Copies of one loan's card that count as lent out now: [qty] of them, from the binder [collectionId]
+ * (where they were found — a card lent from a binder) or from the card's deck.
+ */
+data class LentCopy(val loan: Loan, val card: LoanCard, val qty: Int, val collectionId: String? = null)
+
+private fun nameKeyOf(name: String) = name.trim().lowercase()
+private fun entryKey(collectionId: String, scryfallId: String, foil: Boolean) = "$collectionId|$scryfallId|${if (foil) "foil" else ""}"
+private fun deckKey(deckId: String, name: String) = "$deckId|${nameKeyOf(name)}"
+
+/**
+ * Every copy out on loan that's still there to be lent: a card lent from a binder is one of its
+ * entry's copies with no place (lending took it off its place), a card lent from a deck one of the
+ * deck's real copies. A loan can't count more copies than that — the oldest loans first — so one whose
+ * copies were since removed from the collection counts only what's left. A card whose binder has gone
+ * is looked for in the others, the Unsorted pile first.
+ */
+fun lentCopies(collections: List<Collection>, decks: List<Deck> = emptyList()): List<LentCopy> {
+    val loans = loansOf(collections).filter { isOpen(it) }
+    if (loans.isEmpty()) return emptyList()
+    val known = placesOf(collections).map { it.id }.toSet()
+    val budget = HashMap<String, Int>()
+    fun add(key: String, n: Int) { if (n > 0) budget[key] = (budget[key] ?: 0) + n }
+    val mine = owned(collections)
+    val piles = mine.filter { it.isUnsorted } + mine.filter { !it.isUnsorted }
+    for (c in piles) for (e in c.entries) {
+        val (plain, foil) = unplacedCopies(knownOnly(e, known))
+        add(entryKey(c.id, e.scryfallId, false), plain)
+        add(entryKey(c.id, e.scryfallId, true), foil)
+    }
+    for (d in decks) for (e in realCopiesOf(d)) add(deckKey(d.id, e.name), e.quantity)
+    fun take(key: String, want: Int): Int {
+        val n = minOf(want, budget[key] ?: 0)
+        if (n > 0) budget[key] = (budget[key] ?: 0) - n
+        return n
+    }
+    val out = mutableListOf<LentCopy>()
+    for (loan in loans.sortedBy { it.lentAt }) for (card in loan.cards) {
+        val want = stillOut(card)
+        if (want <= 0) continue
+        if (card.deckId != null) {
+            val got = take(deckKey(card.deckId, card.name), want)
+            if (got > 0) out += LentCopy(loan, card, got)
+            continue
+        }
+        var left = want
+        for (c in piles.filter { it.id == card.collectionId } + piles.filter { it.id != card.collectionId }) {
+            if (left <= 0) break
+            val got = take(entryKey(c.id, card.scryfallId, card.isFoil), left)
+            if (got <= 0) continue
+            left -= got
+            out += LentCopy(loan, card, got, c.id)
+        }
+    }
+    return out
+}
+
+/** How many copies of each binder entry are out on loan, by "collectionId|scryfallId|foil" ("" for plain). */
+fun lentByEntry(lent: List<LentCopy>): Map<String, Int> {
+    val out = HashMap<String, Int>()
+    for (l in lent) {
+        val c = l.collectionId ?: continue
+        val key = entryKey(c, l.card.scryfallId, l.card.isFoil)
+        out[key] = (out[key] ?: 0) + l.qty
+    }
+    return out
+}
+
+/** Copies of [entry] (in [collectionId]) out on loan, plain and foil, from [lentByEntry]. */
+fun lentOf(lent: Map<String, Int>, collectionId: String, entry: CollectionEntry): Pair<Int, Int> =
+    (lent[entryKey(collectionId, entry.scryfallId, false)] ?: 0) to (lent[entryKey(collectionId, entry.scryfallId, true)] ?: 0)
+
+/** How many of a deck's real copies of the card called [name] are out on loan. */
+fun lentFromDeck(lent: List<LentCopy>, deckId: String, name: String): Int =
+    lent.filter { it.card.deckId == deckId && sameCardName(it.card.name, name) }.sumOf { it.qty }
+
+// ---- How much has a place ----
+
 data class StorageSummary(
     /** Every copy owned: in binders, the Unsorted pile and physical decks. */
     val total: Int,
     /** Those with a place: a storage place, a deck box, or lent out. */
     val placed: Int,
     val unplaced: Int,
-    /** Real copies in physical decks (not proxies). */
+    /** Real copies in physical decks (not proxies), less those lent out from them. */
     val inDecks: Int,
-    /** Copies with no other place whose entry is tagged "lent …". */
+    /** Copies out on loan, and copies with no other place whose entry is tagged "lent …". */
     val lent: Int,
     /** Copies in each place itself — not counting the places inside it — by id. */
     val own: Map<String, Int>
@@ -305,6 +393,8 @@ data class StorageSummary(
 
 fun storageSummary(collections: List<Collection>, decks: List<Deck>): StorageSummary {
     val known = placesOf(collections).map { it.id }.toSet()
+    val lentNow = lentCopies(collections, decks)
+    val byEntry = lentByEntry(lentNow)
     val own = LinkedHashMap<String, Int>()
     var total = 0
     var inPlaces = 0
@@ -320,10 +410,14 @@ fun storageSummary(collections: List<Collection>, decks: List<Deck>): StorageSum
             here += p.qty
         }
         inPlaces += here
-        if (lentTag(e) != null) lent += copies - here
+        val (plain, foil) = lentOf(byEntry, c.id, e)
+        lent += plain + foil
+        if (lentTag(e) != null) lent += copies - here - plain - foil
     }
-    val inDecks = decks.sumOf { d -> realCopiesOf(d).sumOf { it.quantity } }
-    total += inDecks
+    val fromDecks = lentNow.filter { it.card.deckId != null }.sumOf { it.qty }
+    val inDecks = decks.sumOf { d -> realCopiesOf(d).sumOf { it.quantity } } - fromDecks
+    total += inDecks + fromDecks
+    lent += fromDecks
     val placed = inPlaces + inDecks + lent
     return StorageSummary(total, placed, total - placed, inDecks, lent, own)
 }
@@ -394,7 +488,10 @@ fun nextPocket(place: StoragePlace, collections: List<Collection>): Pair<Int, In
 
 enum class WhereKind { PLACE, DECK, LENT, NONE }
 
-/** One line of "Where it is". [placeId], [collectionId], [scryfallId] and [line] for a place; [deckId] for a deck. */
+/**
+ * One line of "Where it is". [placeId], [collectionId], [scryfallId] and [line] for a place; [deckId]
+ * for a deck; [loanId] for copies out on loan (null for copies tagged "lent …").
+ */
 data class WhereLine(
     val kind: WhereKind,
     val title: String,
@@ -404,7 +501,8 @@ data class WhereLine(
     val collectionId: String? = null,
     val scryfallId: String? = null,
     val line: CopyPlace? = null,
-    val deckId: String? = null
+    val deckId: String? = null,
+    val loanId: String? = null
 )
 
 private fun nameKeys(n: String): List<String> {
@@ -422,14 +520,31 @@ fun sameCardName(a: String, b: String): Boolean {
 fun pocketLabel(page: Int, slot: Int) = "Page $page, slot $slot"
 
 /**
+ * Where a loan's card came from, short: "Red box › Red", "Atraxa deck", or the binder it had no place
+ * in ("Unsorted"). "Somewhere" when that's all gone.
+ */
+fun loanCardFrom(card: LoanCard, collections: List<Collection>, decks: List<Deck>): String {
+    if (card.deckId != null) {
+        val deck = decks.firstOrNull { it.id == card.deckId }
+        return if (deck != null) "${deck.name} deck" else "a deck"
+    }
+    val place = card.placeId?.let { id -> placesOf(collections).firstOrNull { it.id == id } }
+    if (place != null) return if (card.section != null) "${place.name} › ${card.section}" else place.name
+    return collections.firstOrNull { it.id == card.collectionId }?.name ?: "Somewhere"
+}
+
+/**
  * Where every copy of the card called [name] is (any printing): a line per spot in a place, one per
- * physical deck, the copies lent out, and the ones with no place yet. With their total.
+ * physical deck (less the copies lent out from it), one per loan, and the ones with no place yet.
+ * With their total.
  */
 fun whereItIs(collections: List<Collection>, decks: List<Deck>, name: String): Pair<List<WhereLine>, Int> {
     val places = placesOf(collections)
     val byId = places.associateBy { it.id }
+    val lent = lentCopies(collections, decks).filter { sameCardName(it.card.name, name) }
+    val byEntry = lentByEntry(lent)
     val lines = mutableListOf<WhereLine>()
-    var lent = 0
+    var tagged = 0
     var lentWords = ""
     var none = 0
     val noneIn = mutableListOf<String>()
@@ -450,11 +565,12 @@ fun whereItIs(collections: List<Collection>, decks: List<Deck>, name: String): P
                 placeId = place.id, collectionId = c.id, scryfallId = e.scryfallId, line = line
             )
         }
-        val left = copies - here
+        val (plainOut, foilOut) = lentOf(byEntry, c.id, e)
+        val left = copies - here - plainOut - foilOut
         if (left <= 0) continue
         val tag = lentTag(e)
         if (tag != null) {
-            lent += left
+            tagged += left
             if (lentWords.isEmpty()) lentWords = tag
         } else {
             none += left
@@ -462,10 +578,15 @@ fun whereItIs(collections: List<Collection>, decks: List<Deck>, name: String): P
         }
     }
     for (d in decks) {
-        val qty = realCopiesOf(d).filter { sameCardName(it.name, name) }.sumOf { it.quantity }
+        val qty = realCopiesOf(d).filter { sameCardName(it.name, name) }.sumOf { it.quantity } - lentFromDeck(lent, d.id, name)
         if (qty > 0) lines += WhereLine(WhereKind.DECK, "Deck: ${d.name}", "In its deck box", qty, deckId = d.id)
     }
-    if (lent > 0) lines += WhereLine(WhereKind.LENT, "Lent out", lentWords.replaceFirstChar { it.uppercase() }, lent)
+    for (id in lent.map { it.loan.id }.distinct()) {
+        val mine = lent.filter { it.loan.id == id }
+        val from = mine.map { loanCardFrom(it.card, collections, decks) }.distinct().joinToString(", ")
+        lines += WhereLine(WhereKind.LENT, "Lent to ${mine[0].loan.to}", "From $from", mine.sumOf { it.qty }, loanId = id)
+    }
+    if (tagged > 0) lines += WhereLine(WhereKind.LENT, "Lent out", lentWords.replaceFirstChar { it.uppercase() }, tagged)
     if (none > 0) lines += WhereLine(WhereKind.NONE, "No place yet", "In ${noneIn.joinToString(", ")}", none)
     return lines to lines.sumOf { it.qty }
 }
@@ -638,12 +759,15 @@ fun putAway(collections: List<Collection>, cardId: String, cardName: String, to:
         if (match) candidates += c to e
     }
     val finishes = if (foil) listOf(true, false) else listOf(false, true)
+    // Copies out on loan have no place, but they aren't here to put away.
+    val lent = lentByEntry(lentCopies(collections))
 
     // A copy with no place.
     for (f in finishes) for ((c, e) in candidates) {
         val clean = knownOnly(e, known)
         val (plain, foils) = unplacedCopies(clean)
-        if ((if (f) foils else plain) <= 0) continue
+        val (plainOut, foilOut) = lentOf(lent, c.id, e)
+        if ((if (f) foils - foilOut else plain - plainOut) <= 0) continue
         val entry = placeCopies(clean, to, 1, f).first
         return PutAwayOutcome(
             mapEntry(collections, c.id, e.scryfallId) { entry },
@@ -702,7 +826,7 @@ fun undoPutAway(collections: List<Collection>, step: PutAwayStep): List<Collecti
 /**
  * Gives up to [count] copies of the card called [name] that have no place the spot [to] — copies of
  * the printing [preferId] first, the Unsorted pile's before the binders', plain before foil. Copies
- * tagged as lent out are left alone. Also how many it gave.
+ * out on loan, or tagged as lent out, are left alone. Also how many it gave.
  */
 fun placeUnplaced(collections: List<Collection>, name: String, preferId: String?, to: Spot, count: Int): Pair<List<Collection>, Int> {
     val known = placesOf(collections).map { it.id }.toSet()
@@ -715,10 +839,15 @@ fun placeUnplaced(collections: List<Collection>, name: String, preferId: String?
     }
     var left = count
     var out = collections
+    // Copies out on loan have no place, but they aren't here to be given one.
+    val lent = lentByEntry(lentCopies(collections))
     for (foil in listOf(false, true)) for ((c, e) in order) {
         if (left <= 0) break
         val current = out.firstOrNull { it.id == c.id }?.entries?.firstOrNull { it.scryfallId == e.scryfallId } ?: continue
-        val (entry, moved) = placeCopies(knownOnly(current, known), to, left, foil)
+        val clean = knownOnly(current, known)
+        val (plain, foils) = unplacedCopies(clean)
+        val (plainOut, foilOut) = lentOf(lent, c.id, e)
+        val (entry, moved) = placeCopies(clean, to, minOf(left, if (foil) foils - foilOut else plain - plainOut), foil)
         if (moved == 0) continue
         left -= moved
         out = mapEntry(out, c.id, e.scryfallId) { entry }

@@ -45,6 +45,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Warning
@@ -146,11 +147,12 @@ internal fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
-/** Cut candidate, combo piece, or one card away from a combo — each at a glance. */
+/** Cut candidate, combo piece, or one card away from a combo — each at a glance. And copies lent out ([lent], Loans.kt). */
 @Composable
-internal fun DeckCardBadges(replaceable: Boolean, comboPiece: Boolean, nearMiss: Boolean, modifier: Modifier = Modifier) {
-    if (!replaceable && !comboPiece && !nearMiss) return
+internal fun DeckCardBadges(replaceable: Boolean, comboPiece: Boolean, nearMiss: Boolean, modifier: Modifier = Modifier, lent: Int = 0, quantity: Int = 1) {
+    if (!replaceable && !comboPiece && !nearMiss && lent <= 0) return
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = modifier) {
+        if (lent > 0) Badge(if (quantity > 1) "LENT OUT ×$lent" else "LENT OUT", Icons.Filled.Handshake, fill = LocalAppColors.current.warning)
         if (replaceable) Badge("CUT", Icons.Filled.SwapHoriz, fill = CutColor)
         if (comboPiece) Badge("COMBO", Icons.Filled.Bolt, fill = Gold)
         if (nearMiss && !comboPiece) Badge("+1 COMBO", Icons.Filled.Bolt, fill = null)

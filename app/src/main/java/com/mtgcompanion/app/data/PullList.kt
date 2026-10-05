@@ -186,7 +186,7 @@ private fun knownOnly(e: CollectionEntry, known: Set<String>): CollectionEntry {
  * Every copy [deck] still needs (see pullNeeds), with where to fetch it from, grouped in walking
  * order. Each copy is found once: in a place first (in tree order), then with no place (the Unsorted
  * pile's before the binders'), then in another deck you hold; what's left is a basic land or a card
- * not owned. Wishlists, and copies tagged as lent out, aren't fetched from.
+ * not owned. Wishlists, copies out on loan and copies tagged as lent out aren't fetched from.
  */
 fun pullList(deck: Deck, collections: List<Collection>, decks: List<Deck>): PullListData {
     val places = placesOf(collections)
@@ -195,6 +195,9 @@ fun pullList(deck: Deck, collections: List<Collection>, decks: List<Deck>): Pull
     val owned = collections.filter { it.kind != CollectionType.WISHLIST }
     val piles = owned.filter { it.isUnsorted } + owned.filter { !it.isUnsorted }
     val sources = mutableListOf<Source>()
+    // Copies out on loan (Loans.kt) aren't here to fetch.
+    val lent = lentCopies(collections, decks)
+    val lentHere = lentByEntry(lent)
     piles.forEachIndexed { at, c ->
         for (e in c.entries) {
             if (e.quantity + e.foilQuantity <= 0 || lentTag(e) != null) continue
@@ -206,7 +209,10 @@ fun pullList(deck: Deck, collections: List<Collection>, decks: List<Deck>): Pull
                 )
             }
             // Copies in a place that's gone have no place any more.
-            val (plain, foil) = unplacedCopies(knownOnly(e, byId.keys))
+            val (free, freeFoil) = unplacedCopies(knownOnly(e, byId.keys))
+            val (plainOut, foilOut) = lentOf(lentHere, c.id, e)
+            val plain = free - plainOut
+            val foil = freeFoil - foilOut
             if (plain > 0) sources += Source("l:${c.id}:${e.scryfallId}:", e.name, plain, PullSource.Loose(c.id, e.scryfallId, false), listOf(1, 0, at))
             if (foil > 0) sources += Source("l:${c.id}:${e.scryfallId}:foil", e.name, foil, PullSource.Loose(c.id, e.scryfallId, true), listOf(1, 1, at))
         }
@@ -221,7 +227,10 @@ fun pullList(deck: Deck, collections: List<Collection>, decks: List<Deck>): Pull
             val had = held[key]
             held[key] = if (had != null) had.first to had.second + real else e.name to real
         }
-        for ((key, h) in held) sources += Source("d:${d.id}:$key", h.first, h.second, PullSource.InDeck(d.id), listOf(2, i))
+        for ((key, h) in held) {
+            val qty = h.second - lentFromDeck(lent, d.id, h.first)
+            if (qty > 0) sources += Source("d:${d.id}:$key", h.first, qty, PullSource.InDeck(d.id), listOf(2, i))
+        }
     }
     val sorted = sources.sortedWith(rankOrder)
     val left = sorted.associate { it.key to it.qty }.toMutableMap()

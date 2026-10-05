@@ -100,6 +100,53 @@ data class StoragePlace(
     val rule: SortRule? get() = SortRule.fromName(sortRule)
 }
 
+// The pile's "loans" as JSON — locally and in sync, the web app's exactly:
+//   "loans": [{ "id": "…", "to": "Sam", "friendId": "…", "lentAt": 1790000000000, "backBy": "2026-10-12",
+//               "gameNight": true, "note": "for Saturday", "returnedAt": 1790000000000,
+//               "cards": [{ "name": "Sol Ring", "scryfallId": "…", "qty": 1, "deckId": "…" },
+//                         { "name": "The One Ring", "scryfallId": "…", "qty": 1, "foil": true, "collectionId": "unsorted",
+//                           "placeId": "…", "page": 3, "slot": 5, "back": 1 }] }]
+// Optional keys are null (left out) when not said, as in a binder entry's "places".
+
+/**
+ * Copies of one card lent in a loan, with where they came from: a deck ([deckId]), or a binder's
+ * entry ([collectionId]) — and, when they were in a place, that spot ([placeId], [section], [page],
+ * [slot]), so getting them back puts them there again. [back]: how many have come back. [foil] is
+ * true or null, never false. The web app's LoanCard, field for field (src/types/models.ts).
+ */
+data class LoanCard(
+    val name: String,
+    val scryfallId: String,
+    val qty: Int = 0,
+    val foil: Boolean? = null,
+    val collectionId: String? = null,
+    val placeId: String? = null,
+    val section: String? = null,
+    val page: Int? = null,
+    val slot: Int? = null,
+    val deckId: String? = null,
+    val back: Int? = null
+) {
+    val isFoil: Boolean get() = foil == true
+}
+
+/**
+ * Cards lent to someone: a friend by account ([friendId]) or anyone by name ([to] — a friend's name
+ * too). [backBy]: the day they're due back ("2026-10-12"); [gameNight]: true when due at the next game
+ * night (null otherwise). [returnedAt]: when the last card came back. The web app's Loan, field for field.
+ */
+data class Loan(
+    val id: String,
+    val to: String,
+    val friendId: String? = null,
+    val cards: List<LoanCard> = emptyList(),
+    val lentAt: Long = 0L,
+    val backBy: String? = null,
+    val gameNight: Boolean? = null,
+    val note: String? = null,
+    val returnedAt: Long? = null
+)
+
 /** What a storage place is. */
 enum class PlaceKind(val label: String) {
     BOX("Box"), BINDER("Binder"), DECK_BOX("Deck box"), SHELF("Shelf"), OTHER("Other");
@@ -151,7 +198,14 @@ data class Collection(
      * there and has the same id on every device, so the places ride along with it when it syncs.
      * Null (left out) until the first place is made; then kept, as an empty list once none are left.
      */
-    val storagePlaces: List<StoragePlace>? = null
+    val storagePlaces: List<StoragePlace>? = null,
+    /**
+     * The Unsorted pile only: the user's loans — cards lent to a friend or anyone else (see Loans.kt).
+     * They ride along with the pile when it syncs, like [storagePlaces], and merge loan by loan. Null
+     * (left out) until the first loan; then kept, as an empty list once none are left — so a pile with
+     * no "loans" key was saved by an app that doesn't know about loans.
+     */
+    val loans: List<Loan>? = null
 ) {
     val kind: CollectionType get() = CollectionType.fromName(type)
     /** The pile of cards not in a binder yet (see [UNSORTED_COLLECTION_ID]) — not a binder itself. */

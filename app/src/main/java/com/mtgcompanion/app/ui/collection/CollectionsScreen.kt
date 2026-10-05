@@ -149,7 +149,13 @@ fun CollectionsScreen(
     /** Opens the scanner putting cards away into a storage place, by id. */
     onPutAway: (String) -> Unit = {},
     /** Opens the Decks tab (the Storage page's deck boxes). */
-    onOpenDecks: () -> Unit = {}
+    onOpenDecks: () -> Unit = {},
+    /** The Storage page's Lent out: the Loans screen. */
+    onOpenLoans: () -> Unit = {},
+    /** The Storage page's Sort a new pile: the scanner's sort mode. */
+    onSortPile: () -> Unit = {},
+    /** The Storage page's Value by place. */
+    onOpenValue: () -> Unit = {}
 ) {
     val tagBinders by viewModel.tagBinders.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
@@ -335,7 +341,10 @@ fun CollectionsScreen(
                         onOpenPlace = onOpenPlace,
                         onPutAway = onPutAway,
                         onOpenDecks = onOpenDecks,
-                        onChange = viewModel::changeStorage
+                        onChange = viewModel::changeStorage,
+                        onOpenLoans = onOpenLoans,
+                        onSortPile = onSortPile,
+                        onOpenValue = onOpenValue
                     )
                 } else {
                     CollectionsTab(
