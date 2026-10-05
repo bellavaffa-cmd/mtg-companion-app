@@ -18,7 +18,10 @@ filter wording — so a change to one usually needs the same change in the other
 
 ## Build and test
 
-- JDK 17, Gradle wrapper, AGP 8.5.2, compileSdk 34.
+- JDK 17, Gradle wrapper (8.14), AGP 8.13, Kotlin 2.2 (Compose compiler plugin), compileSdk and
+  targetSdk 36. `scripts/check-16kb-alignment.sh <apk>` checks native libs for 16 KB pages (CI runs it).
+  The app draws edge to edge with the system bars hidden; screens rely on the insets MtgNavGraph
+  applies (bars, cutout, keyboard) rather than adding their own.
 - `./gradlew testDebugUnitTest` — plain JVM unit tests; needs no secrets.
 - `./gradlew assembleBeta -PtesterBuild=N` / `./gradlew assembleRelease` — signed builds; need the
   keystore, so normally left to CI (below). Build one variant per Gradle run: beta and release

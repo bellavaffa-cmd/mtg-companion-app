@@ -61,6 +61,29 @@ jobs:
           if grep -q 'android.permission.REQUEST_INSTALL_PACKAGES' "$m"; then echo "::error::The Play build still asks for REQUEST_INSTALL_PACKAGES"; exit 1; fi
           echo "Play manifest OK"
 
+  # Android 15+ phones can use 16 KB memory pages, and Google Play requires apps targeting 35+ to
+  # support them: every 64-bit native library (onnxruntime, ML Kit, CameraX…) must be 16 KB
+  # aligned. Checked on a debug build — no keystore needed. Built as the Play variant
+  # (-PplayStore=true), whose libs are stored uncompressed, so the APK's zip alignment is checked
+  # too; the ELF check covers the GitHub APKs' compressed libs the same way.
+  native-16kb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: |
+          set -o pipefail
+          ./gradlew -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" :app:assembleDebug -PplayStore=true 2>&1 | tee build.log || {
+            grep -E -A15 "^e: |error:|What went wrong|Caused by|OutOfMemory|Java heap" build.log | head -80 \
+              | while IFS= read -r line; do [ -n "$line" ] && echo "::error::$line"; done
+            exit 1
+          }
+          scripts/check-16kb-alignment.sh app/build/outputs/apk/debug/*.apk
+
   relay-tests:
     runs-on: ubuntu-latest
     steps:

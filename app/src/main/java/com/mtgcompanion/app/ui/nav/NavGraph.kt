@@ -81,6 +81,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -450,7 +451,14 @@ fun MtgNavGraph(
         }
     ) { padding ->
         CompositionLocalProvider(LocalLayoutSize provides layoutSize) {
-        Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+        // The keyboard: edge to edge (enforced from targetSdk 35) the window no longer shrinks for it,
+        // so the content is padded up above it here — minus what the padding above already covers —
+        // and screens with text fields needn't each do it. Not on the life counter, whose tiles
+        // stay put; its overlays pad themselves (TableOverlay).
+        Row(
+            Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+                .then(if (currentRoute == Routes.LIFE_COUNTER || currentRoute == Routes.REMOTE) Modifier else Modifier.imePadding())
+        ) {
         if (showWideNav) {
             val destination = when (currentRoute) {
                 Routes.HOME, Routes.VALUE_HISTORY -> NavDestination.HOME

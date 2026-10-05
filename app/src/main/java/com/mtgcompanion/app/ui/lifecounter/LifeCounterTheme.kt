@@ -17,6 +17,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -286,7 +289,9 @@ fun TableOverlay(
                 .background(Color.Black.copy(alpha = scrim))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { }
         ) {
-            Column(Modifier.fillMaxSize()) {
+            // The scrim runs edge to edge like the table; the panel itself keeps clear of the camera
+            // cutout, any bar swiped into view and the keyboard (the table's route gets no insets).
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)

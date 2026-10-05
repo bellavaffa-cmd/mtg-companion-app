@@ -47,6 +47,7 @@
             android:exported="true"
             android:label="${appLabel}"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.MtgCompanionApp.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
