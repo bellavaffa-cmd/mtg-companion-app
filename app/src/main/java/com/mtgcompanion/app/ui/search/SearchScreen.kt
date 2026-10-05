@@ -1,6 +1,10 @@
 package com.mtgcompanion.app.ui.search
 
 import android.widget.Toast
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -112,7 +116,7 @@ fun SearchScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("Search", style = MaterialTheme.typography.headlineSmall) },
+                    title = { Text("Search", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.a11yHeading()) },
                     actions = {
                         if (mode == SearchMode.CARDS) {
                             TextButton(onClick = { viewModel.onFiltersChange(SearchFilters()) }) {
@@ -357,6 +361,7 @@ private fun ComboSearchBody(
                 val isSelected = color in colors
                 Box(
                     modifier = Modifier
+                        .minimumInteractiveComponentSize()
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(if (isSelected) Gold.copy(alpha = 0.22f) else Surface)
@@ -364,7 +369,7 @@ private fun ComboSearchBody(
                             BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) Gold else BorderColor),
                             CircleShape
                         )
-                        .clickable { onToggleColor(color) },
+                        .toggleable(value = isSelected, role = Role.Checkbox) { onToggleColor(color) },
                     contentAlignment = Alignment.Center
                 ) {
                     ManaSymbol(color.toString(), size = 22.dp)
@@ -517,6 +522,7 @@ private fun ManaColorPicker(selected: Set<Char>, onToggle: (Char) -> Unit) {
             val isSelected = color in selected
             Box(
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .size(44.dp)
                     .clip(CircleShape)
                     .background(if (isSelected) Gold.copy(alpha = 0.22f) else Surface)
@@ -524,7 +530,7 @@ private fun ManaColorPicker(selected: Set<Char>, onToggle: (Char) -> Unit) {
                         BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) Gold else BorderColor),
                         CircleShape
                     )
-                    .clickable { onToggle(color) },
+                    .toggleable(value = isSelected, role = Role.Checkbox) { onToggle(color) },
                 contentAlignment = Alignment.Center
             ) {
                 ManaSymbol(color.toString(), size = 26.dp)

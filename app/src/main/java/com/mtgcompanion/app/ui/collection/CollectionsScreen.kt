@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
 import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.EmptyPrompt
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -257,7 +258,7 @@ fun CollectionsScreen(
                 onSelectAll = { selected = pickedIds + filtered.map { it.scryfallId } },
                 onClear = { selected = emptySet() }
             ) else TopAppBar(
-                title = { Text("Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                title = { Text("Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 actions = {
                     SyncIconButton()
                     if (onShareCollection != null) {

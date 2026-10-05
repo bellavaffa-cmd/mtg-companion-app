@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.ui.decks
 
 import com.mtgcompanion.app.ui.common.AddToPick
+import androidx.compose.material3.minimumInteractiveComponentSize
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.data.AddCandidate
 import com.mtgcompanion.app.ui.common.toAddItem
 import com.mtgcompanion.app.ui.common.checkFor
@@ -2314,7 +2316,7 @@ private fun LogGameResultDialog(suggest: suspend (String) -> List<String>, onCon
                         modifier = Modifier.padding(bottom = 4.dp).clip(RoundedCornerShape(50)).background(Surface2).padding(start = 12.dp)
                     ) {
                         Text(c, style = MaterialTheme.typography.labelMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                        IconButton(onClick = { commanders = commanders - c }, modifier = Modifier.size(32.dp)) {
+                        IconButton(onClick = { commanders = commanders - c }, modifier = Modifier.minimumInteractiveComponentSize().size(32.dp)) {
                             Icon(Icons.Filled.Close, contentDescription = "Remove $c", tint = TextDim, modifier = Modifier.size(16.dp))
                         }
                     }
@@ -2759,7 +2761,7 @@ private fun DeckCardRow(
                 DeckCardBadges(card.replaceable, comboPiece, nearMiss, modifier = Modifier.padding(top = 3.dp), lent = lent, quantity = card.quantity)
             }
             if (canLead) {
-                IconButton(onClick = onToggleCommander, modifier = Modifier.size(30.dp)) {
+                IconButton(onClick = onToggleCommander, modifier = Modifier.minimumInteractiveComponentSize().size(30.dp)) {
                     Icon(
                         if (isCommander) Icons.Filled.Star else Icons.Outlined.Star,
                         contentDescription = "Set as commander",
@@ -3052,7 +3054,7 @@ private fun DeckHero(
                         Text(commander.name, style = MaterialTheme.typography.labelLarge, color = app.textPrimary.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Text(deck.name, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(deck.name, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.a11yHeading())
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 2.dp)) {
                     Row(verticalAlignment = Alignment.Bottom) {
                         CountUpText(deck.cards.sumOf { it.quantity }.toDouble(), NumberStyle(24), app.textPrimary)

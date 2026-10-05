@@ -1,6 +1,12 @@
 package com.mtgcompanion.app.ui.settings
 
 import com.mtgcompanion.app.data.usage.Usage
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.RowScope
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Block
 import com.mtgcompanion.app.data.social.SocialRepository
@@ -208,7 +214,7 @@ fun SettingsScreen(
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text("Settings", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                title = { Text("Settings", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = {
                     BackButton(onClick = onBack)
                 },
@@ -288,7 +294,7 @@ fun SettingsSectionScreen(
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text(section.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                title = { Text(section.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = {
                     BackButton(onClick = onBack)
                 },
@@ -342,8 +348,7 @@ private fun AppearanceSection(settingsRepository: SettingsRepository) {
         style = MaterialTheme.typography.bodySmall
     )
 
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Text("Brightness", style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+    ChoiceRow("Brightness") {
         FilterChip(
             selected = brightness == AppBrightness.DARK,
             onClick = { scope.launch { settingsRepository.setAppBrightness(AppBrightness.DARK) } },
@@ -386,7 +391,7 @@ private fun AppearanceSection(settingsRepository: SettingsRepository) {
     Column {
         Text("Accent color", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
         Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 10.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 10.dp).selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             AccentTheme.entries.forEach { theme ->
@@ -400,9 +405,29 @@ private fun AppearanceSection(settingsRepository: SettingsRepository) {
     }
 }
 
+/**
+ * A setting's name and its choices on one line — or, once the system font is large enough that they
+ * wouldn't fit, the name above and the choices under it, scrolling sideways if they must.
+ */
+@Composable
+private fun ChoiceRow(label: String, choices: @Composable RowScope.() -> Unit) {
+    if (LocalDensity.current.fontScale > 1.3f) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState()), content = choices)
+        }
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+            choices()
+        }
+    }
+}
+
 @Composable
 private fun AccentSwatch(theme: AccentTheme, selected: Boolean, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
+    // One of five: TalkBack reads "Sapphire, selected" as a radio choice.
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.selectable(selected = selected, role = Role.RadioButton, onClick = onClick)) {
         Box(
             modifier = Modifier
                 .size(40.dp)
@@ -473,8 +498,7 @@ private fun CardDisplaySection(settingsRepository: SettingsRepository) {
 
 @Composable
 private fun CardViewModeRow(label: String, mode: CardViewMode, onSelect: (CardViewMode) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+    ChoiceRow(label) {
         FilterChip(
             selected = mode == CardViewMode.LIST,
             onClick = { onSelect(CardViewMode.LIST) },

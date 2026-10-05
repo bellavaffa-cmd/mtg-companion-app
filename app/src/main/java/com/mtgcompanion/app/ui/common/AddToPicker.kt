@@ -108,6 +108,7 @@ fun AddToPicker(
             KeepSystemBarsHidden()
             Column(
                 Modifier
+                    .a11yPane(subject)
                     .width(440.dp)
                     .heightIn(max = 680.dp)
                     .clip(RoundedCornerShape(26.dp))
@@ -136,7 +137,7 @@ fun AddToPicker(
         }
     ) {
         KeepSystemBarsHidden()
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 20.dp)) {
+        Column(Modifier.a11yPane(subject).fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 20.dp)) {
             PickerContent(verb, subject, offered, imageUrl, canMakeBinder, canMakeDeck, considering, quantity, canBeFoil, startKind, offerSideboard, printing, onDismiss) { pick ->
                 scope.launch { sheetState.hide() }.invokeOnCompletion {
                     onDismiss()

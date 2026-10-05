@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.lifecounter
 
 import androidx.compose.foundation.background
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -102,7 +103,7 @@ fun PlayScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp)) {
-                Text("Play", style = MaterialTheme.typography.headlineMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+                Text("Play", style = MaterialTheme.typography.headlineMedium, color = colors.textPrimary, modifier = Modifier.a11yHeading().weight(1f))
                 IconButton(onClick = onOpenRules) { Icon(Icons.Filled.MenuBook, contentDescription = "Rules", tint = colors.textPrimary) }
             }
         }

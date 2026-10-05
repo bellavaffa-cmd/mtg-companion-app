@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.onboarding
 
 import androidx.compose.foundation.background
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -143,7 +144,7 @@ fun WelcomeScreen(
                 style = EyebrowStyle,
                 color = colors.textMuted
             )
-            Text(titleOf(step), style = MaterialTheme.typography.headlineSmall)
+            Text(titleOf(step), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.a11yHeading())
 
             when (step) {
                 WelcomeStep.COLLECTION -> {

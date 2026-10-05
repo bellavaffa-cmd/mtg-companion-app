@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.ui.tournament
 
 import com.mtgcompanion.app.data.usage.Usage
+import androidx.compose.material3.minimumInteractiveComponentSize
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.ui.common.EmptyAction
 import com.mtgcompanion.app.ui.common.EmptyPrompt
@@ -155,7 +157,7 @@ private fun EventScaffold(title: String, onBack: () -> Unit, content: @Composabl
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
@@ -409,7 +411,7 @@ fun NewEventScreen(repository: TournamentRepository, social: SocialRepository, o
                                 modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(colors.surface2).padding(start = 12.dp)
                             ) {
                                 Text("${i + 1}. ${p.name}", style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
-                                IconButton(onClick = { players = players.filterIndexed { j, _ -> j != i } }, modifier = Modifier.size(36.dp)) {
+                                IconButton(onClick = { players = players.filterIndexed { j, _ -> j != i } }, modifier = Modifier.minimumInteractiveComponentSize().size(36.dp)) {
                                     Icon(Icons.Filled.Close, contentDescription = "Remove ${p.name}", tint = colors.textDim, modifier = Modifier.size(16.dp))
                                 }
                             }

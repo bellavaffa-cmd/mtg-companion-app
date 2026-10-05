@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.detail
 
 import com.mtgcompanion.app.ui.common.checkFor
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.AddToPicker
 import com.mtgcompanion.app.ui.common.AddVerb
@@ -180,7 +181,7 @@ fun CardDetailScreen(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
-                title = { Text(state.card?.name ?: "Card", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                title = { Text(state.card?.name ?: "Card", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = {
                     BackButton(onClick = onBack)
                 },
@@ -602,7 +603,7 @@ private fun CardHeader(card: ScryfallCard) {
                 val manaCost = if (flipped) backFace?.manaCost else card.manaCost
                 manaCost?.takeIf { it.isNotBlank() }?.let { ManaCost(it, size = 20.dp) }
             }
-            Text(if (flipped) backFace?.name ?: card.name else card.name, style = MaterialTheme.typography.headlineMedium)
+            Text(if (flipped) backFace?.name ?: card.name else card.name, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.a11yHeading())
             if (card.tags.isNotEmpty()) {
                 CardTagsRow(card.tags, modifier = Modifier.padding(top = 2.dp))
             }

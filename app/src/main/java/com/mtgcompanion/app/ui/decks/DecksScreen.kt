@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
 import com.mtgcompanion.app.ui.common.SyncIconButton
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.EmptyAction
 import com.mtgcompanion.app.ui.common.EmptyPrompt
 import androidx.compose.material.icons.filled.Edit
@@ -178,7 +179,7 @@ fun DecksScreen(
         item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 18.dp, bottom = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.riseIn(0)) {
-                    Text("Decks", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                    Text("Decks", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.a11yHeading().weight(1f).padding(start = 4.dp))
                     SyncIconButton(filled = true)
                     Spacer(Modifier.width(8.dp))
                     if (decks.isNotEmpty()) {

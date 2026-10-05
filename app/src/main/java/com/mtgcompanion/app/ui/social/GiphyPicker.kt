@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
 import androidx.compose.foundation.background
+import com.mtgcompanion.app.ui.common.a11yPane
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -118,7 +119,7 @@ fun GiphyPickerDialog(social: SocialRepository, onPicked: suspend (link: String)
     }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(colors.bg).statusBarsPadding()) {
+        Column(Modifier.a11yPane("Pick a GIF").fillMaxSize().background(colors.bg).statusBarsPadding()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                 OutlinedTextField(
                     value = query,

@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.common
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -133,7 +134,7 @@ fun UserTagsSection(
                             .padding(start = 10.dp, end = 2.dp)
                     ) {
                         Text(tag, style = MaterialTheme.typography.labelMedium, color = TextPrimary)
-                        IconButton(onClick = { onChange(tags - tag) }, modifier = Modifier.size(28.dp)) {
+                        IconButton(onClick = { onChange(tags - tag) }, modifier = Modifier.minimumInteractiveComponentSize().size(28.dp)) {
                             Icon(Icons.Filled.Close, contentDescription = "Take off $tag", tint = TextMuted, modifier = Modifier.size(15.dp))
                         }
                     }

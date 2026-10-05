@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
 import androidx.compose.foundation.background
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +44,7 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
 fun SelectionTopBar(count: Int, total: Int, onSelectAll: () -> Unit, onClear: () -> Unit) {
     val colors = LocalAppColors.current
     TopAppBar(
-        title = { Text("$count selected", style = MaterialTheme.typography.titleLarge) },
+        title = { Text("$count selected", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
         navigationIcon = {
             IconButton(onClick = onClear) { Icon(Icons.Filled.Close, contentDescription = "Stop selecting", tint = colors.accent) }
         },

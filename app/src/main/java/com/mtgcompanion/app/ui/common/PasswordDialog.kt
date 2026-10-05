@@ -54,7 +54,7 @@ fun SetPasswordDialog(
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         containerColor = app.surface,
-        title = { Text(title, style = MaterialTheme.typography.titleLarge) },
+        title = { Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
         text = {
             KeepSystemBarsHidden()
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

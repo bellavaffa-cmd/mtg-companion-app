@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
 import android.widget.Toast
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -102,7 +103,7 @@ fun SpreadThinScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Spread thin", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Spread thin", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )

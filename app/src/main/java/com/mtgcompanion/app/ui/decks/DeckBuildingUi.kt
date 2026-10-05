@@ -167,7 +167,8 @@ private fun Badge(label: String, icon: androidx.compose.ui.graphics.vector.Image
     if (fill == null) {
         StatusBadge(label, fill = app.accent, ink = app.onAccent, icon = icon, outlined = true)
     } else {
-        StatusBadge(label, fill = fill, ink = if (fill == app.accent) app.onAccent else Color(0xFF1E0D02), icon = icon)
+        // Dark or white ink, whichever reads on the fill (the light theme's cut colour takes white).
+        StatusBadge(label, fill = fill, ink = if (fill == app.accent) app.onAccent else com.mtgcompanion.app.ui.theme.inkFor(fill), icon = icon)
     }
 }
 

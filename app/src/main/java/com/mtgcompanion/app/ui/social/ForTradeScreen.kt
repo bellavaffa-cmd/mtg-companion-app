@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.ui.social
 
 import androidx.compose.foundation.background
+import com.mtgcompanion.app.ui.common.a11yPane
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,7 +67,7 @@ fun ForTradeScreen(social: SocialRepository, collectionRepository: CollectionRep
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Cards for trade", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Cards for trade", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
@@ -166,7 +168,7 @@ private fun ForTradeList(social: SocialRepository, collectionRepository: Collect
 
     if (picking) {
         Dialog(onDismissRequest = { closePicker() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Column(Modifier.fillMaxSize().background(colors.bg)) {
+            Column(Modifier.a11yPane("Your binders").fillMaxSize().background(colors.bg)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text("Your binders", style = MaterialTheme.typography.titleLarge)

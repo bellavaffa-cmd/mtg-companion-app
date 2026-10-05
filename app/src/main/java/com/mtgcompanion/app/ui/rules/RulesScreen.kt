@@ -1,6 +1,7 @@
 ﻿package com.mtgcompanion.app.ui.rules
 
 import androidx.compose.foundation.layout.fillMaxHeight
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.readableWidth
 import androidx.compose.ui.unit.sp
 import com.mtgcompanion.app.ui.theme.OnGold
@@ -71,7 +72,7 @@ fun RulesScreen(viewModel: RulesViewModel) {
         containerColor = Bg,
         topBar = {
             TopAppBar(
-                title = { Text("Rules", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Rules", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )
         }

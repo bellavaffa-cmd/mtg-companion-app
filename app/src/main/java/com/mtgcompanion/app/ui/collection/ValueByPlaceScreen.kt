@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -107,7 +108,7 @@ fun ValueByPlaceScreen(collections: List<Collection>, decks: List<Deck>, onBack:
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Value by place", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Value by place", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )

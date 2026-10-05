@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.lifecounter
 
 import androidx.compose.foundation.background
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -90,7 +91,7 @@ fun GameNightScreen(viewModel: GameNightViewModel, onBack: () -> Unit, onOpenLif
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Game night", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Game night", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )

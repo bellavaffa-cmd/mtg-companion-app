@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
 import com.mtgcompanion.app.ui.common.BackButton
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
@@ -88,7 +89,7 @@ fun FriendScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text("Friend", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Friend", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
@@ -110,7 +111,7 @@ fun FriendScreen(
                         item {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
                                 Avatar(friend, 112.dp)
-                                Text(friend.displayName, style = MaterialTheme.typography.headlineSmall)
+                                Text(friend.displayName, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.a11yHeading())
                                 Text(friend.handle, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                                 if (pods.isNotEmpty()) Text("In ${pods.joinToString { it.name }}", style = MaterialTheme.typography.bodySmall, color = colors.textDim)
                                 ReputationLine(social, friendId)

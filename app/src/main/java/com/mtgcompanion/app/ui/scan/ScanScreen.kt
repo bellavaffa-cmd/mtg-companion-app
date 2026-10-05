@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.scan
 
 import com.mtgcompanion.app.data.grouped
+import androidx.compose.material3.minimumInteractiveComponentSize
 import com.mtgcompanion.app.ui.common.toAddItem
 import com.mtgcompanion.app.ui.common.AddCheck
 import androidx.compose.foundation.selection.toggleable
@@ -1061,10 +1062,10 @@ private fun ScannedCardRow(
                 }
             }
             // One more copy of this card: another row, as if it went past the camera again.
-            IconButton(onClick = onScanAgain, modifier = Modifier.size(30.dp)) {
+            IconButton(onClick = onScanAgain, modifier = Modifier.minimumInteractiveComponentSize().size(30.dp)) {
                 Icon(Icons.Filled.Add, contentDescription = "One more copy", tint = Gold, modifier = Modifier.size(18.dp))
             }
-            IconButton(onClick = onRemove, modifier = Modifier.size(30.dp)) {
+            IconButton(onClick = onRemove, modifier = Modifier.minimumInteractiveComponentSize().size(30.dp)) {
                 Icon(Icons.Filled.Close, contentDescription = "Take off this scan", tint = TextDim, modifier = Modifier.size(18.dp))
             }
         }

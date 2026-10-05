@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
 import com.mtgcompanion.app.ui.common.BackButton
+import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -135,7 +136,7 @@ fun FriendsScreen(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
-                title = { Text(if (profile) "Your profile" else "Friends", style = MaterialTheme.typography.titleLarge) },
+                title = { Text(if (profile) "Your profile" else "Friends", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = { if (profile) profile = false else onBack() }) },
                 actions = {
                     IconButton(onClick = onScanQr) { Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan a QR code", tint = colors.textPrimary) }
@@ -394,7 +395,7 @@ private fun ProfileTab(social: SocialRepository, me: Profile) {
         } else {
             Column(card.padding(vertical = 24.dp, horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Avatar(me, 112.dp)
-                Text(me.displayName, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 8.dp))
+                Text(me.displayName, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.a11yHeading().padding(top = 8.dp))
                 Text(me.handle, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
                 LineButton("Edit profile", { editing = true }, modifier = Modifier.padding(top = 8.dp), icon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) })
             }

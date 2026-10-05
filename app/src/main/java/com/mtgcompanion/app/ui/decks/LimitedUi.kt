@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -104,11 +105,11 @@ internal fun BasicLandsDialog(
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         ManaPips(listOf(colour), size = 18.dp)
                         Text(land, style = MaterialTheme.typography.bodyLarge, color = TextPrimary, modifier = Modifier.padding(start = 10.dp).weight(1f))
-                        IconButton(onClick = { step(colour, -1) }, enabled = count > 0, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { step(colour, -1) }, enabled = count > 0, modifier = Modifier.minimumInteractiveComponentSize().size(36.dp)) {
                             Icon(Icons.Filled.Remove, contentDescription = "One $land fewer", tint = TextMuted, modifier = Modifier.size(18.dp))
                         }
                         Text("$count", style = NumberStyle(22), color = TextPrimary, textAlign = TextAlign.Center, modifier = Modifier.width(32.dp))
-                        IconButton(onClick = { step(colour, 1) }, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { step(colour, 1) }, modifier = Modifier.minimumInteractiveComponentSize().size(36.dp)) {
                             Icon(Icons.Filled.Add, contentDescription = "One $land more", tint = TextMuted, modifier = Modifier.size(18.dp))
                         }
                     }

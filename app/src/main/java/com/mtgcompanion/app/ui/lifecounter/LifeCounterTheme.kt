@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
+import com.mtgcompanion.app.ui.common.cappedSp
+import com.mtgcompanion.app.ui.common.rememberReduceMotion
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -166,7 +168,8 @@ fun TableLabel(
 ) {
     Text(
         text.uppercase(),
-        style = tableText(size, color),
+        // Grows with the system font size up to 130%: the labels sit in a tile's fixed space.
+        style = tableText(cappedSp(size), color),
         textAlign = align,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
@@ -177,6 +180,8 @@ fun TableLabel(
 /** Scales from 0 to full size with an overshoot the first time it appears. */
 @Composable
 fun Modifier.popIn(delayMillis: Int = 0, easing: Easing = TableMotion.PopOvershoot): Modifier {
+    // "Remove animations": no pop, and no wait for one.
+    if (rememberReduceMotion()) return this
     val scale = remember { Animatable(0f) }
     LaunchedEffect(Unit) { scale.animateTo(1f, tween(TableMotion.FAST, delayMillis, easing)) }
     return graphicsLayer { scaleX = scale.value; scaleY = scale.value; alpha = scale.value.coerceIn(0f, 1f) }

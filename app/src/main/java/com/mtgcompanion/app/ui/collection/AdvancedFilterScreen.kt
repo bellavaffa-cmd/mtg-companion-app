@@ -1,6 +1,11 @@
 package com.mtgcompanion.app.ui.collection
 
 import com.mtgcompanion.app.data.NO_PLACE
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
+import com.mtgcompanion.app.ui.common.a11yPane
+import com.mtgcompanion.app.ui.common.a11yHeading
 
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -141,10 +146,11 @@ fun AdvancedFilterScreen(
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(
+            modifier = Modifier.a11yPane("Advanced filters"),
             containerColor = Bg,
             topBar = {
                 TopAppBar(
-                    title = { Text("Advanced filters", style = MaterialTheme.typography.titleLarge, maxLines = 1) },
+                    title = { Text("Advanced filters", style = MaterialTheme.typography.titleLarge, maxLines = 1, modifier = Modifier.a11yHeading()) },
                     navigationIcon = { BackButton(onClick = onDismiss) },
                     actions = {
                         TextButton(onClick = { b = CollectionFilter(); a = AdvancedFilter() }) { Text("Clear all", color = TextMuted) }
@@ -238,10 +244,11 @@ fun AdvancedFilterScreen(
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
+                                    .minimumInteractiveComponentSize()
                                     .size(44.dp)
                                     .clip(CircleShape)
                                     .border(BorderStroke(2.dp, if (on) Gold else androidx.compose.ui.graphics.Color.Transparent), CircleShape)
-                                    .clickable {
+                                    .toggleable(value = on, role = Role.Checkbox) {
                                         a = a.copy(colors = if (c == "C") (if (on) emptyList() else listOf("C")) else (a.colors - "C").toggle(c))
                                     }
                                     .alpha(if (on) 1f else 0.45f)

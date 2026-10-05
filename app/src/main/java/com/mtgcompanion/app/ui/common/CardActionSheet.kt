@@ -74,6 +74,7 @@ fun CardActionMenu(
             KeepSystemBarsHidden()
             Column(
                 Modifier
+                    .a11yPane(title ?: "Card actions")
                     .width(420.dp)
                     .heightIn(max = 640.dp)
                     .clip(RoundedCornerShape(26.dp))
@@ -103,7 +104,7 @@ fun CardActionMenu(
         }
     ) {
         KeepSystemBarsHidden()
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp).padding(bottom = 20.dp)) {
+        Column(Modifier.a11yPane(title ?: "Card actions").fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp).padding(bottom = 20.dp)) {
             MenuContent(title, subtitle, imageUrl, actions) { action ->
                 scope.launch { sheetState.hide() }.invokeOnCompletion {
                     onDismiss()
