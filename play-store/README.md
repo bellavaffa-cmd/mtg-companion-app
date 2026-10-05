@@ -51,7 +51,7 @@ before relying on it.
    DELETE statements by design (only the caller's own rows). Then test with a throwaway account:
    in the app, and at manabind.com/delete-account.
 4. **Push the web change** (`/privacy`, `/delete-account`) so both URLs are live. Fill in the
-   contact line on the privacy page (`src/pages/PrivacyPage.tsx`, `CONTACT`): it points at the
+   contact on both pages (`src/account/contact.ts`, `CONTACT`, in the web repo): it points at the
    GitHub issues page until you add an email address.
 5. **User-generated content terms.** Play's UGC policy asks that users agree to rules about
    objectionable content before they can post (messages, profile pictures, display names). The
