@@ -455,6 +455,30 @@ class LifeCounterViewModel(
         }
     }
 
+    init {
+        // A pod from game night, seated once the table has loaded (see LifeCounterSeed).
+        viewModelScope.launch {
+            combine(_ready, LifeCounterSeed.pending) { ready, seed -> if (ready) seed else null }.collect { seed ->
+                if (seed != null) {
+                    LifeCounterSeed.pending.value = null
+                    seatPod(seed)
+                }
+            }
+        }
+    }
+
+    /**
+     * Seats a game night pod: a table for its number of players, their names and commanders, and the
+     * user's seat saving to the deck they picked (no seat of theirs when they aren't in the pod).
+     */
+    private fun seatPod(seed: TableSeed) {
+        updateSettings { it.copy(layoutId = layoutIdFor(seed.players.size, it.layoutId), meSeat = seed.meSeat, meDeckId = seed.meDeckId) }
+        newGame()
+        seed.players.forEachIndexed { i, p ->
+            updatePlayer(i + 1) { it.copy(name = p.name.ifBlank { null }, commander = p.commander) }
+        }
+    }
+
     /**
      * What [seat] is playing, set at the table for a player without a phone of their own: their
      * commander (for everyone's game records), and its art behind a tile that has no picture yet.

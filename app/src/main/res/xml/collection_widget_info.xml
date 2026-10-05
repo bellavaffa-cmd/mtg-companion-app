@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The home-screen widget (widget/CollectionWidget.kt). The app redraws it when it notes a new
+     value or a price alert goes off; otherwise every six hours is plenty, as the value is noted
+     once a day. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/widget_collection"
+    android:minWidth="250dp"
+    android:minHeight="180dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="150dp"
+    android:previewLayout="@layout/widget_collection_preview"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="4"
+    android:targetCellHeight="3"
+    android:updatePeriodMillis="21600000"
+    android:widgetCategory="home_screen" />

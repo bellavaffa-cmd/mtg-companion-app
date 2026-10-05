@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The home-screen widget (widget/CollectionWidget.kt): the collection's value and its week, the
+     price alerts that went off lately, and the way into the life counter and the scanner. The picker's
+     preview is widget_collection_preview.xml. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:id="@+id/widget_value_area"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_collection"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/widget_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:text="@string/widget_no_figure"
+            android:textColor="@color/widget_text"
+            android:textSize="26sp" />
+
+        <TextView
+            android:id="@+id/widget_change"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="@string/widget_no_value"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/widget_price_alerts"
+        android:textColor="@color/widget_gold"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/widget_alert_1"
+        style="@style/Widget.MtgCompanionApp.AlertRow"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/widget_alert_2"
+        style="@style/Widget.MtgCompanionApp.AlertRow"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/widget_alert_3"
+        style="@style/Widget.MtgCompanionApp.AlertRow"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/widget_no_alerts"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="@string/widget_no_alerts"
+        android:textColor="@color/widget_text_dim"
+        android:textSize="12sp" />
+
+    <!-- Takes up the room left, so the buttons sit at the bottom however tall the widget is. -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_life"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="6dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_button_gold"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:text="@string/widget_life_counter"
+            android:textColor="@color/widget_on_gold"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/widget_scan"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_button"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:text="@string/widget_scan"
+            android:textColor="@color/widget_text"
+            android:textSize="13sp" />
+    </LinearLayout>
+</LinearLayout>

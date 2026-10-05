@@ -62,6 +62,20 @@
             </intent-filter>
         </activity>
 
+        <!-- The home-screen widget: collection value, price alerts, life counter and scan. A
+             relative class name, so it's the same receiver in the real app and the tester build. -->
+        <receiver
+            android:name=".widget.CollectionWidget"
+            android:exported="false"
+            android:label="@string/widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/collection_widget_info" />
+        </receiver>
+
         <!-- Serves the downloaded update APK to the system package installer. -->
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Icon
@@ -51,7 +52,8 @@ fun PlayScreen(
     onOpenRules: () -> Unit,
     /** Every deck's games together. */
     onOpenPlaygroup: () -> Unit = {},
-    onOpenEvents: (() -> Unit)? = null
+    onOpenEvents: (() -> Unit)? = null,
+    onOpenGameNight: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     LazyColumn(
@@ -69,8 +71,9 @@ fun PlayScreen(
                 }
             }
         }
+        item { PlayRow(Icons.Filled.Groups, "Game night", "Who's here, fair pods by power, and each pod's game") { onOpenGameNight() } }
         item { PlayRow(Icons.Filled.QrCodeScanner, "Join a table", "Scan a seat's QR code: your phone becomes your remote") { onJoinTable() } }
-        item { PlayRow(Icons.Filled.Groups, "Playgroup", "Your record across every deck: who you play, your nemesis, your best decks") { onOpenPlaygroup() } }
+        item { PlayRow(Icons.Filled.Leaderboard, "Playgroup", "Your record across every deck: who you play, your nemesis, your best decks") { onOpenPlaygroup() } }
         onOpenEvents?.let { open ->
             item { PlayRow(Icons.Filled.EmojiEvents, "Events", "Run a Swiss or Commander pod event: pairings, round clock, standings") { open() } }
         }

@@ -164,6 +164,8 @@ import com.mtgcompanion.app.ui.tournament.EventScreen
 import com.mtgcompanion.app.ui.tournament.EventsScreen
 import com.mtgcompanion.app.ui.tournament.NewEventScreen
 import com.mtgcompanion.app.ui.tournament.TournamentRepository
+import com.mtgcompanion.app.ui.lifecounter.GameNightScreen
+import com.mtgcompanion.app.ui.lifecounter.GameNightViewModel
 import com.mtgcompanion.app.ui.lifecounter.RemoteScreen
 import com.mtgcompanion.app.ui.social.WhoHasItDialog
 import com.mtgcompanion.app.ui.lifecounter.RemoteViewModel
@@ -222,6 +224,8 @@ private object Routes {
     const val EVENT_NEW = "event_new"
     const val EVENT = "event/{eventId}"
     fun event(eventId: String) = "event/$eventId"
+    /** Game night: players, fair pods, each pod's game on the life counter. */
+    const val GAME_NIGHT = "game_night"
     const val VALUE_HISTORY = "value_history"
     /** Cards the decks use more copies of than the user owns — from the Collection's All cards. */
     const val SPREAD_THIN = "spread_thin"
@@ -299,6 +303,14 @@ fun MtgNavGraph(
     LaunchedEffect(openRequest) {
         val open = openRequest ?: return@LaunchedEffect
         pendingOpen.value = null
+        // The home-screen widget: the life counter, the scanner, the collection's value, or a card whose
+        // price alert went off.
+        when {
+            open == "life" -> { navController.navigate(Routes.LIFE_COUNTER) { launchSingleTop = true }; return@LaunchedEffect }
+            open == "scan" -> { navController.navigateToTab(Routes.SCAN); return@LaunchedEffect }
+            open == "value" -> { navController.navigate(Routes.VALUE_HISTORY) { launchSingleTop = true }; return@LaunchedEffect }
+            open.startsWith("card:") -> { navController.navigate(Routes.detail(open.removePrefix("card:"))) { launchSingleTop = true }; return@LaunchedEffect }
+        }
         // A price alert: the wishlist it's on.
         if (open.startsWith("binder:")) {
             navController.navigateToTab(Routes.COLLECTION)
@@ -358,8 +370,7 @@ fun MtgNavGraph(
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
-                Routes.PLAY -> NavDestination.LIFE_COUNTER
-                Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT, Routes.PLAYGROUP -> NavDestination.LIFE_COUNTER
+                Routes.PLAY, Routes.GAME_NIGHT, Routes.PLAYGROUP, Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
                 else -> null
@@ -763,7 +774,19 @@ fun MtgNavGraph(
                     onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
                     onOpenRules = { navController.navigateToTab(Routes.RULES) },
                     onOpenPlaygroup = { navController.navigate(Routes.PLAYGROUP) },
-                    onOpenEvents = { navController.navigate(Routes.EVENTS) { launchSingleTop = true } }
+                    onOpenEvents = { navController.navigate(Routes.EVENTS) { launchSingleTop = true } },
+                    onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } }
+                )
+            }
+
+            destination(Routes.GAME_NIGHT) {
+                val viewModel: GameNightViewModel = viewModel(
+                    factory = GameNightViewModel.Factory(LocalContext.current, deckRepository, socialRepository, lifeCounterSettingsRepository)
+                )
+                GameNightScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) }
                 )
             }
 

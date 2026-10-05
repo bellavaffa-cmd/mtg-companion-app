@@ -24,6 +24,7 @@ import com.mtgcompanion.app.MainActivity
 import com.mtgcompanion.app.R
 import com.mtgcompanion.app.data.social.PushNotifications
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.widget.CollectionWidget
 import kotlinx.coroutines.flow.first
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -161,7 +162,11 @@ object PriceAlerts {
             val cardRepository = CardRepository()
             // A failed price note mustn't stop the alerts.
             val known = runCatching { notePrices(collections, cardRepository) }.getOrDefault(emptyMap())
-            notify(applicationContext, check(applicationContext, collections, cardRepository, known))
+            val hits = check(applicationContext, collections, cardRepository, known)
+            // The home-screen widget shows the latest ones.
+            runCatching { CollectionWidget.noteAlerts(applicationContext, hits) }
+            notify(applicationContext, hits)
+            if (hits.isNotEmpty()) runCatching { CollectionWidget.refresh(applicationContext) }
             Result.success()
         } catch (e: Exception) {
             Result.retry()

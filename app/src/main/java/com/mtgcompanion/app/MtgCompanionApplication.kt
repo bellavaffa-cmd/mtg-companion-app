@@ -41,6 +41,8 @@ import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterSettingsRepository
 import com.mtgcompanion.app.network.NetworkModule
 import com.mtgcompanion.app.update.UpdateManager
+import com.mtgcompanion.app.widget.CollectionWidget
+import kotlinx.coroutines.flow.drop
 
 class MtgCompanionApplication : Application(), ImageLoaderFactory {
 
@@ -96,6 +98,12 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
                 .collect { (collections, decks) ->
                     if (withStandingCollections(collections, decks) !== collections) collectionRepository.maintainStandingCollections(decks)
                 }
+        }
+        // The home-screen widget follows the collection's value and the currency prices show in.
+        appScope.launch {
+            kotlinx.coroutines.flow.combine(ValueHistory.points, Prices.money) { points, money -> points.lastOrNull() to money }
+                .distinctUntilChanged().drop(1)
+                .collect { runCatching { CollectionWidget.refresh(this@MtgCompanionApplication) } }
         }
         appScope.launch {
             var wasSignedIn = false
