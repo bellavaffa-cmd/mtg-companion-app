@@ -22,11 +22,13 @@ data class MoveTarget(
     val imageUrl: String? = null,
     val cards: Int? = null,
     /** A deck whose format has a sideboard — the picker can put cards there. */
-    val hasSideboard: Boolean = false
+    val hasSideboard: Boolean = false,
+    /** A draft or sealed deck, whose sideboard is its pool and is called that. */
+    val pool: Boolean = false
 )
 
 /** A deck as a place to put cards, with its commander's picture. */
-fun Deck.asTarget() = MoveTarget(SourceKind.DECK, id, name, imageUrl = commander?.imageUrl, cards = cards.sumOf { it.quantity }, hasSideboard = mode.hasSideboard)
+fun Deck.asTarget() = MoveTarget(SourceKind.DECK, id, name, imageUrl = commander?.imageUrl, cards = cards.sumOf { it.quantity }, hasSideboard = mode.hasSideboard, pool = mode.limited)
 
 /** A binder as a place to put cards. */
 fun Binder.asTarget() = MoveTarget(SourceKind.BINDER, id, name, cards = entries.sumOf { it.quantity + it.foilQuantity })
@@ -60,11 +62,11 @@ fun addToTitle(verb: AddVerb, subject: String): String = "${verb.label} $subject
  * Considering in Atraxa", "Moved Duress to the sideboard in Burn". [quantity] above one is said for
  * a single card: "Added 4 × Forest to Lands".
  */
-fun addToMessage(verb: AddVerb, subject: String, place: String, considering: Boolean = false, quantity: Int = 1, sideboard: Boolean = false): String {
+fun addToMessage(verb: AddVerb, subject: String, place: String, considering: Boolean = false, quantity: Int = 1, sideboard: Boolean = false, pool: Boolean = false): String {
     val what = if (quantity > 1) "$quantity × $subject" else subject
     val where = when {
         considering -> "Considering in $place"
-        sideboard -> "the sideboard in $place"
+        sideboard -> if (pool) "the pool in $place" else "the sideboard in $place"
         else -> place
     }
     return "${verb.done} $what to $where"
@@ -119,7 +121,7 @@ data class AddToPick(
 
 /** The confirmation for [pick]: "Added Sol Ring to the sideboard in Burn" and the like. */
 fun addToMessage(verb: AddVerb, subject: String, pick: AddToPick, quantity: Int = pick.quantity): String =
-    addToMessage(verb, subject, pick.place, pick.considering, quantity, pick.sideboard)
+    addToMessage(verb, subject, pick.place, pick.considering, quantity, pick.sideboard, pick.target.pool)
 
 /** One thing Undo puts back as it was. */
 sealed interface UndoStep {

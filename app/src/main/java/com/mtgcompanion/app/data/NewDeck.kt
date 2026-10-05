@@ -98,4 +98,5 @@ fun formatBlurb(mode: GameMode): String = when (mode) {
     GameMode.PAUPER -> "60 cards, commons only"
     GameMode.LEGACY -> "60 cards from all of Magic, a few banned"
     GameMode.VINTAGE -> "60 cards from all of Magic, a few restricted"
+    GameMode.LIMITED -> "A draft or sealed pool, built into 40 cards"
 }

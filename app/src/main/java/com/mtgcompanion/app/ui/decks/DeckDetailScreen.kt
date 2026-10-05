@@ -183,6 +183,13 @@ import com.mtgcompanion.app.data.DeckExportFormat
 import com.mtgcompanion.app.data.deckExportText
 import com.mtgcompanion.app.data.isOwnedName
 import com.mtgcompanion.app.data.sideboardCount
+import com.mtgcompanion.app.data.sideboardName
+import com.mtgcompanion.app.data.poolCopies
+import com.mtgcompanion.app.data.poolGroups
+import com.mtgcompanion.app.ui.common.SourceKind
+import com.mtgcompanion.app.ui.common.cardsSubject
+import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Landscape
 import com.mtgcompanion.app.network.edhrec.EdhrecCardView
 import com.mtgcompanion.app.network.edhrec.inclusionPercent
 import com.mtgcompanion.app.network.edhrec.scryfallImageUrl
@@ -310,6 +317,9 @@ fun DeckDetailScreen(
     var compareWith by remember { mutableStateOf<CompareTarget?>(null) }
     // A sideboard card whose remove-confirmation is up.
     var removeSideboardTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
+    // Draft and sealed: the basic lands being chosen, and the binder the pool is being copied to.
+    var addingBasics by remember { mutableStateOf(false) }
+    var poolToBinder by remember { mutableStateOf(false) }
     // Progress while an import runs, then its summary ("Imported N; M couldn't be matched…").
     var importState by remember { mutableStateOf<ImportState?>(null) }
 
@@ -342,6 +352,10 @@ fun DeckDetailScreen(
                             add(CardMenuAction("Playtest", Icons.Filled.Casino, description = "Mulligan, play or draw, then turns") { showGoldfish = true })
                             add(CardMenuAction("Compare with…", Icons.Filled.Layers, description = "Another deck or a saved version") { comparePicking = true })
                             add(CardMenuAction("Cards I don't own", Icons.Filled.Sell, description = "Buy them, wishlist them, or ask friends") { showMissing = true })
+                            if (d.mode.limited) {
+                                add(CardMenuAction("Add basic lands", Icons.Filled.Landscape, description = "17 for 40 cards, by the colours you play") { addingBasics = true })
+                                add(CardMenuAction("Add pool to a binder", Icons.Filled.Collections, description = "Every card here, deck and pool, copied into a binder") { poolToBinder = true })
+                            }
                             add(CardMenuAction("Import list", Icons.AutoMirrored.Filled.PlaylistAdd, description = "Paste a decklist") { showImport = true })
                             add(CardMenuAction("Export list", Icons.Filled.IosShare, description = "Simple, exact printing, Arena or MTGO") { showExport = true })
                             add(CardMenuAction("Deck settings", Icons.Filled.Tune, description = "Format, ownership and tags") { showSettings = true })
@@ -420,9 +434,10 @@ fun DeckDetailScreen(
                                 onMoveToConsidering = { entry -> addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, considering = true)) { viewModel.moveToConsidering(entry.scryfallId) } },
                                 onSwap = { swapOut = it },
                                 hasSideboard = currentDeck.mode.hasSideboard,
+                                sideboardName = sideboardName(currentDeck.mode),
                                 onMoveToSideboard = { entry ->
                                     addTo.perform(
-                                        addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity, sideboard = true),
+                                        addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity, sideboard = true, pool = currentDeck.mode.limited),
                                         // Asked first when the sideboard would go past its 15 cards.
                                         check = AddCheck.forMove(AddToPick(currentDeck.asTarget()), listOf(entry.toAddItem(entry.quantity, sideboard = true)))
                                     ) { viewModel.moveToSideboard(entry.scryfallId) }
@@ -434,6 +449,7 @@ fun DeckDetailScreen(
                         sideboardActions = { entry ->
                             sideboardCardActions(
                                 entry = entry,
+                                sideboardName = sideboardName(currentDeck.mode),
                                 onMoveToMain = {
                                     addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity)) { viewModel.moveToMain(entry.scryfallId) }
                                 },
@@ -508,7 +524,9 @@ fun DeckDetailScreen(
                 }
                 CardZoomDialog(zoomCards, flatCards.indexOfFirst { it.scryfallId == key }.coerceAtLeast(0)) { zoom = null }
             } else if (source == "side") {
-                val side = currentDeck.sideboard.sortedBy { it.name.lowercase() }
+                // A pool swipes in the order it's shown: by colour.
+                val side = if (currentDeck.mode.limited && !analysis.loading) poolGroups(currentDeck.sideboard, analysis.cardsById).flatMap { it.cards }
+                else currentDeck.sideboard.sortedBy { it.name.lowercase() }
                 val zoomCards = side.map { entry ->
                     ZoomCard(
                         imageUrl = entry.imageUrl,
@@ -626,12 +644,47 @@ fun DeckDetailScreen(
         }
 
         removeSideboardTarget?.let { entry ->
+            val side = sideboardName(currentDeck.mode).lowercase()
             ConfirmDeleteDialog(
-                title = "Remove from sideboard?",
-                message = "Take ${entry.name} (${entry.quantity} cop${if (entry.quantity == 1) "y" else "ies"}) out of this deck's sideboard?",
-                confirmLabel = "Remove from sideboard",
+                title = "Remove from $side?",
+                message = "Take ${entry.name} (${entry.quantity} cop${if (entry.quantity == 1) "y" else "ies"}) out of this deck's $side?",
+                confirmLabel = "Remove from $side",
                 onConfirm = { viewModel.setSideboardQuantity(entry.scryfallId, 0); removeSideboardTarget = null },
                 onDismiss = { removeSideboardTarget = null }
+            )
+        }
+
+        if (addingBasics) {
+            BasicLandsDialog(
+                mainDeck = currentDeck.cards,
+                cards = analysis.cardsById,
+                onAdd = { counts ->
+                    addingBasics = false
+                    val total = counts.values.sum()
+                    // New copies from the land station, into the main deck — not ones from the Unsorted pile.
+                    addTo.perform("Added $total basic ${if (total == 1) "land" else "lands"} to ${currentDeck.name}") {
+                        viewModel.addBasicLands(counts, this)
+                    }
+                },
+                onDismiss = { addingBasics = false }
+            )
+        }
+        if (poolToBinder) {
+            val copies = poolCopies(currentDeck).sumOf { it.quantity }
+            AddToPicker(
+                verb = AddVerb.COPY,
+                subject = cardsSubject(copies, null),
+                targets = moveTargets.filter { it.kind == SourceKind.BINDER },
+                canMakeDeck = false,
+                considering = null,
+                quantity = null,
+                onPick = { pick ->
+                    poolToBinder = false
+                    addTo.perform(addToMessage(AddVerb.COPY, cardsSubject(copies, null), pick, quantity = 1)) {
+                        viewModel.copyPoolToBinder(pick, this)
+                    }
+                },
+                onDismiss = { poolToBinder = false }
             )
         }
 
@@ -1420,14 +1473,21 @@ private fun CardsTab(
     val context = LocalContext.current
     val owned = deck.cards.map { it.name }.toSet()
     val addable = if (trimmed.length < 3) emptyList() else addResults.filter { it.name !in owned }
+    // A Limited deck's search fills its pool: the main deck is built from there.
+    val limited = deck.mode.limited
     val addSection: LazyListScope.() -> Unit = {
         if (addable.isNotEmpty()) {
             item(key = "add-header") {
-                Text("Add to this deck", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp, bottom = 2.dp, start = 2.dp))
+                Text(if (limited) "Add to the pool" else "Add to this deck", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp, bottom = 2.dp, start = 2.dp))
             }
             items(addable, key = { "add-" + it.id }) { card ->
                 AddToDeckRow(card) {
-                    addTo.perform(addToMessage(AddVerb.ADD, card.name, deck.name), check = checkFor(card, AddToPick(deck.asTarget()))) { viewModel.addCard(card, this) }
+                    if (limited) {
+                        val pick = AddToPick(deck.asTarget(), sideboard = true)
+                        addTo.perform(addToMessage(AddVerb.ADD, card.name, pick), check = checkFor(card, pick)) { addCard(card, pick) }
+                    } else {
+                        addTo.perform(addToMessage(AddVerb.ADD, card.name, deck.name), check = checkFor(card, AddToPick(deck.asTarget()))) { viewModel.addCard(card, this) }
+                    }
                 }
             }
         }
@@ -1439,18 +1499,22 @@ private fun CardsTab(
     val sideboardShown = deck.sideboard
         .filter { card -> filter == CardFilter.ALL && RoleTags.matches(card.name, tagsOf(card), trimmed) }
         .sortedBy { it.name.lowercase() }
+    // A Limited deck's sideboard is its pool: shown by colour once its cards are known (Limited.kt).
+    val poolByColour = if (limited && !analysis.loading) poolGroups(sideboardShown, analysis.cardsById) else null
     val sideboardSection: LazyListScope.(columns: Int, grid: Boolean) -> Unit = { columns, grid ->
         if (showSideboard && (sideboardShown.isNotEmpty() || (trimmed.isEmpty() && filter == CardFilter.ALL))) {
             item(key = "sideboard-header") {
                 Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp, start = 2.dp, end = 4.dp)) {
-                    Text("Sideboard (${deck.sideboardCount})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    if (deck.mode.hasSideboard) Text("up to 15", style = MaterialTheme.typography.labelMedium, color = TextMuted)
+                    Text("${sideboardName(deck.mode)} (${deck.sideboardCount})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    val limit = deck.mode.sideboardLimit
+                    if (deck.mode.hasSideboard && limit != null) Text("up to $limit", style = MaterialTheme.typography.labelMedium, color = TextMuted)
                 }
             }
             if (sideboardShown.isEmpty()) {
                 item(key = "sideboard-empty") {
                     Text(
-                        "No sideboard cards yet. Long-press a card and choose Move to sideboard, or pick Sideboard when adding one.",
+                        if (limited) "No cards in the pool yet. Type a card's name above to add it, or scan the pool in."
+                        else "No sideboard cards yet. Long-press a card and choose Move to sideboard, or pick Sideboard when adding one.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted
                     )
@@ -1459,7 +1523,7 @@ private fun CardsTab(
             val sideFewer: (DeckCardEntry) -> Unit = { card ->
                 if (card.quantity <= 1) onRemoveLastSideboardCopy(card) else viewModel.setSideboardQuantity(card.scryfallId, card.quantity - 1)
             }
-            cardGrid(sideboardShown, columns = columns, key = { "sb-" + it.scryfallId }) { card ->
+            val sideCard: @Composable (DeckCardEntry) -> Unit = { card ->
                 if (grid) {
                     DeckCardTile(
                         card = card,
@@ -1480,6 +1544,23 @@ private fun CardsTab(
                         onDecrement = { sideFewer(card) }
                     )
                 }
+            }
+            if (poolByColour != null && sideboardShown.isNotEmpty()) {
+                // The pool by colour, with the pairs it supports best.
+                item(key = "pool-pairs") {
+                    PoolPairsHint(deck.sideboard, analysis.cardsById, Modifier.padding(start = 2.dp, bottom = 2.dp))
+                }
+                poolByColour.forEach { group ->
+                    item(key = "pool-" + group.key) {
+                        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth().padding(top = 6.dp, start = 2.dp, end = 4.dp)) {
+                            Text(group.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            Text("${group.count}", style = NumberStyle(18), color = TextMuted)
+                        }
+                    }
+                    cardGrid(group.cards, columns = columns, key = { "sb-" + it.scryfallId }, itemContent = sideCard)
+                }
+            } else {
+                cardGrid(sideboardShown, columns = columns, key = { "sb-" + it.scryfallId }, itemContent = sideCard)
             }
         }
     }
@@ -1741,7 +1822,8 @@ private fun StatsTab(
                 VersionHistoryPanel(versionHistory, onOpen = { openVersion = it })
             }
         }
-        item(key = "bracket") {
+        // A Commander bracket says nothing about a draft or sealed deck.
+        if (!deck.mode.limited) item(key = "bracket") {
             CollapsibleStat("Commander bracket", isOpen("bracket"), { toggle("bracket") }, summary = analysis.bracketName.ifBlank { null }) {
             Panel {
                 SectionLabel("Commander bracket")
@@ -2607,6 +2689,8 @@ private fun deckCardActions(
     onMoveToConsidering: (DeckCardEntry) -> Unit,
     onSwap: (DeckCardEntry) -> Unit,
     hasSideboard: Boolean = false,
+    /** "Sideboard", or "Pool" for a Limited deck. */
+    sideboardName: String = "Sideboard",
     onMoveToSideboard: (DeckCardEntry) -> Unit = {}
 ): List<CardMenuAction> {
     val actions = mutableListOf<CardMenuAction>()
@@ -2642,7 +2726,7 @@ private fun deckCardActions(
         }
         actions += CardMenuAction("Move to Considering", Icons.AutoMirrored.Filled.DriveFileMove, description = "Out of the deck, still on your list", section = inDeck) { onMoveToConsidering(entry) }
         if (hasSideboard) {
-            actions += CardMenuAction("Move to sideboard", Icons.AutoMirrored.Filled.DriveFileMove, section = inDeck) { onMoveToSideboard(entry) }
+            actions += CardMenuAction("Move to ${sideboardName.lowercase()}", Icons.AutoMirrored.Filled.DriveFileMove, section = inDeck) { onMoveToSideboard(entry) }
         }
     }
     // Elsewhere: other decks and binders, and the card's own page.
@@ -2658,13 +2742,15 @@ private fun deckCardActions(
 /** What a sideboard card's long-press offers: back into the main deck, its details, and off the sideboard last. */
 private fun sideboardCardActions(
     entry: DeckCardEntry,
+    /** "Sideboard", or "Pool" for a Limited deck. */
+    sideboardName: String = "Sideboard",
     onMoveToMain: () -> Unit,
     onRemove: () -> Unit,
     onViewDetails: (String) -> Unit
 ): List<CardMenuAction> = listOf(
     CardMenuAction("Move to main deck", Icons.AutoMirrored.Filled.DriveFileMove) { onMoveToMain() },
     CardMenuAction("View details (EDHREC)", Icons.Filled.Info) { onViewDetails(entry.name) },
-    CardMenuAction("Remove from sideboard", Icons.Filled.Close, destructive = true) { onRemove() }
+    CardMenuAction("Remove from ${sideboardName.lowercase()}", Icons.Filled.Close, destructive = true) { onRemove() }
 )
 
 /**

@@ -1094,7 +1094,9 @@ class ScanViewModel(
                 // Cards the user chose to leave out, as they aren't allowed in the deck (see
                 // AddCheck), stay on the list to go somewhere else.
                 val kept = pile.filterNot { ops.leaves(it.card.name) }
-                deckRepository.addEntries(target.id, kept.map { deckEntry(it.card, it.quantity) })
+                // Into the sideboard — a Limited deck's pool, say — or the deck itself.
+                if (pick.sideboard) deckRepository.addSideboardEntries(target.id, kept.map { deckEntry(it.card, it.quantity) })
+                else deckRepository.addEntries(target.id, kept.map { deckEntry(it.card, it.quantity) })
                 if (kept.size < pile.size) {
                     setScanned(_uiState.value.scannedCards.filter { ops.leaves(it.card.name) })
                     lastAddedCard = null

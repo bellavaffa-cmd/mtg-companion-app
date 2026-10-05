@@ -19,6 +19,23 @@ fun importPart(section: ListSection, mode: GameMode): DeckPart = when (section) 
     ListSection.MAYBEBOARD -> DeckPart.CONSIDERING
 }
 
+/** What the sideboard is called: a Limited deck's is its pool. */
+fun sideboardName(mode: GameMode): String = if (mode.limited) "Pool" else "Sideboard"
+
+/**
+ * The picker's sideboard choice, given which of the decks on offer that have one are Limited
+ * ([pools]): "Pool" when they all are, "Sideboard" otherwise.
+ */
+fun sideboardChoice(pools: List<Boolean>): String =
+    if (pools.isNotEmpty() && pools.all { it }) "Pool" else "Sideboard"
+
+/** The line under that choice once it's picked, for the same decks. */
+fun sideboardChoiceHint(pools: List<Boolean>): String = when {
+    pools.isNotEmpty() && pools.all { it } -> "Your draft or sealed pool — the cards not in the main deck."
+    pools.any { it } -> "Beside the main deck, up to 15 cards — or a Limited deck's pool. Only decks whose format has a sideboard are listed."
+    else -> "Beside the main deck, up to 15 cards. Only decks whose format has a sideboard are listed."
+}
+
 /** How many cards the sideboard holds. */
 val Deck.sideboardCount: Int get() = sideboard.sumOf { it.quantity }
 

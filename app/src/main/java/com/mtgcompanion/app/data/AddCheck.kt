@@ -40,6 +40,8 @@ fun copyLimitOf(mode: GameMode, name: String, card: ScryfallCard?, typeLine: Str
     ) return null
     val text = card?.let { c -> listOfNotNull(c.oracleText).plus(c.cardFaces.orEmpty().mapNotNull { it.oracleText }).joinToString("\n") }.orEmpty()
     if (text.contains("A deck can have any number of cards named", ignoreCase = true)) return null
+    // Limited has no copy limit: a pool can hold several of a card.
+    if (mode.limited) return null
     if (card?.legalities?.get(mode.scryfallFormat) == "restricted") return 1
     return if (mode.singleton) 1 else mode.maxCopies
 }
@@ -79,13 +81,14 @@ fun checkAdd(
     (deck.cards + deck.sideboard).forEach { copies.merge(cardNameKey(it.name), it.quantity, Int::plus) }
 
     var sideboardCount = deck.sideboard.sumOf { it.quantity }
+    val sideLimit = mode.sideboardLimit
 
     return adding.map { item ->
         val card = cards[item.scryfallId]
         val problems = mutableListOf<String>()
         if (item.sideboard && mode.hasSideboard) {
             sideboardCount += item.quantity.coerceAtLeast(1)
-            if (sideboardCount > GameMode.MAX_SIDEBOARD) problems += "Sideboard is full (${GameMode.MAX_SIDEBOARD} max)"
+            if (sideLimit != null && sideboardCount > sideLimit) problems += "Sideboard is full ($sideLimit max)"
         }
         if (moving) return@map AddCheckResult(item.scryfallId, item.name, problems)
         val legality = card?.legalities?.get(mode.scryfallFormat)

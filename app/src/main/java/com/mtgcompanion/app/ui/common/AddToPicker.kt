@@ -51,6 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.mtgcompanion.app.data.GameMode
+import com.mtgcompanion.app.data.sideboardChoice
+import com.mtgcompanion.app.data.sideboardChoiceHint
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.theme.LocalAppColors
@@ -69,9 +71,10 @@ import kotlinx.coroutines.launch
  * - [quantity]: a copies stepper; null hides it (the scanner's pile says how many).
  * - [canBeFoil]: on the binder list, a Foil switch.
  * - [startKind]: open straight on that kind's list (Back still reaches the first step).
- * - [offerSideboard]: with [considering] on offer, the deck list's choice becomes "Into the deck /
- *   Sideboard / Considering" when a deck there has a sideboard; picking Sideboard lists only those.
- *   For flows whose change reads [AddToPick.sideboard] (AddToOps.addCard does).
+ * - [offerSideboard]: the deck list's choice becomes "Into the deck / Sideboard / Considering" (or
+ *   "Into the deck / Sideboard" without [considering]) when a deck there has a sideboard; picking
+ *   Sideboard lists only those. A Limited deck's is called Pool. For flows whose change reads
+ *   [AddToPick.sideboard] (AddToOps.addCard does).
  * - [printing]: the card being added — a "Printing: SET #number" row opens the printing picker,
  *   and the one chosen comes back as [AddToPick.printing]. Only for adding a new card, never for
  *   moving or copying copies that already exist.
@@ -186,8 +189,9 @@ private fun PickerContent(
 
     val toDeck = listKind == SourceKind.DECK
     val intoConsidering = toDeck && startConsidering != null && considering
-    // Sideboard is a third choice only where a deck on offer has one.
-    val sideboardOffered = toDeck && startConsidering != null && offerSideboard && targets.any { it.kind == SourceKind.DECK && it.hasSideboard }
+    // Sideboard is a choice only where a deck on offer has one — called Pool when they're all Limited.
+    val sideboardOffered = toDeck && offerSideboard && targets.any { it.kind == SourceKind.DECK && it.hasSideboard }
+    val sideboardPools = targets.filter { it.kind == SourceKind.DECK && it.hasSideboard }.map { it.pool }
     val intoSideboard = sideboardOffered && sideboard && !considering
     fun pick(target: MoveTarget, isNew: Boolean = false) = onPick(
         AddToPick(
@@ -257,14 +261,18 @@ private fun PickerContent(
             // Into the sideboard, only the decks that have one are listed, and no new deck is offered.
             val shown = targets.filter { it.kind == listKind && (!intoSideboard || it.hasSideboard) }
             val offerNew = (toDeck && canMakeDeck && !intoSideboard) || (listKind == SourceKind.BINDER && canMakeBinder)
-            if (toDeck && startConsidering != null) {
+            if (toDeck && (startConsidering != null || sideboardOffered)) {
                 // Into the deck, its sideboard, or onto its Considering list. 0, 1, 2 in that order.
                 val part = when {
                     considering -> 2
                     intoSideboard -> 1
                     else -> 0
                 }
-                val parts = listOfNotNull(0 to "Into the deck", if (sideboardOffered) 1 to "Sideboard" else null, 2 to "Considering")
+                val parts = listOfNotNull(
+                    0 to "Into the deck",
+                    if (sideboardOffered) 1 to sideboardChoice(sideboardPools) else null,
+                    if (startConsidering != null) 2 to "Considering" else null
+                )
                 Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp).clip(RoundedCornerShape(12.dp)).background(app.surface3).padding(3.dp)) {
                     parts.forEach { (value, text) ->
                         Text(
@@ -285,7 +293,7 @@ private fun PickerContent(
                 }
                 if (intoSideboard) {
                     Text(
-                        "Beside the main deck, up to 15 cards. Only decks whose format has a sideboard are listed.",
+                        sideboardChoiceHint(sideboardPools),
                         style = MaterialTheme.typography.labelMedium,
                         color = app.textDim,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

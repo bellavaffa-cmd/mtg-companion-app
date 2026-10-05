@@ -118,16 +118,18 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
         }
     }
 
-    // The sideboard: only formats that have one, at most 15 cards, and every card legal there too.
+    // The sideboard: only formats that have one, at most 15 cards (a Limited pool: any number), and
+    // every card legal there too.
     val sideboardCount = deck.sideboard.sumOf { it.quantity }
+    val sideLimit = mode.sideboardLimit
     if (sideboardCount > 0 && !mode.hasSideboard) {
         issues += LegalityIssue(
             null, "${mode.label} has no sideboard — $sideboardCount card${if (sideboardCount == 1) "" else "s"} still there.",
             kind = LegalityIssueKind.DECK_SIZE
         )
-    } else if (sideboardCount > GameMode.MAX_SIDEBOARD) {
+    } else if (sideLimit != null && sideboardCount > sideLimit) {
         issues += LegalityIssue(
-            null, "Sideboard has $sideboardCount cards; ${mode.label} allows at most ${GameMode.MAX_SIDEBOARD}.",
+            null, "Sideboard has $sideboardCount cards; ${mode.label} allows at most $sideLimit.",
             kind = LegalityIssueKind.DECK_SIZE
         )
     }
