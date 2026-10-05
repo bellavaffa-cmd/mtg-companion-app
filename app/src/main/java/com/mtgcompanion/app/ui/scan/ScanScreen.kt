@@ -622,15 +622,17 @@ fun ScanScreen(
             // Scans are cards in hand: they go into a deck or binder, and the pile says how many.
             considering = null,
             quantity = null,
+            // A deck's sideboard too: a draft or sealed pool is scanned straight in.
+            offerSideboard = true,
             onPick = { pick ->
                 addingAll = false
                 showList = false
-                val check = AddCheck(pick, grouped(rows).map { it.card.toAddItem(it.quantity) })
+                val check = AddCheck(pick, grouped(rows).map { it.card.toAddItem(it.quantity, pick.sideboard) })
                 addTo.perform(
-                    addToMessage(AddVerb.ADD, label, pick.place),
+                    addToMessage(AddVerb.ADD, label, pick, quantity = 1),
                     onUndone = { viewModel.restoreScans(rows) },
                     check = check,
-                    fewer = { kept -> addToMessage(AddVerb.ADD, cardsSubject(kept, null), pick.place) }
+                    fewer = { kept -> addToMessage(AddVerb.ADD, cardsSubject(kept, null), pick, quantity = 1) }
                 ) {
                     viewModel.putAllAway(pick, this)
                 }
@@ -651,12 +653,13 @@ fun ScanScreen(
             considering = null,
             quantity = null,
             canBeFoil = scanned.card.canBeFoil,
+            offerSideboard = true,
             onPick = { pick ->
                 addingRow = null
                 addTo.perform(
-                    addToMessage(AddVerb.ADD, scanned.card.name, pick.place, quantity = copies),
+                    addToMessage(AddVerb.ADD, scanned.card.name, pick, quantity = copies),
                     onUndone = { viewModel.restoreScans(rows) },
-                    check = AddCheck(pick, listOf(scanned.card.toAddItem(copies)))
+                    check = AddCheck(pick, listOf(scanned.card.toAddItem(copies, pick.sideboard)))
                 ) {
                     viewModel.putAway(scanned.card, copies, pick, this)
                 }

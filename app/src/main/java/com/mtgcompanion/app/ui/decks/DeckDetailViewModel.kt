@@ -16,6 +16,8 @@ import com.mtgcompanion.app.data.proxySwaps
 import com.mtgcompanion.app.data.deckProxyCopies
 import com.mtgcompanion.app.data.ProxySwap
 import com.mtgcompanion.app.data.WISHLIST_ID
+import com.mtgcompanion.app.data.BASIC_LAND_FOR
+import com.mtgcompanion.app.data.poolCopies
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -147,7 +149,12 @@ data class DeckAnalysis(
      * scryfallId -> pairing ability read from the card itself (CommanderPairing.kt), for the cards
      * it could be fetched for: an entry saved by an older version may lack a newer ability.
      */
-    val pairingAbilities: Map<String, String?> = emptyMap()
+    val pairingAbilities: Map<String, String?> = emptyMap(),
+    /**
+     * The cards behind the main deck and sideboard, by scryfallId — what a Limited deck's pool is
+     * sorted by colour with, and its basic lands worked out from (Limited.kt).
+     */
+    val cardsById: Map<String, ScryfallCard> = emptyMap()
 )
 
 /** What each card does for the deck. [fromTagger] is false when counts came from the offline heuristic. */
@@ -426,7 +433,9 @@ class DeckDetailViewModel(
                         "t:${primaryType(card?.typeLine).lowercase()} mv>=${(cmc - 1).coerceAtLeast(0)} mv<=${cmc + 1}"
                     }
                     val ceiling = String.format(java.util.Locale.US, "%.2f", (price * BUDGET_PRICE_FRACTION).coerceAtLeast(0.25))
-                    val query = "$jobFilter id<=$identity usd<$ceiling f:${d.mode.scryfallFormat} -!\"${entry.name.replace("\"", "")}\""
+                    // Limited isn't a format Scryfall knows: any card goes.
+                    val legal = if (d.mode.limited) "" else " f:${d.mode.scryfallFormat}"
+                    val query = "$jobFilter id<=$identity usd<$ceiling$legal -!\"${entry.name.replace("\"", "")}\""
                     val alternatives = try {
                         cardRepository.search(query, order = "edhrec").cards
                             .filterNot { alt -> cardNameKeys(alt.name).any { it in alreadyHave } }
@@ -590,7 +599,9 @@ class DeckDetailViewModel(
         }.toSet()
         val comboCompleters = nearMisses.flatMap { near -> near.missing.flatMap { cardNameKeys(it) } }.toSet()
 
-        val (bracket, bracketName, estimateReason) = estimateBracket(gameChangers.size, combos.size)
+        // A Commander bracket says nothing about a draft or sealed deck: 0 hides it.
+        val (bracket, bracketName, estimateReason) =
+            if (d.mode.limited) Triple(0, "", "") else estimateBracket(gameChangers.size, combos.size)
         // Offline, "no combos" only means none were checked — say so rather than imply a clean deck.
         val reason = when {
             deckCombos != null -> estimateReason
@@ -628,7 +639,8 @@ class DeckDetailViewModel(
             comboCompleters = comboCompleters,
             manaAdvice = manaBaseAdvice(pipList, sourceList, landCount, d.mode),
             legality = evaluateLegality(d, byId),
-            pairingAbilities = byId.mapValues { it.value.partnerAbility }
+            pairingAbilities = byId.mapValues { it.value.partnerAbility },
+            cardsById = byId
         )
     }
 
@@ -648,6 +660,37 @@ class DeckDetailViewModel(
      */
     suspend fun addCard(card: ScryfallCard, ops: AddToOps) {
         ops.addCard(card, AddToPick(here()))
+    }
+
+    // ---- Draft and sealed (Limited.kt) ----
+
+    /**
+     * The basic lands chosen ([counts]: colour -> copies) into the main deck — new copies from the
+     * land station, not ones from the Unsorted pile. Run by the add confirmation ([ops]).
+     */
+    suspend fun addBasicLands(counts: Map<String, Int>, ops: AddToOps) {
+        counts.filterValues { it > 0 }.forEach { (colour, copies) ->
+            val name = BASIC_LAND_FOR[colour] ?: return@forEach
+            val card = findByName(name)
+            if (card == null) {
+                ops.message = "Couldn't find $name — try again when you're online."
+                return
+            }
+            ops.addCard(card, AddToPick(here(), quantity = copies), fromPile = false)
+        }
+    }
+
+    /**
+     * Every card in the deck and its pool copied into the binder [pick] names — once the event is
+     * over. Run by the add confirmation ([ops]), which can undo it.
+     */
+    suspend fun copyPoolToBinder(pick: AddToPick, ops: AddToOps) {
+        val d = deck.value ?: return
+        val target = ops.resolve(pick)
+        collectionRepository.addEntries(
+            target.id,
+            poolCopies(d).map { CollectionEntry(it.scryfallId, it.name, it.imageUrl, quantity = it.quantity, foilQuantity = 0, backImageUrl = it.backImageUrl, tags = it.tags) }
+        )
     }
 
     // ---- Cut candidates, considering, swaps ----

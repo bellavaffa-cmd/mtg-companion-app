@@ -116,8 +116,17 @@ fun manaBaseAdvice(
         }
     }
 
-    val (low, high) = if (mode == GameMode.COMMANDER) 34 to 40 else 20 to 27
-    val typical = if (mode == GameMode.COMMANDER) "36–38" else "22–26"
+    // A 40-card Limited deck runs about 17.
+    val (low, high) = when (mode) {
+        GameMode.COMMANDER -> 34 to 40
+        GameMode.LIMITED -> 16 to 18
+        else -> 20 to 27
+    }
+    val typical = when (mode) {
+        GameMode.COMMANDER -> "36–38"
+        GameMode.LIMITED -> "16–18"
+        else -> "22–26"
+    }
     if (landCount in 1 until low) {
         advice += "$landCount lands is light — most decks like this run $typical, fewer only with plenty of cheap ramp."
     } else if (landCount > high) {

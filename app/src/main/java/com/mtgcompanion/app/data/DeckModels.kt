@@ -25,13 +25,22 @@ enum class GameMode(
     MODERN("Modern", "modern", 60, false, false, 4, false),
     PAUPER("Pauper", "pauper", 60, false, false, 4, false),
     LEGACY("Legacy", "legacy", 60, false, false, 4, false),
-    VINTAGE("Vintage", "vintage", 60, false, false, 4, false);
+    VINTAGE("Vintage", "vintage", 60, false, false, 4, false),
+    // Draft and sealed: a 40-card deck from a pool (Limited.kt). No Scryfall format, so no card is
+    // banned or not legal; no copy limit; and its sideboard is the pool, of any size.
+    LIMITED("Limited", "", 40, false, false, Int.MAX_VALUE, false);
 
     /**
      * Whether the format has a sideboard (up to [MAX_SIDEBOARD] cards beside the main deck).
      * Commander and Brawl don't: their "sideboard" lines go to Considering instead.
      */
     val hasSideboard: Boolean get() = !usesCommander
+
+    /** A draft or sealed deck, whose sideboard is the pool it's built from. */
+    val limited: Boolean get() = this == LIMITED
+
+    /** The most cards the sideboard may hold; null for no limit — a Limited deck's pool. */
+    val sideboardLimit: Int? get() = if (limited) null else MAX_SIDEBOARD
 
     companion object {
         val DEFAULT = COMMANDER
