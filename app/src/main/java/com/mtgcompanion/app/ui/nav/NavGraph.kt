@@ -356,10 +356,10 @@ fun MtgNavGraph(
                 Routes.HOME, Routes.VALUE_HISTORY -> NavDestination.HOME
                 Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
-                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS -> NavDestination.COLLECTION
+                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.PLAY -> NavDestination.LIFE_COUNTER
-                Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT -> NavDestination.LIFE_COUNTER
+                Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT, Routes.PLAYGROUP -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
                 else -> null
