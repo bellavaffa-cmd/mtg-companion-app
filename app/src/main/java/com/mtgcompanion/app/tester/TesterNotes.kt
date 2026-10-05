@@ -9,6 +9,11 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "advanced-filters",
+        "Advanced filters for your collection",
+        "Collection › All cards › Filters › Advanced filters. Try commander identity at most two colours, mana value ≤ 3, legal in Commander, a set and Foil, then Show N cards: each filter is a chip you can remove. Check the Scryfall line (Copy, Open on Scryfall), and Save as… then apply the saved filter again."
+    ),
+    TesterNote(
         "spread-thin",
         "Spread thin: cards your decks fight over",
         "Collection › All cards › Spread thin. Each card your decks use more copies of than you own, with how many you're short, what the rest would cost and the decks using it (tap one to open it). Try Copy buy list and paste it somewhere."
