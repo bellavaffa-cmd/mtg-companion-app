@@ -9,6 +9,26 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "android-16",
+        "Built for Android 16 — check the edges and the keyboard",
+        "Type in Messages, Profile, a trade message, Search and a deck rename: the field and send button should sit just above the keyboard. Rename a player on the life counter: is the name field hidden by the keyboard? Swipe the status and navigation bars into view in light and dark themes: icons readable? Open the scanner and the QR scanner in portrait and landscape."
+    ),
+    TesterNote(
+        "back-gesture",
+        "New back gesture",
+        "With Android 15 or 16, swipe back from a tab, from card zoom, from a sheet and from selection mode: each should close the right thing. On the life counter, back still needs pressing twice."
+    ),
+    TesterNote(
+        "community-rules",
+        "Community rules",
+        "The first time you save your profile, send a message or share something, a Community rules sheet appears once. Not now should post nothing; Agree lets it go ahead and it shouldn't ask again."
+    ),
+    TesterNote(
+        "accessibility",
+        "Accessibility",
+        "Turn on TalkBack and try the life counter: each seat reads as one line (seat, name, life, commander damage) and the new total is read once after you stop tapping. Try a deck page and Settings too. Then set the font size to the largest: Settings, tabs and chips should still fit. Check the accent buttons in the Sapphire, Amethyst and Ruby colours now have dark text."
+    ),
+    TesterNote(
         "welcome",
         "Welcome steps and sample content",
         "Settings › Getting started: go through the welcome steps (import a CSV from another app if you have one). Try Add the sample deck and binder, look around, then Remove samples — and check samples never show on your other device."
