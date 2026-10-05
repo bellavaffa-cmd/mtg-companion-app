@@ -7,6 +7,8 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckVersion
 import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
+import com.mtgcompanion.app.data.keepDeckExtrasFromOlderApp
+import com.mtgcompanion.app.data.withMergedExtras
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
 import com.mtgcompanion.app.data.mergeCameFrom
 import com.mtgcompanion.app.data.mergeCopyPlaces
@@ -33,6 +35,9 @@ import com.mtgcompanion.app.data.tidied
  *    last checked (PlaceCheck.kt) merges to the later check.
  *  - Where a deck's copies came from (its "cameFrom", see PullList.kt) merges card by card the same
  *    way; a deck saved by an app that doesn't know about it leaves it as it was.
+ *  - A deck's primer, folder, archive flag and companion go to whoever changed them; each category's
+ *    target the same, one by one; a card's categories merge like its tags. A deck saved by an app that
+ *    doesn't know them leaves them as they were (DeckExtras.kt).
  * The web app merges the same way — see MtgCompanionWeb/src/sync/mergeItems.ts.
  */
 object ItemMerge {
@@ -131,6 +136,8 @@ object ItemMerge {
                 tags = pick(b.tags, m.tags, t.tags, minePreferred),
                 // Two devices tagging the same copy keep both tags, as a deck's own tags do.
                 userTags = mergeStringSet(b.userTags, m.userTags, t.userTags),
+                // A card's categories in this deck merge the same way.
+                categories = mergeStringSet(b.categories.orEmpty(), m.categories.orEmpty(), t.categories.orEmpty()).ifEmpty { null },
                 replaceable = pick(b.replaceable, m.replaceable, t.replaceable, minePreferred),
                 proxyQuantity = pick(b.proxyQuantity, m.proxyQuantity, t.proxyQuantity, minePreferred)
             )
@@ -153,9 +160,15 @@ object ItemMerge {
     /** [minePreferred]: this device's edit is the more recent one, so it wins any field both changed. */
     fun mergeDecks(base: Deck, mine: Deck, theirs: Deck, minePreferred: Boolean): Deck =
         // A side saved by an app that doesn't know where the deck's copies came from left that as it was.
-        mergeDecksKnowingCameFrom(base, keepCameFromFromOlderApp(base, mine), keepCameFromFromOlderApp(base, theirs), minePreferred)
+        // ...and the same for its primer, folder, archive flag, companion and categories.
+        mergeDecksKnowingCameFrom(
+            base,
+            keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, mine)),
+            keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, theirs)),
+            minePreferred
+        )
 
-    private fun mergeDecksKnowingCameFrom(base: Deck, mine: Deck, theirs: Deck, minePreferred: Boolean): Deck = theirs.copy(
+    private fun mergeDecksKnowingCameFrom(base: Deck, mine: Deck, theirs: Deck, minePreferred: Boolean): Deck = withMergedExtras(theirs.copy(
         cameFrom = mergeCameFrom(base.cameFrom, mine.cameFrom, theirs.cameFrom),
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         gameMode = pick(base.gameMode, mine.gameMode, theirs.gameMode, minePreferred),
@@ -169,7 +182,7 @@ object ItemMerge {
         tags = mergeStringSet(base.tags, mine.tags, theirs.tags),
         gameResults = mergeGameResults(base.gameResults, mine.gameResults, theirs.gameResults),
         versions = mergeVersions(mine.versions, theirs.versions)
-    )
+    ), base, mine, theirs, minePreferred)
 
     fun mergeCollections(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection =
         // A side saved by an app that doesn't know about places left them as they were.

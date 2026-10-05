@@ -95,4 +95,31 @@ class StoragePlacesSyncTest {
         assertEquals(listOf(CameFrom("Sol Ring", "red", 1)), healed.cameFrom)
         assertTrue(deckKey in result.state.pending)
     }
+
+    // The primer, folder, archive flag, companion and categories (DeckExtras.kt) ride the same way.
+    @Test
+    fun `an older app's save of a deck doesn't lose its primer, folder or categories`() {
+        val deckAdapter = localMoshi.adapter(Deck::class.java)
+        val deckKey = "deck:d1"
+        val mine = Deck(
+            "d1", "Krenko", cards = listOf(DeckCardEntry("a", "Sol Ring", null, categories = listOf("Ramp"))), createdAt = 1,
+            description = "## Plan\n[[Sol Ring]] first", folder = "Cube", archived = true, companion = "Yorion, Sky Nomad",
+            categoryTargets = mapOf("Ramp" to 10)
+        )
+        val mineJson = deckAdapter.toJson(mine)
+        // An older app read it without the keys it doesn't know, renamed it and saved.
+        val older = Deck("d1", "Krenko goblins", cards = listOf(DeckCardEntry("a", "Sol Ring", null)), createdAt = 1)
+        val row = RemoteRow("deck", "d1", deckAdapter.toJson(older), 200L, false, "2026-09-18T000000000002")
+        val state = CloudSyncState(items = mapOf(deckKey to ItemMeta(mineJson.hashCode(), 100L, base = mineJson, baseMs = 100L)), userId = "u", cursor = "2026-09-18T000000000001")
+        val result = core.pull(state, core.localJson(listOf(mine), emptyList()), listOf(row), emptyList(), 300L)
+        val healed = result.deckChanges["d1"]!!
+        assertEquals("Krenko goblins", healed.name)
+        assertEquals("## Plan\n[[Sol Ring]] first", healed.description)
+        assertEquals("Cube", healed.folder)
+        assertEquals(true, healed.archived)
+        assertEquals("Yorion, Sky Nomad", healed.companion)
+        assertEquals(mapOf("Ramp" to 10), healed.categoryTargets)
+        assertEquals(listOf("Ramp"), healed.cards.single().categories)
+        assertTrue(deckKey in result.state.pending)
+    }
 }

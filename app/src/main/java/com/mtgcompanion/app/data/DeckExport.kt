@@ -11,7 +11,9 @@ package com.mtgcompanion.app.data
 //    sideboard part, which is where MTGO looks for them.
 //
 // Simple and Exact printing add a "Sideboard" section when the deck has one, which this app's own
-// importer (parseCardList) reads back into the sideboard. Considering is never exported.
+// importer (parseCardList) reads back into the sideboard, and start with the deck's primer as "// "
+// comment lines, which importers skip (Arena and MTGO take no comments, so they leave it out).
+// Considering is never exported.
 
 enum class DeckExportFormat(val label: String) {
     SIMPLE("Simple"),
@@ -66,6 +68,7 @@ fun deckExportText(deck: Deck, format: DeckExportFormat, printings: Map<String, 
     val sections = mutableListOf<List<String>>()
     when (format) {
         DeckExportFormat.SIMPLE, DeckExportFormat.EXACT -> {
+            sections += primerComments(deck.description)
             sections += commanders.map { line(it, 1) } + rest.map { line(it) }
             if (sideboard.isNotEmpty()) sections += listOf("Sideboard") + sideboard.map { line(it) }
         }

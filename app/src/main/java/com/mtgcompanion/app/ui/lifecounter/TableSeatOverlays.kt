@@ -40,6 +40,7 @@ import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import kotlinx.coroutines.delay
 import java.text.DateFormat
 import java.util.Date
+import com.mtgcompanion.app.data.activeDecks
 
 /**
  * Picks the commander a seat is playing, for a player without a phone of their own: their name
@@ -135,7 +136,8 @@ internal fun MeSeatOverlay(
             }
             if (decks.isEmpty()) TableLabel("You have no decks yet.", 22.sp, color = TableColors.TextMuted, modifier = Modifier.padding(top = 10.dp))
             LazyColumn {
-                items(decks, key = { it.id }) { deck ->
+                // Archived decks aren't offered (DeckFolders.kt).
+                items(activeDecks(decks), key = { it.id }) { deck ->
                     val picked = isMe && deck.id == currentDeckId
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

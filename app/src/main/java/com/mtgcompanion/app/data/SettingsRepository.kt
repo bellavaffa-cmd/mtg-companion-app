@@ -55,6 +55,7 @@ class SettingsRepository(private val context: Context) {
     private val scanModeKey = stringPreferencesKey("scan_mode")
     private val collectionViewModeKey = stringPreferencesKey("collection_view_mode")
     private val deckViewModeKey = stringPreferencesKey("deck_view_mode")
+    private val deckGroupingKey = stringPreferencesKey("deck_grouping")
     private val allCardsViewModeKey = stringPreferencesKey("allcards_view_mode")
     private val recViewModeKey = stringPreferencesKey("rec_view_mode")
     private val gridColumnsKey = intPreferencesKey("grid_columns")
@@ -129,6 +130,13 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDeckViewMode(mode: CardViewMode) {
         context.dataStore.edit { it[deckViewModeKey] = mode.name }
+    }
+
+    /** How a deck's Cards tab groups its cards (DeckCategories.kt), for every deck. */
+    val deckGrouping: Flow<DeckGrouping> = context.dataStore.data.map { DeckGrouping.fromName(it[deckGroupingKey]) }
+
+    suspend fun setDeckGrouping(grouping: DeckGrouping) {
+        context.dataStore.edit { it[deckGroupingKey] = grouping.name }
     }
 
     suspend fun setAllCardsViewMode(mode: CardViewMode) {

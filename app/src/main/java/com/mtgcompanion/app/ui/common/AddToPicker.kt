@@ -101,6 +101,8 @@ fun AddToPicker(
     printing: ScryfallCard? = null
 ) {
     val app = LocalAppColors.current
+    // Archived decks are put away: not offered (DeckFolders.kt).
+    val offered = targets.filterNot { it.archived }
     if (LocalLayoutSize.current.isWide) {
         Dialog(onDismissRequest = onDismiss) {
             KeepSystemBarsHidden()
@@ -112,7 +114,7 @@ fun AddToPicker(
                     .background(app.surface)
                     .padding(horizontal = 12.dp, vertical = 16.dp)
             ) {
-                PickerContent(verb, subject, targets, imageUrl, canMakeBinder, canMakeDeck, considering, quantity, canBeFoil, startKind, offerSideboard, printing, onDismiss) { pick ->
+                PickerContent(verb, subject, offered, imageUrl, canMakeBinder, canMakeDeck, considering, quantity, canBeFoil, startKind, offerSideboard, printing, onDismiss) { pick ->
                     onDismiss()
                     onPick(pick)
                 }
@@ -135,7 +137,7 @@ fun AddToPicker(
     ) {
         KeepSystemBarsHidden()
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 20.dp)) {
-            PickerContent(verb, subject, targets, imageUrl, canMakeBinder, canMakeDeck, considering, quantity, canBeFoil, startKind, offerSideboard, printing, onDismiss) { pick ->
+            PickerContent(verb, subject, offered, imageUrl, canMakeBinder, canMakeDeck, considering, quantity, canBeFoil, startKind, offerSideboard, printing, onDismiss) { pick ->
                 scope.launch { sheetState.hide() }.invokeOnCompletion {
                     onDismiss()
                     onPick(pick)

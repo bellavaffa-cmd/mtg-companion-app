@@ -3,7 +3,7 @@ package com.mtgcompanion.app.data
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 
 /** What kind of rule an issue broke — lets the UI offer a one-tap fix for the ones that have one. */
-enum class LegalityIssueKind { DECK_SIZE, COMMANDER, LEGALITY, COPY_LIMIT, COLOR_IDENTITY }
+enum class LegalityIssueKind { DECK_SIZE, COMMANDER, LEGALITY, COPY_LIMIT, COLOR_IDENTITY, COMPANION }
 
 /**
  * A single problem found while checking a deck against its format's rules. [scryfallId] +
@@ -122,7 +122,9 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
     // every card legal there too.
     val sideboardCount = deck.sideboard.sumOf { it.quantity }
     val sideLimit = mode.sideboardLimit
-    if (sideboardCount > 0 && !mode.hasSideboard) {
+    // In Commander the companion waits outside the 100, where a sideboard would be: one copy of it is fine.
+    val companionOutside = if (!mode.hasSideboard && companionEntry(deck) != null) 1 else 0
+    if (sideboardCount - companionOutside > 0 && !mode.hasSideboard) {
         issues += LegalityIssue(
             null, "${mode.label} has no sideboard — $sideboardCount card${if (sideboardCount == 1) "" else "s"} still there.",
             kind = LegalityIssueKind.DECK_SIZE
@@ -141,6 +143,7 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
     }
 
     issues += copyLimitIssues(deck, cards)
+    issues += companionIssues(deck, cards, commanderIdentity)
 
     return LegalityReport(mode = mode, totalCards = totalCards, legal = issues.isEmpty(), issues = issues)
 }
@@ -182,5 +185,32 @@ private fun copyLimitIssues(deck: Deck, cards: Map<String, ScryfallCard>): List<
             fixQuantity = fix
         )
     }
+    return issues
+}
+
+/**
+ * The companion: a companion card, in the sideboard (outside the 100 in Commander, inside the
+ * commander's colours), whose condition the starting deck — commanders included — meets. The web
+ * app's companionIssues (src/decks/deckLegality.ts), in the same words.
+ */
+fun companionIssues(deck: Deck, cards: Map<String, ScryfallCard>, commanderIdentity: Set<String>? = null): List<LegalityIssue> {
+    val named = deck.companion?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
+    val companion = companionNamed(named) ?: return listOf(LegalityIssue(named, "Isn't a companion.", kind = LegalityIssueKind.COMPANION))
+    val issues = mutableListOf<LegalityIssue>()
+    val entry = companionEntry(deck)
+    if (entry == null) {
+        issues += LegalityIssue(
+            companion.name,
+            if (deck.mode.hasSideboard) "The companion isn't in the sideboard." else "The companion isn't with the deck — add it again from Details.",
+            kind = LegalityIssueKind.COMPANION
+        )
+    } else if (commanderIdentity != null) {
+        val outside = cards[entry.scryfallId]?.colorIdentity.orEmpty().filter { it !in commanderIdentity }
+        if (outside.isNotEmpty()) {
+            issues += LegalityIssue(companion.name, "Outside the commander's colour identity (${outside.joinToString("")}).", kind = LegalityIssueKind.COLOR_IDENTITY)
+        }
+    }
+    val result = checkCompanion(companion.name, deck.cards.map { companionCard(it, cards[it.scryfallId]) }, deck.mode.deckSize)
+    if (!result.met) issues += LegalityIssue(companion.name, companionReason(companion, result), kind = LegalityIssueKind.COMPANION)
     return issues
 }
