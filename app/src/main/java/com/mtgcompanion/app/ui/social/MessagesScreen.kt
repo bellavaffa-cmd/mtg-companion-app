@@ -264,10 +264,13 @@ private fun ConversationThread(social: SocialRepository, overview: Overview, oth
         them == null -> { EmptyState(Icons.Filled.PersonOff, "You can only message friends."); return }
     }
     val person = them ?: return
+    // A first message waits for the community rules (CommunityRulesHost).
+    val communityRules = rememberCommunityRules()
 
     fun send() {
         val body = draft.trim()
         if (body.isEmpty()) return
+        if (!communityRules.agreed) { communityRules.require { send() }; return }
         busy = true
         error = null
         scope.launch {

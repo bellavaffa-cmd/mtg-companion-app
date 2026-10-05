@@ -73,6 +73,7 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val communityRules = rememberCommunityRules()
     val overview by social.overview.collectAsState()
     val me: Profile? = overview?.me
     var username by remember { mutableStateOf(me?.username ?: suggestUsername(social.email)) }
@@ -165,29 +166,32 @@ fun ProfileEditor(social: SocialRepository, onDone: (() -> Unit)?) {
             if (onDone != null && me != null) LineButton("Cancel", onDone, enabled = !busy)
             GoldButton(
                 if (busy) "Saving…" else if (me != null) "Save profile" else "Create profile",
+                // Name, username and picture are seen by others: the community rules first, once.
                 onClick = {
-                    busy = true
-                    error = null
-                    scope.launch {
-                        try {
-                            val old = me?.avatarPath
-                            val path: String? = when {
-                                giphyGif != null -> social.api.uploadAvatar(social.userId ?: throw SocialException("not_signed_in", "Sign in first."), giphyGif!!, "image/gif")
-                                picture != null -> {
-                                    val (bytes, type) = avatarBytes(context, picture!!)
-                                    social.api.uploadAvatar(social.userId ?: throw SocialException("not_signed_in", "Sign in first."), bytes, type)
+                    communityRules.require {
+                        busy = true
+                        error = null
+                        scope.launch {
+                            try {
+                                val old = me?.avatarPath
+                                val path: String? = when {
+                                    giphyGif != null -> social.api.uploadAvatar(social.userId ?: throw SocialException("not_signed_in", "Sign in first."), giphyGif!!, "image/gif")
+                                    picture != null -> {
+                                        val (bytes, type) = avatarBytes(context, picture!!)
+                                        social.api.uploadAvatar(social.userId ?: throw SocialException("not_signed_in", "Sign in first."), bytes, type)
+                                    }
+                                    removePicture -> ""
+                                    else -> null
                                 }
-                                removePicture -> ""
-                                else -> null
+                                social.api.saveProfile(clean, name.trim(), path)
+                                if (path != null && old != null) social.api.deleteAvatar(old)
+                                social.refresh()
+                                onDone?.invoke()
+                            } catch (e: Exception) {
+                                error = e.message ?: "Something went wrong."
+                            } finally {
+                                busy = false
                             }
-                            social.api.saveProfile(clean, name.trim(), path)
-                            if (path != null && old != null) social.api.deleteAvatar(old)
-                            social.refresh()
-                            onDone?.invoke()
-                        } catch (e: Exception) {
-                            error = e.message ?: "Something went wrong."
-                        } finally {
-                            busy = false
                         }
                     }
                 },

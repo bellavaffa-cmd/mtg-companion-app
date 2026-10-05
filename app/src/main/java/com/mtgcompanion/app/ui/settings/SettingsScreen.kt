@@ -972,8 +972,15 @@ internal fun AccountSyncSection(sync: SupabaseSync) {
         DeleteAccountButton(sync, signedIn.email)
     }
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    TextButton(onClick = { runCatching { uriHandler.openUri(PRIVACY_URL) } }) {
-        Text("Privacy policy", style = MaterialTheme.typography.labelLarge, color = TextMuted)
+    Row {
+        TextButton(onClick = { runCatching { uriHandler.openUri(PRIVACY_URL) } }) {
+            Text("Privacy policy", style = MaterialTheme.typography.labelLarge, color = TextMuted)
+        }
+        // The community rules for profiles, messages, trades and sharing (CommunityRulesHost shows them).
+        val communityRules = com.mtgcompanion.app.ui.social.rememberCommunityRules()
+        TextButton(onClick = { communityRules.show() }) {
+            Text("Community rules", style = MaterialTheme.typography.labelLarge, color = TextMuted)
+        }
     }
 }
 

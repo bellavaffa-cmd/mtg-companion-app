@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.ui.social.rememberCommunityRules
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 
 /** The one sentence Settings › Privacy says about it, the same as the web app's. */
@@ -41,6 +42,16 @@ internal fun PrivacySection() {
             checked = on,
             onCheckedChange = { Usage.setEnabled(it) },
             colors = SwitchDefaults.colors(checkedTrackColor = colors.accent, checkedThumbColor = colors.onAccent)
+        )
+    }
+    // What's allowed in profiles, messages, trades and sharing, and how to report or block.
+    val communityRules = rememberCommunityRules()
+    Column(Modifier.fillMaxWidth().clickable { communityRules.show() }.padding(vertical = 8.dp)) {
+        Text("Community rules", style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary)
+        Text(
+            "Be respectful; no hate, harassment, spam, scams or explicit content. How to report or block someone.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textMuted
         )
     }
 }

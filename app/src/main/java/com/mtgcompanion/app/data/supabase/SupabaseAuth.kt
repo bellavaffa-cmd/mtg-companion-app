@@ -12,6 +12,8 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mtgcompanion.app.BuildConfig
+import com.mtgcompanion.app.data.social.CommunityRulesPolicy
+import com.mtgcompanion.app.data.social.CommunityRulesStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -155,6 +157,7 @@ class SupabaseAuth(private val context: Context) {
         }
         _account.value = null
         _signedOutNotice.value = reason?.let { SignedOutNotice(it, System.currentTimeMillis()) }
+        CommunityRulesStore.get(context).setAccountVersion(null)
     }
 
     /**
@@ -305,6 +308,7 @@ class SupabaseAuth(private val context: Context) {
         }
         _signedOutNotice.value = null
         _account.value = to?.let { SupabaseAccount(it.userId, it.email) }
+        CommunityRulesStore.get(context).setAccountVersion(null)
     }
 
     /** A valid access token, refreshing it first if it's about to expire; null when signed out. */
@@ -383,6 +387,34 @@ class SupabaseAuth(private val context: Context) {
             it[emailKey] = account.email
         }
         _account.value = account
+        noteCommunityRules(user)
+    }
+
+    /**
+     * The community rules agreement the account carries (user_metadata, see CommunityRulesPolicy):
+     * agreed on the web or another phone counts here. Only an agreement made while signed in is
+     * written to the account (CommunityRulesHost), never one made on this device by whoever used it.
+     */
+    private fun noteCommunityRules(user: JSONObject) {
+        CommunityRulesStore.get(context).setAccountVersion(CommunityRulesPolicy.versionFromUser(user))
+    }
+
+    /** Records on the account that its owner agreed to the community rules (best effort by callers). */
+    suspend fun saveCommunityRulesVersion(version: Int) {
+        val token = accessToken() ?: return
+        withContext(Dispatchers.IO) {
+            val body = JSONObject().put("data", JSONObject().put(CommunityRulesPolicy.METADATA_KEY, version))
+            val request = Request.Builder()
+                .url(BuildConfig.SUPABASE_URL + "/auth/v1/user")
+                .header("apikey", BuildConfig.SUPABASE_ANON_KEY)
+                .header("Authorization", "Bearer $token")
+                .put(body.toString().toRequestBody(JSON_MEDIA))
+                .build()
+            http.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("Couldn't save the community rules agreement (HTTP ${response.code})")
+            }
+        }
+        CommunityRulesStore.get(context).setAccountVersion(version)
     }
 
     private suspend fun post(path: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {

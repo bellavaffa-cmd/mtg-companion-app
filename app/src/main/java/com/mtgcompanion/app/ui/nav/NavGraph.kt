@@ -1557,6 +1557,11 @@ fun MtgNavGraph(
     }
     }
 
+    // The one-time community rules, asked for before a first post (profile, message, trade, share).
+    CompositionLocalProvider(LocalLayoutSize provides layoutSize) {
+        com.mtgcompanion.app.ui.social.CommunityRulesHost(supabaseSync.auth)
+    }
+
     val passwordRecovery by supabaseSync.auth.passwordRecovery.collectAsState()
     if (passwordRecovery) {
         val context = LocalContext.current

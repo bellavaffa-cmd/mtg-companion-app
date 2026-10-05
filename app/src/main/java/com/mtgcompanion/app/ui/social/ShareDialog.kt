@@ -53,6 +53,7 @@ fun ShareDialog(
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val communityRules = rememberCommunityRules()
     val account by social.accountFlow.collectAsState()
     val overview by social.overview.collectAsState()
     val loadError by social.error.collectAsState()
@@ -137,26 +138,30 @@ fun ShareDialog(
         },
         confirmButton = {
             if (changed) TextButton(enabled = !busy, onClick = {
-                busy = true
-                error = null
-                scope.launch {
-                    try {
-                        // A new deck or binder has to reach the server before it can be shared.
-                        sync.refresh()
-                        social.api.setShare(kind, itemId, friendsOn, podsOn, linkOn)
-                        social.refresh()
-                        allFriends = null
-                        pods = null
-                        link = null
-                        if (!linkOn) onClose()
-                    } catch (e: SocialException) {
-                        error = if (e.code == "no_such_item") "This $what hasn't synced yet — check your connection and try again." else e.message
-                    } catch (e: Exception) {
-                        error = e.message ?: "Something went wrong."
-                    } finally {
-                        busy = false
+                val save = {
+                    busy = true
+                    error = null
+                    scope.launch {
+                        try {
+                            // A new deck or binder has to reach the server before it can be shared.
+                            sync.refresh()
+                            social.api.setShare(kind, itemId, friendsOn, podsOn, linkOn)
+                            social.refresh()
+                            allFriends = null
+                            pods = null
+                            link = null
+                            if (!linkOn) onClose()
+                        } catch (e: SocialException) {
+                            error = if (e.code == "no_such_item") "This $what hasn't synced yet — check your connection and try again." else e.message
+                        } catch (e: Exception) {
+                            error = e.message ?: "Something went wrong."
+                        } finally {
+                            busy = false
+                        }
                     }
                 }
+                // Sharing something for the first time waits for the community rules, once.
+                if (friendsOn || podsOn.isNotEmpty() || linkOn) communityRules.require { save() } else save()
             }) { Text(if (busy) "Saving…" else "Save", color = colors.accent) }
             else TextButton(onClick = onClose) { Text("Close", color = colors.accent) }
         },

@@ -72,8 +72,11 @@ fun ShareWithFriendSection(
     // first, then the change) takes a moment.
     var pending by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     fun shown(key: String, saved: Boolean) = pending?.takeIf { it.first == key }?.second ?: saved
+    val communityRules = rememberCommunityRules()
 
     fun run(key: String, on: Boolean, action: suspend () -> Unit) {
+        // Sharing something for the first time waits for the community rules, once.
+        if (on && !communityRules.agreed) { communityRules.require { run(key, on, action) }; return }
         busy = true
         pending = key to on
         error = null
@@ -155,6 +158,7 @@ fun ShareWithFriendSection(
 fun ShareCollectionDialog(social: SocialRepository, sync: SupabaseSync, onOpenFriends: () -> Unit, onClose: () -> Unit) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
+    val communityRules = rememberCommunityRules()
     val account by social.accountFlow.collectAsState()
     val overview by social.overview.collectAsState()
     val loadError by social.error.collectAsState()
@@ -189,6 +193,7 @@ fun ShareCollectionDialog(social: SocialRepository, sync: SupabaseSync, onOpenFr
     }
 
     fun set(viewer: String?, on: Boolean) {
+        if (on && !communityRules.agreed) { communityRules.require { set(viewer, on) }; return }
         busy = true
         pending = viewer to on
         error = null

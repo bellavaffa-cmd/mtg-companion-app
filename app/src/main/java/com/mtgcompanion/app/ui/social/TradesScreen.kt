@@ -198,6 +198,7 @@ private class TradeMore(val on: Boolean, val rating: Boolean?, val onRated: (Boo
 private fun TradeCardView(social: SocialRepository, collectionRepository: CollectionRepository, overview: Overview, trade: Trade, onCounter: (String) -> Unit, more: TradeMore) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
+    val communityRules = rememberCommunityRules()
     val me = overview.me!!.userId
     val sides = tradeSides(trade, me)
     val them = overview.person(sides.other)
@@ -284,7 +285,12 @@ private fun TradeCardView(social: SocialRepository, collectionRepository: Collec
                 }
             },
             confirmButton = {
-                TextButton(onClick = { answering = null; run { social.api.respondTrade(trade.id, if (accept) "accept" else "decline", reply.trim()) } }) {
+                TextButton(onClick = {
+                    answering = null
+                    val answer = { run { social.api.respondTrade(trade.id, if (accept) "accept" else "decline", reply.trim()) } }
+                    // A reply with a message is something they read: the community rules first, once.
+                    if (reply.isBlank()) answer() else communityRules.require(answer)
+                }) {
                     Text(if (accept) "Accept" else "Decline", color = if (accept) colors.accent else colors.error)
                 }
             },
@@ -500,6 +506,7 @@ fun TradeComposerScreen(
 private fun Composer(social: SocialRepository, collectionRepository: CollectionRepository, overview: Overview, friendId: String, onSent: () -> Unit) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
+    val communityRules = rememberCommunityRules()
     val friend = overview.person(friendId)
     if (friend == null || !overview.isFriend(friendId)) {
         EmptyState(Icons.Filled.PersonOff, "You can only trade with friends.")
@@ -562,19 +569,22 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
             GoldButton(
                 if (busy) "Sending…" else if (replying != null) "Send counter-offer" else "Send trade request",
                 {
-                    busy = true
-                    error = null
-                    scope.launch {
-                        try {
-                            social.api.proposeTrade(friendId, draft.want, draft.give, draft.message.trim(), replying?.id)
-                            Usage.action(UsageAction.TRADE_PROPOSED)
-                            social.draft = null
-                            social.refresh()
-                            onSent()
-                        } catch (e: Exception) {
-                            error = e.message
-                        } finally {
-                            busy = false
+                    // A first trade request (and its message) waits for the community rules, once.
+                    communityRules.require {
+                        busy = true
+                        error = null
+                        scope.launch {
+                            try {
+                                social.api.proposeTrade(friendId, draft.want, draft.give, draft.message.trim(), replying?.id)
+                                Usage.action(UsageAction.TRADE_PROPOSED)
+                                social.draft = null
+                                social.refresh()
+                                onSent()
+                            } catch (e: Exception) {
+                                error = e.message
+                            } finally {
+                                busy = false
+                            }
                         }
                     }
                 },

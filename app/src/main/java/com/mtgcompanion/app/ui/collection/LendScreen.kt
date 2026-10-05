@@ -93,7 +93,7 @@ fun LendScreen(
     val scope = rememberCoroutineScope()
     // Picked once: lending changes them.
     val sources = remember { lendSources(collections, decks, name = if (placeId == null) cardName.orEmpty() else null, placeId = placeId) }
-    var picked by remember { mutableStateOf(if (cardName != null && placeId == null && sources.isNotEmpty()) mapOf(sources[0].key to 1) else emptyMap()) }
+    var picked by remember { mutableStateOf<Map<String, Int>>(if (cardName != null && placeId == null && sources.isNotEmpty()) mapOf(sources[0].key to 1) else emptyMap()) }
     val overview by social.overview.collectAsState()
     val account by social.accountFlow.collectAsState()
     LaunchedEffect(account?.userId) { if (account != null && overview == null) runCatching { social.refresh() } }
