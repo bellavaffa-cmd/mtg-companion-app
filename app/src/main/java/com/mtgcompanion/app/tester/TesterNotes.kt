@@ -9,6 +9,16 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "pull-list",
+        "Pull lists and putting a deck back",
+        "On a Virtual or Prototype deck tap Build this deck: cards are grouped by place with where to find them. Tick some (or Scan to tick), then Move pulled into deck box and check the deck and places changed. On a Physical deck try Take apart: each card should go back where it came from."
+    ),
+    TesterNote(
+        "box-labels",
+        "Box labels",
+        "Open a place › Label: try the sizes, then Print or save PDF (and All labels from Storage). Scan the printed label with the scanner: you should get Put cards away here, Open box and, with a pull list open, Pull from here."
+    ),
+    TesterNote(
         "storage-places",
         "Storage: where your physical cards are",
         "Collection › Storage › New place: make a shelf, a box inside it (try the colour sorting rule) and a binder. Open the box › Put cards away and scan a few cards: each says where to file it and what happened; try Undo last. Then open one of those cards: Where it is should list the box, any decks and No place yet. Try Move a copy, the Place filter in Advanced filters, and check the places show on your other device after sync."
