@@ -102,10 +102,14 @@ fun copyBadges(entry: CollectionEntry): List<String> =
  * This entry with [added]'s copies put in with its own. One entry describes all its copies, so it
  * keeps its own condition, language and alert, taking [added]'s only where it has none.
  */
-internal fun CollectionEntry.withCopiesOf(added: CollectionEntry): CollectionEntry = copy(
-    quantity = quantity + added.quantity,
-    foilQuantity = foilQuantity + added.foilQuantity,
-    condition = condition ?: added.condition,
-    language = language ?: added.language,
-    priceAlertAbove = priceAlertAbove ?: added.priceAlertAbove
-)
+internal fun CollectionEntry.withCopiesOf(added: CollectionEntry): CollectionEntry {
+    val next = copy(
+        quantity = quantity + added.quantity,
+        foilQuantity = foilQuantity + added.foilQuantity,
+        condition = condition ?: added.condition,
+        language = language ?: added.language,
+        priceAlertAbove = priceAlertAbove ?: added.priceAlertAbove
+    )
+    // Where the added copies are kept comes with them (see StoragePlaces.kt).
+    return if (places != null || added.places != null) withPlaces(next, places.orEmpty() + added.places.orEmpty()) else next
+}

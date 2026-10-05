@@ -5,6 +5,9 @@ import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.GameMode
+import com.mtgcompanion.app.data.NO_PLACE
+import com.mtgcompanion.app.data.placeFactsOf
+import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.languageName
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import org.json.JSONArray
@@ -97,6 +100,8 @@ data class AdvancedFilter(
     val language: String = "",
     /** A binder's id, or "" for any. */
     val binder: String = "",
+    /** A storage place's id (copies in it or in a place inside it), [NO_PLACE] for copies with no place yet, or "" for any. */
+    val place: String = "",
     /** "any", "yes" or "no". */
     val inDeck: String = "any",
     val copiesOp: String = ">=",
@@ -112,7 +117,7 @@ data class AdvancedFilter(
             numberOf(power) != null, numberOf(toughness) != null, numberOf(loyalty) != null,
             format != "", keywordList(keywords).isNotEmpty(),
             numberOf(priceMin) != null || numberOf(priceMax) != null, artist.isNotBlank(), flavor.isNotBlank(),
-            language != "", binder != "", inDeck != "any", numberOf(copies) != null
+            language != "", binder != "", place != "", inDeck != "any", numberOf(copies) != null
         ).count { it } + sets.size + cardIs.size + finishes.size + conditions.size
 
     internal val pickedColors: List<String> get() = colors.filter { it != "C" }
@@ -243,7 +248,11 @@ data class CopyFacts(
     val binders: List<String> = emptyList(),
     val inDeck: Boolean = false,
     /** All copies, in binders and decks — as All cards counts them. */
-    val copies: Int = 1
+    val copies: Int = 1,
+    /** The storage places holding binder copies, each with the places it sits in. */
+    val places: List<String> = emptyList(),
+    /** Binder copies with no place yet (not counting ones lent out). */
+    val unplaced: Int = 0
 )
 
 /**
@@ -259,9 +268,12 @@ fun copyFactsOf(collections: List<Collection>, decks: List<Deck>): Map<String, C
         val binders = mutableListOf<String>()
         var inDeck = false
         var copies = 0
+        val places = mutableListOf<String>()
+        var unplaced = 0
     }
     val out = LinkedHashMap<String, Acc>()
     fun MutableList<String>.addOnce(v: String) { if (v !in this) add(v) }
+    val storage = placesOf(collections)
     for (c in collections) {
         if (c.kind != CollectionType.OWNED) continue
         for (e in c.entries) {
@@ -274,6 +286,9 @@ fun copyFactsOf(collections: List<Collection>, decks: List<Deck>): Map<String, C
             e.condition?.takeIf { it.isNotEmpty() }?.let { f.conditions.addOnce(it) }
             f.languages.addOnce(e.language?.takeIf { it.isNotEmpty() } ?: "en")
             f.binders.addOnce(c.id)
+            val (holding, unplaced) = placeFactsOf(e, storage)
+            holding.forEach { f.places.addOnce(it) }
+            f.unplaced += unplaced
         }
     }
     for (d in decks) {
@@ -285,7 +300,7 @@ fun copyFactsOf(collections: List<Collection>, decks: List<Deck>): Map<String, C
             f.inDeck = true
         }
     }
-    return out.mapValues { (_, f) -> CopyFacts(f.nonfoil, f.foil, f.conditions.toList(), f.languages.toList(), f.binders.toList(), f.inDeck, f.copies) }
+    return out.mapValues { (_, f) -> CopyFacts(f.nonfoil, f.foil, f.conditions.toList(), f.languages.toList(), f.binders.toList(), f.inDeck, f.copies, f.places.toList(), f.unplaced) }
 }
 
 /** The price a copy is judged by (US dollars): non-foil, unless every copy is foil — as the price alerts do. */
@@ -358,7 +373,7 @@ fun advancedMatches(a: AdvancedFilter, facts: AdvancedFacts?, copies: CopyFacts?
     if (a.artist.isNotBlank() && !facts.artist.contains(a.artist.trim(), ignoreCase = true)) return false
     if (a.flavor.isNotBlank() && !facts.flavor.contains(a.flavor.trim(), ignoreCase = true)) return false
 
-    val copiesOn = a.finishes.isNotEmpty() || a.conditions.isNotEmpty() || a.language != "" || a.binder != "" || a.inDeck != "any" || numberOf(a.copies) != null
+    val copiesOn = a.finishes.isNotEmpty() || a.conditions.isNotEmpty() || a.language != "" || a.binder != "" || a.place != "" || a.inDeck != "any" || numberOf(a.copies) != null
     if (!copiesOn) return true
     if (copies == null) return false
     if (a.finishes.isNotEmpty()) {
@@ -369,6 +384,7 @@ fun advancedMatches(a: AdvancedFilter, facts: AdvancedFacts?, copies: CopyFacts?
     if (a.conditions.isNotEmpty() && a.conditions.none { it in copies.conditions }) return false
     if (a.language != "" && a.language !in copies.languages) return false
     if (a.binder != "" && a.binder !in copies.binders) return false
+    if (a.place == NO_PLACE) { if (copies.unplaced <= 0) return false } else if (a.place != "" && a.place !in copies.places) return false
     if (a.inDeck == "yes" && !copies.inDeck) return false
     if (a.inDeck == "no" && copies.inDeck) return false
     val n = numberOf(a.copies)
@@ -439,9 +455,16 @@ private fun cap(s: String) = s.replaceFirstChar { it.uppercase() }
 
 /**
  * The chips for the basic and advanced filters on, in the order the panel and the page show them.
- * [binderName] names a binder by id; [formatLocal] shows an amount typed in the chosen currency.
+ * [binderName] names a binder by id; [formatLocal] shows an amount typed in the chosen currency;
+ * [placeName] names a storage place by id.
  */
-fun filterChips(basic: CollectionFilter, a: AdvancedFilter, binderName: (String) -> String?, formatLocal: (Double) -> String): List<ActiveChip> {
+fun filterChips(
+    basic: CollectionFilter,
+    a: AdvancedFilter,
+    binderName: (String) -> String?,
+    formatLocal: (Double) -> String,
+    placeName: (String) -> String? = { null }
+): List<ActiveChip> {
     val chips = mutableListOf<ActiveChip>()
     fun add(key: String, label: String, symbols: List<String> = emptyList()) { chips += ActiveChip(key, label, symbols) }
     val words = basic.type.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
@@ -485,6 +508,7 @@ fun filterChips(basic: CollectionFilter, a: AdvancedFilter, binderName: (String)
     CARD_CONDITIONS.filter { it in a.conditions }.forEach { add("condition:$it", CONDITION_LABELS[it] ?: it) }
     if (a.language.isNotEmpty()) add("language", languageName(a.language))
     if (a.binder.isNotEmpty()) add("binder", binderName(a.binder) ?: "Binder")
+    if (a.place.isNotEmpty()) add("place", if (a.place == NO_PLACE) "No place yet" else placeName(a.place) ?: "Place")
     if (a.inDeck == "yes") add("inDeck", "In a deck")
     if (a.inDeck == "no") add("inDeck", "Not in a deck")
     num("copies", "Copies", a.copiesOp, a.copies)
@@ -520,6 +544,7 @@ fun removeChip(basic: CollectionFilter, a: AdvancedFilter, key: String): Pair<Co
         "condition" -> adv = adv.copy(conditions = adv.conditions - value)
         "language" -> adv = adv.copy(language = "")
         "binder" -> adv = adv.copy(binder = "")
+        "place" -> adv = adv.copy(place = "")
         "inDeck" -> adv = adv.copy(inDeck = "any")
         "copies" -> adv = adv.copy(copies = "")
     }
@@ -579,7 +604,7 @@ private fun advancedJson(a: AdvancedFilter) = jsonObject(listOf(
     "artist" to jsonString(a.artist), "flavor" to jsonString(a.flavor),
     "finishes" to jsonList(FINISHES.filter { it in a.finishes }),
     "conditions" to jsonList(CARD_CONDITIONS.filter { it in a.conditions }),
-    "language" to jsonString(a.language), "binder" to jsonString(a.binder), "inDeck" to jsonString(a.inDeck),
+    "language" to jsonString(a.language), "binder" to jsonString(a.binder), "place" to jsonString(a.place), "inDeck" to jsonString(a.inDeck),
     "copiesOp" to jsonString(a.copiesOp), "copies" to jsonString(a.copies)
 ))
 
@@ -639,6 +664,7 @@ private fun advancedFrom(o: JSONObject): AdvancedFilter {
         conditions = o.strList("conditions").filter { it in CARD_CONDITIONS },
         language = o.str("language"),
         binder = o.str("binder"),
+        place = o.str("place"),
         inDeck = o.oneOf("inDeck", IN_DECK_OPTIONS, d.inDeck),
         copiesOp = o.oneOf("copiesOp", COMPARE_OPS, d.copiesOp),
         copies = o.str("copies")

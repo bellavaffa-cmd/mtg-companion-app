@@ -1,6 +1,10 @@
 package com.mtgcompanion.app.ui
 
 import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.CopyPlace
+import com.mtgcompanion.app.data.PlaceKind
+import com.mtgcompanion.app.data.StoragePlace
+import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
@@ -275,9 +279,9 @@ class AdvancedFilterTest {
     @Test
     fun `copies - binders and decks, not wishlists, a copy with no language said is English`() {
         val facts = copyFactsOf(collections, decks)
-        assertEquals(CopyFacts(4, 1, listOf("LP", "NM"), listOf("ja", "en"), listOf("b1", "b2"), true, 5), facts["bolt"])
-        assertEquals(CopyFacts(1, 0, emptyList(), emptyList(), emptyList(), true, 1), facts["jace"])
-        assertEquals(CopyFacts(0, 1, emptyList(), listOf("en"), listOf("b1"), false, 1), facts["ring"])
+        assertEquals(CopyFacts(4, 1, listOf("LP", "NM"), listOf("ja", "en"), listOf("b1", "b2"), true, 5, emptyList(), 4), facts["bolt"])
+        assertEquals(CopyFacts(1, 0, emptyList(), emptyList(), emptyList(), true, 1, emptyList(), 0), facts["jace"])
+        assertEquals(CopyFacts(0, 1, emptyList(), listOf("en"), listOf("b1"), false, 1, emptyList(), 1), facts["ring"])
     }
 
     @Test
@@ -302,6 +306,28 @@ class AdvancedFilterTest {
         assertTrue(matches(AdvancedFilter(inDeck = "no"), solRing, ringCopies))
         assertTrue(matches(AdvancedFilter(copiesOp = ">=", copies = "4"), bolt, boltCopies))
         assertFalse(matches(AdvancedFilter(copiesOp = "<", copies = "2"), bolt, boltCopies))
+    }
+
+    @Test
+    fun `your copies - the place they are kept, a place inside it, or none yet`() {
+        val shelf = StoragePlace("shelf", "Shelf", PlaceKind.SHELF.name, createdAt = 1)
+        val red = StoragePlace("red", "Red box", PlaceKind.BOX.name, parentId = "shelf", createdAt = 2)
+        val facts = copyFactsOf(listOf(
+            Collection(
+                UNSORTED_COLLECTION_ID, "Unsorted",
+                listOf(entry("bolt", 2).copy(places = listOf(CopyPlace("red", 2))), entry("ring", 1)),
+                createdAt = 0, type = "OWNED", storagePlaces = listOf(shelf, red)
+            )
+        ), emptyList())
+        assertEquals(listOf("shelf", "red"), facts["bolt"]?.places)
+        assertTrue(matches(AdvancedFilter(place = "shelf"), bolt, facts["bolt"]))
+        assertFalse(matches(AdvancedFilter(place = "red"), solRing, facts["ring"]))
+        assertTrue(matches(AdvancedFilter(place = "none"), solRing, facts["ring"]))
+        assertFalse(matches(AdvancedFilter(place = "none"), bolt, facts["bolt"]))
+        assertEquals(listOf("Red box"), filterChips(CollectionFilter(), AdvancedFilter(place = "red"), binderName, usd) { if (it == "red") "Red box" else null }.map { it.label })
+        assertEquals(listOf("No place yet"), filterChips(CollectionFilter(), AdvancedFilter(place = "none"), binderName, usd).map { it.label })
+        assertEquals("", removeChip(CollectionFilter(), AdvancedFilter(place = "red"), "place").second.place)
+        assertEquals(1, AdvancedFilter(place = "red").count)
     }
 
     @Test
@@ -397,7 +423,7 @@ class AdvancedFilterTest {
         "\"advanced\":{\"colorTarget\":\"identity\",\"colorMode\":\"atMost\",\"colors\":[\"U\",\"B\"],\"multicolor\":false,\"mvOp\":\"<=\",\"mv\":\"3\",\"manaCost\":\"\"," +
         "\"powerOp\":\">=\",\"power\":\"\",\"toughnessOp\":\">=\",\"toughness\":\"\",\"loyaltyOp\":\">=\",\"loyalty\":\"\",\"format\":\"commander\",\"legality\":\"legal\"," +
         "\"sets\":[\"mh3\"],\"cardIs\":[\"commander\",\"token\"],\"keywords\":\"flying\",\"priceMin\":\"\",\"priceMax\":\"5\",\"artist\":\"Rebecca \\\"Becky\\\" Guay\",\"flavor\":\"\"," +
-        "\"finishes\":[\"nonfoil\",\"foil\"],\"conditions\":[\"NM\",\"DMG\"],\"language\":\"ja\",\"binder\":\"b1\",\"inDeck\":\"no\",\"copiesOp\":\">=\",\"copies\":\"2\"}}]"
+        "\"finishes\":[\"nonfoil\",\"foil\"],\"conditions\":[\"NM\",\"DMG\"],\"language\":\"ja\",\"binder\":\"b1\",\"place\":\"red\",\"inDeck\":\"no\",\"copiesOp\":\">=\",\"copies\":\"2\"}}]"
 
     @Test
     fun `saved filters - the same JSON text as the web app, and back`() {
@@ -406,7 +432,7 @@ class AdvancedFilterTest {
             basic = CollectionFilter(type = "creature", colors = setOf('B', 'U'), rarities = setOf("mythic", "rare")),
             advanced = AdvancedFilter(
                 colors = listOf("B", "U"), mv = "3", format = "commander", sets = listOf("mh3"), cardIs = listOf("token", "commander"), keywords = "flying", priceMax = "5",
-                artist = "Rebecca \"Becky\" Guay", finishes = listOf("foil", "nonfoil"), conditions = listOf("DMG", "NM"), language = "ja", binder = "b1", inDeck = "no", copies = "2"
+                artist = "Rebecca \"Becky\" Guay", finishes = listOf("foil", "nonfoil"), conditions = listOf("DMG", "NM"), language = "ja", binder = "b1", place = "red", inDeck = "no", copies = "2"
             )
         ))
         assertEquals(savedJson, savedFiltersToJson(saved))

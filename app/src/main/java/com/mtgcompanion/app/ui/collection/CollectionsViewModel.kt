@@ -86,7 +86,7 @@ class CollectionsViewModel(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
-    private val decks: StateFlow<List<com.mtgcompanion.app.data.Deck>> = deckRepository.decksFlow.stateIn(
+    val decks: StateFlow<List<com.mtgcompanion.app.data.Deck>> = deckRepository.decksFlow.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
@@ -418,6 +418,11 @@ class CollectionsViewModel(
 
     fun deleteCollection(collectionId: String) {
         viewModelScope.launch { repository.deleteCollection(collectionId) }
+    }
+
+    /** Changes the storage places or where copies are kept (see StoragePlaces.kt). */
+    fun changeStorage(change: (List<Collection>) -> List<Collection>) {
+        viewModelScope.launch { repository.changeStorage(change) }
     }
 
     class Factory(

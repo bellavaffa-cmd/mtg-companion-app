@@ -49,6 +49,16 @@ import com.mtgcompanion.app.data.Confirmation
 import com.mtgcompanion.app.data.scannedTwiceOver
 import com.mtgcompanion.app.data.copyNumber
 import com.mtgcompanion.app.data.ScanRow
+import com.mtgcompanion.app.data.PutAwayResult
+import com.mtgcompanion.app.data.PutAwayStep
+import com.mtgcompanion.app.data.Spot
+import com.mtgcompanion.app.data.addedHere
+import com.mtgcompanion.app.data.cardFactsOf
+import com.mtgcompanion.app.data.placesOf
+import com.mtgcompanion.app.data.pocketLabel
+import com.mtgcompanion.app.data.suggestSpot
+import com.mtgcompanion.app.data.undoPutAway
+import com.mtgcompanion.app.data.putAway as putAwayInto
 import android.graphics.Bitmap
 import android.media.MediaActionSound
 import androidx.lifecycle.ViewModel
@@ -147,6 +157,20 @@ private class PendingScan(
     val captureId: Int
 )
 
+/** One card put away this session (put-away mode): what happened to it, and how to take it back. */
+data class PutAwayRow(
+    val id: Long,
+    val card: ScryfallCard,
+    /** Where it goes: "Red › around “L”", "Page 3, slot 6". */
+    val hint: String?,
+    /** The section or pocket, short, for the list. */
+    val where: String,
+    val spot: Spot,
+    val result: PutAwayResult,
+    val label: String,
+    val step: PutAwayStep?
+)
+
 data class ScanUiState(
     val status: String? = null,
     val scannedCards: List<ScanRow> = emptyList(),
@@ -164,7 +188,9 @@ class ScanViewModel(
     private val collectionRepository: CollectionRepository,
     private val deckRepository: DeckRepository,
     private val cardIndexRepository: CardIndexRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    /** Put-away mode: each card scanned is put away into this storage place at once (see StoragePlaces.kt). */
+    putAwayPlaceId: String? = null
 ) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -873,8 +899,72 @@ class ScanViewModel(
         return a.contains(b) || b.contains(a) || a.commonPrefixWith(b).length >= 4
     }
 
+    // ---- Put-away mode ----
+
+    private val _putAwayTarget = MutableStateFlow(putAwayPlaceId)
+    /** The storage place cards are being put away into, or null when scanning into the pile. */
+    val putAwayTarget: StateFlow<String?> = _putAwayTarget.asStateFlow()
+    private val _session = MutableStateFlow<List<PutAwayRow>>(emptyList())
+    /** The cards put away this session, newest first. */
+    val session: StateFlow<List<PutAwayRow>> = _session.asStateFlow()
+
+    fun setPutAwayTarget(placeId: String) {
+        _putAwayTarget.value = placeId
+    }
+
+    /** A scanned card as a new binder entry, with no copies yet — as the scanner's Add to… makes it. */
+    private fun newEntryOf(card: ScryfallCard) =
+        CollectionEntry(card.id, card.name, card.displayImageUrl, backImageUrl = card.backImageUrl, tags = card.tags)
+
+    /** Puts [card] away into [placeId] at once: given a place, moved here, or added here (putAway in StoragePlaces.kt). */
+    private fun putAwayCard(card: ScryfallCard, placeId: String): Long {
+        val id = nextScanId++
+        viewModelScope.launch {
+            var row: PutAwayRow? = null
+            collectionRepository.changeStorage { collections ->
+                val place = placesOf(collections).firstOrNull { it.id == placeId } ?: return@changeStorage collections
+                val (spot, hint) = suggestSpot(place, cardFactsOf(card), collections)
+                val outcome = putAwayInto(collections, card.id, card.name, spot, newEntryOf(card))
+                val page = spot.page
+                val slot = spot.slot
+                val where = spot.section ?: if (page != null && slot != null) pocketLabel(page, slot) else place.name
+                row = PutAwayRow(id, card, hint, where, spot, outcome.result, outcome.label, outcome.step)
+                outcome.collections
+            }
+            val done = row ?: return@launch
+            _session.update { listOf(done) + it }
+            _uiState.update { it.copy(status = "${card.name} — ${done.label}", successToken = it.successToken + 1) }
+        }
+        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        return id
+    }
+
+    /** A card that was already here is another copy after all: it's added, here. */
+    fun anotherCopy(row: PutAwayRow) {
+        viewModelScope.launch {
+            var step: PutAwayStep? = null
+            collectionRepository.changeStorage { collections ->
+                val (next, added) = addedHere(collections, row.card.id, row.spot, newEntryOf(row.card))
+                step = added
+                next
+            }
+            val added = step ?: return@launch
+            _session.update { listOf(row.copy(id = nextScanId++, result = PutAwayResult.NEW, label = "new to collection", step = added)) + it }
+        }
+    }
+
+    /** Takes back the newest card of the session. */
+    fun undoLastPutAway() {
+        val last = _session.value.firstOrNull() ?: return
+        _session.update { it.drop(1) }
+        _uiState.update { it.copy(status = "${last.card.name} taken back") }
+        val step = last.step ?: return
+        viewModelScope.launch { collectionRepository.changeStorage { undoPutAway(it, step) } }
+    }
+
     /** Every scan is its own row, newest first, so a card read twice shows twice. */
     private fun addScannedCard(card: ScryfallCard, exact: Boolean = false): Long {
+        _putAwayTarget.value?.let { return putAwayCard(card, it) }
         val row = ScanRow(nextScanId++, card, System.currentTimeMillis(), exact)
         val rows = listOf(row) + _uiState.value.scannedCards
         val copy = copyNumber(rows, row)
@@ -1121,7 +1211,8 @@ class ScanViewModel(
         private val collectionRepository: CollectionRepository,
         private val deckRepository: DeckRepository,
         private val cardIndexRepository: CardIndexRepository,
-        private val settingsRepository: SettingsRepository
+        private val settingsRepository: SettingsRepository,
+        private val putAwayPlaceId: String? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1131,7 +1222,8 @@ class ScanViewModel(
                 collectionRepository = collectionRepository,
                 deckRepository = deckRepository,
                 cardIndexRepository = cardIndexRepository,
-                settingsRepository = settingsRepository
+                settingsRepository = settingsRepository,
+                putAwayPlaceId = putAwayPlaceId
             ) as T
         }
     }

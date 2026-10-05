@@ -11,6 +11,8 @@ import com.mtgcompanion.app.data.offerCards
 import com.mtgcompanion.app.data.isWishlist
 import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.data.CollectionBreakdown
+import com.mtgcompanion.app.data.placesOf
+import com.mtgcompanion.app.data.placeTree
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.GroupAdd
@@ -141,7 +143,13 @@ fun CollectionsScreen(
     /** Opens a set's cards, owned and missing (from the Sets page), by set code. */
     onOpenSet: (String) -> Unit = {},
     /** Opens the cards the decks use more copies of than the user owns. */
-    onOpenSpreadThin: () -> Unit = {}
+    onOpenSpreadThin: () -> Unit = {},
+    /** Opens a storage place's page (from the Storage page), by id. */
+    onOpenPlace: (String) -> Unit = {},
+    /** Opens the scanner putting cards away into a storage place, by id. */
+    onPutAway: (String) -> Unit = {},
+    /** Opens the Decks tab (the Storage page's deck boxes). */
+    onOpenDecks: () -> Unit = {}
 ) {
     val tagBinders by viewModel.tagBinders.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
@@ -161,13 +169,14 @@ fun CollectionsScreen(
     var showImport by remember { mutableStateOf(false) }
     val importProgress by viewModel.importProgress.collectAsState()
     val unsorted by viewModel.unsorted.collectAsState()
-    // Page 0 = All Cards, 1 = Binders, 2 = Sets, 3 = Shared (with accounts). Swipe or tap the tabs to switch.
-    val pageCount = if (sharedPage != null) 4 else 3
+    // Page 0 = All Cards, 1 = Binders, 2 = Storage, 3 = Sets, 4 = Shared (with accounts). Swipe or tap the tabs to switch.
+    val pageCount = if (sharedPage != null) 5 else 4
+    val decks by viewModel.decks.collectAsState()
     val pagerState = rememberPagerState(pageCount = { pageCount })
     val scope = rememberCoroutineScope()
     LaunchedEffect(openShared) {
         if (openShared && sharedPage != null) {
-            pagerState.scrollToPage(3)
+            pagerState.scrollToPage(4)
             onSharedOpened()
         }
     }
@@ -269,7 +278,7 @@ fun CollectionsScreen(
         }
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             SegmentedTabs(
-                labels = if (sharedPage != null) listOf("All cards", "Binders", "Sets", "Shared") else listOf("All cards", "Binders", "Sets"),
+                labels = if (sharedPage != null) listOf("All cards", "Binders", "Storage", "Sets", "Shared") else listOf("All cards", "Binders", "Storage", "Sets"),
                 selected = pagerState.currentPage,
                 onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -295,7 +304,10 @@ fun CollectionsScreen(
                         onCardFilterChange = { cardFilter = it },
                         filtersOn = cardFilter.count + advFilter.count,
                         filtering = filtering,
-                        chips = filterChips(cardFilter, advFilter, { id -> collections.firstOrNull { it.id == id }?.name }) { money.formatLocal(it) },
+                        chips = filterChips(
+                            cardFilter, advFilter, { id -> collections.firstOrNull { it.id == id }?.name }, { money.formatLocal(it) },
+                            placeName = { id -> placesOf(collections).firstOrNull { it.id == id }?.name }
+                        ),
                         onRemoveChip = { key -> val (b, a) = removeChip(cardFilter, advFilter, key); cardFilter = b; advFilter = a },
                         onClearFilters = clearFilters,
                         onOpenAdvanced = { advancedOpen = true },
@@ -311,10 +323,20 @@ fun CollectionsScreen(
                         onViewDetails = onViewDetails,
                         viewModel = viewModel
                     )
-                } else if (page == 3 && sharedPage != null) {
+                } else if (page == 4 && sharedPage != null) {
                     sharedPage()
-                } else if (page == 2) {
+                } else if (page == 3) {
                     SetsTab(viewModel, onOpenSet)
+                } else if (page == 2) {
+                    // Where the cards are kept (StorageTab.kt).
+                    StorageTab(
+                        collections = collections,
+                        decks = decks,
+                        onOpenPlace = onOpenPlace,
+                        onPutAway = onPutAway,
+                        onOpenDecks = onOpenDecks,
+                        onChange = viewModel::changeStorage
+                    )
                 } else {
                     CollectionsTab(
                         // The Unsorted pile on top, then the Wishlist; both are always there.
@@ -345,7 +367,8 @@ fun CollectionsScreen(
             onRename = viewModel::renameFilter,
             onDelete = viewModel::deleteFilter,
             onApply = { b, a -> cardFilter = b; advFilter = a; advancedOpen = false },
-            onDismiss = { advancedOpen = false }
+            onDismiss = { advancedOpen = false },
+            places = placeTree(placesOf(collections)).map { it.place.id to ("  ".repeat(it.depth) + it.place.name) }
         )
     }
 

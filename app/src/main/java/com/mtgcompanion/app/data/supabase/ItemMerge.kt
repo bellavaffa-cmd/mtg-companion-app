@@ -6,6 +6,10 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckVersion
 import com.mtgcompanion.app.data.GameResult
+import com.mtgcompanion.app.data.keepPlacesFromOlderApp
+import com.mtgcompanion.app.data.mergeCopyPlaces
+import com.mtgcompanion.app.data.mergePlaceLists
+import com.mtgcompanion.app.data.tidied
 
 /**
  * Three-way merge for decks and binders, so two devices editing the same one keep both sets of edits
@@ -21,6 +25,9 @@ import com.mtgcompanion.app.data.GameResult
  *  - Counts that both sides changed add up: +1 here and +2 there lands on +3; two cuts that would
  *    take it below zero settle on the lower count rather than removing the card.
  *  - A field both sides changed differently (a deck's name, say) goes to the more recent edit.
+ *  - Where a binder card's copies are kept (its "places") merges line by line like the cards do, and
+ *    the storage places themselves (on the Unsorted pile) place by place — see StoragePlaces.kt. A
+ *    binder saved by an app that doesn't know about places leaves them as they were.
  * The web app merges the same way — see MtgCompanionWeb/src/sync/mergeItems.ts.
  */
 object ItemMerge {
@@ -154,7 +161,12 @@ object ItemMerge {
         versions = mergeVersions(mine.versions, theirs.versions)
     )
 
-    fun mergeCollections(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection = theirs.copy(
+    fun mergeCollections(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection =
+        // A side saved by an app that doesn't know about places left them as they were.
+        mergeCollectionsKnowingPlaces(base, keepPlacesFromOlderApp(base, mine), keepPlacesFromOlderApp(base, theirs), minePreferred)
+
+    private fun mergeCollectionsKnowingPlaces(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection = theirs.copy(
+        storagePlaces = mergePlaceLists(base.storagePlaces, mine.storagePlaces, theirs.storagePlaces, minePreferred),
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         type = pick(base.type, mine.type, theirs.type, minePreferred),
         createdAt = minOf(mine.createdAt, theirs.createdAt),
@@ -163,9 +175,12 @@ object ItemMerge {
             base.entries, mine.entries, theirs.entries,
             id = { it.scryfallId },
             counts = { listOf(it.quantity, it.foilQuantity) },
-            withCounts = { entry, values -> entry.copy(quantity = values[0], foilQuantity = values[1]) },
+            // Each card's places line by line (one added on both sides keeps the other device's), then no
+            // more than its merged copies.
+            withCounts = { entry, values -> tidied(entry.copy(quantity = values[0], foilQuantity = values[1])) },
             mergeRest = { b, m, t ->
                 t.copy(
+                    places = mergeCopyPlaces(b.places, m.places, t.places),
                     name = pick(b.name, m.name, t.name, minePreferred),
                     imageUrl = pick(b.imageUrl, m.imageUrl, t.imageUrl, minePreferred),
                     backImageUrl = pick(b.backImageUrl, m.backImageUrl, t.backImageUrl, minePreferred),

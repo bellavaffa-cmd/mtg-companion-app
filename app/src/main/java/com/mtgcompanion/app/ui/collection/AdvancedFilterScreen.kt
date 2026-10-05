@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.NO_PLACE
+
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -115,7 +117,9 @@ fun AdvancedFilterScreen(
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onApply: (CollectionFilter, AdvancedFilter) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** The storage places, id to name (indented by depth), for "Place". */
+    places: List<Pair<String, String>> = emptyList()
 ) {
     var b by remember { mutableStateOf(basic) }
     var a by remember { mutableStateOf(advanced) }
@@ -337,6 +341,8 @@ fun AdvancedFilterScreen(
                     Picker(listOf("" to "Any") + CARD_LANGUAGES.map { it to languageName(it) }, a.language, "Language") { a = a.copy(language = it) }
                     Label("Binder")
                     Picker(listOf("" to "Any binder") + binders, a.binder, "Binder") { a = a.copy(binder = it) }
+                    Label("Place")
+                    Picker(listOf("" to "Any place", NO_PLACE to "No place yet") + places, a.place, "Place") { a = a.copy(place = it) }
                     Label("In a deck")
                     Seg(IN_DECK_OPTIONS.map { it to (IN_DECK_LABELS[it] ?: it) }, a.inDeck) { a = a.copy(inDeck = it) }
                     NumberRow("Copies", a.copiesOp, a.copies, { a = a.copy(copiesOp = it) }) { a = a.copy(copies = it) }

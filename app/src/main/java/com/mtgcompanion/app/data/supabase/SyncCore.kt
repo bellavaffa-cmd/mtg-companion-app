@@ -2,6 +2,7 @@ package com.mtgcompanion.app.data.supabase
 
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.keepPlacesFromOlderApp
 import com.squareup.moshi.JsonAdapter
 
 /**
@@ -159,7 +160,8 @@ internal class SyncCore(
             adapter: JsonAdapter<T>,
             changes: MutableMap<String, T?>,
             emptyBase: (T) -> T,
-            merge: (base: T, mine: T, theirs: T, minePreferred: Boolean) -> T
+            merge: (base: T, mine: T, theirs: T, minePreferred: Boolean) -> T,
+            heal: (mine: T, theirs: T) -> T = { _, t -> t }
         ): Boolean {
             val key = row.key
             val localEdit = pending[key]
@@ -223,6 +225,18 @@ internal class SyncCore(
                 return true
             }
             if (localEdit != null && localEdit > row.editedMs) return true // ours is newer; pushed below
+            // A binder saved by an app that doesn't know about storage places comes without them: this
+            // device's are kept and pushed back, rather than the older app's save clearing them everywhere.
+            val mineItem = mineJson?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
+            val healed = if (mineItem != null) heal(mineItem, theirs) else theirs
+            if (healed !== theirs) {
+                val healedJson = adapter.toJson(healed)
+                if (healedJson != mineJson) { changes[row.id] = healed; pulled++ }
+                local[key] = healedJson
+                pending[key] = maxOf(now, row.editedMs + 1)
+                items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson, baseMs = row.editedMs)
+                return true
+            }
             if (mineJson != theirJson) { changes[row.id] = theirs; pulled++ }
             items[key] = ItemMeta(theirJson.hashCode(), row.editedMs, base = theirJson, baseMs = row.editedMs)
             pending.remove(key)
@@ -234,11 +248,14 @@ internal class SyncCore(
             val taken = if (row.kind == "deck") {
                 takeRow(row, deckAdapter, deckChanges, { mine ->
                     mine.copy(cards = emptyList(), considering = emptyList(), sideboard = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList())
-                }) { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) }
+                }, merge = { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) })
             } else {
-                takeRow(row, collectionAdapter, collectionChanges, { mine -> mine.copy(entries = emptyList()) }) { b, m, t, p ->
-                    ItemMerge.mergeCollections(b, m, t, minePreferred = p)
-                }
+                // First meeting: the places too are each device's own, kept as additions.
+                takeRow(
+                    row, collectionAdapter, collectionChanges, { mine -> mine.copy(entries = emptyList(), storagePlaces = null) },
+                    { b, m, t, p -> ItemMerge.mergeCollections(b, m, t, minePreferred = p) },
+                    heal = { mine, theirs -> keepPlacesFromOlderApp(mine, theirs) }
+                )
             }
             // A row this version can't read is read back by key every pass until an update can; the
             // cursor moves on, so everything after it isn't downloaded again and again.
@@ -354,7 +371,7 @@ internal fun rescueDecks(decks: List<Deck>, rescue: Rescue, adapter: JsonAdapter
 
 /** The same, for binders. */
 internal fun rescueCollections(collections: List<Collection>, rescue: Rescue, adapter: JsonAdapter<Collection>): List<Collection> =
-    rescueItems(collections, rescue, "collection", adapter, { it.id }, { mine -> mine.copy(entries = emptyList()) }) { b, m, t ->
+    rescueItems(collections, rescue, "collection", adapter, { it.id }, { mine -> mine.copy(entries = emptyList(), storagePlaces = null) }) { b, m, t ->
         ItemMerge.mergeCollections(b, m, t, minePreferred = true)
     }
 

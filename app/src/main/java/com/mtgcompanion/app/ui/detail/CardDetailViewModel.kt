@@ -257,6 +257,11 @@ class CardDetailViewModel(
         _uiState.value = _uiState.value.copy(card = card)
     }
 
+    /** Changes the storage places or where copies are kept (see StoragePlaces.kt) — "Where it is". */
+    fun changeStorage(change: (List<Collection>) -> List<Collection>) {
+        viewModelScope.launch { collectionRepository.changeStorage(change) }
+    }
+
     class Factory(
         private val cardName: String,
         private val settingsRepository: SettingsRepository,

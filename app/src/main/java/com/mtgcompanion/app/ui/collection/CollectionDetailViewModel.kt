@@ -22,6 +22,7 @@ import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.data.CollectionType
+import com.mtgcompanion.app.data.splitPlaces
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.AddToOps
 import com.mtgcompanion.app.ui.common.AddToPick
@@ -232,7 +233,9 @@ class CollectionDetailViewModel(
     suspend fun sendEntry(entry: CollectionEntry, pick: AddToPick, keep: Boolean, ops: AddToOps) {
         val target = ops.resolve(pick)
         val (plain, foil) = copiesTaken(entry, pick.quantity)
-        val moving = entry.copy(quantity = plain, foilQuantity = foil)
+        // Where the copies are kept goes with them; a copy made in the app has no place of its own.
+        val (staying, going) = splitPlaces(entry, plain, foil)
+        val moving = entry.copy(quantity = plain, foilQuantity = foil, places = if (entry.places == null || keep) null else going)
         when (target.kind) {
             SourceKind.DECK -> {
                 val deckEntry = cardRepository.withFullCardInfo(listOf(moving.toDeckEntry())).first()
@@ -245,7 +248,10 @@ class CollectionDetailViewModel(
             val leftPlain = entry.quantity - plain
             val leftFoil = entry.foilQuantity - foil
             if (leftPlain + leftFoil <= 0) repository.removeEntry(collectionId, entry.scryfallId)
-            else repository.setQuantity(collectionId, entry.scryfallId, leftPlain, leftFoil)
+            else {
+                repository.setQuantity(collectionId, entry.scryfallId, leftPlain, leftFoil)
+                if (entry.places != null && target.kind == SourceKind.BINDER) repository.setPlaces(collectionId, entry.scryfallId, staying)
+            }
         }
     }
 

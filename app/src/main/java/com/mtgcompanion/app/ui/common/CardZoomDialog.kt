@@ -103,6 +103,8 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.keptLabel
+import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.theme.BorderColor
 import com.mtgcompanion.app.ui.theme.Gold
@@ -115,7 +117,8 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 /** A place a card is held — a binder or a deck — and how many copies are there. */
 enum class SourceKind { BINDER, DECK }
 
-data class CardSource(val kind: SourceKind, val id: String, val name: String, val quantity: Int)
+/** [kept]: for a binder, where its copies are physically kept — "Red box ×2" (see StoragePlaces.kt); "" for none. */
+data class CardSource(val kind: SourceKind, val id: String, val name: String, val quantity: Int, val kept: String = "")
 
 /**
  * Where every card is physically held, across every binder and deck — scryfallId -> the places
@@ -125,12 +128,13 @@ data class CardSource(val kind: SourceKind, val id: String, val name: String, va
  */
 fun buildCardSources(collections: List<Collection>, decks: List<Deck>): Map<String, List<CardSource>> {
     val bySource = HashMap<String, MutableList<CardSource>>()
+    val places = placesOf(collections)
     collections.forEach { collection ->
         collection.entries.forEach { entry ->
             val qty = entry.quantity + entry.foilQuantity
             if (qty > 0) {
                 bySource.getOrPut(entry.scryfallId) { mutableListOf() } +=
-                    CardSource(SourceKind.BINDER, collection.id, collection.name, qty)
+                    CardSource(SourceKind.BINDER, collection.id, collection.name, qty, keptLabel(entry, places))
             }
         }
     }
@@ -717,14 +721,17 @@ private fun SourcesSection(sources: List<CardSource>) {
                     tint = Gold,
                     modifier = Modifier.size(18.dp)
                 )
-                Text(
-                    source.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(start = 10.dp)
-                )
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(
+                        source.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    // Where its copies are physically kept.
+                    if (source.kept.isNotEmpty()) Text(source.kept, style = MaterialTheme.typography.labelMedium, color = TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 Text(
                     "×${source.quantity}",
                     style = MaterialTheme.typography.bodyMedium,

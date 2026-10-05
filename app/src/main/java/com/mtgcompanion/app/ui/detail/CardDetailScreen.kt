@@ -138,13 +138,17 @@ import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
+import com.mtgcompanion.app.data.whereItIs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CardDetailScreen(
     viewModel: CardDetailViewModel,
     onBack: () -> Unit,
-    onViewDetails: (String) -> Unit
+    onViewDetails: (String) -> Unit,
+    /** Opens a storage place's page, from "Where it is". */
+    onOpenPlace: (String) -> Unit = {},
+    onOpenDeck: (String) -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
@@ -197,6 +201,7 @@ fun CardDetailScreen(
 
             state.card != null -> {
                 val card = state.card!!
+                val ownsCopies = remember(collections, decks, card.name) { whereItIs(collections, decks, card.name).second > 0 }
                 // A legendary creature has two distinct EDHREC datasets: recs for building around it
                 // as a commander, vs. recs for it as an inclusion in someone else's deck.
                 val showingCommanderView = card.canBeCommander && state.viewAsCommander
@@ -232,6 +237,18 @@ fun CardDetailScreen(
                     }) }
                     // This printing's price as this phone has noted it, day by day (see CardPriceHistory).
                     fullSpanItem { GoldPanel { PriceHistoryPanel(card.id) } }
+                    // Where the copies are physically kept (StoragePlaces.kt); nothing when none are owned.
+                    if (ownsCopies) fullSpanItem {
+                        WhereItIsPanel(
+                            name = card.name,
+                            card = card,
+                            collections = collections,
+                            decks = decks,
+                            onOpenPlace = onOpenPlace,
+                            onOpenDeck = onOpenDeck,
+                            onChange = viewModel::changeStorage
+                        )
+                    }
 
                 }
                 val browseSections: androidx.compose.foundation.lazy.grid.LazyGridScope.() -> Unit = {

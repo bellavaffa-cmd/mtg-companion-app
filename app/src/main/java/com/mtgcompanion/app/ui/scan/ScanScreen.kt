@@ -37,6 +37,8 @@ import com.mtgcompanion.app.data.repeatedCards
 import com.mtgcompanion.app.data.onlyRepeats
 import com.mtgcompanion.app.data.copyNumber
 import com.mtgcompanion.app.data.ScanRow
+import com.mtgcompanion.app.data.placesOf
+import com.mtgcompanion.app.ui.collection.PlacePickerDialog
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -171,6 +173,11 @@ fun ScanScreen(
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
     val collections by viewModel.collections.collectAsState()
+    // Put-away mode: each card goes straight into this storage place (PutAwayPanel.kt).
+    val putAwayTarget by viewModel.putAwayTarget.collectAsState()
+    val session by viewModel.session.collectAsState()
+    val putAwayPlace = putAwayTarget?.let { id -> placesOf(collections).firstOrNull { it.id == id } }
+    var choosingPlace by remember { mutableStateOf(false) }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -201,9 +208,9 @@ fun ScanScreen(
     // Cards scanned but not put away yet: leaving would throw them away, so it asks first.
     var confirmLeave by remember { mutableStateOf(false) }
     val leave = {
-        if (state.scannedCards.isEmpty()) onBack() else confirmLeave = true
+        if (putAwayTarget != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
     }
-    BackHandler(enabled = state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
+    BackHandler(enabled = putAwayTarget == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
     var showManualAdd by remember { mutableStateOf(false) }
 
     // Bound once the camera provider resolves, so the torch button has something to control.
@@ -437,7 +444,11 @@ fun ScanScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ScrimIconButton(onClick = leave, icon = Icons.AutoMirrored.Filled.ArrowBack, desc = "Back")
-                Box(modifier = Modifier.weight(1f))
+                if (putAwayPlace != null) {
+                    PutAwayTarget(putAwayPlace.name, onClick = { choosingPlace = true }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                } else {
+                    Box(modifier = Modifier.weight(1f))
+                }
                 // Everything else lives behind one button. The camera wants the screen, not a row
                 // of icons over it, and all of these are things you reach for occasionally.
                 Box {
@@ -530,8 +541,18 @@ fun ScanScreen(
             }
         }
 
+        // Put-away mode: the card just put away and the session, instead of the pile.
+        if (putAwayTarget != null) {
+            PutAwayPanel(
+                session = session,
+                onUndoLast = viewModel::undoLastPutAway,
+                onAnotherCopy = viewModel::anotherCopy,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
         // Bottom overlay: view-list button.
-        Button(
+        if (putAwayTarget == null) Button(
             onClick = { showList = true },
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
@@ -571,6 +592,13 @@ fun ScanScreen(
                 onAllTo = { addingAll = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
+        }
+    }
+
+    if (choosingPlace) {
+        PlacePickerDialog("Put cards away into…", placesOf(collections), onDismiss = { choosingPlace = false }) { id ->
+            choosingPlace = false
+            viewModel.setPutAwayTarget(id)
         }
     }
 

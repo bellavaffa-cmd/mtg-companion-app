@@ -138,6 +138,8 @@ class CollectionRepository(private val context: Context) {
     suspend fun transferEntries(fromId: String, ids: Set<String>, toId: String, keep: Boolean) {
         update { collections ->
             val moving = collections.firstOrNull { it.id == fromId }?.entries.orEmpty().filter { it.scryfallId in ids }
+                // A copy made in the app has no place of its own (StoragePlaces.kt); moved, its places go with it.
+                .map { if (keep && it.places != null) it.copy(places = null) else it }
             collections.map { c ->
                 when {
                     c.id == toId -> c.copy(entries = c.entries.mergeIn(moving))
@@ -164,6 +166,19 @@ class CollectionRepository(private val context: Context) {
                 }
             }
         }
+    }
+
+    /**
+     * Changes the storage places or where copies are kept (StoragePlaces.kt): [change] gets the
+     * binders as they are now and answers them changed, in one change.
+     */
+    suspend fun changeStorage(change: (List<Collection>) -> List<Collection>) {
+        update(transform = change)
+    }
+
+    /** Sets where [scryfallId]'s copies in one binder are kept (tidied to its copies). */
+    suspend fun setPlaces(collectionId: String, scryfallId: String, places: List<CopyPlace>) {
+        updateEntries(collectionId) { entries -> entries.map { if (it.scryfallId == scryfallId) withPlaces(it, places) else it } }
     }
 
     /** Removes the cards [ids] from one binder, in one change. */

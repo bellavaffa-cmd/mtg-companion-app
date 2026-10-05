@@ -22,7 +22,11 @@ fun withEntryPrinting(entries: List<CollectionEntry>, oldId: String, card: Scryf
             .filter { it.scryfallId != oldId }
             .map {
                 if (it.scryfallId != card.id) it
-                else it.copy(quantity = it.quantity + old.quantity, foilQuantity = it.foilQuantity + old.foilQuantity)
+                else {
+                    val joined = it.copy(quantity = it.quantity + old.quantity, foilQuantity = it.foilQuantity + old.foilQuantity)
+                    // Where the copies are kept comes along too (StoragePlaces.kt).
+                    if (it.places != null || old.places != null) withPlaces(joined, it.places.orEmpty() + old.places.orEmpty()) else joined
+                }
             }
     }
     return entries.map {
