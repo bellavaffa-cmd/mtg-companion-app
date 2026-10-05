@@ -447,13 +447,16 @@ class LifeCounterViewModel(
     /** This game's log for its chart and recap, from its history; [endAt]: when it ended. */
     fun gameLog(players: List<PlayerLife> = _players.value, settings: LifeCounterSettings = _settings.value, endAt: Long = System.currentTimeMillis()): GameLog {
         val life = settings.startingLifeFor(players.size)
+        val endMs = _clock.value.elapsed(endAt)
         val entries = _history.value.map { h ->
             LogEntry(
                 seat = h.playerId, ms = h.elapsedMs, turn = h.turn, life = h.life, out = h.out,
                 turnStart = h.event == HistoryEvent.TurnStarted || h.event == HistoryEvent.WonHighRoll,
                 first = h.event == HistoryEvent.WonHighRoll
             )
-        }
+        } +
+            // Where everyone ended up, in case the last change isn't in the history yet (or any more).
+            players.map { LogEntry(it.id, endMs, _turnNumber.value, it.life, it.lossReason(autoKill = true)?.name) }
         val damage = players.flatMap { p ->
             p.commanderDamage.entries.groupBy({ it.key.opponentId }, { it.value }).map { (from, amounts) -> DamageTotal(p.id, from, amounts.sum()) }
         }
@@ -462,7 +465,7 @@ class LifeCounterViewModel(
             players.map { SeatLife(it.id, life) },
             players.map { it.id to it.lossReason(settings.autoKill)?.name },
             damage,
-            _clock.value.elapsed(endAt),
+            endMs,
             settings.turnTrackerEnabled && players.size > 1,
             // Seat 1 opens a new game; choosing who goes first is in the history, and starts the turns over.
             1
