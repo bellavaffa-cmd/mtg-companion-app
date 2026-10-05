@@ -105,8 +105,9 @@ fun MessagesScreen(social: SocialRepository, onBack: () -> Unit, onSignIn: () ->
     }
 }
 
+/** Every conversation — on this screen and on Friends' Messages tab. */
 @Composable
-private fun ConversationList(social: SocialRepository, overview: Overview, onOpen: (String) -> Unit) {
+internal fun ConversationList(social: SocialRepository, overview: Overview, onOpen: (String) -> Unit) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val available = rememberSocialMore(social)

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -121,8 +122,17 @@ fun TradesScreen(
     }
 }
 
+/** The trades themselves, filtered — on this screen and on Friends' Trades tab, with [header] and [footer] around them. */
 @Composable
-private fun TradeList(social: SocialRepository, collectionRepository: CollectionRepository, overview: Overview, onCounter: (String) -> Unit, onMessage: (String) -> Unit) {
+internal fun TradeList(
+    social: SocialRepository,
+    collectionRepository: CollectionRepository,
+    overview: Overview,
+    onCounter: (String) -> Unit,
+    onMessage: (String) -> Unit,
+    header: LazyListScope.() -> Unit = {},
+    footer: LazyListScope.() -> Unit = {}
+) {
     val me = overview.me!!.userId
     val withMore = rememberSocialMore(social) == true
     // People the user blocked are left out, and the user's thumbs up/down on finished trades shown.
@@ -141,6 +151,7 @@ private fun TradeList(social: SocialRepository, collectionRepository: Collection
     val shown = when (filter) { TradeFilter.WAITING -> waiting; TradeFilter.SENT -> sent; TradeFilter.DONE -> done }
 
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        header()
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 PillChip("Waiting on you", filter == TradeFilter.WAITING, { filter = TradeFilter.WAITING }, count = waiting.size)
@@ -166,6 +177,7 @@ private fun TradeList(social: SocialRepository, collectionRepository: Collection
                 )
             }
         }
+        footer()
     }
 }
 

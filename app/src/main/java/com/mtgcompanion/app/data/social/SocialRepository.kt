@@ -100,6 +100,12 @@ class SocialRepository(private val auth: SupabaseAuth) {
     /** Set to open Collection on its Shared page (from Friends); the Collection screen takes it. */
     var openSharedTab: Boolean = false
 
+    /**
+     * Set to open Friends on one of its tabs (a FriendsTab key: "trades", "messages"…) — from a tapped
+     * notification. The Friends screen takes it, even when it's already showing.
+     */
+    val openFriendsTab = MutableStateFlow<String?>(null)
+
     /** Ends a life counter table after its screen has gone (so no coroutine of its own is left). */
     fun endMatchInBackground(matchId: String) { scope.launch { runCatching { api.endMatch(matchId) } } }
 
