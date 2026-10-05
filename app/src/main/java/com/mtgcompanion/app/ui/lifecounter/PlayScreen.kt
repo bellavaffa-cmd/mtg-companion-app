@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.EventSeat
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Icon
@@ -46,7 +47,9 @@ fun PlayScreen(
     onStartGame: () -> Unit,
     onJoinTable: () -> Unit,
     onOpenRemote: (matchId: String, seat: Int) -> Unit,
-    onOpenRules: () -> Unit
+    onOpenRules: () -> Unit,
+    /** Every deck's games together. */
+    onOpenPlaygroup: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     LazyColumn(
@@ -65,6 +68,7 @@ fun PlayScreen(
             }
         }
         item { PlayRow(Icons.Filled.QrCodeScanner, "Join a table", "Scan a seat's QR code: your phone becomes your remote") { onJoinTable() } }
+        item { PlayRow(Icons.Filled.Groups, "Playgroup", "Your record across every deck: who you play, your nemesis, your best decks") { onOpenPlaygroup() } }
         item { PlayRow(Icons.Filled.MenuBook, "Rules", "Look up a rule or a card's rulings") { onOpenRules() } }
         item { SectionHeader("Recent games", modifier = Modifier.padding(top = 10.dp)) }
         if (games.isEmpty()) {

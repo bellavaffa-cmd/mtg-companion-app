@@ -180,7 +180,7 @@ data class MissingCard(val entry: DeckCardEntry, val need: Int)
 /** Basic lands: nobody buys these, so a deck short of them isn't short of anything. */
 private val BASIC_LANDS = setOf("plains", "island", "swamp", "mountain", "forest", "wastes")
 
-private fun isBasicLand(name: String) = name.trim().lowercase().removePrefix("snow-covered ") in BASIC_LANDS
+internal fun isBasicLand(name: String) = name.trim().lowercase().removePrefix("snow-covered ") in BASIC_LANDS
 
 /** Copies of each card this deck really holds — proxies are print-outs, not copies you have. */
 internal fun copiesHeld(deck: Deck): Map<String, Int> = when (deck.ownershipType) {
