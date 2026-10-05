@@ -356,7 +356,7 @@ fun PlaceScreen(
                         onOpenCard = onOpenCard
                     )
                 }
-                if (cards.isEmpty() && sections.isEmpty()) item {
+                if (cards.isEmpty() && sections.isEmpty() && inside.isEmpty()) item {
                     Text("Nothing here yet. Put cards away to fill it.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
                 }
             }

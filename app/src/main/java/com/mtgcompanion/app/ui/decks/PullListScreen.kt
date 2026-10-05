@@ -241,7 +241,7 @@ fun PullListScreen(
                     val rows = if (byPlace) g.rows else g.rows.sortedBy { it.name.lowercase() }
                     val of = g.rows.sumOf { it.qty }
                     val got = pulledCopies(g.rows, ticked)
-                    GroupCard(g.title, listOfNotNull(g.detail.takeIf { g.kind == PullGroupKind.PLACE && it.isNotEmpty() }, "$got of $of").joinToString(" · "), g.kind == PullGroupKind.DECK) {
+                    GroupCard(g.title, metaLine(listOfNotNull(g.detail.takeIf { g.kind == PullGroupKind.PLACE && it.isNotEmpty() }, "$got of $of")), g.kind == PullGroupKind.DECK) {
                         shown(rows).forEach { r -> PullRowLine(r, r.key in ticked, r.hint, { toggle(r) }, ask = r.source is PullSource.InDeck) }
                     }
                 }
@@ -398,7 +398,16 @@ internal fun TickLine(name: String, ticked: Boolean, hint: String?, onToggle: ()
             color = if (ticked) colors.textDim else if (ask) colors.warning else colors.textMuted,
             textDecoration = if (ticked) TextDecoration.LineThrough else null,
             textAlign = TextAlign.End,
-            modifier = Modifier.padding(start = 8.dp)
+            // A long hint ("in Atraxa Superfriends Proliferate Extravaganza — take it?") shares the line
+            // with the card's name rather than squeezing it to nothing.
+            modifier = Modifier.weight(1f, fill = false).padding(start = 8.dp)
         )
     }
 }
+
+/**
+ * A group's "Office shelf · 0 of 2": each part kept whole, so a narrow screen breaks the line only
+ * after a "·", never inside "0 of 2". The web app's metaLine (collection/pullList.ts).
+ */
+internal fun metaLine(parts: List<String>): String =
+    parts.filter { it.isNotEmpty() }.joinToString("\u00A0· ") { it.replace(' ', '\u00A0') }

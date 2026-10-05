@@ -173,7 +173,7 @@ fun PutBackScreen(
             items(list.groups, key = { it.key }) { g ->
                 val of = g.rows.sumOf { it.qty }
                 val got = g.rows.filter { it.key in ticked }.sumOf { it.qty }
-                GroupCard(g.title, if (g.kind == PutBackGroupKind.BASIC) "$of" else listOfNotNull(g.detail.ifEmpty { null }, "$got of $of").joinToString(" · "), false) {
+                GroupCard(g.title, if (g.kind == PutBackGroupKind.BASIC) "$of" else metaLine(listOfNotNull(g.detail.ifEmpty { null }, "$got of $of")), false) {
                     if (g.kind == PutBackGroupKind.BASIC) Text(g.detail, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                     g.rows.forEach { r ->
                         val name = (if (g.kind == PutBackGroupKind.BASIC) "${r.qty} ${r.name}" else r.name + if (r.qty > 1) " ×${r.qty}" else "") + if (r.foil) " · foil" else ""

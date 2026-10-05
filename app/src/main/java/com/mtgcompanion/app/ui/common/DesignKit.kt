@@ -341,7 +341,7 @@ fun StatFigure(value: @Composable () -> Unit, label: String, modifier: Modifier 
         modifier.clip(RoundedCornerShape(18.dp)).background(Surface).padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         value()
-        Text(label, style = MaterialTheme.typography.labelMedium, color = TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = TextMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 

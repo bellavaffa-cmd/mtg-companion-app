@@ -273,13 +273,15 @@ private fun PersonCard(person: LoanPerson, collections: List<Collection>, decks:
             loan.cards.filter { stillOut(it) > 0 }.forEach { c ->
                 Row(Modifier.fillMaxWidth()) {
                     Text((if (stillOut(c) > 1) "${stillOut(c)}× " else "") + c.name + if (c.isFoil) " · foil" else "", style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("→ ${loanCardFrom(c, collections, decks)}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // Where it goes back to can be long: it shares the line with the card's name rather than taking it.
+                    Text("→ ${loanCardFrom(c, collections, decks)}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(start = 8.dp))
                 }
             }
         }
-        val dates = person.loans.mapNotNull { it.backBy }.distinct()
-        if (dates.isNotEmpty() && person.overdue == 0) {
-            Text(dates.joinToString(" · ") { "Back by ${shortDay(it, today.take(4).toIntOrNull())}" }, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+        val dates = person.loans.mapNotNull { it.backBy }.distinct().joinToString(" · ") { "Back by ${shortDay(it, today.take(4).toIntOrNull())}" }
+        // The dates, when there's more to say than the one already beside the name.
+        if (dates.isNotEmpty() && person.overdue == 0 && dates != person.label) {
+            Text(dates, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             LoanButton("Got them back", primary = true, modifier = Modifier.weight(1f), onClick = onBack)

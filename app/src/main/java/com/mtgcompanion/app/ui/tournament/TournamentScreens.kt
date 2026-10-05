@@ -129,6 +129,7 @@ import com.mtgcompanion.app.ui.common.PillChip
 import com.mtgcompanion.app.ui.common.SegmentedTabs
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.theme.NumberStyle
+import com.mtgcompanion.app.ui.social.EmptyState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -207,7 +208,7 @@ fun EventsScreen(repository: TournamentRepository, onBack: () -> Unit, onNew: ()
         ) {
             item { Note("Run a small Swiss or Commander pod event from this phone: pairings, a round clock and standings.") }
             item { GoldButton("New event", Icons.Filled.Add, onClick = onNew) }
-            if (events.isEmpty()) item { Note("Events you run show up here.") }
+            if (events.isEmpty()) item { EmptyState(Icons.Filled.EmojiEvents, "Events you run show up here.") }
             items(events, key = { it.id }) { e ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
