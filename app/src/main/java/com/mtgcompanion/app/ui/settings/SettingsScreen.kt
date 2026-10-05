@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.settings
 
+import androidx.compose.material.icons.filled.Block
+import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.ui.social.BlockedPeopleSection
 import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.layout.fillMaxHeight
 import com.mtgcompanion.app.ui.common.readableWidth
@@ -122,7 +125,8 @@ enum class SettingsSection(val id: String, val title: String, val icon: ImageVec
     PRICES("prices", "Prices", Icons.Filled.Sell),
     OFFLINE_SEARCH("offline-search", "Offline Search", Icons.Filled.CloudOff),
     CARD_RECOGNITION("card-recognition", "Card Recognition", Icons.Filled.CameraAlt),
-    APP_UPDATES("app-updates", "App Updates", Icons.Filled.Autorenew);
+    APP_UPDATES("app-updates", "App Updates", Icons.Filled.Autorenew),
+    BLOCKED("blocked", "Blocked people", Icons.Filled.Block);
 
     companion object {
         fun fromId(id: String?): SettingsSection? = entries.firstOrNull { it.id == id }
@@ -187,6 +191,7 @@ fun SettingsScreen(
         SettingsSection.OFFLINE_SEARCH -> if (offline.hasData) "${offline.cardCount} cards downloaded" else "Not downloaded"
         SettingsSection.CARD_RECOGNITION -> if (recognition.ready) "${recognition.cardCount} card pictures" else "Downloads the first time you scan"
         SettingsSection.APP_UPDATES -> update.available?.let { "${it.headline} is available" } ?: "Version ${BuildConfig.VERSION_NAME}"
+        SettingsSection.BLOCKED -> "People who can't see your things or contact you"
     }
 
     Scaffold(
@@ -260,7 +265,8 @@ fun SettingsSectionScreen(
     cardIndexRepository: CardIndexRepository,
     settingsRepository: SettingsRepository,
     onBack: () -> Unit,
-    onOpenFriends: (() -> Unit)? = null
+    onOpenFriends: (() -> Unit)? = null,
+    socialRepository: SocialRepository? = null
 ) {
     Scaffold(
         containerColor = Bg,
@@ -301,6 +307,7 @@ fun SettingsSectionScreen(
                 SettingsSection.OFFLINE_SEARCH -> OfflineSearchSection(offlineCardRepository)
                 SettingsSection.CARD_RECOGNITION -> CardRecognitionSection(cardIndexRepository)
                 SettingsSection.APP_UPDATES -> AppUpdatesSection(updateManager)
+                SettingsSection.BLOCKED -> if (socialRepository != null) BlockedPeopleSection(socialRepository) else Text("Not available yet.", color = TextMuted)
             }
         }
         }

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.PersonOff
@@ -66,7 +67,10 @@ import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.localMoshi
 import com.mtgcompanion.app.data.social.CollectionChange
+import com.mtgcompanion.app.data.social.ForTradeCard
 import com.mtgcompanion.app.data.social.Overview
+import com.mtgcompanion.app.data.social.TradeMatch
+import com.mtgcompanion.app.data.social.matchSentence
 import com.mtgcompanion.app.data.social.ShareKind
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.data.social.Trade
@@ -95,7 +99,8 @@ fun TradesScreen(
     collectionRepository: CollectionRepository,
     onBack: () -> Unit,
     onSignIn: () -> Unit,
-    onCounter: (friendId: String) -> Unit
+    onCounter: (friendId: String) -> Unit,
+    onMessage: (friendId: String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     Scaffold(
@@ -110,18 +115,28 @@ fun TradesScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.readableWidth(760.dp)) {
-                SocialGate(social, onSignIn) { overview -> TradeList(social, collectionRepository, overview, onCounter) }
+                SocialGate(social, onSignIn) { overview -> TradeList(social, collectionRepository, overview, onCounter, onMessage) }
             }
         }
     }
 }
 
 @Composable
-private fun TradeList(social: SocialRepository, collectionRepository: CollectionRepository, overview: Overview, onCounter: (String) -> Unit) {
+private fun TradeList(social: SocialRepository, collectionRepository: CollectionRepository, overview: Overview, onCounter: (String) -> Unit, onMessage: (String) -> Unit) {
     val me = overview.me!!.userId
-    val waiting = overview.trades.filter { waitingOnMe(it, me) }
-    val sent = overview.trades.filter { it.status == TradeStatus.OPEN && it.fromUser == me }
-    val done = overview.trades.filter { it !in waiting && it !in sent }
+    val withMore = rememberSocialMore(social) == true
+    // People the user blocked are left out, and the user's thumbs up/down on finished trades shown.
+    var blocked by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var ratings by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    LaunchedEffect(withMore, overview) {
+        if (!withMore) return@LaunchedEffect
+        runCatching { social.more.blocked() }.onSuccess { list -> blocked = list.map { it.profile.userId }.toSet() }
+        runCatching { social.more.myRatings() }.onSuccess { ratings = it }
+    }
+    val trades = overview.trades.filter { (if (it.fromUser == me) it.toUser else it.fromUser) !in blocked }
+    val waiting = trades.filter { waitingOnMe(it, me) }
+    val sent = trades.filter { it.status == TradeStatus.OPEN && it.fromUser == me }
+    val done = trades.filter { it !in waiting && it !in sent }
     var filter by remember { mutableStateOf(if (waiting.isNotEmpty() || sent.isEmpty()) TradeFilter.WAITING else TradeFilter.SENT) }
     val shown = when (filter) { TradeFilter.WAITING -> waiting; TradeFilter.SENT -> sent; TradeFilter.DONE -> done }
 
@@ -143,7 +158,14 @@ private fun TradeList(social: SocialRepository, collectionRepository: Collection
                 } + if (filter != TradeFilter.DONE && overview.acceptedFriends.isNotEmpty()) " To start one, open a friend's shared binder." else ""
             )
         }
-        shown.forEach { t -> item(key = t.id) { TradeCardView(social, collectionRepository, overview, t, onCounter) } }
+        shown.forEach { t ->
+            item(key = t.id) {
+                TradeCardView(
+                    social, collectionRepository, overview, t, onCounter,
+                    TradeMore(withMore, ratings[t.id], { positive -> ratings = ratings + (t.id to positive) }, onMessage)
+                )
+            }
+        }
     }
 }
 
@@ -155,8 +177,11 @@ private val STATUS = mapOf(
     TradeStatus.COUNTERED to "Countered"
 )
 
+/** Messages, ratings and blocking on a trade card, once the server has them (social_more). */
+private class TradeMore(val on: Boolean, val rating: Boolean?, val onRated: (Boolean) -> Unit, val onMessage: (String) -> Unit)
+
 @Composable
-private fun TradeCardView(social: SocialRepository, collectionRepository: CollectionRepository, overview: Overview, trade: Trade, onCounter: (String) -> Unit) {
+private fun TradeCardView(social: SocialRepository, collectionRepository: CollectionRepository, overview: Overview, trade: Trade, onCounter: (String) -> Unit, more: TradeMore) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val me = overview.me!!.userId
@@ -197,6 +222,10 @@ private fun TradeCardView(social: SocialRepository, collectionRepository: Collec
                 Text(status, style = MaterialTheme.typography.bodySmall, color = if (trade.status == TradeStatus.OPEN || trade.status == TradeStatus.ACCEPTED) colors.accent else colors.textMuted)
             }
             Text(trade.updatedAt.take(10), style = MaterialTheme.typography.labelSmall, color = colors.textDim)
+            if (more.on && overview.isFriend(sides.other)) {
+                IconButton(onClick = { more.onMessage(sides.other) }) { Icon(Icons.Filled.ChatBubble, contentDescription = "Message $theirName", tint = colors.textMuted) }
+            }
+            BlockReportButton(social, sides.other, theirName, itemKind = "trade", itemId = trade.id, compact = true)
         }
         TradeSideList("You give", sides.give)
         TradeSideList("You get", sides.get)
@@ -220,6 +249,7 @@ private fun TradeCardView(social: SocialRepository, collectionRepository: Collec
                 TextButton(onClick = { run { social.api.respondTrade(trade.id, "cancel") } }, enabled = !busy) { Text("Cancel request", color = colors.textMuted) }
             }
         }
+        if (more.on) RateTrade(social, trade, me, more.rating, theirName, more.onRated)
         if (awaitingMyUpdate(trade, me)) {
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 GoldButton("Update my binders", { updating = true }, enabled = !busy, icon = { Icon(Icons.Filled.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp)) })
@@ -468,9 +498,36 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
     var picking by remember { mutableStateOf<Boolean?>(null) } // true: their binders, false: mine
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Cards they've marked for trade (seen by all friends), and matches either way to start from.
+    val withMore = rememberSocialMore(social) == true
+    var forTrade by remember { mutableStateOf<List<ForTradeCard>>(emptyList()) }
+    var match by remember { mutableStateOf<TradeMatch?>(null) }
+    val fresh = remember { draft.replyTo == null && draft.want.isEmpty() && draft.give.isEmpty() }
+    LaunchedEffect(withMore, friendId) {
+        if (!withMore) return@LaunchedEffect
+        forTrade = runCatching { social.more.forTradeList(friendId) }.getOrNull().orEmpty()
+        if (fresh) match = runCatching { social.more.tradeMatches() }.getOrNull()?.firstOrNull { it.friend == friendId }
+    }
 
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { PersonRow(friend, detail = if (replying != null) "Counter-offer" else null) }
+        match?.takeIf { it.theyHave.isNotEmpty() || it.theyWant.isNotEmpty() }?.let { m ->
+            item(key = "match") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.accentGlow).padding(12.dp)
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = colors.accent)
+                    Text(matchSentence(friend.displayName, m.theyHave.size, m.theyWant.size).orEmpty() + ".", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    GoldButton("Add them", {
+                        fun add(list: List<TradeCard>, cards: List<TradeCard>) = list + cards.filter { c -> list.none { it.key == c.key } }
+                        update(draft.copy(want = add(draft.want, m.theyHave), give = add(draft.give, m.theyWant)))
+                        match = null
+                    })
+                }
+            }
+        }
         item { SectionHeader(if (draft.want.isEmpty()) "You ask for" else "You ask for · ${draft.want.cardTotal()}", action = "Pick cards", onAction = { picking = true }) }
         item { TradeCardList(draft.want, "Nothing yet — pick from ${friend.displayName}'s shared binders.") { c -> update(draft.copy(want = draft.want.filterNot { it.key == c.key })) } }
         item { SectionHeader(if (draft.give.isEmpty()) "You offer" else "You offer · ${draft.give.cardTotal()}", action = "Pick cards", onAction = { picking = false }) }
@@ -539,9 +596,17 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
                     }
                     GoldButton("Done", { picking = null })
                 }
-                val list = if (theirs) binders else myBinders.filter { it.type != "WISHLIST" }
+                // Their for-trade cards, by binder (a binder they share shows in full below instead).
+                val sharedIds = shared.map { it.itemId }.toSet()
+                val forTradeBinders = forTrade.filter { it.itemId !in sharedIds }.groupBy { it.itemId }.map { (id, cards) ->
+                    Collection(id, "For trade · ${cards.first().itemName ?: "Binder"}", cards.map { c ->
+                        val plain = minOf(c.forTrade, maxOf(0, c.quantity))
+                        CollectionEntry(c.scryfallId, c.name, c.imageUrl, quantity = plain, foilQuantity = c.forTrade - plain, condition = c.condition)
+                    })
+                }
+                val list = if (theirs) binders?.let { forTradeBinders + it } else myBinders.filter { it.type != "WISHLIST" }
                 when {
-                    theirs && shared.isEmpty() -> Notice("${friend.displayName} hasn't shared a binder with you.", Modifier.padding(16.dp))
+                    theirs && shared.isEmpty() && forTradeBinders.isEmpty() -> Notice("${friend.displayName} hasn't shared a binder with you or marked cards for trade.", Modifier.padding(16.dp))
                     list == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = colors.accent) }
                     list.isEmpty() -> Notice("You have no binders yet.", Modifier.padding(16.dp))
                     else -> LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

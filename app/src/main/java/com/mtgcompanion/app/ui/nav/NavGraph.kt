@@ -138,6 +138,10 @@ import com.mtgcompanion.app.data.social.SharedSummary
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.ui.social.FriendScreen
 import com.mtgcompanion.app.ui.social.FriendsScreen
+import com.mtgcompanion.app.ui.social.ConversationScreen
+import com.mtgcompanion.app.ui.social.ForTradeScreen
+import com.mtgcompanion.app.ui.social.FriendsMoreActions
+import com.mtgcompanion.app.ui.social.MessagesScreen
 import com.mtgcompanion.app.ui.social.QrScanScreen
 import com.mtgcompanion.app.ui.social.ShareCollectionDialog
 import com.mtgcompanion.app.ui.social.ShareDialog
@@ -249,6 +253,11 @@ private object Routes {
     const val FRIEND_SHARED = "friend_shared/{owner}"
     fun friendShared(owner: String) = "friend_shared/$owner"
     fun sharedCollection(owner: String) = "shared_collection/$owner"
+    /** Direct messages: the list, one conversation, and the user's cards for trade (SocialMore). */
+    const val MESSAGES = "messages"
+    const val CONVERSATION = "conversation/{userId}"
+    fun conversation(userId: String) = "conversation/$userId"
+    const val FOR_TRADE = "for_trade"
     const val QR_SCAN = "qr_scan"
     /** A player's phone as the remote for their seat at a life counter table. */
     const val REMOTE = "remote/{matchId}/{seat}"
@@ -356,6 +365,7 @@ fun MtgNavGraph(
         }
         navController.navigateToTab(Routes.FRIENDS)
         if (open == "trades") navController.navigate(Routes.TRADES) { launchSingleTop = true }
+        if (open == "messages") navController.navigate(Routes.MESSAGES) { launchSingleTop = true }
     }
 
     // Check GitHub for a newer release once on launch; the dialog below shows if one is found.
@@ -1090,7 +1100,8 @@ fun MtgNavGraph(
                         cardIndexRepository = cardIndexRepository,
                         settingsRepository = settingsRepository,
                         onBack = { navController.popBackStack() },
-                        onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) }
+                        onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) },
+                        socialRepository = socialRepository
                     )
                 }
             }
@@ -1118,7 +1129,54 @@ fun MtgNavGraph(
                     onOpenShared = openShared,
                     onOpenSharedCollection = { owner -> navController.navigate(Routes.sharedCollection(owner)) },
                     onOpenTrades = { navController.navigate(Routes.TRADES) },
-                    onOpenSharedTab = { socialRepository.openSharedTab = true; navController.navigateToTab(Routes.COLLECTION) }
+                    onOpenSharedTab = { socialRepository.openSharedTab = true; navController.navigateToTab(Routes.COLLECTION) },
+                    more = FriendsMoreActions(
+                        onOpenMessages = { navController.navigate(Routes.MESSAGES) },
+                        onOpenForTrade = { navController.navigate(Routes.FOR_TRADE) },
+                        onOpenActivity = { item ->
+                            val owner = item.actor.userId
+                            when {
+                                (item.kind == "shared" || item.kind == "deck_updated") && item.itemId != null && item.itemKind != null ->
+                                    navController.navigate(Routes.shared(owner, item.itemKind, item.itemId))
+                                item.kind == "shared" -> navController.navigate(Routes.friendShared(owner))
+                                item.kind == "pod_game" -> navController.navigate(Routes.PLAYGROUP)
+                                else -> navController.navigate(Routes.friend(owner))
+                            }
+                        },
+                        onOpenMatch = { m ->
+                            socialRepository.draft = SocialRepository.TradeDraft(to = m.friend, want = m.theyHave, give = m.theyWant)
+                            navController.navigate(Routes.tradeNew(m.friend))
+                        }
+                    )
+                )
+            }
+
+            destination(Routes.MESSAGES) {
+                MessagesScreen(
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) }
+                )
+            }
+
+            destination(Routes.CONVERSATION, arguments = listOf(navArgument("userId") { type = NavType.StringType })) { entry ->
+                ConversationScreen(
+                    social = socialRepository,
+                    friendId = entry.arguments?.getString("userId").orEmpty(),
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenFriend = { id -> navController.navigate(Routes.friend(id)) }
+                )
+            }
+
+            destination(Routes.FOR_TRADE) {
+                ForTradeScreen(
+                    social = socialRepository,
+                    collectionRepository = collectionRepository,
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn
                 )
             }
 
@@ -1133,7 +1191,8 @@ fun MtgNavGraph(
                     onSignIn = signIn,
                     onOpenShared = openShared,
                     onOpenSharedCollection = { owner -> navController.navigate(Routes.sharedCollection(owner)) },
-                    onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) }
+                    onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) },
+                    onMessage = { id -> navController.navigate(Routes.conversation(id)) }
                 )
             }
 
@@ -1168,7 +1227,8 @@ fun MtgNavGraph(
                     collectionRepository = collectionRepository,
                     onBack = { navController.popBackStack() },
                     onSignIn = signIn,
-                    onCounter = { id -> navController.navigate(Routes.tradeNew(id)) }
+                    onCounter = { id -> navController.navigate(Routes.tradeNew(id)) },
+                    onMessage = { id -> navController.navigate(Routes.conversation(id)) }
                 )
             }
 

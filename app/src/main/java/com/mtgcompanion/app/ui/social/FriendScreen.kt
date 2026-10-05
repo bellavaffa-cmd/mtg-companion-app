@@ -1,6 +1,18 @@
 package com.mtgcompanion.app.ui.social
 
 import com.mtgcompanion.app.ui.common.BackButton
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.social.ForTradeCard
+import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,12 +71,19 @@ fun FriendScreen(
     onSignIn: () -> Unit,
     onOpenShared: (SharedSummary) -> Unit,
     onOpenSharedCollection: (String) -> Unit,
-    onProposeTrade: (String) -> Unit
+    onProposeTrade: (String) -> Unit,
+    onMessage: (String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     var confirmRemove by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val withMore = rememberSocialMore(social) == true
+    // What they've marked for trade (they show it to all friends).
+    var forTrade by remember(friendId) { mutableStateOf<List<ForTradeCard>>(emptyList()) }
+    LaunchedEffect(withMore, friendId) {
+        if (withMore) forTrade = runCatching { social.more.forTradeList(friendId) }.getOrNull().orEmpty()
+    }
     Scaffold(
         containerColor = colors.bg,
         topBar = {
@@ -94,23 +113,60 @@ fun FriendScreen(
                                 Text(friend.displayName, style = MaterialTheme.typography.headlineSmall)
                                 Text(friend.handle, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                                 if (pods.isNotEmpty()) Text("In ${pods.joinToString { it.name }}", style = MaterialTheme.typography.bodySmall, color = colors.textDim)
+                                ReputationLine(social, friendId)
                             }
+                        }
+                        if (withMore) item {
+                            LineButton(
+                                "Message",
+                                { onMessage(friendId) },
+                                modifier = Modifier.fillMaxWidth(),
+                                icon = { Icon(Icons.Filled.ChatBubble, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                            )
                         }
                         item {
                             GoldButton(
                                 "Propose a trade",
                                 { social.draft = SocialRepository.TradeDraft(to = friendId); onProposeTrade(friendId) },
-                                enabled = binders > 0,
+                                enabled = binders > 0 || forTrade.isNotEmpty(),
                                 modifier = Modifier.fillMaxWidth(),
                                 icon = { Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             )
-                            if (binders == 0) Text(
-                                "Trading needs a binder they've shared with you.",
+                            if (binders == 0 && forTrade.isEmpty()) Text(
+                                "Trading needs a binder they've shared with you, or cards they've marked for trade.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colors.textDim,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                             )
+                        }
+                        if (forTrade.isNotEmpty()) {
+                            item { SectionHeader("For trade · ${forTrade.sumOf { it.forTrade }}") }
+                            forTrade.take(12).forEach { c ->
+                                item(key = "ft-${c.itemId}-${c.scryfallId}") {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface)
+                                            .clickable {
+                                                social.draft = SocialRepository.TradeDraft(to = friendId, want = listOf(c.asTrade()))
+                                                onProposeTrade(friendId)
+                                            }
+                                            .padding(8.dp)
+                                    ) {
+                                        AsyncImage(
+                                            model = c.imageUrl.toArtCropUrl(), contentDescription = null, contentScale = ContentScale.Crop,
+                                            modifier = Modifier.size(width = 56.dp, height = 44.dp).clip(RoundedCornerShape(11.dp)).background(colors.surface2)
+                                        )
+                                        Column(Modifier.weight(1f)) {
+                                            Text(c.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(listOfNotNull(c.itemName ?: "Binder", c.condition).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                                        }
+                                        Text("${c.forTrade}×", style = MaterialTheme.typography.titleSmall, color = colors.accent)
+                                    }
+                                }
+                            }
+                            if (forTrade.size > 12) item { Text("…and ${forTrade.size - 12} more — pick them when you propose a trade.", style = MaterialTheme.typography.bodySmall, color = colors.textDim) }
                         }
                         item { SectionHeader("Shared with you") }
                         if (shared.isEmpty()) item { Notice("${friend.displayName} hasn't shared any decks or binders with you yet.") }
@@ -129,6 +185,7 @@ fun FriendScreen(
                                 icon = { Icon(Icons.Filled.PersonRemove, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             )
                         }
+                        item(key = "block") { BlockReportButton(social, friendId, friend.displayName, itemKind = "profile", itemId = friendId, onBlocked = onBack) }
                     }
                     if (confirmRemove) {
                         AlertDialog(

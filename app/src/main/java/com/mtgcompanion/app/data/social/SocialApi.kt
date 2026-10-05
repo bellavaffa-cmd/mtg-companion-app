@@ -28,7 +28,7 @@ class SocialException(val code: String, message: String) : Exception(message)
  */
 class SocialApi(private val auth: SupabaseAuth) {
 
-    private suspend fun call(fn: String, args: JSONObject = JSONObject(), signedIn: Boolean = true): String = withContext(Dispatchers.IO) {
+    internal suspend fun call(fn: String, args: JSONObject = JSONObject(), signedIn: Boolean = true): String = withContext(Dispatchers.IO) {
         val token = auth.accessToken()
         if (signedIn && token == null) throw SocialException("not_signed_in", MESSAGES.getValue("not_signed_in"))
         val request = Request.Builder()
@@ -45,6 +45,9 @@ class SocialApi(private val auth: SupabaseAuth) {
         response.use {
             val text = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
+                // A function that isn't there yet (its migration not applied): see SocialMore.
+                val pgCode = runCatching { JSONObject(text).optString("code") }.getOrNull()
+                if (isMissingFunction(it.code, pgCode)) throw SocialException("unavailable", MESSAGES.getValue("unavailable"))
                 val code = runCatching { JSONObject(text).optString("message") }.getOrNull().orEmpty()
                 throw SocialException(code, MESSAGES[code] ?: "Something went wrong (HTTP ${it.code}).")
             }
@@ -397,7 +400,19 @@ class SocialApi(private val auth: SupabaseAuth) {
             "not_host" to "Only the table can do that.",
             "not_in_pod" to "You're not in that pod any more.",
             "bad_players" to "Check the players: 2 to 10, each with a name, and one winner at most.",
-            "too_many_games" to "This pod has 5,000 games recorded — delete some old ones first."
+            "too_many_games" to "This pod has 5,000 games recorded — delete some old ones first.",
+            // supabase/migrations/20261006020000_social_more.sql (see SocialMore.kt)
+            "unavailable" to "Not available yet.",
+            "blocked" to "You've blocked them — unblock them in Settings first.",
+            "too_many_blocks" to "You've blocked a lot of people already.",
+            "bad_reason" to "Pick a reason.",
+            "note_too_long" to "Keep the note under 1,000 characters.",
+            "too_many_reports" to "You've sent a lot of reports today — we'll look at those first.",
+            "empty_message" to "Write something first.",
+            "dm_too_long" to "Keep messages under 2,000 characters.",
+            "cant_message" to "You can only message friends.",
+            "slow_down" to "You're sending messages very fast — wait a minute.",
+            "cant_rate" to "You can rate a trade once you've updated your binders for it."
         )
     }
 }

@@ -20,6 +20,10 @@ class SocialRepository(private val auth: SupabaseAuth) {
     val api = SocialApi(auth)
     /** Life counter tables and their players' remotes talk over this. */
     val matchChannel = MatchChannel(auth)
+    /** Blocking, messages, reputation, activity and cards for trade (SocialMore.kt), once the server has them. */
+    val more = SocialMore(api)
+    /** New direct messages, live (DmChannel.kt). */
+    val dmChannel = DmChannel(auth)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _overview = MutableStateFlow<Overview?>(null)
@@ -48,6 +52,7 @@ class SocialRepository(private val auth: SupabaseAuth) {
                 _overview.value = null
                 _inbox.value = Inbox()
                 _error.value = null
+                more.reset()
                 if (it != null) refreshInbox()
             }
         }
@@ -100,6 +105,9 @@ class SocialRepository(private val auth: SupabaseAuth) {
 
     /** Gets up from a life counter seat, after the remote screen has gone. */
     fun leaveSeatInBackground(matchId: String, seat: Int) { scope.launch { runCatching { api.clearMatchSeat(matchId, seat) } } }
+
+    /** Tells friends' feeds about cards newly marked for trade, after the screen has gone. */
+    fun noteForTradeInBackground(cards: List<Pair<String, String?>>) { scope.launch { more.noteForTrade(cards) } }
 
     /** The badge checks in whenever the app comes back to the front (MainActivity.onResume). */
     fun refreshInboxInBackground() { scope.launch { refreshInbox() } }
