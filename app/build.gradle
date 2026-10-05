@@ -38,6 +38,13 @@ if (keystorePropertiesFile.exists()) {
 // The tester build's number, from -PtesterBuild; 0 for every other build.
 def testerBuild = (project.findProperty('testerBuild') ?: '0').toString().toInteger()
 
+// The Google Play build: `gradlew bundleRelease -PplayStore=true`. Play forbids an app updating itself
+// from anywhere but Play, so this build has the in-app GitHub updater switched off (BuildConfig.PLAY_STORE,
+// see update/InstallSource.kt) and drops REQUEST_INSTALL_PACKAGES (src/play/AndroidManifest.xml). The
+// GitHub APKs are built without it and are unchanged. Run it as its own Gradle invocation: it changes
+// BuildConfig, so the release build's classes are compiled again.
+def playStore = (project.findProperty('playStore') ?: 'false').toString().toBoolean()
+
 android {
     namespace 'com.mtgcompanion.app'
     compileSdk 34
@@ -54,6 +61,8 @@ android {
         // Which tester build this is (see the beta build type): `gradlew assembleBeta -PtesterBuild=3`.
         // The tester app updates itself to any tester-N pre-release with a higher number.
         buildConfigField 'int', 'TESTER_BUILD', "${testerBuild}"
+        // Built for Google Play (-PplayStore=true): Play does the updating, not the app.
+        buildConfigField 'boolean', 'PLAY_STORE', "${playStore}"
 
         // Bounds which ABIs exist in this project at all, which the `splits` block below then
         // divides into one APK each. It has to stay: the universal APK packages every ABI the
@@ -132,6 +141,11 @@ android {
             manifestPlaceholders = [appLabel: 'Manabind Tester']
             matchingFallbacks = ['release']
         }
+    }
+
+    if (playStore) {
+        // Merged over the main manifest for the release build only: removes the install permission.
+        sourceSets.release.manifest.srcFile 'src/play/AndroidManifest.xml'
     }
 
     compileOptions {

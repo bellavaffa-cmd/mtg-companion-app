@@ -355,6 +355,29 @@ class SupabaseSync(
     }
 
     /**
+     * Deletes the signed-in account on the server — its decks and binders, friends, trades, messages,
+     * profile and the sign-in itself (delete_my_account) — then signs out here and removes the
+     * library from this phone. Answers [AccountDeletion.UNAVAILABLE] when the server doesn't have the
+     * function yet, with nothing deleted. Throws IOException when offline.
+     */
+    suspend fun deleteAccount(): AccountDeletion {
+        val account = auth.account.value ?: throw SupabaseAuthException("Sign in first.")
+        val token = auth.accessToken() ?: throw SupabaseAuthException("Signed out — sign in again first.")
+        val result = withContext(Dispatchers.IO) {
+            deleteOwnAvatars(auth.http, token, account.userId)
+            callDeleteMyAccount(auth.http, token)
+        }
+        if (result == AccountDeletion.DELETED) {
+            realtime.stop()
+            mutex.withLock {
+                auth.signOut()
+                removeLocalLibrary(keepUnsynced = false)
+            }
+        }
+        return result
+    }
+
+    /**
      * The tester app's switch between two accounts: syncs this one, puts its sign-in aside (returned,
      * for switching back) and takes up [to] — or signs out locally when [to] is null, for a second
      * account to be signed in to by hand. The library on the phone goes with the account it belongs

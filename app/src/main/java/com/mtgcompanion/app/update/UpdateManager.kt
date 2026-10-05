@@ -57,8 +57,17 @@ class UpdateManager(
     private val _state = MutableStateFlow(UpdateUiState())
     val state: StateFlow<UpdateUiState> = _state.asStateFlow()
 
+    /**
+     * False for the Google Play build and for any copy Play installed: Play updates those, and Play
+     * policy forbids the app installing updates itself. Nothing below then checks or downloads.
+     */
+    val selfUpdates: Boolean by lazy {
+        InstallSource.selfUpdateAllowed(BuildConfig.PLAY_STORE, InstallSource.installerOf(context))
+    }
+
     /** Check GitHub for a newer release. [silent] suppresses the "up to date" / error status text. */
     fun checkForUpdate(silent: Boolean = true) {
+        if (!selfUpdates) return
         scope.launch {
             _state.value = _state.value.copy(checking = true, message = null)
             _state.value = try {
@@ -89,6 +98,7 @@ class UpdateManager(
 
     /** Download the available update's APK and launch the installer. */
     fun startUpdate() {
+        if (!selfUpdates) return
         val info = _state.value.available ?: return
         scope.launch {
             _state.value = _state.value.copy(

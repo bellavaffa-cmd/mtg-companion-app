@@ -38,6 +38,29 @@ jobs:
           name: test-results
           path: app/build/reports/tests/testDebugUnitTest
 
+  # The Google Play build (release.yml's bundleRelease -PplayStore=true) must not ask to install
+  # packages — Play forbids self-updating — while the GitHub release build still must. Checked on the
+  # merged manifests, which need no keystore.
+  play-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: |
+          set -o pipefail
+          merged() { find app/build/intermediates -path '*release*' -name AndroidManifest.xml -path '*merged_manifest*' | head -n 1; }
+          ./gradlew :app:processReleaseManifest 2>&1 | tail -n 20
+          m=$(merged); echo "GitHub build: $m"
+          grep -q 'android.permission.REQUEST_INSTALL_PACKAGES' "$m" || { echo "::error::The GitHub release build lost REQUEST_INSTALL_PACKAGES"; exit 1; }
+          ./gradlew :app:processReleaseManifest -PplayStore=true 2>&1 | tail -n 20
+          m=$(merged); echo "Play build: $m"
+          if grep -q 'android.permission.REQUEST_INSTALL_PACKAGES' "$m"; then echo "::error::The Play build still asks for REQUEST_INSTALL_PACKAGES"; exit 1; fi
+          echo "Play manifest OK"
+
   relay-tests:
     runs-on: ubuntu-latest
     steps:

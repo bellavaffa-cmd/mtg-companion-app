@@ -643,6 +643,14 @@ private fun DownloadButtonContent(downloading: Boolean, label: String, spinnerCo
 private fun AppUpdatesSection(updateManager: UpdateManager) {
     val state by updateManager.state.collectAsState()
 
+    if (!updateManager.selfUpdates) {
+        Text(
+            "You're on version ${BuildConfig.VERSION_NAME}. Google Play keeps Manabind up to date.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        return
+    }
+
     Text(
         "You're on version ${BuildConfig.VERSION_NAME}. Updates are delivered straight from the " +
             "project's GitHub releases.",
@@ -943,7 +951,77 @@ private fun AccountSyncSection(sync: SupabaseSync) {
             style = MaterialTheme.typography.labelMedium,
             color = TextDim
         )
+        DeleteAccountButton(sync, signedIn.email)
     }
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    TextButton(onClick = { runCatching { uriHandler.openUri(PRIVACY_URL) } }) {
+        Text("Privacy policy", style = MaterialTheme.typography.labelLarge, color = TextMuted)
+    }
+}
+
+private const val PRIVACY_URL = "https://manabind.com/privacy"
+
+/**
+ * Delete my account: asks once, plainly, then deletes the account on the server and signs out
+ * (SupabaseSync.deleteAccount). A server without the function says so and deletes nothing.
+ */
+@Composable
+private fun DeleteAccountButton(sync: SupabaseSync, email: String) {
+    val app = LocalAppColors.current
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var asking by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
+
+    TextButton(onClick = { problem = null; asking = true }) {
+        Text("Delete my account", style = MaterialTheme.typography.labelLarge, color = app.warning)
+    }
+    problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = app.warning) }
+    if (!asking) return
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { if (!busy) asking = false },
+        title = { Text("Delete your account?", color = GoldLight) },
+        text = {
+            Text(
+                "This deletes $email and everything synced to it — decks, binders, friends, trades, messages, " +
+                    "loans and your profile — from Manabind's server, for good. It can't be undone. " +
+                    "This phone is signed out and its copy of your library removed too.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy,
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        problem = try {
+                            when (sync.deleteAccount()) {
+                                com.mtgcompanion.app.data.supabase.AccountDeletion.DELETED -> {
+                                    android.widget.Toast.makeText(context, "Your account has been deleted.", android.widget.Toast.LENGTH_LONG).show()
+                                    null
+                                }
+                                com.mtgcompanion.app.data.supabase.AccountDeletion.UNAVAILABLE ->
+                                    "Deleting accounts from the app isn't switched on yet. Nothing was deleted — see manabind.com/delete-account for another way."
+                                com.mtgcompanion.app.data.supabase.AccountDeletion.FAILED ->
+                                    "The server couldn't delete your account. Nothing was deleted — try again later."
+                            }
+                        } catch (e: java.io.IOException) {
+                            "Can't reach the server — check your connection. Nothing was deleted."
+                        } catch (e: Exception) {
+                            e.message ?: "Couldn't delete your account."
+                        }
+                        busy = false
+                        asking = false
+                    }
+                }
+            ) { Text(if (busy) "Deleting…" else "Delete for good", color = app.warning) }
+        },
+        dismissButton = {
+            TextButton(enabled = !busy, onClick = { asking = false }) { Text("Cancel", color = Gold) }
+        }
+    )
 }
 
 /**

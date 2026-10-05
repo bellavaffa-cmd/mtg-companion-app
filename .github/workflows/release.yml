@@ -7,7 +7,8 @@ name: Release
 #              the tester app's own updater offers. N is the tester build number.
 #   vX.Y.Z     the real app, published as the latest full release. app/build.gradle's versionName
 #              must already say X.Y.Z. Its notes come from release-notes/vX.Y.Z.md when that file
-#              exists.
+#              exists. Besides the APKs it carries app-release.aab, the Google Play build of the
+#              same version (updater off), for uploading to Play Console by hand.
 #
 # A push to the `tester-build` branch is a tester build too, for whoever can push but can't make tags
 # (a cloud session, say): the run takes the next tester number, makes that tag on the pushed commit
@@ -157,6 +158,23 @@ jobs:
           cp $src/app-x86_64-release.apk      out/app-release-x86_64.apk
           cp $src/app-universal-release.apk   out/app-universal-release.apk
 
+      # The same release as an Android App Bundle, for uploading to Google Play by hand (Play Console ›
+      # Release). Built with -PplayStore=true: the in-app GitHub updater is off and the install-packages
+      # permission is gone, as Play requires. A Gradle run of its own, after the APKs above are copied
+      # out — one variant per run, and the flag recompiles the release classes.
+      - name: Build the Google Play bundle
+        if: steps.plan.outputs.kind == 'release'
+        run: |
+          gradle_or_report() {
+            set -o pipefail
+            ./gradlew -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" "$@" 2>&1 | tee build.log && return 0
+            grep -E -A15 "^e: |error:|What went wrong|Caused by|OutOfMemory|Java heap|Lint found|Errors found" build.log | head -80 \
+              | while IFS= read -r line; do [ -n "$line" ] && echo "::error::$line"; done
+            return 1
+          }
+          gradle_or_report bundleRelease -PplayStore=true
+          cp app/build/outputs/bundle/release/app-release.aab out/app-release.aab
+
       - name: Check the signature
         if: steps.plan.outputs.kind != 'none'
         run: |
@@ -166,6 +184,15 @@ jobs:
             echo "$apk $sha"
             if [[ "$sha" != ${CERT_SHA256_PREFIX}* ]]; then
               echo "::error::$apk is not signed with the release key"; exit 1
+            fi
+          done
+          # The Play bundle is jar-signed; keytool prints its fingerprint as colon-separated hex.
+          for aab in out/*.aab; do
+            [ -e "$aab" ] || continue
+            sha=$(keytool -printcert -jarfile "$aab" | grep -m 1 'SHA256:' | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
+            echo "$aab $sha"
+            if [[ "$sha" != ${CERT_SHA256_PREFIX}* ]]; then
+              echo "::error::$aab is not signed with the release key"; exit 1
             fi
           done
 
@@ -194,12 +221,12 @@ jobs:
           # app's updater can't see it yet) comes with its release already there: the APKs go onto
           # it first, and only then does it become the latest full release.
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" out/*.apk --clobber
+            gh release upload "$TAG" out/*.apk out/*.aab --clobber
             if [ -f "release-notes/$TAG.md" ]; then
               gh release edit "$TAG" --title "$TAG" --notes-file "release-notes/$TAG.md" --prerelease=false --latest
             else
               gh release edit "$TAG" --title "$TAG" --prerelease=false --latest
             fi
           else
-            gh release create "$TAG" out/*.apk --latest --target "$GITHUB_SHA" --title "$TAG" "${notes[@]}"
+            gh release create "$TAG" out/*.apk out/*.aab --latest --target "$GITHUB_SHA" --title "$TAG" "${notes[@]}"
           fi
