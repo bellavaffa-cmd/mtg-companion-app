@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Style
 import com.mtgcompanion.app.data.mulliganSummary
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -82,7 +86,10 @@ fun PlaygroupScreen(
     onOpenDeck: (String) -> Unit,
     onSignIn: () -> Unit,
     onOpenFriends: () -> Unit,
-    onAddGameResult: (String, GameResult) -> Unit
+    onAddGameResult: (String, GameResult) -> Unit,
+    /** The empty page's buttons: the life counter, and the Decks tab. */
+    onStartGame: () -> Unit = {},
+    onOpenDecks: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val account by social.accountFlow.collectAsState()
@@ -120,7 +127,7 @@ fun PlaygroupScreen(
             when {
                 pod != null && me != null && current != null ->
                     PodView(social, current, pod, me, decks, onAddGameResult)
-                chosen == null -> JustMe(decks, onOpenDeck)
+                chosen == null -> JustMe(decks, onOpenDeck, onStartGame, onOpenDecks)
                 !social.configured -> PodsState(Icons.Filled.CloudOff, "Accounts aren't set up in this build.")
                 account == null -> PodsState(Icons.Filled.Groups, "Sign in to see your pods' games.") { GoldButton("Sign in", onSignIn) }
                 current == null -> if (socialError != null) {
@@ -156,7 +163,7 @@ private fun PodsState(icon: ImageVector, text: String, action: (@Composable () -
 
 /** The user's own view: every one of their decks' games together. */
 @Composable
-private fun JustMe(decks: List<Deck>, onOpenDeck: (String) -> Unit) {
+private fun JustMe(decks: List<Deck>, onOpenDeck: (String) -> Unit, onStartGame: () -> Unit, onOpenDecks: () -> Unit) {
     val colors = LocalAppColors.current
     val stats = remember(decks) { playgroupStats(decks) }
     LazyColumn(
@@ -166,15 +173,14 @@ private fun JustMe(decks: List<Deck>, onOpenDeck: (String) -> Unit) {
     ) {
         if (stats.games == 0) {
             item {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 8.dp)) {
-                    Icon(Icons.Filled.Groups, contentDescription = null, tint = colors.textDim, modifier = Modifier.size(40.dp))
-                    Text(
-                        "No games recorded yet. Log a result on a deck's Stats, or play with your phone as a remote at a life counter table — every deck's games come together here.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.textMuted,
-                        modifier = Modifier.padding(top = 10.dp)
+                EmptyPrompt(
+                    Icons.Filled.Groups,
+                    "No games yet. Play at the life counter, or log a result on a deck's Stats, and every game shows here.",
+                    actions = listOf(
+                        EmptyAction("Start a game", Icons.Filled.Favorite, onStartGame),
+                        EmptyAction("Your decks", Icons.Filled.Style, onOpenDecks)
                     )
-                }
+                )
             }
             return@LazyColumn
         }

@@ -1,5 +1,12 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
+import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.CollectionsBookmark
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.SearchOff
 import com.mtgcompanion.app.ui.common.cardsSubject
 import com.mtgcompanion.app.ui.common.toAddItem
 import com.mtgcompanion.app.ui.common.AddCheck
@@ -130,7 +137,10 @@ fun CollectionDetailScreen(
     viewModel: CollectionDetailViewModel,
     onBack: () -> Unit,
     onViewDetails: (String) -> Unit,
-    onShare: (() -> Unit)? = null
+    onShare: (() -> Unit)? = null,
+    /** The empty binder's and Wishlist's buttons. */
+    onOpenSearch: (() -> Unit)? = null,
+    onOpenScan: (() -> Unit)? = null
 ) {
     val collection by viewModel.collection.collectAsState()
     val entries by viewModel.entries.collectAsState()
@@ -351,16 +361,20 @@ fun CollectionDetailScreen(
                 )
             }
             when {
-                collection?.entries.isNullOrEmpty() -> Text(
-                    if (collection?.isUnsorted == true) "All sorted — every card is in a binder." else "No cards yet. Add cards from a card's detail page or the scanner.",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
-                entries.isEmpty() -> Text(
-                    "No cards match \"$query\".",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
+                collection?.entries.isNullOrEmpty() -> when {
+                    collection?.isUnsorted == true -> EmptyPrompt(Icons.Filled.Inbox, "All sorted — every card is in a binder.")
+                    isWishlist -> EmptyPrompt(
+                        Icons.Filled.Star,
+                        "Your wishlist is empty. Add cards you want from any card's page; cards your decks are considering show up here too.",
+                        actions = listOfNotNull(onOpenSearch?.let { EmptyAction("Search cards", Icons.Filled.Search, it) })
+                    )
+                    else -> EmptyPrompt(
+                        Icons.Filled.CollectionsBookmark,
+                        "No cards yet. Add cards from a card's page, or scan them in.",
+                        actions = listOfNotNull(onOpenScan?.let { EmptyAction("Scan cards", Icons.Filled.PhotoCamera, it) })
+                    )
+                }
+                entries.isEmpty() -> EmptyPrompt(Icons.Filled.SearchOff, "No cards match \"$query\".")
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(20.dp),

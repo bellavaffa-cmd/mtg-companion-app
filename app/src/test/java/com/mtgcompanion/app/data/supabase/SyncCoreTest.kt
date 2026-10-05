@@ -479,4 +479,39 @@ class SyncCoreTest(private val cas: Boolean) {
         val rescue = Rescue("u", 123L, mapOf("deck:d1" to RescueItem("{\"id\":\"d1\"}", "{}"), "deck:d2" to RescueItem(null, null)))
         assertEquals(rescue, adapter.fromJson(adapter.toJson(rescue)))
     }
+
+    // Samples from the welcome flow never reach the account: not on the first sync, not after an
+    // edit, and removing them isn't a deletion anyone else hears about. The web app's
+    // tests/sync/samples.test.ts has the same case.
+    @Test
+    fun `samples never go to the account`() {
+        setDeck("A", "d1", "x" to 1)
+        setDeck("A", "s1", "y" to 2)
+        dev("A").decks = dev("A").decks.map { if (it.id == "s1") it.copy(sample = true) else it }
+        settle("A", "B")
+        assertEquals("x1", server("d1"))
+        assertEquals("(none)", server("s1"))
+        // The sample stays where it was made, and only there.
+        assertEquals("y2", show("A", "s1"))
+        assertEquals("(none)", show("B", "s1"))
+        assertEquals("x1", show("B", "d1"))
+
+        // Played with, it still stays put.
+        dev("A").decks = dev("A").decks.map { if (it.id == "s1") it.copy(cards = it.cards.map { c -> c.copy(quantity = 3) }) else it }
+        settle("A")
+        assertEquals("(none)", server("s1"))
+        assertEquals("y3", show("A", "s1"))
+
+        // "Remove samples": nothing to push, and the real deck is untouched everywhere.
+        dev("A").decks = com.mtgcompanion.app.data.withoutSampleDecks(dev("A").decks)
+        settle("A", "B")
+        assertEquals("(none)", server("s1"))
+        assertEquals("x1", server("d1"))
+        assertEquals("x1", show("A", "d1"))
+        assertEquals(false, dev("A").state.items.keys.any { "s1" in it })
+
+        // A sample binder is left out the same way.
+        val binders = listOf(Collection(id = "b1", name = "Mine"), Collection(id = "s2", name = "Sample binder", sample = true))
+        assertEquals(listOf("collection:b1"), core.localJson(emptyList(), binders).keys.toList())
+    }
 }

@@ -50,12 +50,13 @@ private fun words(raw: String): String =
 /**
  * The condition code for what another app wrote: TCGplayer's and Moxfield's words ("Near Mint",
  * "Lightly Played", "Near Mint Foil"), Deckbox's ("Good (Lightly Played)", "Played"), ManaBox's
- * ("near_mint", "excellent", "light_played", "poor") and the short forms (NM, LP, EX, PL…). Null
+ * ("near_mint", "excellent", "light_played", "poor"), Dragon Shield's ("NearMint", "LightPlayed") and the short forms (NM, LP, EX, PL…). Null
  * for a blank cell or a word it can't place.
  */
 fun conditionCode(raw: String?): String? {
     if (raw.isNullOrBlank()) return null
-    val w = words(raw).removeSuffix(" foil").removeSuffix(" etched").trim()
+    // Dragon Shield runs the words together: "NearMint", "LightPlayed".
+    val w = words(raw.replace(Regex("([a-z])([A-Z])"), "\$1 \$2")).removeSuffix(" foil").removeSuffix(" etched").trim()
     if (w.isEmpty()) return null
     // Deckbox's "Good (Lightly Played)" says what it means in brackets.
     Regex("\\(([^)]*)\\)").find(w)?.groupValues?.get(1)?.let { inner -> conditionCode(inner)?.let { return it } }

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.ui.common.EmptyPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -433,7 +434,7 @@ fun ActivityList(social: SocialRepository, header: @Composable () -> Unit, onOpe
             }
             !loaded -> item { Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = colors.accent) } }
             items.isEmpty() -> item {
-                EmptyState(Icons.Filled.DynamicFeed, "Nothing new from friends yet. When they share a deck, record a game or put cards up for trade, it shows here.")
+                EmptyPrompt(Icons.Filled.DynamicFeed, "Nothing from friends yet. When they share a deck, record a game or put cards up for trade, it shows here.")
             }
             else -> {
                 items.forEachIndexed { i, a ->

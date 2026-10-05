@@ -2,6 +2,7 @@ package com.mtgcompanion.app.data.supabase
 
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.isSample
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepDeckExtrasFromOlderApp
 import com.mtgcompanion.app.data.keepLastChecked
@@ -70,11 +71,16 @@ internal class SyncCore(
     private val deckAdapter: JsonAdapter<Deck>,
     private val collectionAdapter: JsonAdapter<Collection>
 ) {
-    /** key -> JSON of every deck and binder. Keys are "deck:<id>" / "collection:<id>". */
+    /**
+     * key -> JSON of every deck and binder the sync looks after. Keys are "deck:<id>" /
+     * "collection:<id>". Samples from the welcome flow are left out (Onboarding.kt): never pushed,
+     * never counted as deleted when they're removed, and left alone by what's pulled. The web app's
+     * libraryJson (src/sync/cloudSync.ts) does the same.
+     */
     fun localJson(decks: List<Deck>, collections: List<Collection>): LinkedHashMap<String, String> {
         val local = LinkedHashMap<String, String>()
-        decks.forEach { local["deck:${it.id}"] = deckAdapter.toJson(it) }
-        collections.forEach { local["collection:${it.id}"] = collectionAdapter.toJson(it) }
+        decks.filterNot { isSample(it) }.forEach { local["deck:${it.id}"] = deckAdapter.toJson(it) }
+        collections.filterNot { isSample(it) }.forEach { local["collection:${it.id}"] = collectionAdapter.toJson(it) }
         return local
     }
 

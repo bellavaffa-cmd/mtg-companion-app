@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -54,7 +59,13 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
  * opens its cards, owned and missing.
  */
 @Composable
-fun SetsTab(viewModel: CollectionsViewModel, onOpenSet: (String) -> Unit) {
+fun SetsTab(
+    viewModel: CollectionsViewModel,
+    onOpenSet: (String) -> Unit,
+    /** The empty page's buttons: the collection import, and the scanner. */
+    onImport: () -> Unit = {},
+    onOpenScan: () -> Unit = {}
+) {
     val colors = LocalAppColors.current
     LaunchedEffect(Unit) { viewModel.loadSets() }
     val progress by viewModel.setProgress.collectAsState()
@@ -66,7 +77,14 @@ fun SetsTab(viewModel: CollectionsViewModel, onOpenSet: (String) -> Unit) {
 
     val list = progress
     when {
-        allCards.isEmpty() -> Message("Cards you own show here, set by set, with how much of each set you have.")
+        allCards.isEmpty() -> EmptyPrompt(
+            Icons.Filled.Layers,
+            "No cards yet. Once you have some, each set shows how much of it you own.",
+            actions = listOf(
+                EmptyAction("Import your collection", Icons.AutoMirrored.Filled.PlaylistAdd, onImport),
+                EmptyAction("Scan cards", Icons.Filled.PhotoCamera, onOpenScan)
+            )
+        )
         failed && list == null -> Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Couldn't fetch the sets from Scryfall. Check the connection and try again.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
             OutlinedButton(onClick = { viewModel.loadSets() }) { Text("Try again", color = colors.accent) }

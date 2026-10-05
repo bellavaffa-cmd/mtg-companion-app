@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.mtgcompanion.app.data.Currencies
@@ -151,7 +152,11 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenSection: (SettingsSection) -> Unit,
     /** Only in the tester app: opens its tools. */
-    onOpenTesterTools: (() -> Unit)? = null
+    onOpenTesterTools: (() -> Unit)? = null,
+    /** Getting started: the welcome flow again (ui/onboarding/WelcomeScreen.kt). */
+    onOpenGettingStarted: (() -> Unit)? = null,
+    /** Given while the sample deck and binder are in the library: takes them out. */
+    onRemoveSamples: (() -> Unit)? = null
 ) {
     val account by supabaseSync.auth.account.collectAsState()
     val brightness by settingsRepository.appBrightness.collectAsState(initial = AppBrightness.DEFAULT)
@@ -223,6 +228,12 @@ fun SettingsScreen(
         ) {
             SettingsSection.entries.forEach { section ->
                 SettingsSectionRow(section.icon, section.title, summaryOf(section)) { onOpenSection(section) }
+            }
+            if (onOpenGettingStarted != null) {
+                SettingsSectionRow(Icons.Filled.Flag, "Getting started", "Bring in your cards, make a first deck, sign in", onOpenGettingStarted)
+            }
+            if (onRemoveSamples != null) {
+                SettingsSectionRow(Icons.Filled.Science, "Remove samples", "The sample deck and binder go; nothing else changes", onRemoveSamples)
             }
             if (onOpenTesterTools != null) {
                 SettingsSectionRow(Icons.Filled.Science, "Tester tools", "Reports, checklists and scan logs", onOpenTesterTools)
@@ -722,10 +733,11 @@ private fun AppUpdatesSection(updateManager: UpdateManager) {
 
 /**
  * Sign in with email + password to sync decks and binders through Supabase. Signing out removes
- * them from this device (they stay in the account).
+ * them from this device (they stay in the account). Also the welcome flow's account step
+ * (ui/onboarding/WelcomeScreen.kt).
  */
 @Composable
-private fun AccountSyncSection(sync: SupabaseSync) {
+internal fun AccountSyncSection(sync: SupabaseSync) {
     val app = LocalAppColors.current
     val account by sync.auth.account.collectAsState()
     val signedOutNotice by sync.auth.signedOutNotice.collectAsState()

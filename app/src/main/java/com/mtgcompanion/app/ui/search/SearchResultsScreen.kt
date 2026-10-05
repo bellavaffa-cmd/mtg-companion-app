@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.search
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
 import com.mtgcompanion.app.ui.common.checkFor
 import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.rememberMoney
@@ -192,7 +194,7 @@ fun SearchResultsScreen(
                     }
                     if (state.cards.isEmpty()) {
                         item {
-                            EmptyState(icon = Icons.Filled.SearchOff, title = "No cards match.")
+                            EmptyState(icon = Icons.Filled.SearchOff, title = "No cards match. Check the spelling, or try fewer filters.", actionLabel = "Change search", onAction = onBack)
                         }
                     } else if (viewMode == CardViewMode.GRID) {
                         cardGrid(state.cards, columns = gridCols, key = { it.id }) { card ->
@@ -383,7 +385,10 @@ private fun resultCardActions(onAddToTarget: () -> Unit, onViewDetails: () -> Un
     CardMenuAction("View details (EDHREC)", Icons.Filled.Info, onClick = onViewDetails)
 )
 
-/** A friendlier stand-in for a bare line of text — used for empty results, errors, and offline notices. */
+/**
+ * Empty results, errors and offline notices: the app's shared empty state (ui/common/EmptyPrompt.kt),
+ * so they look like every other empty list.
+ */
 @Composable
 private fun EmptyState(
     icon: ImageVector,
@@ -391,26 +396,9 @@ private fun EmptyState(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(icon, contentDescription = null, tint = TextMuted, modifier = Modifier.size(40.dp))
-        Spacer(Modifier.height(12.dp))
-        Text(
-            title,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp)
-        )
-        if (actionLabel != null && onAction != null) {
-            Spacer(Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = onAction,
-                border = BorderStroke(1.dp, BorderColor),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)
-            ) { Text(actionLabel) }
-        }
-    }
+    EmptyPrompt(
+        icon,
+        title,
+        actions = if (actionLabel != null && onAction != null) listOf(EmptyAction(actionLabel, onClick = onAction)) else emptyList()
+    )
 }

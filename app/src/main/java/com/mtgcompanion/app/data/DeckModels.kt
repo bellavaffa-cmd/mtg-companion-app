@@ -227,7 +227,12 @@ data class Deck(
      * cards' "categories" are known: it's there, as {} with no targets, once any card has had a
      * category (see DeckExtras.kt).
      */
-    val categoryTargets: Map<String, Int>? = null
+    val categoryTargets: Map<String, Int>? = null,
+    /**
+     * A sample from the welcome flow (Onboarding.kt): shown with a "Sample" label, never synced to the
+     * account, and gone with one "Remove samples". Null (left out of the JSON) on everything else.
+     */
+    val sample: Boolean? = null
 ) {
     val mode: GameMode get() = GameMode.fromName(gameMode)
     val ownershipType: DeckOwnership get() = DeckOwnership.fromName(ownership)
