@@ -1,6 +1,10 @@
 package com.mtgcompanion.app.data.social
 
 import com.mtgcompanion.app.BuildConfig
+import com.mtgcompanion.app.data.PodGame
+import com.mtgcompanion.app.data.PodPlayer
+import com.mtgcompanion.app.data.parsePodGames
+import com.mtgcompanion.app.data.podPlayersJson
 import com.mtgcompanion.app.data.supabase.JSON_MEDIA
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
 import kotlinx.coroutines.Dispatchers
@@ -171,6 +175,37 @@ class SocialApi(private val auth: SupabaseAuth) {
         call("save_pod", JSONObject().put("p_pod", podId ?: JSONObject.NULL).put("p_name", name).put("p_members", JSONArray(members))).trim().trim('"')
 
     suspend fun leavePod(podId: String) { call("leave_pod", JSONObject().put("p_pod", podId)) }
+
+    // ---- A pod's games (supabase/migrations/20261005000000_pod_games.sql) ----
+
+    /**
+     * Records a game played in a pod; answers its id. [clientId] makes it safe to send again: the
+     * same id updates the game instead of adding a second one.
+     */
+    suspend fun recordPodGame(
+        podId: String,
+        clientId: String,
+        playedAt: Long,
+        format: String,
+        turns: Int?,
+        minutes: Int?,
+        players: List<PodPlayer>
+    ): String =
+        call(
+            "record_pod_game",
+            JSONObject().put("p_pod", podId).put("p_client_id", clientId)
+                .put("p_played_at", java.time.Instant.ofEpochMilli(playedAt).toString())
+                .put("p_format", format)
+                .put("p_turns", turns ?: JSONObject.NULL).put("p_minutes", minutes ?: JSONObject.NULL)
+                .put("p_players", podPlayersJson(players))
+        ).trim().trim('"')
+
+    /** A pod's games, newest first. */
+    suspend fun podGames(podId: String, limit: Int = 1000): List<PodGame> =
+        parsePodGames(call("pod_games", JSONObject().put("p_pod", podId).put("p_limit", limit)))
+
+    /** Whoever recorded a game, or the pod's owner, deletes it. */
+    suspend fun deletePodGame(gameId: String) { call("delete_pod_game", JSONObject().put("p_game", gameId)) }
 
     // ---- Sharing ----
 
@@ -359,7 +394,10 @@ class SocialApi(private val auth: SupabaseAuth) {
             "too_many_trades" to "You have a lot of open trades — wait for some answers first.",
             "trade_closed" to "This trade has already been answered.",
             "not_seated" to "You're no longer sitting at this table.",
-            "not_host" to "Only the table can do that."
+            "not_host" to "Only the table can do that.",
+            "not_in_pod" to "You're not in that pod any more.",
+            "bad_players" to "Check the players: 2 to 10, each with a name, and one winner at most.",
+            "too_many_games" to "This pod has 5,000 games recorded — delete some old ones first."
         )
     }
 }
