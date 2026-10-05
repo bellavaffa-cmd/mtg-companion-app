@@ -9,6 +9,41 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "sort-pile",
+        "Sorting a new pile",
+        "Scan › Sort a pile: scan a handful of new cards. Each shows a big pile number and where it goes; check the piles make sense, then Done: file every pile and look the cards up in Where it is."
+    ),
+    TesterNote(
+        "loans",
+        "Lending cards",
+        "From a card's Where it is, Lend a copy to a friend (and one to someone not on Manabind). Check Friends › Loans, then Got them back: each card should go back where it came from. If your friend has the tester app, they should see it under Borrowed and get a notification; try Remind."
+    ),
+    TesterNote(
+        "history-value",
+        "A copy's history and value by place",
+        "Open a card you've moved around › Where it is › History. Then Storage › Value by place: check the totals, and try Spreadsheet and PDF report."
+    ),
+    TesterNote(
+        "deck-extras",
+        "Primers, categories, companions, folders",
+        "On a deck: write an About (try [[Sol Ring]] as a link), Group by Category and Suggest categories, set a target like Ramp 10. Add a companion to a 60-card deck and check the legality message. On Decks, make a folder and archive a deck."
+    ),
+    TesterNote(
+        "game-extras",
+        "Dungeons, new counters, life chart, mulligans",
+        "In a life counter game: venture into a dungeon (and take the initiative for Undercity), try rad, speed and the Ring counters, record a mulligan. After the game open Life chart from the menu, and check the mulligan shows on your deck's match record."
+    ),
+    TesterNote(
+        "top-cut",
+        "Top 8 playoff",
+        "Run a small event to the end of Swiss, then Standings › Cut to top 4 or 8: play the bracket through to a champion."
+    ),
+    TesterNote(
+        "friends-extras",
+        "Messages, block and report, activity, for trade",
+        "Friends: message a friend, check the unread count. Mark a few binder cards for trade and look at Friends want / trade matches. Open Activity. Try Block on someone you don't mind (and unblock in Settings)."
+    ),
+    TesterNote(
         "binder-pages",
         "Binder pages and fitting cards in order",
         "Open a binder in Storage › Pages: flip through (arrows or swipe), tap a card, try Move and Edit (swap two pockets). Give the binder an order in Change place, put a few cards away into it, then Fit in order: follow the steps with real cards and check Show on pages matches your binder."
