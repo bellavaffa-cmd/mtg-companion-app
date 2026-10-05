@@ -31,21 +31,17 @@ before relying on it.
 
 ## Before anything goes to Play — must fix (blocking)
 
-1. **Target SDK.** `app/build.gradle` has `compileSdk 34` / `targetSdk 34`. Google currently requires
-   new apps and updates to target an API level within a year of the latest Android release: API 35
-   (Android 15) since 31 August 2025, and — on the usual yearly step — API 36 (Android 16) from
-   31 August 2026. Check Play Console › Policy status / "Target API level requirements" for today's
-   number. API 34 will be rejected at upload. Raising it means:
-   - AGP 8.5.2 → a version that supports the new compileSdk (AGP 8.6+ for 35; a newer one for 36),
-     and possibly Gradle and Kotlin/Compose compiler bumps.
-   - Targeting 35+ makes the app **edge-to-edge by default**: every screen's insets need checking
-     (the visual-audit branch is the natural place).
-   - Re-test the camera, notifications, the widget and background price checks (WorkManager).
-2. **16 KB memory pages.** Google currently requires apps targeting Android 15+ to support 16 KB
-   page sizes (native libraries aligned to 16 KB). Manabind ships native code from onnxruntime,
-   ML Kit and CameraX. CameraX 1.3.x's `libimage_processing_util_jni.so` is known not to be 16 KB
-   aligned (fixed in CameraX 1.4); check the others with Android Studio's APK Analyzer or the
-   warning Play Console shows on upload, and bump libraries as needed.
+1. **Target SDK — done on `ux/sdk`.** compileSdk/targetSdk 36 (Android 16), AGP 8.13, Gradle 8.14.3,
+   Kotlin 2.2 with the Compose compiler plugin. Edge-to-edge (enforced from 35): the app already drew
+   behind hidden system bars; the keyboard is now handled once in MtgNavGraph (adjustResize +
+   imePadding) and the life counter's overlays keep clear of cutout/bars/keyboard. Predictive back is
+   opted in (`enableOnBackInvokedCallback`). Re-test the camera, notifications, the widget, printing
+   and background price checks (WorkManager) on an Android 15/16 phone before a release.
+2. **16 KB memory pages — done on `ux/sdk`.** CameraX 1.4.2 (1.3.x's `libimage_processing_util_jni.so`
+   wasn't aligned); `tests.yml`'s `native-16kb` job builds a debug APK and fails if any 64-bit `.so`
+   isn't 16 KB aligned (`scripts/check-16kb-alignment.sh`, which also runs `zipalign -c -P 16`).
+   The Play bundle (`-PplayStore=true`) stores native libs uncompressed; the GitHub APKs keep them
+   compressed for download size.
 3. **Run the delete-account migration** `supabase/migrations/20261006040000_delete_account.sql`
    in the Supabase SQL editor (project `ftjwwbkqqoctlozubopv`) after reading it — it contains
    DELETE statements by design (only the caller's own rows). Then test with a throwaway account:
@@ -53,10 +49,11 @@ before relying on it.
 4. **Push the web change** (`/privacy`, `/delete-account`) so both URLs are live. Fill in the
    contact on both pages (`src/account/contact.ts`, `CONTACT`, in the web repo): it points at the
    GitHub issues page until you add an email address.
-5. **User-generated content terms.** Play's UGC policy asks that users agree to rules about
-   objectionable content before they can post (messages, profile pictures, display names). The
-   app has block and report, but no terms or community rules to accept. Add a short "Be decent"
-   rules page and a one-time agreement when someone first sets up a profile — not done here.
+5. **User-generated content terms — done on `ux/sdk` (app and web).** A one-time Community rules
+   sheet before the first profile save, message, trade request/reply and share; the agreement is
+   kept on the device and in the account's `user_metadata.community_rules_version`. The rules page
+   is manabind.com/community-rules (web `ux/sdk` branch — not live until the web change is pushed),
+   linked from Settings and the privacy policy.
 6. **Tester build first.** The delete-account and Play changes are app changes: per the usual
    rule, they go out in a Manabind Tester build (with TesterNotes entries for them) before a release.
 

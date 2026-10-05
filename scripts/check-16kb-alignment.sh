@@ -16,13 +16,16 @@ set -uo pipefail
 
 [ $# -gt 0 ] || { echo "usage: $0 app.apk [more.apk ...]" >&2; exit 2; }
 
+# zipalign's -P (page alignment) arrived in build-tools 35: the newest installed one of those.
 zipalign=""
 if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME/build-tools" ]; then
+  echo "build-tools installed: $(ls "$ANDROID_HOME/build-tools" | tr '\n' ' ')"
   for dir in $(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V -r); do
-    # -P (page alignment) arrived in build-tools 35.
-    if [ -x "$dir/zipalign" ] && "$dir/zipalign" 2>&1 | grep -q -- '-P'; then zipalign="$dir/zipalign"; break; fi
+    major=$(basename "$dir" | cut -d. -f1)
+    if [ -x "$dir/zipalign" ] && [ "$major" -ge 35 ] 2>/dev/null; then zipalign="$dir/zipalign"; break; fi
   done
 fi
+ok_libs=""
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -45,7 +48,7 @@ for apk in "$@"; do
     case "$abi" in
       arm64-v8a|x86_64)
         if [ "$min" -ge 16384 ]; then
-          [ -n "${reported[$key]:-}" ] || echo "::notice::16 KB OK: $rel (LOAD align $min)"
+          [ -n "${reported[$key]:-}" ] || { echo "16 KB OK: $rel (LOAD align $min)"; ok_libs="$ok_libs $rel"; }
         else
           echo "::error::NOT 16 KB aligned: $rel (LOAD align $min) — upgrade the library that ships it"
           failed=1
@@ -73,4 +76,6 @@ if [ "$failed" -ne 0 ]; then
   echo "::error::Some native code isn't 16 KB page-size compatible (see above)"
   exit 1
 fi
+# One annotation for the lot (Actions keeps only the first 10 notices of a step).
+echo "::notice::16 KB aligned (ELF LOAD >= 16384):$ok_libs"
 echo "All native libraries are 16 KB page-size compatible."

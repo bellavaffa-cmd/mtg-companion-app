@@ -82,6 +82,8 @@ jobs:
               | while IFS= read -r line; do [ -n "$line" ] && echo "::error::$line"; done
             exit 1
           }
+          # zipalign -P needs build-tools 35+; the runner image may only have older ones.
+          ls "$ANDROID_HOME/build-tools" | grep -q '^3[5-9]\|^[4-9][0-9]' || yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0" > /dev/null
           scripts/check-16kb-alignment.sh app/build/outputs/apk/debug/*.apk
 
   relay-tests:
