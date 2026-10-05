@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The home-screen widget (widget/CollectionWidget.kt), in the app's dark theme with the gold
+     accent (ui/theme/Color.kt). -->
+<resources>
+    <color name="widget_bg">#F00C0D11</color>
+    <color name="widget_surface">#FF20222A</color>
+    <color name="widget_gold">#FFE6B45E</color>
+    <color name="widget_on_gold">#FF1C1405</color>
+    <color name="widget_text">#FFF1EEE6</color>
+    <color name="widget_text_muted">#FFA7A8B3</color>
+    <color name="widget_text_dim">#FF6F717C</color>
+    <color name="widget_up">#FF5BCB8F</color>
+    <color name="widget_down">#FFF07565</color>
+
+    <string name="widget_name">Collection and play</string>
+    <string name="widget_description">Your collection\'s value and its week, price alerts that went off, and quick ways into the life counter and the scanner.</string>
+    <string name="widget_collection">Collection value</string>
+    <string name="widget_price_alerts">Price alerts</string>
+    <string name="widget_no_alerts">None went off this week</string>
+    <string name="widget_no_value">Open Manabind to work out its value</string>
+    <string name="widget_life_counter">Life counter</string>
+    <string name="widget_scan">Scan</string>
+    <string name="widget_no_figure">—</string>
+    <string name="widget_preview_value">$1,234.56</string>
+    <string name="widget_preview_change">+$18.20 (+1.5%) this week</string>
+    <string name="widget_preview_alert">Sol Ring  ↓ $1.20</string>
+
+    <style name="Widget.MtgCompanionApp.AlertRow" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:textColor">@color/widget_text</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+</resources>

@@ -158,6 +158,8 @@ import com.mtgcompanion.app.ui.home.HomeScreen
 import com.mtgcompanion.app.ui.home.HomeViewModel
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterScreen
 import com.mtgcompanion.app.ui.lifecounter.PlayScreen
+import com.mtgcompanion.app.ui.lifecounter.GameNightScreen
+import com.mtgcompanion.app.ui.lifecounter.GameNightViewModel
 import com.mtgcompanion.app.ui.lifecounter.RemoteScreen
 import com.mtgcompanion.app.ui.social.WhoHasItDialog
 import com.mtgcompanion.app.ui.lifecounter.RemoteViewModel
@@ -211,6 +213,8 @@ private object Routes {
     const val LIFE_COUNTER = "life_counter"
     /** The Play tab: start a life counter game, join a table, recent games. */
     const val PLAY = "play"
+    /** Game night: players, fair pods, each pod's game on the life counter. */
+    const val GAME_NIGHT = "game_night"
     const val VALUE_HISTORY = "value_history"
     const val FRIENDS = "friends"
     const val FRIEND = "friend/{userId}"
@@ -284,6 +288,14 @@ fun MtgNavGraph(
     LaunchedEffect(openRequest) {
         val open = openRequest ?: return@LaunchedEffect
         pendingOpen.value = null
+        // The home-screen widget: the life counter, the scanner, the collection's value, or a card whose
+        // price alert went off.
+        when {
+            open == "life" -> { navController.navigate(Routes.LIFE_COUNTER) { launchSingleTop = true }; return@LaunchedEffect }
+            open == "scan" -> { navController.navigateToTab(Routes.SCAN); return@LaunchedEffect }
+            open == "value" -> { navController.navigate(Routes.VALUE_HISTORY) { launchSingleTop = true }; return@LaunchedEffect }
+            open.startsWith("card:") -> { navController.navigate(Routes.detail(open.removePrefix("card:"))) { launchSingleTop = true }; return@LaunchedEffect }
+        }
         // A price alert: the wishlist it's on.
         if (open.startsWith("binder:")) {
             navController.navigateToTab(Routes.COLLECTION)
@@ -343,7 +355,7 @@ fun MtgNavGraph(
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
-                Routes.PLAY -> NavDestination.LIFE_COUNTER
+                Routes.PLAY, Routes.GAME_NIGHT -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
                 else -> null
@@ -453,7 +465,19 @@ fun MtgNavGraph(
                     viewModel = viewModel,
                     onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
                     onOpenResults = { navController.navigate(Routes.SEARCH_RESULTS) },
-                    onOpenRules = { navController.navigateToTab(Routes.RULES) }
+                    onOpenRules = { navController.navigateToTab(Routes.RULES) },
+                    onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } }
+                )
+            }
+
+            destination(Routes.GAME_NIGHT) {
+                val viewModel: GameNightViewModel = viewModel(
+                    factory = GameNightViewModel.Factory(LocalContext.current, deckRepository, socialRepository, lifeCounterSettingsRepository)
+                )
+                GameNightScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) }
                 )
             }
 
