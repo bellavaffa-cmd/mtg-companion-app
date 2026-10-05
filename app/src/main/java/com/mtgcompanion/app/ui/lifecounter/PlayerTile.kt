@@ -6,6 +6,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import com.mtgcompanion.app.data.social.Giphy
+import com.mtgcompanion.app.data.mulliganText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -147,7 +148,18 @@ class PlayerTileActions(
     /** When this seat is the table owner's: the deck their games here are saved to ("" before one's picked). */
     val meDeck: String? = null,
     /** One of the seat's deck tokens ([PlayerLife.deckInfo]) up or down, by token id. */
-    val adjustToken: (tokenId: String, delta: Int) -> Unit = { _, _ -> }
+    val adjustToken: (tokenId: String, delta: Int) -> Unit = { _, _ -> },
+    /** Ventures to a room or a dungeon ([Dungeons.kt]); true: venturing into Undercity. */
+    val venture: (to: String, undercity: Boolean) -> Unit = { _, _ -> },
+    val leaveDungeon: () -> Unit = {},
+    val adjustDungeonsCompleted: (Int) -> Unit = {},
+    val setRingBearer: (String?) -> Unit = {},
+    /** Mulligans this game, 0 to 7; null: not recorded. */
+    val setMulligans: (Int?) -> Unit = {},
+    /** Whether this seat holds the initiative, so it can venture into Undercity. */
+    val hasInitiative: Boolean = false,
+    /** A multiplayer game, where the first mulligan is free. */
+    val freeMulligan: Boolean = false
 )
 
 /** The turn timer on the active player's tile: it counts itself down on [clock]. */
@@ -955,10 +967,17 @@ private fun TileCounters(player: PlayerLife, settings: LifeCounterSettings, ink:
     }
     val tax = player.commanderTax.sum()
     val showTax = settings.countersOnTile && tax > 0
-    if (shown.isEmpty() && !showTax) return
+    val showDungeon = settings.countersOnTile && (player.dungeon != null || player.dungeonsCompleted > 0)
+    if (shown.isEmpty() && !showTax && !showDungeon) return
     Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = modifier.horizontalScroll(rememberScrollState())) {
-        shown.forEach { kind -> CounterChip(kind.label, player.counter(kind), ink) }
+        shown.forEach { kind ->
+            val label = if (kind == PlayerCounter.SPEED && isMaxSpeed(player.counter(kind))) "Max speed" else kind.label
+            CounterChip(label, player.counter(kind), ink)
+        }
         if (showTax) CounterChip("Tax", tax, ink)
+        if (settings.countersOnTile && (roomOf(player.dungeon) != null || player.dungeonsCompleted > 0)) {
+            CounterChip(roomOf(player.dungeon)?.name ?: "Dungeons", player.dungeonsCompleted, ink)
+        }
     }
 }
 
@@ -1019,6 +1038,19 @@ private fun OptionsCard(player: PlayerLife, autoKill: Boolean, actions: PlayerTi
             )
         }
 
+        CardSection("Mulligans")
+        val mulligans = player.mulligans
+        if (mulligans == null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OptionTile("Kept 7", TableColors.SurfaceRaised, Color.White, onClick = { actions.setMulligans(0) }, modifier = Modifier.weight(1f))
+                OptionTile("Mulligan", TableColors.SurfaceRaised, Color.White, onClick = { actions.setMulligans(1) }, modifier = Modifier.weight(1f))
+            }
+        } else {
+            StepperRow(mulliganText(mulligans, actions.freeMulligan), mulligans) { d ->
+                actions.setMulligans(if (mulligans + d < 0) null else minOf(7, mulligans + d))
+            }
+        }
+
         val linked = player.linked
         if (linked != null) {
             CardSection("Playing")
@@ -1069,12 +1101,35 @@ private fun OptionsCard(player: PlayerLife, autoKill: Boolean, actions: PlayerTi
 
         CardSection("Counters")
         PlayerCounter.entries.forEach { kind ->
-            StepperRow(if (kind.resetsEachTurn) "${kind.label} · this turn" else kind.label, player.counter(kind)) { actions.adjustCounter(kind, it) }
+            val label = when {
+                kind.resetsEachTurn -> "${kind.label} · this turn"
+                kind == PlayerCounter.SPEED && isMaxSpeed(player.counter(kind)) -> "Speed · max speed"
+                kind == PlayerCounter.RING -> "The Ring tempts you"
+                else -> kind.label
+            }
+            StepperRow(label, player.counter(kind)) { actions.adjustCounter(kind, it) }
+        }
+        val ring = player.counter(PlayerCounter.RING)
+        if (ring > 0) {
+            ringAbilities(ring).forEachIndexed { i, a -> Text("${i + 1}. $a", style = tableText(15.sp, TableColors.TextMuted)) }
+            var bearer by remember(player.id) { mutableStateOf(player.ringBearer ?: "") }
+            CardTextField(value = bearer, placeholder = "Ring-bearer's name") { bearer = it; actions.setRingBearer(it) }
         }
         StepperRow("Commander tax", player.commanderTax.getOrElse(0) { 0 }, step = 2) { actions.adjustTax(0, it) }
         if (player.hasPartner) {
             StepperRow("Partner tax", player.commanderTax.getOrElse(1) { 0 }, step = 2) { actions.adjustTax(1, it) }
         }
+
+        CardSection("Dungeon")
+        VentureSection(
+            dungeon = player.dungeon,
+            completed = player.dungeonsCompleted,
+            hasInitiative = actions.hasInitiative,
+            ink = DungeonInk(Color.White, TableColors.TextMuted, TableColors.SurfaceRaised, TableColors.Yellow),
+            onVenture = actions.venture,
+            onLeave = actions.leaveDungeon,
+            onCompleted = actions.adjustDungeonsCompleted
+        )
 
         CardSection("Mana pool")
         ManaPoolRow(pool = player.manaPool, onAdjust = actions.adjustMana)

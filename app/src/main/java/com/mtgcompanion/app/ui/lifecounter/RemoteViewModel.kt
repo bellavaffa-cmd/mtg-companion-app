@@ -409,7 +409,8 @@ class RemoteViewModel(
                 opponents,
                 turns = over.turns.takeIf { it > 0 },
                 minutes = over.minutes.takeIf { it > 0 },
-                commanders = others.mapNotNull { it.commander }
+                commanders = others.mapNotNull { it.commander },
+                mulligans = s.players.firstOrNull { it.seat == seat }?.mulligans
             )
             viewModelScope.launch {
                 deckRepository.addGameResult(deck.id, result)

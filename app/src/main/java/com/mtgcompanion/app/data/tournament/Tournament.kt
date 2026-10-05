@@ -55,7 +55,9 @@ data class Tournament(
     val players: List<EventPlayer>,
     /** The rounds paired so far, oldest first. Only the last one's results can still change. */
     val rounds: List<EventRound> = emptyList(),
-    val finished: Boolean = false
+    val finished: Boolean = false,
+    /** The top 8/4/2 bracket or the pods' final table, once cut to (Playoff.kt); null in events saved before playoffs. */
+    val playoff: Playoff? = null
 )
 
 const val MIN_EVENT_PLAYERS = 4

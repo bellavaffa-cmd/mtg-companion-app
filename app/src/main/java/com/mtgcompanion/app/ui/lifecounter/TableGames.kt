@@ -6,8 +6,20 @@ import com.mtgcompanion.app.data.GameResult
 // played, who won and how long it took. And, for a table owner playing without a remote of their
 // own, their seat's game saved to their deck. Mirrors the web app's src/lifecounter/tableGames.ts.
 
-/** One seat in a finished game. [out]: why they lost (LIFE, POISON…), null for the winner. [me]: the table owner's seat. */
-data class TableGamePlayer(val seat: Int, val name: String, val commander: String? = null, val out: String? = null, val me: Boolean = false)
+/**
+ * One seat in a finished game. [out]: why they lost (LIFE, POISON…), null for the winner. [me]: the
+ * table owner's seat. [mulligans]: how many they took, when recorded. [colorIndex]: their seat colour,
+ * for the chart (null in games kept before it).
+ */
+data class TableGamePlayer(
+    val seat: Int,
+    val name: String,
+    val commander: String? = null,
+    val out: String? = null,
+    val me: Boolean = false,
+    val mulligans: Int? = null,
+    val colorIndex: Int? = null
+)
 
 /** A finished game. [id] is the table's game id, so a result changed by an undo replaces it rather than adding one. */
 data class TableGame(
@@ -17,7 +29,9 @@ data class TableGame(
     val minutes: Int,
     /** Null when nobody was left standing. */
     val winnerSeat: Int?,
-    val players: List<TableGamePlayer>
+    val players: List<TableGamePlayer>,
+    /** Life over the game, for its chart and recap (LifeChart.kt); null in games kept before it. */
+    val log: GameLog? = null
 ) {
     val winner: TableGamePlayer? get() = players.firstOrNull { it.seat == winnerSeat }
 }
@@ -52,6 +66,7 @@ fun meResultOf(game: TableGame, meSeat: Int?, seatLinked: Boolean): GameResult? 
         playedAt = game.endedAt,
         turns = game.turns.takeIf { it > 0 },
         minutes = game.minutes.takeIf { it > 0 },
-        commanders = others.mapNotNull { it.commander }
+        commanders = others.mapNotNull { it.commander },
+        mulligans = game.players.firstOrNull { it.seat == meSeat }?.mulligans
     )
 }

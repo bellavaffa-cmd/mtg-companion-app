@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.mulliganStats
+import com.mtgcompanion.app.data.mulliganSummary
 import com.mtgcompanion.app.ui.theme.CutColor
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
@@ -342,6 +344,7 @@ private fun resultColor(result: String, win: Color, other: Color, loss: Color): 
 @Composable
 internal fun MatchRecordPanel(results: List<GameResult>, onLog: () -> Unit, onRemove: (String) -> Unit) {
     val stats = remember(results) { gameStats(results) }
+    val mulligans = remember(results) { mulliganSummary(mulliganStats(results)) }
     var showAll by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<String?>(null) }
     removing?.let { id ->
@@ -394,6 +397,7 @@ internal fun MatchRecordPanel(results: List<GameResult>, onLog: () -> Unit, onRe
         if (length.isNotEmpty()) {
             Text("A game takes about ${length.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall, color = TextMuted, modifier = Modifier.padding(top = 8.dp))
         }
+        mulligans?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = TextMuted, modifier = Modifier.padding(top = 4.dp)) }
         if (stats.commanders.isNotEmpty()) MatchupList("Commanders faced", stats.commanders)
         if (stats.opponents.isNotEmpty()) MatchupList("Against", stats.opponents)
 
@@ -407,7 +411,8 @@ internal fun MatchRecordPanel(results: List<GameResult>, onLog: () -> Unit, onRe
                         listOfNotNull(
                             game.opponent?.let { "vs $it" },
                             game.commanders.takeIf { it.isNotEmpty() }?.joinToString(", "),
-                            game.turns?.let { "$it turns" }
+                            game.turns?.let { "$it turns" },
+                            game.mulligans?.takeIf { it > 0 }?.let { "$it ${if (it == 1) "mulligan" else "mulligans"}" }
                         ).joinToString(" · ").ifEmpty { "—" },
                         style = MaterialTheme.typography.labelMedium,
                         color = TextMuted,

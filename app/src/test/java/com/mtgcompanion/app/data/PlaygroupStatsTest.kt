@@ -76,4 +76,11 @@ class PlaygroupStatsTest {
         assertNull(stats.nemesis)
         assertNull(stats.averageMinutes)
     }
+
+    @Test
+    fun mulligansAcrossEveryDeckOverTheGamesThatRecordedThem() {
+        fun m(n: Int, result: String, mulligans: Int?) = game(n, result).copy(mulligans = mulligans)
+        val stats = playgroupStats(listOf(deck("Omnath", m(1, "WIN", 1), m(2, "LOSS", 0)), deck("Krenko", m(3, "LOSS", 2), game(4, "WIN"))))
+        assertEquals(MulliganStats(recorded = 3, mulliganed = 2, rate = 66, winsAfter = 1, winRateAfter = 50, winRateKept = 0), stats.mulligans)
+    }
 }

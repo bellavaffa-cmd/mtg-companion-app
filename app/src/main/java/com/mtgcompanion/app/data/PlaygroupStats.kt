@@ -34,7 +34,9 @@ data class PlaygroupStats(
     val unranked: List<DeckRecord>,
     /** The person and the commander the user does worst against (enough games, more losses than wins). */
     val nemesis: Matchup?,
-    val nemesisCommander: Matchup?
+    val nemesisCommander: Matchup?,
+    /** Mulligans over every game that recorded them (Mulligans.kt). */
+    val mulligans: MulliganStats = mulliganStats(emptyList())
 ) {
     val winRate: Int get() = if (games == 0) 0 else wins * 100 / games
 }
@@ -90,6 +92,7 @@ fun playgroupStats(decks: List<Deck>): PlaygroupStats {
         unranked = records.filter { it.games < PLAYGROUP_MIN_GAMES }
             .sortedWith(compareByDescending<DeckRecord> { it.games }.thenBy { it.name.lowercase() }),
         nemesis = nemesisOf(overall.opponents),
-        nemesisCommander = nemesisOf(overall.commanders)
+        nemesisCommander = nemesisOf(overall.commanders),
+        mulligans = mulliganStats(all)
     )
 }

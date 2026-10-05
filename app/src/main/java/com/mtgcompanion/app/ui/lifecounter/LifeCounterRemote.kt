@@ -2,6 +2,7 @@ package com.mtgcompanion.app.ui.lifecounter
 
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.graphics.toArgb
+import com.mtgcompanion.app.data.cleanMulligans
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
@@ -40,6 +41,30 @@ import java.net.URI
 //   turnTimer: {"seconds":120,"leftMs":87000} | null
 //       The per-turn timer of the player whose turn it is ("turn"): leftMs left of it when this
 //       state was sent, below 0 once the turn has run over. null/absent: no turn timer.
+//
+// ---- Added with dungeons, the new counters and mulligans (all optional, the same rules) ----
+//
+// Remote -> table:
+//   {"type":"counter","counter":"rad"|"speed"|"ring",…}
+//       Three more counter names. Speed and the Ring stop at 4. An older table doesn't know them
+//       and ignores the request (counterOfWire gives null).
+//   {"type":"venture","to":"<dungeon id or room id>","undercity":true|false}
+//       Ventures: starts a dungeon ("lost-mine", "mad-mage", "tomb"; "undercity" only with
+//       "undercity":true) or moves to a room joined below the seat's current room. Anything else is
+//       ignored. Room and dungeon ids are in Dungeons.kt / dungeons.ts.
+//   {"type":"leaveDungeon"}
+//       Takes the seat's marker out of its dungeon without completing it.
+//   {"type":"ringBearer","name":"Frodo"|null}
+//       The seat's Ring-bearer (trimmed, at most 60 characters; blank or null: nobody).
+//   {"type":"mulligan","value":0..7|null}
+//       Mulligans the seat took this game (0: kept seven; null: not recorded).
+//
+// Table -> remotes, on each players[i] (absent from older tables, which read as "not tracked"):
+//   counters.rad / counters.speed / counters.ring — in the existing counters object; an older
+//       remote shows only the counters it knows and ignores the rest.
+//   dungeon: {"id":"undercity","room":"arena"} | null    dungeonsCompleted: 2
+//   ringBearer: "Frodo" | null                           mulligans: 1 | null
+//   A table that knows these always sends dungeonsCompleted; without it a remote doesn't offer them.
 //
 // Already in the protocol and used for the remote extras: "hold" (hold on), "target" (pointing,
 // shown as an announce), "concede", "planar" (with "plane" in the state), and showCard's lookup for
@@ -82,7 +107,14 @@ data class RemoteSeat(
     /** The same for its partner, when [partner]. */
     val partnerCasts: Int = 0,
     /** The seat's deck tokens and how many of each are out; null from a table that doesn't track them. */
-    val tokens: List<RemoteToken>? = null
+    val tokens: List<RemoteToken>? = null,
+    /** Where the seat's venture marker is. */
+    val dungeon: DungeonState? = null,
+    /** Null from a table that doesn't know dungeons, the Ring or mulligans (see the notes at the top). */
+    val dungeonsCompleted: Int? = null,
+    val ringBearer: String? = null,
+    /** Mulligans this game; null: not recorded. */
+    val mulligans: Int? = null
 ) {
     fun damageFrom(from: Int, slot: Int): Int = commanderDamage.firstOrNull { it.from == from && it.slot == slot }?.amount ?: 0
 }
@@ -176,6 +208,14 @@ data class RemoteState(
                 .put("canUndo", p.canUndo).put("partner", p.partner)
                 .put("commanderCasts", p.commanderCasts).put("partnerCasts", p.partnerCasts)
                 .also { o -> p.tokens?.let { t -> o.put("tokens", JSONArray(t.map { it.toJson() })) } }
+                .also { o ->
+                    p.dungeonsCompleted?.let { done ->
+                        o.put("dungeon", p.dungeon?.let { JSONObject().put("id", it.dungeon).put("room", it.room) } ?: JSONObject.NULL)
+                            .put("dungeonsCompleted", done)
+                            .put("ringBearer", p.ringBearer ?: JSONObject.NULL)
+                            .put("mulligans", p.mulligans ?: JSONObject.NULL)
+                    }
+                }
         }))
         .put("shownCard", shownCard?.let { JSONObject().put("name", it.name).put("imageUrl", it.imageUrl).put("seat", it.seat) } ?: JSONObject.NULL)
         .put("over", over?.let { JSONObject().put("winner", it.winner ?: JSONObject.NULL).put("turns", it.turns).put("minutes", it.minutes) } ?: JSONObject.NULL)
@@ -205,7 +245,12 @@ data class RemoteState(
                         canUndo = p.optBoolean("canUndo"), partner = p.optBoolean("partner"),
                         commanderCasts = p.optInt("commanderCasts", 0).coerceAtLeast(0),
                         partnerCasts = p.optInt("partnerCasts", 0).coerceAtLeast(0),
-                        tokens = RemoteToken.parseList(p.optJSONArray("tokens"))
+                        tokens = RemoteToken.parseList(p.optJSONArray("tokens")),
+                        dungeon = p.optJSONObject("dungeon")?.let { d -> parseDungeonState(d.str("id"), d.str("room")) },
+                        // A table that knows dungeons, the Ring and mulligans always sends this.
+                        dungeonsCompleted = (p.opt("dungeonsCompleted") as? Number)?.let { cleanCompleted(it.toInt()) },
+                        ringBearer = cleanRingBearer(p.str("ringBearer")),
+                        mulligans = (p.opt("mulligans") as? Number)?.let { cleanMulligans(it.toInt()) }
                     )
                 }
             }
@@ -268,6 +313,12 @@ object RemoteActions {
     fun token(id: String, delta: Int) = tokenAction(id, delta)
     /** "OK, go on": clears someone else's hold on. */
     fun holdOk() = JSONObject().put("type", "holdOk")
+    /** Ventures to [to]: a dungeon to start, or a room below the seat's ([undercity]: venturing into Undercity). */
+    fun venture(to: String, undercity: Boolean) = JSONObject().put("type", "venture").put("to", to).put("undercity", undercity)
+    fun leaveDungeon() = JSONObject().put("type", "leaveDungeon")
+    fun ringBearer(name: String?) = JSONObject().put("type", "ringBearer").put("name", name ?: JSONObject.NULL)
+    /** 0 to 7, or null: not recorded. */
+    fun mulligan(value: Int?) = JSONObject().put("type", "mulligan").put("value", value ?: JSONObject.NULL)
 }
 
 /** The dice a remote can ask the table to roll; 2 is a coin. */

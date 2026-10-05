@@ -80,7 +80,21 @@ import com.mtgcompanion.app.data.tournament.MAX_EVENT_PLAYERS
 import com.mtgcompanion.app.data.tournament.RoundTimer
 import com.mtgcompanion.app.data.tournament.TableResult
 import com.mtgcompanion.app.data.tournament.Tournament
+import com.mtgcompanion.app.data.tournament.PlayoffKind
+import com.mtgcompanion.app.data.tournament.PlayoffMatch
+import com.mtgcompanion.app.data.tournament.canCut
 import com.mtgcompanion.app.data.tournament.canFinish
+import com.mtgcompanion.app.data.tournament.cutLabel
+import com.mtgcompanion.app.data.tournament.cutSizes
+import com.mtgcompanion.app.data.tournament.matchWinner
+import com.mtgcompanion.app.data.tournament.playoffChampion
+import com.mtgcompanion.app.data.tournament.playoffChoices
+import com.mtgcompanion.app.data.tournament.playoffEditable
+import com.mtgcompanion.app.data.tournament.playoffRoundName
+import com.mtgcompanion.app.data.tournament.playoffStatus
+import com.mtgcompanion.app.data.tournament.seedOrder
+import com.mtgcompanion.app.data.tournament.startPlayoff
+import com.mtgcompanion.app.data.tournament.withPlayoffResult
 import com.mtgcompanion.app.data.tournament.canPairNext
 import com.mtgcompanion.app.data.tournament.clockText
 import com.mtgcompanion.app.data.tournament.currentRound
@@ -211,7 +225,7 @@ fun EventsScreen(repository: TournamentRepository, onBack: () -> Unit, onNew: ()
                         Text("${formatLabel(e)} · ${e.players.size} players", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(statusText(e), style = MaterialTheme.typography.bodySmall, color = colors.textPrimary)
+                        Text(playoffStatus(e) { playerName(e, it) } ?: statusText(e), style = MaterialTheme.typography.bodySmall, color = colors.textPrimary)
                         Text(day(e.createdAt), style = MaterialTheme.typography.bodySmall, color = colors.textDim)
                     }
                     IconButton(onClick = { deleting = e }) {
@@ -417,17 +431,21 @@ fun EventScreen(repository: TournamentRepository, eventId: String, onBack: () ->
         return
     }
     val save: (Tournament) -> Unit = { t -> scope.launch { repository.save(t) } }
-    val shown = tab ?: if (event.finished) 1 else 0
+    // The tabs by name: the top cut (or final table) sits between the standings and the players once there is one.
+    val tabs = if (event.playoff != null) listOf("round", "standings", "playoff", "players") else listOf("round", "standings", "players")
+    val shownTab = tab?.let { tabs.getOrNull(it) } ?: if (event.playoff != null) "playoff" else if (event.finished) "standings" else "round"
+    val shown = tabs.indexOf(shownTab)
+    val labels = tabs.map { when (it) { "round" -> "Round"; "standings" -> "Standings"; "playoff" -> if (event.format == EventFormat.PODS) "Final" else "Top cut"; else -> "Players" } }
     EventScaffold(event.name, onBack) { padding ->
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             modifier = Modifier.fillMaxSize().padding(padding)
         ) {
-            item { Note("${formatLabel(event)} · ${event.players.size} players · ${statusText(event)}") }
-            item { SegmentedTabs(labels = listOf("Round", "Standings", "Players"), selected = shown, onSelect = { tab = it }) }
-            when (shown) {
-                0 -> {
+            item { Note("${formatLabel(event)} · ${event.players.size} players · ${playoffStatus(event) { playerName(event, it) } ?: statusText(event)}") }
+            item { SegmentedTabs(labels = labels, selected = shown, onSelect = { tab = it }) }
+            when (shownTab) {
+                "round" -> {
                     val round = currentRound(event)
                     if (round != null && !event.finished) item { RoundClock(event, save) }
                     if (round == null) item { Note("${event.players.size} players. Pair round 1 once everyone's here — seats are drawn at random.") }
@@ -439,7 +457,7 @@ fun EventScreen(repository: TournamentRepository, eventId: String, onBack: () ->
                         }
                         if (canFinish(event)) {
                             item {
-                                val finish = { save(event.copy(finished = true)); tab = 1 }
+                                val finish = { save(event.copy(finished = true)); tab = tabs.indexOf("standings") }
                                 if (canPairNext(event)) LineButton("Finish now", Icons.Filled.Flag, Modifier.fillMaxWidth()) { finish() }
                                 else GoldButton("Finish event", Icons.Filled.Flag) { finish() }
                             }
@@ -449,7 +467,7 @@ fun EventScreen(repository: TournamentRepository, eventId: String, onBack: () ->
                         }
                     }
                 }
-                1 -> {
+                "standings" -> {
                     item { FieldLabel(standingsHeading(event)) }
                     val rows = standings(event)
                     rows.forEachIndexed { i, s ->
@@ -482,7 +500,35 @@ fun EventScreen(repository: TournamentRepository, eventId: String, onBack: () ->
                             else "Pod win 3, draw 1 each. Ties go to the average points of everyone you shared a pod with."
                         )
                     }
+                    if (canCut(event)) item { CutButtons(event) { size -> save(startPlayoff(event, size)); tab = 2 } }
                     item { ShareStandings(event) }
+                }
+                "playoff" -> {
+                    val p = event.playoff!!
+                    val champion = playoffChampion(event)
+                    if (champion != null) item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.accent.copy(alpha = 0.16f)).padding(14.dp)
+                        ) {
+                            Icon(Icons.Filled.EmojiEvents, contentDescription = null, tint = colors.accent, modifier = Modifier.size(32.dp))
+                            Column {
+                                Text("Champion", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                                Text(playerName(event, champion), style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                            }
+                        }
+                    }
+                    // Each player's seed: where they sit in the first round, in bracket order.
+                    val order = seedOrder(p.size)
+                    val seedOf = p.rounds.first().flatMap { it.players }.mapIndexed { i, id -> id to order.getOrElse(i) { 0 } }.toMap()
+                    p.rounds.forEachIndexed { r, round ->
+                        item { FieldLabel(playoffRoundName(p, r)) }
+                        round.forEachIndexed { i, match ->
+                            item { PlayoffCard(event, match, r, i, if (p.kind == PlayoffKind.BRACKET) seedOf else emptyMap(), save) }
+                        }
+                    }
+                    if (champion == null) item { Note("Tap each match's result. A result can change until the next match is played.") }
                 }
                 else -> {
                     item { Note("A dropped player isn't paired again; their results still count for everyone they played.") }
@@ -615,7 +661,7 @@ private fun ShareStandings(event: Tournament) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
-    val text = standingsText(event)
+    val text = standingsText(event) + (playoffChampion(event)?.let { "\n\nChampion: ${playerName(event, it)}" } ?: "")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
         LineButton(if (copied) "Copied" else "Copy", Icons.Filled.ContentCopy) {
             clipboard.setText(AnnotatedString(text))
@@ -626,4 +672,68 @@ private fun ShareStandings(event: Tournament) {
         }
     }
     Box(Modifier.height(8.dp))
+}
+
+/** After the Swiss: cut to a top 8 / 4 / 2 (1v1) or a final table of the top 4 (pods). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CutButtons(event: Tournament, onCut: (Int) -> Unit) {
+    val sizes = cutSizes(event)
+    if (sizes.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+        FieldLabel(if (event.format == EventFormat.PODS) "Final table" else "Top cut")
+        Note(
+            if (event.format == EventFormat.PODS) "The top players by the standings play one last game; its winner takes the event."
+            else "Single elimination, seeded by the standings: 1 plays 8, 4 plays 5, 2 plays 7, 3 plays 6."
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            sizes.forEach { n -> PillChip(cutLabel(event.format, n), false, { onCut(n) }) }
+        }
+    }
+}
+
+/** One playoff match: its players (with seeds in a bracket), the winner marked, and its result tapped in while it can change. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlayoffCard(event: Tournament, match: PlayoffMatch, round: Int, index: Int, seeds: Map<String?, Int>, save: (Tournament) -> Unit) {
+    val colors = LocalAppColors.current
+    val p = event.playoff ?: return
+    val editable = playoffEditable(p, round, index)
+    val winner = matchWinner(match)
+    val set = { r: TableResult -> if (editable) save(withPlayoffResult(event, round, index, if (match.result == r) null else r)) }
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).padding(14.dp)
+    ) {
+        match.players.forEach { id ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                seeds[id]?.let { Text("$it", style = MaterialTheme.typography.labelMedium, color = colors.textDim, textAlign = TextAlign.End, modifier = Modifier.widthIn(min = 18.dp)) }
+                Text(
+                    id?.let { playerName(event, it) } ?: "Waiting",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = when {
+                        id == null -> colors.textDim
+                        id == winner -> colors.accent
+                        else -> colors.textPrimary
+                    },
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                )
+                if (id != null && id == winner) Icon(Icons.Filled.EmojiEvents, contentDescription = "Won", tint = colors.accent, modifier = Modifier.size(18.dp))
+            }
+        }
+        if (editable) {
+            val ids = match.players.filterNotNull()
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (p.kind == PlayoffKind.FINAL_TABLE) {
+                    ids.forEach { id ->
+                        val r = podResult(ids, id)
+                        PillChip(playerName(event, id), match.result == r, { set(r) })
+                    }
+                } else {
+                    playoffChoices(event.bestOf).forEach { c -> PillChip(c.label, match.result == c.result, { set(c.result) }) }
+                }
+            }
+            if (p.kind == PlayoffKind.BRACKET) Note("From ${playerName(event, ids.first())}'s side")
+        }
+    }
 }

@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.PlayerProfile
 import com.mtgcompanion.app.data.PlayerProfileRepository
+import com.mtgcompanion.app.data.cleanMulligans
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -31,7 +32,10 @@ import org.json.JSONObject
 import java.util.UUID
 import kotlin.random.Random
 
-/** Per-player counters beyond life. [resetsEachTurn] ones are cleared when the turn passes. */
+/**
+ * Per-player counters beyond life. [resetsEachTurn] ones are cleared when the turn passes. Speed and
+ * the Ring stop at 4 (CounterRules.kt). The web app's COUNTER_KINDS (game.ts), in the same order.
+ */
 enum class PlayerCounter(val label: String, val resetsEachTurn: Boolean = false) {
     POISON("Poison"),
     EXPERIENCE("Experience"),
@@ -39,7 +43,10 @@ enum class PlayerCounter(val label: String, val resetsEachTurn: Boolean = false)
     CHARGE("Charge"),
     STORM("Storm", resetsEachTurn = true),
     TOKENS("Tokens"),
-    LOYALTY("Loyalty")
+    LOYALTY("Loyalty"),
+    RAD("Rad"),
+    SPEED("Speed"),
+    RING("The Ring")
 }
 
 /** Mana pool colors, in canonical WUBRG order with colorless last — keys match Scryfall symbol codes. */
@@ -91,7 +98,14 @@ data class PlayerLife(
     /** The tokens and start-of-turn cards of the deck played here — from the player's remote, or the table owner's own deck. */
     val deckInfo: SeatDeckInfo? = null,
     /** How many of each of [deckInfo]'s tokens are out, by token id. */
-    val tokenCounts: Map<String, Int> = emptyMap()
+    val tokenCounts: Map<String, Int> = emptyMap(),
+    /** Where their venture marker is (Dungeons.kt), and how many dungeons they've completed this game. */
+    val dungeon: DungeonState? = null,
+    val dungeonsCompleted: Int = 0,
+    /** Their Ring-bearer's name, once the Ring has tempted them (the RING counter is how often). */
+    val ringBearer: String? = null,
+    /** Mulligans they took this game (0: kept seven); null until someone records it. */
+    val mulligans: Int? = null
 ) {
     fun counter(kind: PlayerCounter): Int = counters[kind] ?: 0
 
@@ -194,11 +208,19 @@ sealed interface HistoryEvent {
     data object Conceded : HistoryEvent
     /** One of the seat's deck tokens; [HistoryEntry.from]/[HistoryEntry.to] are the count. */
     data class DeckToken(val name: String) : HistoryEvent
+    /** A step through a dungeon: "Undercity: Forge"; [completed] when it was the last room. */
+    data class Ventured(val room: String, val completed: Boolean) : HistoryEvent
+    /** The completed-dungeons count put right; [HistoryEntry.from]/[HistoryEntry.to] are the count. */
+    data object DungeonsCompleted : HistoryEvent
+    /** Mulligans recorded for the player: [value] null is "not recorded". */
+    data class Mulligans(val value: Int?) : HistoryEvent
 }
 
 /**
  * One line of the game log. Player names are resolved when the log is displayed, not stored, so a
  * rename mid-game relabels its earlier entries too. [from]/[to] are null for non-numeric events.
+ * For the life chart (LifeChart.kt): [elapsedMs] is the game clock, [life] that player's life after
+ * it and [out] whether that had them out (with automatic knock-outs on).
  */
 data class HistoryEntry(
     val id: Long,
@@ -207,7 +229,10 @@ data class HistoryEntry(
     val from: Int?,
     val to: Int?,
     val turn: Int,
-    val atMillis: Long
+    val atMillis: Long,
+    val elapsedMs: Long = 0,
+    val life: Int? = null,
+    val out: String? = null
 )
 
 /** Every player's d20 roll, and who rolled highest. Never a tie: a tie for highest re-rolls everyone. */
@@ -400,8 +425,12 @@ class LifeCounterViewModel(
             minutes = gameMinutes(_clock.value.elapsed(lastAt)),
             winnerSeat = winnerSeat,
             players = players.map { p ->
-                TableGamePlayer(p.id, p.displayName, p.commander, p.lossReason(settings.autoKill)?.name, me = p.id == settings.meSeat && p.linked == null)
-            }
+                TableGamePlayer(
+                    p.id, p.displayName, p.commander, p.lossReason(settings.autoKill)?.name, me = p.id == settings.meSeat && p.linked == null,
+                    mulligans = p.mulligans, colorIndex = p.colorIndex
+                )
+            },
+            log = gameLog(players, settings, lastAt)
         )
         viewModelScope.launch {
             settingsRepository.updateTableGames { withTableGame(it, game) }
@@ -413,6 +442,31 @@ class LifeCounterViewModel(
             deckRepository.removeGameResult(deckId, result.id)
             deckRepository.addGameResult(deckId, result)
         }
+    }
+
+    /** This game's log for its chart and recap, from its history; [endAt]: when it ended. */
+    fun gameLog(players: List<PlayerLife> = _players.value, settings: LifeCounterSettings = _settings.value, endAt: Long = System.currentTimeMillis()): GameLog {
+        val life = settings.startingLifeFor(players.size)
+        val entries = _history.value.map { h ->
+            LogEntry(
+                seat = h.playerId, ms = h.elapsedMs, turn = h.turn, life = h.life, out = h.out,
+                turnStart = h.event == HistoryEvent.TurnStarted || h.event == HistoryEvent.WonHighRoll,
+                first = h.event == HistoryEvent.WonHighRoll
+            )
+        }
+        val damage = players.flatMap { p ->
+            p.commanderDamage.entries.groupBy({ it.key.opponentId }, { it.value }).map { (from, amounts) -> DamageTotal(p.id, from, amounts.sum()) }
+        }
+        return buildGameLog(
+            entries,
+            players.map { SeatLife(it.id, life) },
+            players.map { it.id to it.lossReason(settings.autoKill)?.name },
+            damage,
+            _clock.value.elapsed(endAt),
+            settings.turnTrackerEnabled && players.size > 1,
+            // Seat 1 opens a new game; choosing who goes first is in the history, and starts the turns over.
+            1
+        )
     }
 
     // ---- The table owner's seat, seats' commanders, and the table's games ----
@@ -640,7 +694,8 @@ class LifeCounterViewModel(
     fun adjustCounter(playerId: Int, kind: PlayerCounter, delta: Int) = undoable("counter:$playerId:$kind") {
         val player = player(playerId) ?: return@undoable
         val current = player.counter(kind)
-        val updated = (current + delta).coerceAtLeast(0)
+        // Speed and the Ring stop at 4.
+        val updated = clampCounter(kind.wire(), current + delta)
         if (updated == current) return@undoable
         updatePlayer(playerId) { it.copy(counters = it.counters + (kind to updated)) }
         log(HistoryEvent.Counter(kind), playerId, current, updated)
@@ -656,6 +711,50 @@ class LifeCounterViewModel(
         if (updated == current) return@undoable
         updatePlayer(playerId) { it.copy(tokenCounts = counts) }
         log(HistoryEvent.DeckToken(tokens.first { it.id == tokenId }.label), playerId, current, updated)
+    }
+
+    // ---- Dungeons, the Ring, mulligans ----
+
+    /**
+     * Seat [playerId] ventures to [to]: a room below theirs, or a dungeon to start ([undercity]:
+     * venturing into Undercity). Anything else is ignored. Each step undoes on its own.
+     */
+    fun ventureTo(playerId: Int, to: String, undercity: Boolean = false) = undoable("venture:$playerId:$to") {
+        val player = player(playerId) ?: return@undoable
+        val v = venture(Venture(player.dungeon, player.dungeonsCompleted), to, undercity) ?: return@undoable
+        updatePlayer(playerId) { it.copy(dungeon = v.dungeon, dungeonsCompleted = v.completed) }
+        val room = "${dungeonById(v.dungeon?.dungeon)?.name}: ${roomOf(v.dungeon)?.name}"
+        log(HistoryEvent.Ventured(room, v.completed > player.dungeonsCompleted), playerId, null, null)
+    }
+
+    /** Takes seat [playerId]'s marker out of its dungeon, without completing it. */
+    fun leaveDungeon(playerId: Int) = undoable("dungeon:$playerId") {
+        if (player(playerId)?.dungeon == null) return@undoable
+        updatePlayer(playerId) { it.copy(dungeon = null) }
+    }
+
+    /** Puts right seat [playerId]'s completed-dungeons count. */
+    fun adjustDungeonsCompleted(playerId: Int, delta: Int) = undoable("dungeon:$playerId") {
+        val player = player(playerId) ?: return@undoable
+        val updated = (player.dungeonsCompleted + delta).coerceIn(0, 99)
+        if (updated == player.dungeonsCompleted) return@undoable
+        updatePlayer(playerId) { it.copy(dungeonsCompleted = updated) }
+        log(HistoryEvent.DungeonsCompleted, playerId, player.dungeonsCompleted, updated)
+    }
+
+    /** Typed at the table a letter at a time, so it isn't logged. */
+    fun setRingBearer(playerId: Int, name: String?) {
+        val clean = cleanRingBearer(name)
+        if (player(playerId)?.let { it.ringBearer != clean } != true) return
+        updatePlayer(playerId) { it.copy(ringBearer = clean) }
+    }
+
+    /** Seat [playerId]'s mulligans this game, 0 to 7 (null: not recorded). */
+    fun setMulligans(playerId: Int, value: Int?) = undoable("mulligan:$playerId") {
+        val clean = value?.coerceIn(0, 7)
+        if (player(playerId)?.let { it.mulligans != clean } != true) return@undoable
+        updatePlayer(playerId) { it.copy(mulligans = clean) }
+        log(HistoryEvent.Mulligans(clean), playerId, null, null)
     }
 
     fun adjustMana(playerId: Int, color: String, delta: Int) = undoable("mana:$playerId:$color") {
@@ -844,8 +943,13 @@ class LifeCounterViewModel(
         val mergeable = last != null && from != null && to != null && last.from != null &&
             last.event == event && last.playerId == playerId && last.turn == _turnNumber.value &&
             now - last.atMillis <= MERGE_WINDOW_MILLIS
+        // For the chart: the game clock, and that player's life after this and whether it had them out.
+        val elapsed = _clock.value.elapsed(now)
+        val p = playerId?.let { player(it) }
+        val life = p?.life
+        val out = p?.lossReason(autoKill = true)?.name
         _history.value = if (mergeable) {
-            val merged = last!!.copy(to = to, atMillis = now)
+            val merged = last!!.copy(to = to, atMillis = now, elapsedMs = elapsed, life = life, out = out)
             if (merged.from == merged.to) entries.dropLast(1) else entries.dropLast(1) + merged
         } else {
             val entry = HistoryEntry(
@@ -855,7 +959,10 @@ class LifeCounterViewModel(
                 from = from,
                 to = to,
                 turn = _turnNumber.value,
-                atMillis = now
+                atMillis = now,
+                elapsedMs = elapsed,
+                life = life,
+                out = out
             )
             (entries + entry).takeLast(MAX_HISTORY)
         }
@@ -1104,7 +1211,8 @@ class LifeCounterViewModel(
 
     private fun samePlay(a: PlayerLife, b: PlayerLife) =
         a.life == b.life && a.killed == b.killed && a.commanderDamage == b.commanderDamage &&
-            a.counters == b.counters && a.manaPool == b.manaPool && a.commanderTax == b.commanderTax && a.tokenCounts == b.tokenCounts
+            a.counters == b.counters && a.manaPool == b.manaPool && a.commanderTax == b.commanderTax && a.tokenCounts == b.tokenCounts &&
+            a.dungeon == b.dungeon && a.dungeonsCompleted == b.dungeonsCompleted && a.mulligans == b.mulligans
 
     /**
      * Takes back the newest change — the newest one made from seat [by]'s remote when [by] is set.
@@ -1117,7 +1225,10 @@ class LifeCounterViewModel(
         undoStack.removeAt(index)
         _players.value = _players.value.map { p ->
             val was = entry.before.firstOrNull { it.id == p.id } ?: return@map p
-            p.copy(life = was.life, killed = was.killed, commanderDamage = was.commanderDamage, counters = was.counters, manaPool = was.manaPool, commanderTax = was.commanderTax, tokenCounts = was.tokenCounts)
+            p.copy(
+                life = was.life, killed = was.killed, commanderDamage = was.commanderDamage, counters = was.counters, manaPool = was.manaPool, commanderTax = was.commanderTax,
+                tokenCounts = was.tokenCounts, dungeon = was.dungeon, dungeonsCompleted = was.dungeonsCompleted, mulligans = was.mulligans
+            )
         }
         entry.turn?.let { (seat, number) -> _currentTurnPlayerId.value = seat; _turnNumber.value = number; restartTurnTimer() }
         if (index == 0) _history.value = entry.history
@@ -1218,7 +1329,11 @@ class LifeCounterViewModel(
                     partner = p.hasPartner,
                     commanderCasts = p.commanderTax.getOrElse(0) { 0 } / 2,
                     partnerCasts = if (p.hasPartner) p.commanderTax.getOrElse(1) { 0 } / 2 else 0,
-                    tokens = p.deckInfo?.tokens?.map { RemoteToken(it.id, it.name, it.pt, p.tokenCounts[it.id] ?: 0) }
+                    tokens = p.deckInfo?.tokens?.map { RemoteToken(it.id, it.name, it.pt, p.tokenCounts[it.id] ?: 0) },
+                    dungeon = p.dungeon,
+                    dungeonsCompleted = p.dungeonsCompleted,
+                    ringBearer = p.ringBearer,
+                    mulligans = p.mulligans
                 )
             },
             shownCard = _shownCard.value,
@@ -1374,6 +1489,18 @@ class LifeCounterViewModel(
                     delta(100)?.let { d -> if (id.isNotEmpty()) adjustToken(seat, id, d) }
                 }
                 "holdOk" -> okGoOn(seat)
+                "venture" -> action.optString("to").takeIf { it.isNotEmpty() && it.length <= 40 }?.let {
+                    ventureTo(seat, it, undercity = action.opt("undercity") == true)
+                }
+                "leaveDungeon" -> leaveDungeon(seat)
+                "ringBearer" -> when {
+                    action.isNull("name") -> setRingBearer(seat, null)
+                    action.opt("name") is String -> setRingBearer(seat, action.optString("name"))
+                }
+                "mulligan" -> when {
+                    action.isNull("value") -> setMulligans(seat, null)
+                    action.opt("value") is Int -> cleanMulligans(action.optInt("value"))?.let { setMulligans(seat, it) }
+                }
             }
         } finally {
             actingSeat = null

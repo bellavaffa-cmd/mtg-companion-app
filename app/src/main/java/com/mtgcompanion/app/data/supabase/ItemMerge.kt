@@ -141,7 +141,11 @@ object ItemMerge {
     private fun mergeGameResults(base: List<GameResult>, mine: List<GameResult>, theirs: List<GameResult>): List<GameResult> {
         val removed = (base.map { it.id } - mine.map { it.id }.toSet()).toSet() +
             (base.map { it.id } - theirs.map { it.id }.toSet()).toSet()
-        return (theirs + mine).distinctBy { it.id }.filterNot { it.id in removed }.sortedByDescending { it.playedAt }
+        // The same game saved by an app that doesn't know about mulligans keeps the count the other side has.
+        val counted = (theirs + mine).filter { it.mulligans != null }.associateBy { it.id }
+        return (theirs + mine).distinctBy { it.id }.filterNot { it.id in removed }
+            .map { g -> if (g.mulligans == null) counted[g.id]?.let { g.copy(mulligans = it.mulligans) } ?: g else g }
+            .sortedByDescending { it.playedAt }
     }
 
     /** Saved deck versions from both devices, oldest first, capped the way the repository caps them. */

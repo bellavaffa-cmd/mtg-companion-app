@@ -154,7 +154,9 @@ data class GameResult(
     val turns: Int? = null,
     val minutes: Int? = null,
     /** The commanders the opponents played (a partner pair as "A & B"). */
-    val commanders: List<String> = emptyList()
+    val commanders: List<String> = emptyList(),
+    /** Mulligans taken (0: kept seven), when the table recorded them — see Mulligans.kt. */
+    val mulligans: Int? = null
 )
 
 /**
