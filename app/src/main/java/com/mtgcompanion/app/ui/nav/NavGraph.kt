@@ -160,6 +160,10 @@ import com.mtgcompanion.app.ui.home.HomeScreen
 import com.mtgcompanion.app.ui.home.HomeViewModel
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterScreen
 import com.mtgcompanion.app.ui.lifecounter.PlayScreen
+import com.mtgcompanion.app.ui.tournament.EventScreen
+import com.mtgcompanion.app.ui.tournament.EventsScreen
+import com.mtgcompanion.app.ui.tournament.NewEventScreen
+import com.mtgcompanion.app.ui.tournament.TournamentRepository
 import com.mtgcompanion.app.ui.lifecounter.RemoteScreen
 import com.mtgcompanion.app.ui.social.WhoHasItDialog
 import com.mtgcompanion.app.ui.lifecounter.RemoteViewModel
@@ -213,6 +217,11 @@ private object Routes {
     const val LIFE_COUNTER = "life_counter"
     /** The Play tab: start a life counter game, join a table, recent games. */
     const val PLAY = "play"
+    /** Small tournaments run from this phone: the list, a new one, and one event. */
+    const val EVENTS = "events"
+    const val EVENT_NEW = "event_new"
+    const val EVENT = "event/{eventId}"
+    fun event(eventId: String) = "event/$eventId"
     const val VALUE_HISTORY = "value_history"
     /** Cards the decks use more copies of than the user owns — from the Collection's All cards. */
     const val SPREAD_THIN = "spread_thin"
@@ -350,6 +359,7 @@ fun MtgNavGraph(
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.PLAY -> NavDestination.LIFE_COUNTER
+                Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
                 else -> null
@@ -752,8 +762,37 @@ fun MtgNavGraph(
                     onJoinTable = { navController.navigate(Routes.QR_SCAN) },
                     onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
                     onOpenRules = { navController.navigateToTab(Routes.RULES) },
-                    onOpenPlaygroup = { navController.navigate(Routes.PLAYGROUP) }
+                    onOpenPlaygroup = { navController.navigate(Routes.PLAYGROUP) },
+                    onOpenEvents = { navController.navigate(Routes.EVENTS) { launchSingleTop = true } }
                 )
+            }
+
+            destination(Routes.EVENTS) {
+                val context = LocalContext.current
+                val repository = remember { TournamentRepository(context.applicationContext) }
+                EventsScreen(
+                    repository = repository,
+                    onBack = { navController.popBackStack() },
+                    onNew = { navController.navigate(Routes.EVENT_NEW) { launchSingleTop = true } },
+                    onOpen = { id -> navController.navigate(Routes.event(id)) }
+                )
+            }
+
+            destination(Routes.EVENT_NEW) {
+                val context = LocalContext.current
+                val repository = remember { TournamentRepository(context.applicationContext) }
+                NewEventScreen(
+                    repository = repository,
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onCreated = { id -> navController.navigate(Routes.event(id)) { popUpTo(Routes.EVENT_NEW) { inclusive = true } } }
+                )
+            }
+
+            destination(Routes.EVENT, arguments = listOf(navArgument("eventId") { type = NavType.StringType })) { entry ->
+                val context = LocalContext.current
+                val repository = remember { TournamentRepository(context.applicationContext) }
+                EventScreen(repository = repository, eventId = entry.arguments?.getString("eventId").orEmpty(), onBack = { navController.popBackStack() })
             }
 
             destination(Routes.LIFE_COUNTER) {

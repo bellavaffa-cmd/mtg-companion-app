@@ -38,7 +38,8 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
 
 /**
  * The Play tab: start a life counter game on this phone, join someone else's table with your phone
- * as the remote for your seat (or go back to the seat you're in), and the games played here.
+ * as the remote for your seat (or go back to the seat you're in), run a small event, and the games
+ * played here.
  */
 @Composable
 fun PlayScreen(
@@ -49,7 +50,8 @@ fun PlayScreen(
     onOpenRemote: (matchId: String, seat: Int) -> Unit,
     onOpenRules: () -> Unit,
     /** Every deck's games together. */
-    onOpenPlaygroup: () -> Unit = {}
+    onOpenPlaygroup: () -> Unit = {},
+    onOpenEvents: (() -> Unit)? = null
 ) {
     val colors = LocalAppColors.current
     LazyColumn(
@@ -69,6 +71,9 @@ fun PlayScreen(
         }
         item { PlayRow(Icons.Filled.QrCodeScanner, "Join a table", "Scan a seat's QR code: your phone becomes your remote") { onJoinTable() } }
         item { PlayRow(Icons.Filled.Groups, "Playgroup", "Your record across every deck: who you play, your nemesis, your best decks") { onOpenPlaygroup() } }
+        onOpenEvents?.let { open ->
+            item { PlayRow(Icons.Filled.EmojiEvents, "Events", "Run a Swiss or Commander pod event: pairings, round clock, standings") { open() } }
+        }
         item { PlayRow(Icons.Filled.MenuBook, "Rules", "Look up a rule or a card's rulings") { onOpenRules() } }
         item { SectionHeader("Recent games", modifier = Modifier.padding(top = 10.dp)) }
         if (games.isEmpty()) {
