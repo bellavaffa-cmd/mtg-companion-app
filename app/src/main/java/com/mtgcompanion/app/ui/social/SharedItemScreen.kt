@@ -130,6 +130,15 @@ fun SharedItemScreen(
             TopAppBar(
                 title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { BackButton(onClick = onBack) },
+                actions = {
+                    // Block or report whoever shared it (not the user's own).
+                    val shown = (loaded as? Loaded.Ok)?.item
+                    val account by social.accountFlow.collectAsState()
+                    if (shown != null && account != null && shown.owner.userId != account?.userId) {
+                        val id = runCatching { org.json.JSONObject(shown.data).optString("id") }.getOrNull().orEmpty()
+                        BlockReportButton(social, shown.owner.userId, shown.owner.displayName, itemKind = shown.kind.wire, itemId = id, compact = true, onBlocked = onBack)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
         }

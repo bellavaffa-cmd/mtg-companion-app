@@ -131,7 +131,8 @@ object PushNotifications {
     /** Shows one notification from a push message's data. */
     fun show(context: Context, data: Map<String, String>) {
         if (!permissionGranted(context) || !_enabled.value) return
-        val open = if (data["open"] == "trades") "trades" else "friends"
+        // "messages": a direct message (supabase/migrations/20261006020000_social_more.sql), on the friends channel.
+        val open = when (data["open"]) { "trades" -> "trades"; "messages" -> "messages"; else -> "friends" }
         val intent = Intent(context, MainActivity::class.java)
             .putExtra(EXTRA_OPEN, open)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)

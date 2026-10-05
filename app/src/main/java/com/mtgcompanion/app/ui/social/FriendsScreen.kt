@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
@@ -68,7 +69,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.social.ActivityItem
 import com.mtgcompanion.app.data.social.Overview
+import com.mtgcompanion.app.data.social.TradeMatch
 import com.mtgcompanion.app.data.social.Pod
 import com.mtgcompanion.app.data.social.Profile
 import com.mtgcompanion.app.data.social.ShareKind
@@ -80,6 +83,14 @@ import com.mtgcompanion.app.ui.common.SectionHeader
 import com.mtgcompanion.app.ui.common.readableWidth
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.launch
+
+/** Where the Friends screen's messages, activity, cards for trade and trade matches lead. */
+data class FriendsMoreActions(
+    val onOpenMessages: () -> Unit = {},
+    val onOpenForTrade: () -> Unit = {},
+    val onOpenActivity: (ActivityItem) -> Unit = {},
+    val onOpenMatch: (TradeMatch) -> Unit = {}
+)
 
 /**
  * Friends: the user's profile, adding friends by username or QR code, requests, pods, what friends
@@ -98,7 +109,8 @@ fun FriendsScreen(
     onOpenSharedCollection: (String) -> Unit = {},
     onOpenSharedTab: () -> Unit = {},
     /** Loans: what friends have lent the user, and what the user lent (LoansScreen.kt). */
-    onOpenLoans: () -> Unit = {}
+    onOpenLoans: () -> Unit = {},
+    more: FriendsMoreActions = FriendsMoreActions()
 ) {
     val colors = LocalAppColors.current
     Scaffold(
@@ -115,7 +127,7 @@ fun FriendsScreen(
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.readableWidth(680.dp)) {
                 SocialGate(social, onSignIn) { overview ->
-                    FriendsContent(social, overview, onOpenFriend, onOpenShared, onOpenTrades, onOpenSharedCollection, onOpenSharedTab, onOpenLoans)
+                    FriendsContent(social, overview, onOpenFriend, onOpenShared, onOpenTrades, onOpenSharedCollection, onOpenSharedTab, onOpenLoans, more)
                 }
             }
         }
@@ -131,7 +143,8 @@ private fun FriendsContent(
     onOpenTrades: () -> Unit,
     onOpenSharedCollection: (String) -> Unit,
     onOpenSharedTab: () -> Unit,
-    onOpenLoans: () -> Unit
+    onOpenLoans: () -> Unit,
+    more: FriendsMoreActions
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
@@ -139,8 +152,12 @@ private fun FriendsContent(
     var borrowed by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { runCatching { social.api.myBorrowedLoans() }.onSuccess { l -> borrowed = l.sumOf { b -> b.cards.sumOf { it.qty } } } }
     val me = overview.me!!
-    // 0: friends, 1: the user's own profile.
+    // 0: friends, 1: activity (when the server has it), then the user's own profile.
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val withMore = rememberSocialMore(social) == true
+    val profileTab = if (withMore) 2 else 1
+    var unread by remember { mutableIntStateOf(0) }
+    LaunchedEffect(withMore, overview) { if (withMore) unread = runCatching { social.more.unread() }.getOrDefault(0) }
     var podDialog by remember { mutableStateOf<Pod?>(null) }
     var newPod by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -157,18 +174,22 @@ private fun FriendsContent(
         }
     }
 
-    val waiting = incoming.size + inbox
+    val waiting = incoming.size + inbox + unread
     val tabs: @Composable () -> Unit = {
         SegmentedTabs(
-            labels = listOf("Friends", "Profile"),
-            selected = tab,
+            labels = if (withMore) listOf("Friends", "Activity", "Profile") else listOf("Friends", "Profile"),
+            selected = tab.coerceAtMost(profileTab),
             onSelect = { tab = it },
             counts = if (waiting > 0) mapOf(0 to waiting) else emptyMap(),
             modifier = Modifier.padding(bottom = 6.dp)
         )
     }
-    if (tab == 1) {
+    if (tab >= profileTab) {
         ProfileTab(social, me, tabs)
+        return
+    }
+    if (withMore && tab == 1) {
+        ActivityList(social, tabs, more.onOpenActivity)
         return
     }
 
@@ -201,6 +222,20 @@ private fun FriendsContent(
                 Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
             }
         }
+        if (withMore) {
+            item(key = "messages") { MessagesRow(unread, more.onOpenMessages) }
+            item(key = "for-trade") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).clickable(onClick = more.onOpenForTrade).padding(14.dp)
+                ) {
+                    Icon(Icons.Filled.Sell, contentDescription = null, tint = colors.accent)
+                    Text("Your cards for trade", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
+                }
+            }
+        }
         error?.let { item { Notice(it, warn = true) } }
 
         if (incoming.isNotEmpty()) {
@@ -227,6 +262,8 @@ private fun FriendsContent(
                 }
             }
         }
+
+        if (withMore) item(key = "matches") { TradeMatchesBlock(social, overview, more.onOpenMatch) }
 
         if (outgoing.isNotEmpty()) {
             item { SectionHeader("Waiting for an answer") }
