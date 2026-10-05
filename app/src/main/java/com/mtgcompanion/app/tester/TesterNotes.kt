@@ -9,6 +9,31 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "welcome",
+        "Welcome steps and sample content",
+        "Settings › Getting started: go through the welcome steps (import a CSV from another app if you have one). Try Add the sample deck and binder, look around, then Remove samples — and check samples never show on your other device."
+    ),
+    TesterNote(
+        "play-friends-layout",
+        "New Play and Friends layout",
+        "Play: Start a game, Your group tiles and Recent games. Friends: People, Messages, Trades and Activity tabs, with badges. Tap a message or trade notification and check it opens the right tab."
+    ),
+    TesterNote(
+        "empty-states",
+        "Empty screens tell you what to do",
+        "Look at a few empty places (a new binder, Events, Loans, Messages): each should say what goes there and offer a button."
+    ),
+    TesterNote(
+        "privacy-account",
+        "Privacy, usage counts and deleting your account",
+        "Settings › Privacy: the usage counts switch. Account & sync › Delete my account should open (it says it isn't available yet until the server part is added — don't use your real account to test it later)."
+    ),
+    TesterNote(
+        "visual-fixes",
+        "Layout fixes",
+        "Pull lists, put back, loans, place pages and labels had text overlapping or squeezed; check they look tidy now."
+    ),
+    TesterNote(
         "sort-pile",
         "Sorting a new pile",
         "Scan › Sort a pile: scan a handful of new cards. Each shows a big pile number and where it goes; check the piles make sense, then Done: file every pile and look the cards up in Where it is."
