@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.data.userTagsOf
 import com.mtgcompanion.app.data.allUserTags
 import com.mtgcompanion.app.data.WISHLIST_ID
@@ -176,6 +178,7 @@ class CollectionDetailViewModel(
             _importProgress.value = try {
                 val result = CardListImporter(cardRepository).resolve(lines) { done, total -> _importProgress.value = ImportProgress.Working(done, total) }
                 repository.addEntries(collectionId, result.cards.map { it.toEntry() })
+                if (result.cards.isNotEmpty()) Usage.action(UsageAction.CARDS_IMPORTED)
                 ImportProgress.Done(result, collection.value?.name ?: "this binder")
             } catch (e: java.io.IOException) {
                 ImportProgress.Failed("You're offline — try again when you're connected.")

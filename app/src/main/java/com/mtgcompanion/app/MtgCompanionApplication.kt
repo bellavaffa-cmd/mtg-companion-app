@@ -1,5 +1,6 @@
 package com.mtgcompanion.app
 
+import com.mtgcompanion.app.data.usage.Usage
 import com.mtgcompanion.app.tester.Tester
 import com.mtgcompanion.app.data.withStandingCollections
 import com.mtgcompanion.app.data.ScanPile
@@ -79,6 +80,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         supabaseSync
         // The tester app's crash catcher, activity trail and reports. Does nothing in the real app.
         Tester.init(this)
+        // Anonymous usage counts (Settings › Privacy).
+        Usage.init(this)
         // Notifications follow the account: a device signed in gets them, a device signed out doesn't.
         PushNotifications.init(this)
         // Wishlist price alerts, checked a few times a day.

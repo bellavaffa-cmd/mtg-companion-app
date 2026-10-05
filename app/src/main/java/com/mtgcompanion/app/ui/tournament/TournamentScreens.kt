@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.tournament
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -322,6 +324,7 @@ fun NewEventScreen(repository: TournamentRepository, social: SocialRepository, o
         )
         scope.launch {
             repository.save(t)
+            Usage.action(UsageAction.EVENT_STARTED)
             onCreated(t.id)
         }
     }

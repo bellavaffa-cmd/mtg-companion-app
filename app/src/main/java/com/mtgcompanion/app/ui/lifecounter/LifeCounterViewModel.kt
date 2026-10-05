@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.lifecounter
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.tester.TesterLog
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.Deck
@@ -416,6 +418,7 @@ class LifeCounterViewModel(
         val outcome = gameId + ":" + winnerSeat + ":" + players.joinToString(",") { "${it.id}=${it.lossReason(settings.autoKill)}" }
         if (outcome == lastRecorded) return
         lastRecorded = outcome
+        Usage.action(UsageAction.GAME_RECORDED)
         val lastAt = _history.value.lastOrNull()?.atMillis ?: System.currentTimeMillis()
         val game = TableGame(
             id = gameId,
@@ -594,6 +597,8 @@ class LifeCounterViewModel(
     }
 
     fun newGame() {
+        // A new game, not the one the table opens with.
+        if (_ready.value) Usage.action(UsageAction.GAME_STARTED)
         val settings = _settings.value
         val count = TableLayouts.byId(settings.layoutId).playerCount
         val life = settings.startingLifeFor(count)

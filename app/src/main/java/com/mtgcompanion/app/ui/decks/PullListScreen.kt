@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.data.usage.UsageAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -121,6 +123,7 @@ fun PullListScreen(
     LaunchedEffect(deck?.id) { if (deck != null) progress.openPullDeck = deck.id }
 
     fun save(next: Set<String>) {
+        if (ticked.isEmpty() && next.isNotEmpty()) Usage.action(UsageAction.PULL_LIST_STARTED)
         ticked = next
         progress.setTicked(PullProgress.ListKind.PULL, deckId, next)
     }

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.nav
 
+import com.mtgcompanion.app.data.usage.Usage
 import com.mtgcompanion.app.tester.Tester
 import com.mtgcompanion.app.tester.TesterToolsScreen
 import com.mtgcompanion.app.ui.social.OfferSparesDialog
@@ -392,6 +393,8 @@ fun MtgNavGraph(
     LaunchedEffect(Unit) { updateManager.checkForUpdate() }
 
     // The tester app keeps track of the screen in front, and opens its tools when the bug button is held.
+    // Anonymous usage counts: the screen opened (Settings › Privacy).
+    LaunchedEffect(currentRoute) { Usage.screen(currentRoute) }
     if (Tester.on) {
         LaunchedEffect(currentRoute) { Tester.onScreen(currentRoute) }
         val openTesterTools by Tester.openTools.collectAsState()
