@@ -9,6 +9,11 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "storage-places",
+        "Storage: where your physical cards are",
+        "Collection › Storage › New place: make a shelf, a box inside it (try the colour sorting rule) and a binder. Open the box › Put cards away and scan a few cards: each says where to file it and what happened; try Undo last. Then open one of those cards: Where it is should list the box, any decks and No place yet. Try Move a copy, the Place filter in Advanced filters, and check the places show on your other device after sync."
+    ),
+    TesterNote(
         "advanced-filters",
         "Advanced filters for your collection",
         "Collection › All cards › Filters › Advanced filters. Try commander identity at most two colours, mana value ≤ 3, legal in Commander, a set and Foil, then Show N cards: each filter is a chip you can remove. Check the Scryfall line (Copy, Open on Scryfall), and Save as… then apply the saved filter again."
