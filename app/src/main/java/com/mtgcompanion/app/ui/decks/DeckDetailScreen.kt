@@ -432,7 +432,7 @@ fun DeckDetailScreen(
                             onDismiss = { menuOpen = false },
                             actions = deckActions,
                             title = d.name,
-                            subtitle = "$cardCount card${if (cardCount == 1) "" else "s"} · ${d.ownershipType.label}",
+                            subtitle = "$cardCount card${if (cardCount == 1) "" else "s"} · ${if (d.sample == true) "Sample — not synced" else d.ownershipType.label}",
                             imageUrl = d.commander?.imageUrl.toArtCropUrl()
                         )
                     }

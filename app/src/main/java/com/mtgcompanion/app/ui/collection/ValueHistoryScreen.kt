@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -85,7 +89,13 @@ private fun signed(money: Money, usd: Double, percent: Double?): String {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ValueHistoryScreen(onBack: () -> Unit) {
+fun ValueHistoryScreen(
+    onBack: () -> Unit,
+    /** False while the binders hold no cards: there's no value to note yet. */
+    hasCards: Boolean = true,
+    /** The empty page's "Bring in your cards" (the welcome flow's collection step). */
+    onBringCards: (() -> Unit)? = null
+) {
     val colors = LocalAppColors.current
     val money by Prices.money.collectAsState()
     val all by ValueHistory.points.collectAsState()
@@ -106,6 +116,14 @@ fun ValueHistoryScreen(onBack: () -> Unit) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
             val shown = picked ?: all.lastOrNull()
+            if (shown == null && !hasCards) {
+                EmptyPrompt(
+                    Icons.Filled.BarChart,
+                    "No value yet. Once your binders have cards, their value is noted here once a day.",
+                    actions = listOfNotNull(onBringCards?.let { EmptyAction("Bring in your cards", Icons.AutoMirrored.Filled.PlaylistAdd, it) })
+                )
+                return@Column
+            }
             if (shown == null) {
                 Text("—", style = NumberStyle(44), color = colors.textDim)
                 Text(

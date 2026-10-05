@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -167,11 +169,10 @@ fun StorageTab(
         }
         if (places.isEmpty()) {
             item {
-                Text(
-                    "Boxes, binders and shelves: make one for each place you keep cards, then scan cards into it — the app remembers where each copy is.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textMuted,
-                    modifier = Modifier.padding(vertical = 12.dp)
+                EmptyPrompt(
+                    Icons.Filled.Inventory2,
+                    "No places yet. Make one for each box, binder or shelf, and the app remembers where each copy is.",
+                    actions = listOf(EmptyAction("New place", Icons.Filled.Add) { editing = true })
                 )
             }
         }

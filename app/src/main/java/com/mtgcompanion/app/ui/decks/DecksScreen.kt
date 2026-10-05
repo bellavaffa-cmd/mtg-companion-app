@@ -1,6 +1,10 @@
 package com.mtgcompanion.app.ui.decks
 
 import com.mtgcompanion.app.ui.common.SyncIconButton
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.foundation.layout.widthIn
 import com.mtgcompanion.app.ui.common.LocalLayoutSize
 import com.mtgcompanion.app.ui.common.LayoutSize
@@ -113,7 +117,14 @@ import com.mtgcompanion.app.ui.theme.TextPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrowsePrecons: () -> Unit, onNewDeck: () -> Unit) {
+fun DecksScreen(
+    viewModel: DecksViewModel,
+    onDeckClick: (String) -> Unit,
+    onBrowsePrecons: () -> Unit,
+    onNewDeck: () -> Unit,
+    /** The empty list's "Paste a list": a first deck from a pasted list (ui/onboarding/WelcomeScreen.kt). */
+    onPasteList: (() -> Unit)? = null
+) {
     val decks by viewModel.decks.collectAsState()
     val commanderColors by viewModel.commanderColors.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
@@ -207,15 +218,22 @@ fun DecksScreen(viewModel: DecksViewModel, onDeckClick: (String) -> Unit, onBrow
 
         if (decks.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "empty") {
-                Text(
-                    "No decks yet. Start from an official precon, or from scratch with a format and a commander.",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(4.dp)
+                EmptyPrompt(
+                    Icons.Filled.Style,
+                    "No decks yet. Paste a list from anywhere, or start from an official precon.",
+                    actions = listOf(
+                        EmptyAction("Paste a list", Icons.Filled.Edit, onPasteList ?: onNewDeck),
+                        EmptyAction("Browse precons", Icons.Filled.Inventory2, onBrowsePrecons)
+                    )
                 )
             }
         } else if (shown.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "nomatch") {
-                Text("No decks match.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(4.dp))
+                EmptyPrompt(
+                    Icons.Filled.SearchOff,
+                    "No decks match. Try another name, or show all decks.",
+                    actions = listOf(EmptyAction("Show all", onClick = { query = ""; ownership = null }))
+                )
             }
         }
 
@@ -301,9 +319,9 @@ private fun DeckTile(deck: Deck, colors: List<String>, onClick: () -> Unit, modi
         )
         // Ownership badge, top-left: hidden for Physical decks (the default) so it only draws
         // attention when a deck is not counted toward the collection.
-        if (deck.ownershipType != DeckOwnership.PHYSICAL) {
+        if (deck.sample == true || deck.ownershipType != DeckOwnership.PHYSICAL) {
             Text(
-                deck.ownershipType.label,
+                if (deck.sample == true) "Sample" else deck.ownershipType.label,
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White,
                 modifier = Modifier

@@ -1,7 +1,7 @@
 package com.mtgcompanion.app.data
 
 // Card lists as text, for moving a collection between this app and others (Moxfield, Archidekt,
-// ManaBox, Deckbox, TCGplayer…). Reads the usual pasted/exported shapes, one card per line:
+// ManaBox, Deckbox, TCGplayer, Dragon Shield…). Reads the usual pasted/exported shapes, one card per line:
 //
 //   4 Lightning Bolt
 //   2x Counterspell
@@ -9,7 +9,8 @@ package com.mtgcompanion.app.data
 //   1 Sol Ring [CMR] 472 *F*        (foil; *E* etched, "(foil)"/"[foil]" work too)
 //
 // and the CSV collection exports those apps make (a header row naming Count/Quantity and Name, and
-// optionally the set code, collector number, foil, condition, language and Scryfall ID). Writes the
+// optionally the set code, collector number, foil, condition, language and Scryfall ID; a leading
+// "sep=," line, as Dragon Shield writes for Excel, sets the separator). Writes the
 // plain text form, which all of them read back, and a CSV that keeps condition and language too.
 // Mirrors the web app's collection/cardListText.ts.
 
@@ -90,8 +91,8 @@ private fun parseTextLine(raw: String): ListLine? {
 
 private val UNREADABLE = ListLine(0, null)
 
-/** The cells of one CSV row: commas outside quotes separate, "" inside quotes is a quote. */
-fun csvCells(row: String): List<String> {
+/** The cells of one CSV row: commas (or [sep]) outside quotes separate, "" inside quotes is a quote. */
+fun csvCells(row: String, sep: Char = ','): List<String> {
     val cells = mutableListOf<String>()
     val cell = StringBuilder()
     var quoted = false
@@ -103,7 +104,7 @@ fun csvCells(row: String): List<String> {
             quoted && c == '"' -> quoted = false
             quoted -> cell.append(c)
             c == '"' -> quoted = true
-            c == ',' -> { cells += cell.toString(); cell.clear() }
+            c == sep -> { cells += cell.toString(); cell.clear() }
             else -> cell.append(c)
         }
         i++
@@ -112,9 +113,18 @@ fun csvCells(row: String): List<String> {
     return cells.map { it.trim() }
 }
 
+// Which header each app uses, best first:
+//   ManaBox      Name, Set code, Collector number, Foil, Quantity, Scryfall ID, Condition, Language
+//   Moxfield     Count, Name, Edition (a code), Collector Number, Foil, Condition, Language
+//   Deckbox      Count, Name, Edition (a set name), Card Number, Condition, Language, Foil
+//   Archidekt    Quantity, Name, Finish, Condition, Language, Edition Code, Scryfall ID, Collector Number
+//   TCGplayer    Quantity, Name, Simple Name, Set, Card Number, Set Code, Printing, Condition, Language
+//                (its seller export: Product Name, Number, Condition, Total Quantity)
+//   Dragon Shield  Quantity, Card Name, Set Code, Card Number, Condition, Printing, Language
 private object Columns {
-    val quantity = listOf("count", "quantity", "qty", "amount")
-    val name = listOf("name", "card name", "card")
+    val quantity = listOf("count", "quantity", "qty", "amount", "total quantity")
+    // TCGplayer's Name can carry the treatment ("Sol Ring (Foil Etched)"); its Simple Name doesn't.
+    val name = listOf("simple name", "name", "card name", "card", "product name")
     val set = listOf("set code", "edition code", "set", "edition")
     val number = listOf("collector number", "card number", "collector_number", "number", "cn")
     val foil = listOf("foil", "finish", "printing")
@@ -136,8 +146,8 @@ private val FOIL_CONDITION = Regex("\\s(foil|etched)$", RegexOption.IGNORE_CASE)
 private val SET_CODE = Regex("[A-Za-z0-9]{2,6}")
 private val SCRYFALL_ID = Regex("[0-9a-fA-F-]{36}")
 
-private fun parseCsv(rows: List<String>): ParsedList {
-    val header = csvCells(rows.first()).map { it.lowercase() }
+private fun parseCsv(rows: List<String>, sep: Char): ParsedList {
+    val header = csvCells(rows.first(), sep).map { it.lowercase() }
     val qtyAt = header.column(Columns.quantity)
     val nameAt = header.column(Columns.name)
     val setAt = header.column(Columns.set)
@@ -150,7 +160,7 @@ private fun parseCsv(rows: List<String>): ParsedList {
     val skipped = mutableListOf<String>()
     for (row in rows.drop(1)) {
         if (row.isBlank()) continue
-        val cells = csvCells(row)
+        val cells = csvCells(row, sep)
         fun get(i: Int) = if (i >= 0) cells.getOrNull(i).orEmpty() else ""
         val name = get(nameAt).ifEmpty { null }
         val id = get(idAt).takeIf { SCRYFALL_ID.matches(it) }?.lowercase()
@@ -171,17 +181,23 @@ private fun parseCsv(rows: List<String>): ParsedList {
     return ParsedList(lines, skipped)
 }
 
-private fun looksLikeCsv(firstRow: String): Boolean {
-    if (',' !in firstRow) return false
-    val header = csvCells(firstRow).map { it.lowercase() }
+private fun looksLikeCsv(firstRow: String, sep: Char): Boolean {
+    if (sep !in firstRow) return false
+    val header = csvCells(firstRow, sep).map { it.lowercase() }
     return (header.column(Columns.name) != -1 || header.column(Columns.id) != -1) && header.column(Columns.quantity) != -1
 }
 
+private val SEP_HINT = Regex("^\\s*\"?sep=(.)\"?\\s*$", RegexOption.IGNORE_CASE)
+
 /** Reads a pasted or exported card list (text or CSV). */
 fun parseCardList(text: String): ParsedList {
-    val rows = text.removePrefix("﻿").split(Regex("\\r?\\n"))
+    var rows = text.removePrefix("﻿").split(Regex("\\r?\\n"))
+    // "sep=," (or "sep=;") before the header is Excel's hint, which Dragon Shield writes.
+    val hint = SEP_HINT.matchEntire(rows.firstOrNull { it.isNotBlank() }.orEmpty())
+    val sep = hint?.groupValues?.get(1)?.first() ?: ','
+    if (hint != null) rows = rows.drop(rows.indexOfFirst { it.isNotBlank() } + 1)
     val first = rows.firstOrNull { it.isNotBlank() } ?: return ParsedList(emptyList(), emptyList())
-    if (looksLikeCsv(first)) return parseCsv(rows.drop(rows.indexOf(first)))
+    if (looksLikeCsv(first, sep)) return parseCsv(rows.drop(rows.indexOf(first)), sep)
     val lines = mutableListOf<ListLine>()
     val skipped = mutableListOf<String>()
     // Arena exports start with "Deck" and put the sideboard after a blank line, with no header of

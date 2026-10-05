@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.tournament
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -206,8 +208,14 @@ fun EventsScreen(repository: TournamentRepository, onBack: () -> Unit, onNew: ()
             modifier = Modifier.fillMaxSize().padding(padding)
         ) {
             item { Note("Run a small Swiss or Commander pod event from this phone: pairings, a round clock and standings.") }
-            item { GoldButton("New event", Icons.Filled.Add, onClick = onNew) }
-            if (events.isEmpty()) item { Note("Events you run show up here.") }
+            if (events.isNotEmpty()) item { GoldButton("New event", Icons.Filled.Add, onClick = onNew) }
+            if (events.isEmpty()) item {
+                EmptyPrompt(
+                    Icons.Filled.EmojiEvents,
+                    "No events yet. Run one for your playgroup and it shows here.",
+                    actions = listOf(EmptyAction("New event", Icons.Filled.Add, onNew))
+                )
+            }
             items(events, key = { it.id }) { e ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

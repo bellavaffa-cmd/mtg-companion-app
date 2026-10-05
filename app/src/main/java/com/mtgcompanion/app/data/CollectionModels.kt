@@ -211,7 +211,9 @@ data class Collection(
      * (left out) until the first loan; then kept, as an empty list once none are left — so a pile with
      * no "loans" key was saved by an app that doesn't know about loans.
      */
-    val loans: List<Loan>? = null
+    val loans: List<Loan>? = null,
+    /** A sample binder from the welcome flow — see Deck.sample. Null (left out) on everything else. */
+    val sample: Boolean? = null
 ) {
     val kind: CollectionType get() = CollectionType.fromName(type)
     /** The pile of cards not in a binder yet (see [UNSORTED_COLLECTION_ID]) — not a binder itself. */

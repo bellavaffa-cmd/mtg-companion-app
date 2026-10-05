@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.home
 
+import com.mtgcompanion.app.data.withoutSampleCollections
 import com.mtgcompanion.app.data.SeatMemory
 import com.mtgcompanion.app.data.isBinder
 import com.mtgcompanion.app.data.proxySwaps
@@ -99,7 +100,9 @@ class HomeViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     /** Total value of OWNED binders only (wishlist binders don't count toward this). */
-    val collectionValue: StateFlow<Double?> = collectionRepository.collectionsFlow.mapLatest { collections ->
+    val collectionValue: StateFlow<Double?> = collectionRepository.collectionsFlow.mapLatest { all ->
+        // The welcome flow's sample binder isn't the user's: it mustn't show up in their value history.
+        val collections = withoutSampleCollections(all)
         val quantities = collections.filter { it.kind == CollectionType.OWNED }
             .flatMap { it.entries }
             .groupBy { it.scryfallId }

@@ -108,7 +108,14 @@ fun HomeScreen(
     /** Friend requests and trades waiting on the user. */
     friendsWaiting: Int = 0,
     /** The "New deck" tile: a deck from scratch. Opens the Decks tab when not given. */
-    onNewDeck: (() -> Unit)? = null
+    onNewDeck: (() -> Unit)? = null,
+    /**
+     * The welcome flow's part of Home (ui/onboarding/GetStarted.kt): the "Get started" card while
+     * nothing in the library is the user's own, or the samples bar while samples are in it.
+     */
+    onboarding: (@Composable () -> Unit)? = null,
+    /** Nothing at all for the widgets to show: [onboarding]'s card stands in for them. */
+    emptyHome: Boolean = false
 ) {
     val deckCount by viewModel.deckCount.collectAsState()
     val binderCount by viewModel.binderCount.collectAsState()
@@ -266,7 +273,11 @@ fun HomeScreen(
             PriceAlertBanner(priceAlertHits, onViewCard, Modifier.padding(horizontal = pad).riseIn(1))
         }
 
-        if (layout == LayoutSize.DESKTOP) {
+        onboarding?.let { Box(Modifier.padding(horizontal = pad).riseIn(1)) { it() } }
+
+        if (emptyHome) {
+            // The "Get started" card above is the whole of it.
+        } else if (layout == LayoutSize.DESKTOP) {
             // The hero beside a 2×2 block of figures.
             Row(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),

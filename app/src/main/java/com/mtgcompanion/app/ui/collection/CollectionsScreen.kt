@@ -1,5 +1,10 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
+import androidx.compose.material.icons.filled.CollectionsBookmark
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.SearchOff
 import com.mtgcompanion.app.ui.common.cardsSubject
 import com.mtgcompanion.app.data.AddCandidate
 import com.mtgcompanion.app.ui.common.AddItem
@@ -155,7 +160,9 @@ fun CollectionsScreen(
     /** The Storage page's Sort a new pile: the scanner's sort mode. */
     onSortPile: () -> Unit = {},
     /** The Storage page's Value by place. */
-    onOpenValue: () -> Unit = {}
+    onOpenValue: () -> Unit = {},
+    /** The empty pages' "Scan cards". */
+    onOpenScan: () -> Unit = {}
 ) {
     val tagBinders by viewModel.tagBinders.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
@@ -303,6 +310,7 @@ fun CollectionsScreen(
                         unsorted = unsorted,
                         onOpenUnsorted = { onCollectionClick(it) },
                         onImport = { viewModel.resetImport(); showImport = true },
+                        onOpenScan = onOpenScan,
                         allCards = allCards,
                         query = query,
                         onQueryChange = { query = it },
@@ -332,7 +340,7 @@ fun CollectionsScreen(
                 } else if (page == 4 && sharedPage != null) {
                     sharedPage()
                 } else if (page == 3) {
-                    SetsTab(viewModel, onOpenSet)
+                    SetsTab(viewModel, onOpenSet, onImport = { viewModel.resetImport(); showImport = true }, onOpenScan = onOpenScan)
                 } else if (page == 2) {
                     // Where the cards are kept (StorageTab.kt).
                     StorageTab(
@@ -356,7 +364,9 @@ fun CollectionsScreen(
                         onDelete = { viewModel.deleteCollection(it) },
                         tagBinders = tagBinders,
                         tagging = tagging,
-                        onOpenTag = onOpenTag
+                        onOpenTag = onOpenTag,
+                        onImport = { viewModel.resetImport(); showImport = true },
+                        onNewBinder = { showCreateDialog = true }
                     )
                 }
             }
@@ -445,16 +455,24 @@ private fun CollectionsTab(
     onDelete: (String) -> Unit,
     tagBinders: List<TagBinder>,
     tagging: Pair<Int, Int>?,
-    onOpenTag: (String) -> Unit
+    onOpenTag: (String) -> Unit,
+    onImport: () -> Unit = {},
+    onNewBinder: () -> Unit = {}
 ) {
     // Binder pending a delete-confirmation, if any.
     var confirmDelete by remember { mutableStateOf<Collection?>(null) }
     val listCols = adaptiveListColumns()
 
-    if (collections.isEmpty()) {
-        Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
-            Text("No binders yet. Tap + to create one.", style = MaterialTheme.typography.bodySmall)
-        }
+    // The Wishlist and the Unsorted pile are always there; empty, there's nothing to show yet.
+    if (collections.all { it.isWishlist && it.entries.isEmpty() } && unsorted?.entries.isNullOrEmpty()) {
+        EmptyPrompt(
+            Icons.Filled.Collections,
+            "No binders yet. Import your collection from another app, or make a binder for the cards you own.",
+            actions = listOf(
+                EmptyAction("Import your collection", Icons.AutoMirrored.Filled.PlaylistAdd, onImport),
+                EmptyAction("New binder", Icons.Filled.Add, onNewBinder)
+            )
+        )
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -504,6 +522,7 @@ private fun AllCardsTab(
     unsorted: Collection?,
     onOpenUnsorted: (String) -> Unit,
     onImport: () -> Unit,
+    onOpenScan: () -> Unit = {},
     allCards: List<AllCardEntry>,
     // Search filters the visible card list only; the dashboard still reflects the whole collection.
     query: String,
@@ -539,16 +558,14 @@ private fun AllCardsTab(
     val listCols = adaptiveListColumns()
 
     if (allCards.isEmpty()) {
-        Column(modifier = Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(
-                "No cards owned yet. Cards you add to any binder or deck appear here.",
-                style = MaterialTheme.typography.bodySmall
+        EmptyPrompt(
+            Icons.Filled.CollectionsBookmark,
+            "No cards yet. Every card in your binders and physical decks shows here.",
+            actions = listOf(
+                EmptyAction("Import your collection", Icons.AutoMirrored.Filled.PlaylistAdd, onImport),
+                EmptyAction("Scan cards", Icons.Filled.PhotoCamera, onOpenScan)
             )
-            OutlinedButton(onClick = onImport) {
-                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
-                Text("  Import your collection", color = TextPrimary)
-            }
-        }
+        )
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -644,7 +661,7 @@ private fun AllCardsTab(
             }
             if (filtered.isEmpty()) {
                 item {
-                    Text(if (filtering) "No cards match these filters." else "No cards match \"$query\".", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    EmptyPrompt(Icons.Filled.SearchOff, if (filtering) "No cards match these filters." else "No cards match \"$query\".")
                 }
             } else {
                 if (viewMode == CardViewMode.GRID) {

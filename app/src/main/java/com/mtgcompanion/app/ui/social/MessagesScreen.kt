@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -85,7 +88,14 @@ private fun DirectMessagesEffect(social: SocialRepository, enabled: Boolean, onM
 /** Every conversation, newest first, with unread counts; new ones arrive live. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MessagesScreen(social: SocialRepository, onBack: () -> Unit, onSignIn: () -> Unit, onOpenConversation: (String) -> Unit) {
+fun MessagesScreen(
+    social: SocialRepository,
+    onBack: () -> Unit,
+    onSignIn: () -> Unit,
+    onOpenConversation: (String) -> Unit,
+    /** The empty list's "Add a friend", with no friends to message yet. */
+    onOpenFriends: (() -> Unit)? = null
+) {
     val colors = LocalAppColors.current
     Scaffold(
         containerColor = colors.bg,
@@ -99,14 +109,14 @@ fun MessagesScreen(social: SocialRepository, onBack: () -> Unit, onSignIn: () ->
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.readableWidth(680.dp)) {
-                SocialGate(social, onSignIn) { overview -> ConversationList(social, overview, onOpenConversation) }
+                SocialGate(social, onSignIn) { overview -> ConversationList(social, overview, onOpenConversation, onOpenFriends) }
             }
         }
     }
 }
 
 @Composable
-private fun ConversationList(social: SocialRepository, overview: Overview, onOpen: (String) -> Unit) {
+private fun ConversationList(social: SocialRepository, overview: Overview, onOpen: (String) -> Unit, onOpenFriends: (() -> Unit)? = null) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val available = rememberSocialMore(social)
@@ -130,7 +140,14 @@ private fun ConversationList(social: SocialRepository, overview: Overview, onOpe
         else -> {
             val others = overview.acceptedFriends.filter { f -> current.none { it.other.userId == f.userId } }
             LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (current.isEmpty()) item { Notice("No messages yet. Start a conversation with a friend below, or from their profile.") }
+                if (current.isEmpty()) item {
+                    if (others.isNotEmpty()) EmptyPrompt(Icons.Filled.ChatBubble, "No messages yet. Pick a friend below to start a conversation.")
+                    else EmptyPrompt(
+                        Icons.Filled.ChatBubble,
+                        "No messages yet. Add a friend, then start a conversation with them here.",
+                        actions = listOfNotNull(onOpenFriends?.let { EmptyAction("Add a friend", Icons.Filled.PersonAdd, it) })
+                    )
+                }
                 current.forEach { c ->
                     item(key = c.id) {
                         PersonRow(

@@ -1,5 +1,9 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
+import androidx.compose.material.icons.filled.Handshake
+import androidx.compose.material.icons.filled.Inventory2
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -203,7 +207,11 @@ fun LoansScreen(
                     }
                 }
                 if (people.isEmpty()) item {
-                    Text("Nothing lent out. Lend a card from its page (Where it is), or cards from a place.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(vertical = 16.dp))
+                    EmptyPrompt(
+                        Icons.Filled.Handshake,
+                        "Nothing lent out. Open a card or one of your places to lend from it.",
+                        actions = listOf(EmptyAction("Lend from a place", Icons.Filled.Inventory2, onLendFromPlace))
+                    )
                 }
                 items(people, key = { it.key }) { p ->
                     PersonCard(p, collections, decks, today, onBack = { gotBack(p, null) }, onSome = { some = p }, onRemind = { remind(p) })
@@ -217,7 +225,7 @@ fun LoansScreen(
                     account == null -> item { Text("Sign in to see what friends have lent you.", color = colors.textMuted) }
                     borrowedFailed -> item { Text("Couldn’t load what friends have lent you. Try again later.", color = colors.textMuted) }
                     borrowed == null -> item { Text("Loading…", color = colors.textMuted) }
-                    borrowed!!.isEmpty() -> item { Text("Nothing borrowed. When a friend lends you cards in Manabind, they show here.", color = colors.textMuted) }
+                    borrowed!!.isEmpty() -> item { EmptyPrompt(Icons.Filled.Handshake, "Nothing borrowed. When a friend lends you cards in Manabind, they show here.") }
                     else -> items(borrowed!!, key = { it.id }) { l -> BorrowedCard(l, today) }
                 }
             }

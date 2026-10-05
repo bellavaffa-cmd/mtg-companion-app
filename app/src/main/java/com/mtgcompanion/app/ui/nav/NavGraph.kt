@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.nav
 
+import com.mtgcompanion.app.data.libraryFacts
 import com.mtgcompanion.app.tester.Tester
 import com.mtgcompanion.app.tester.TesterToolsScreen
 import com.mtgcompanion.app.ui.social.OfferSparesDialog
@@ -174,6 +175,18 @@ import com.mtgcompanion.app.ui.decks.PreconsViewModel
 import com.mtgcompanion.app.ui.detail.CardDetailScreen
 import com.mtgcompanion.app.ui.detail.CardDetailViewModel
 import com.mtgcompanion.app.ui.home.HomeScreen
+import com.mtgcompanion.app.data.WelcomeFacts
+import com.mtgcompanion.app.data.WelcomeStep
+import com.mtgcompanion.app.data.isSample
+import com.mtgcompanion.app.data.shouldOpenWelcome
+import com.mtgcompanion.app.data.showGetStarted
+import com.mtgcompanion.app.ui.onboarding.GetStartedCard
+import com.mtgcompanion.app.ui.onboarding.SamplesBar
+import com.mtgcompanion.app.ui.onboarding.WelcomeScreen
+import com.mtgcompanion.app.ui.onboarding.WelcomeStore
+import com.mtgcompanion.app.ui.onboarding.WelcomeViewModel
+import com.mtgcompanion.app.ui.onboarding.rememberWelcomeFacts
+import com.mtgcompanion.app.ui.onboarding.removeAllSamples
 import com.mtgcompanion.app.ui.home.HomeViewModel
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterScreen
 import com.mtgcompanion.app.ui.lifecounter.PlayScreen
@@ -229,6 +242,9 @@ private object Routes {
     /** One of Settings' sections on a screen of its own (SettingsSection ids). */
     const val SETTINGS_SECTION = "settings/{section}"
     fun settingsSection(id: String) = "settings/$id"
+    /** The welcome flow (ui/onboarding/WelcomeScreen.kt) at a step; with paste, the deck step's paste dialog opens. */
+    const val WELCOME = "welcome?step={step}&paste={paste}"
+    fun welcome(step: WelcomeStep = WelcomeStep.COLLECTION, paste: Boolean = false) = "welcome?step=${step.key}&paste=$paste"
     /** The tester app's own tools; never reached in the real app. */
     const val TESTER = "tester"
     const val SCAN = "scan"
@@ -515,7 +531,44 @@ fun MtgNavGraph(
                         offlineCardRepository, driveImporter
                     )
                 )
+                // The welcome flow opens by itself once, on a first launch with nothing in the library;
+                // after that, the "Get started" card stands in for Home's empty widgets until there's
+                // something of the user's own (Onboarding.kt).
+                val welcomeContext = LocalContext.current
+                val welcomeStore = remember { WelcomeStore.get(welcomeContext) }
+                val welcomeState by welcomeStore.state.collectAsState()
+                val welcomeFacts = rememberWelcomeFacts(deckRepository, collectionRepository, supabaseSync, socialRepository)
+                val welcomeModel: WelcomeViewModel = viewModel(factory = WelcomeViewModel.Factory(deckRepository, collectionRepository))
+                val addingSamples by welcomeModel.addingSamples.collectAsState()
+                val samplesError by welcomeModel.samplesError.collectAsState()
+                LaunchedEffect(welcomeFacts, welcomeState) {
+                    val facts = welcomeFacts ?: return@LaunchedEffect
+                    if (shouldOpenWelcome(welcomeState, facts)) {
+                        welcomeStore.update { it.copy(opened = true) }
+                        navController.navigate(Routes.welcome()) { launchSingleTop = true }
+                    }
+                }
+                val getStarted = welcomeFacts != null && showGetStarted(welcomeFacts)
+                val onboarding: (@Composable () -> Unit)? = when {
+                    welcomeFacts == null -> null
+                    getStarted -> {
+                        {
+                            GetStartedCard(
+                                facts = welcomeFacts,
+                                addingSamples = addingSamples,
+                                samplesError = samplesError,
+                                onOpenStep = { step -> navController.navigate(Routes.welcome(step)) { launchSingleTop = true } },
+                                onAddSamples = { welcomeModel.addSamples { id -> navController.navigate(Routes.deckDetail(id)) } },
+                                onRemoveSamples = welcomeModel::removeSamples
+                            )
+                        }
+                    }
+                    welcomeFacts.samples -> { { SamplesBar(onRemove = welcomeModel::removeSamples) } }
+                    else -> null
+                }
                 HomeScreen(
+                    onboarding = onboarding,
+                    emptyHome = getStarted && welcomeFacts?.samples == false,
                     viewModel = viewModel,
                     onOpenSearch = { navController.navigateToTab(Routes.SEARCH) },
                     onOpenCollection = { navController.navigateToTab(Routes.COLLECTION) },
@@ -534,8 +587,43 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(
+                Routes.WELCOME,
+                arguments = listOf(
+                    navArgument("step") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("paste") { type = NavType.BoolType; defaultValue = false }
+                )
+            ) { entry ->
+                val welcomeContext = LocalContext.current
+                val welcomeStore = remember { WelcomeStore.get(welcomeContext) }
+                val welcomeModel: WelcomeViewModel = viewModel(factory = WelcomeViewModel.Factory(deckRepository, collectionRepository))
+                val facts = rememberWelcomeFacts(deckRepository, collectionRepository, supabaseSync, socialRepository)
+                    ?: WelcomeFacts(accountsAvailable = supabaseSync.auth.configured)
+                WelcomeScreen(
+                    startStep = WelcomeStep.fromKey(entry.arguments?.getString("step")) ?: WelcomeStep.COLLECTION,
+                    viewModel = welcomeModel,
+                    facts = facts,
+                    supabaseSync = supabaseSync,
+                    socialRepository = socialRepository,
+                    onFinish = { how ->
+                        welcomeStore.update { it.copy(finished = how, opened = true) }
+                        navController.navigateToTab(Routes.HOME)
+                    },
+                    onReachedDone = { welcomeStore.update { it.copy(finished = "done", opened = true) } },
+                    onOpenScan = { navController.navigateToTab(Routes.SCAN) },
+                    onOpenPrecons = { navController.navigate(Routes.PRECONS) { launchSingleTop = true } },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
+                    startPasting = entry.arguments?.getBoolean("paste") == true
+                )
+            }
+
             destination(Routes.VALUE_HISTORY) {
-                ValueHistoryScreen(onBack = { navController.popBackStack() })
+                val valueBinders by collectionRepository.collectionsFlow.collectAsState(initial = null)
+                ValueHistoryScreen(
+                    onBack = { navController.popBackStack() },
+                    hasCards = valueBinders?.let { libraryFacts(emptyList(), it).cards > 0 } ?: true,
+                    onBringCards = { navController.navigate(Routes.welcome(WelcomeStep.COLLECTION)) { launchSingleTop = true } }
+                )
             }
 
             destination(
@@ -826,7 +914,9 @@ fun MtgNavGraph(
                     onSignIn = { navController.navigateToTab(Routes.SETTINGS) },
                     onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) },
                     // The app's scope, so the result is saved even if the screen is left at once.
-                    onAddGameResult = { deckId, result -> addToScope.launch { deckRepository.addGameResult(deckId, result) } }
+                    onAddGameResult = { deckId, result -> addToScope.launch { deckRepository.addGameResult(deckId, result) } },
+                    onStartGame = { navController.navigate(Routes.LIFE_COUNTER) },
+                    onOpenDecks = { navController.navigateToTab(Routes.DECKS) }
                 )
             }
 
@@ -889,6 +979,7 @@ fun MtgNavGraph(
                 var openShared by remember { mutableStateOf(socialRepository.openSharedTab) }
                 CollectionsScreen(
                     viewModel = viewModel,
+                    onOpenScan = { navController.navigateToTab(Routes.SCAN) },
                     onCollectionClick = { id -> navController.navigate(Routes.collectionDetail(id)) },
                     onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
                     onShareCollection = if (supabaseSync.auth.configured) ({ sharingAll = true }) else null,
@@ -953,7 +1044,9 @@ fun MtgNavGraph(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
                     onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
-                    onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null
+                    onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null,
+                    onOpenSearch = { navController.navigateToTab(Routes.SEARCH) },
+                    onOpenScan = { navController.navigateToTab(Routes.SCAN) }
                 )
                 if (sharing) {
                     ShareDialog(
@@ -976,7 +1069,8 @@ fun MtgNavGraph(
                     viewModel = viewModel,
                     onDeckClick = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
                     onBrowsePrecons = { navController.navigate(Routes.PRECONS) },
-                    onNewDeck = { navController.navigate(Routes.NEW_DECK) { launchSingleTop = true } }
+                    onNewDeck = { navController.navigate(Routes.NEW_DECK) { launchSingleTop = true } },
+                    onPasteList = { navController.navigate(Routes.welcome(WelcomeStep.DECK, paste = true)) { launchSingleTop = true } }
                 )
             }
 
@@ -1176,7 +1270,13 @@ fun MtgNavGraph(
             }
 
             destination(Routes.SETTINGS) {
+                val settingsDecks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                val settingsBinders by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val hasSamples = settingsDecks.any { isSample(it) } || settingsBinders.any { isSample(it) }
+                val settingsScope = rememberCoroutineScope()
                 SettingsScreen(
+                    onOpenGettingStarted = { navController.navigate(Routes.welcome()) { launchSingleTop = true } },
+                    onRemoveSamples = if (hasSamples) ({ settingsScope.launch { removeAllSamples(deckRepository, collectionRepository) }; Unit }) else null,
                     supabaseSync = supabaseSync,
                     updateManager = updateManager,
                     offlineCardRepository = offlineCardRepository,
@@ -1262,7 +1362,8 @@ fun MtgNavGraph(
                     social = socialRepository,
                     onBack = { navController.popBackStack() },
                     onSignIn = signIn,
-                    onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) }
+                    onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) },
+                    onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) }
                 )
             }
 

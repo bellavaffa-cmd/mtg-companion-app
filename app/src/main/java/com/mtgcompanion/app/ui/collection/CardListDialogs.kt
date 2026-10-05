@@ -147,7 +147,7 @@ fun ImportCardsDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "Paste a list — one card per line, like \"4 Lightning Bolt\" or \"1 Sol Ring (CMR) 472 *F*\" — or choose a .txt or .csv export from Moxfield, ManaBox, Archidekt, Deckbox or TCGplayer.",
+                    "Paste a list — one card per line, like \"4 Lightning Bolt\" or \"1 Sol Ring (CMR) 472 *F*\" — or choose a .txt or .csv export from ManaBox, Moxfield, Archidekt, Deckbox, TCGplayer or Dragon Shield.",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textMuted
                 )
