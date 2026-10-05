@@ -35,6 +35,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import com.mtgcompanion.app.ui.common.LocalSyncControl
 import com.mtgcompanion.app.ui.common.SyncControl
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -466,9 +467,14 @@ fun MtgNavGraph(
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
                 PlaygroupScreen(
                     decks = decks,
+                    social = socialRepository,
                     onBack = { navController.popBackStack() },
                     // A deck opens on its Stats, where its match record is.
-                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id, "Stats")) }
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id, "Stats")) },
+                    onSignIn = { navController.navigateToTab(Routes.SETTINGS) },
+                    onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) },
+                    // The app's scope, so the result is saved even if the screen is left at once.
+                    onAddGameResult = { deckId, result -> addToScope.launch { deckRepository.addGameResult(deckId, result) } }
                 )
             }
 

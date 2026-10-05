@@ -1,6 +1,23 @@
 package com.mtgcompanion.app.ui.lifecounter
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.mtgcompanion.app.data.GameResult
+import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.ui.common.PillChip
+import com.mtgcompanion.app.ui.social.GoldButton
+import com.mtgcompanion.app.ui.social.LineButton
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,14 +69,32 @@ private fun recordLine(wins: Int, losses: Int, draws: Int) = "$wins–$losses" +
 
 /**
  * The playgroup: every deck's games together — the user's record, who they play most and how they
- * do against them, their nemesis, which decks win most, and their streaks. Mirrors the web app's
- * src/pages/PlaygroupPage.tsx.
+ * do against them, their nemesis, which decks win most, and their streaks. Above it, a switch to
+ * each pod's shared games (PodGames.kt). Mirrors the web app's src/pages/PlaygroupPage.tsx.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlaygroupScreen(decks: List<Deck>, onBack: () -> Unit, onOpenDeck: (String) -> Unit) {
+fun PlaygroupScreen(
+    decks: List<Deck>,
+    social: SocialRepository,
+    onBack: () -> Unit,
+    onOpenDeck: (String) -> Unit,
+    onSignIn: () -> Unit,
+    onOpenFriends: () -> Unit,
+    onAddGameResult: (String, GameResult) -> Unit
+) {
     val colors = LocalAppColors.current
-    val stats = remember(decks) { playgroupStats(decks) }
+    val account by social.accountFlow.collectAsState()
+    val overview by social.overview.collectAsState()
+    val socialError by social.error.collectAsState()
+    val socialLoading by social.loading.collectAsState()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(account?.userId) { if (account != null && social.overview.value == null) social.refresh() }
+    // "Just me" (null), a pod's id, or PODS while there are none to list.
+    var chosen by rememberSaveable { mutableStateOf<String?>(null) }
+    val me = if (account != null) overview?.me else null
+    val pods = if (me != null) overview?.pods.orEmpty() else emptyList()
+    val pod = pods.firstOrNull { it.id == chosen }
 
     Scaffold(
         containerColor = colors.bg,
@@ -71,87 +106,138 @@ fun PlaygroupScreen(decks: List<Deck>, onBack: () -> Unit, onOpenDeck: (String) 
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (stats.games == 0) {
-                item {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 8.dp)) {
-                        Icon(Icons.Filled.Groups, contentDescription = null, tint = colors.textDim, modifier = Modifier.size(40.dp))
-                        Text(
-                            "No games recorded yet. Log a result on a deck's Stats, or play with your phone as a remote at a life counter table — every deck's games come together here.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.textMuted,
-                            modifier = Modifier.padding(top = 10.dp)
-                        )
-                    }
-                }
-                return@LazyColumn
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp)
+            ) {
+                PillChip("Just me", selected = chosen == null, onClick = { chosen = null })
+                pods.forEach { p -> PillChip(p.name, selected = pod?.id == p.id, onClick = { chosen = p.id }) }
+                if (pods.isEmpty() && social.configured) PillChip("Pods", selected = chosen != null, onClick = { chosen = PODS })
             }
+            val current = overview
+            when {
+                pod != null && me != null && current != null ->
+                    PodView(social, current, pod, me, decks, onAddGameResult)
+                chosen == null -> JustMe(decks, onOpenDeck)
+                !social.configured -> PodsState(Icons.Filled.CloudOff, "Accounts aren't set up in this build.")
+                account == null -> PodsState(Icons.Filled.Groups, "Sign in to see your pods' games.") { GoldButton("Sign in", onSignIn) }
+                current == null -> if (socialError != null) {
+                    PodsState(Icons.Filled.CloudOff, socialError.orEmpty()) {
+                        LineButton("Try again", { scope.launch { social.refresh() } }, enabled = !socialLoading)
+                    }
+                } else {
+                    Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = colors.accent) }
+                }
+                me == null -> PodsState(Icons.Filled.Groups, "Make your profile on Friends first — then your pods' games show here.") { GoldButton("Make your profile", onOpenFriends) }
+                else -> PodsState(
+                    Icons.Filled.Groups,
+                    (if (chosen == PODS) "You're not in a pod yet." else "You're not in that pod any more.") +
+                        " A pod is a group of friends — make one on Friends, and everyone in it can record games here."
+                ) { LineButton("Friends", onOpenFriends) }
+            }
+        }
+    }
+}
+
+/** The switcher's entry for pods while there are none to list (signed out, loading, no pods). */
+private const val PODS = "pods"
+
+@Composable
+private fun PodsState(icon: ImageVector, text: String, action: (@Composable () -> Unit)? = null) {
+    val colors = LocalAppColors.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 24.dp)) {
+        Icon(icon, contentDescription = null, tint = colors.textDim, modifier = Modifier.size(40.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(top = 10.dp, bottom = 12.dp))
+        action?.invoke()
+    }
+}
+
+/** The user's own view: every one of their decks' games together. */
+@Composable
+private fun JustMe(decks: List<Deck>, onOpenDeck: (String) -> Unit) {
+    val colors = LocalAppColors.current
+    val stats = remember(decks) { playgroupStats(decks) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (stats.games == 0) {
+            item {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 8.dp)) {
+                    Icon(Icons.Filled.Groups, contentDescription = null, tint = colors.textDim, modifier = Modifier.size(40.dp))
+                    Text(
+                        "No games recorded yet. Log a result on a deck's Stats, or play with your phone as a remote at a life counter table — every deck's games come together here.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textMuted,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                }
+            }
+            return@LazyColumn
+        }
+        item {
+            Panel {
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(recordLine(stats.wins, stats.losses, stats.draws), style = NumberStyle(40), color = colors.textPrimary)
+                    Text(
+                        "${stats.winRate}% win rate over ${plural(stats.games, "game")}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.accentLight,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
+                val streaks = listOfNotNull(
+                    stats.streak?.let { (result, count) -> "$count ${when (result) { "WIN" -> "wins"; "LOSS" -> "losses"; else -> "draws" }} in a row now" },
+                    stats.longestWinStreak.takeIf { it > 1 }?.let { "Longest win streak $it" }
+                )
+                Text(
+                    streaks.joinToString(" · ").ifEmpty { "Across ${plural(decks.count { it.gameResults.isNotEmpty() }, "deck")}" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                val length = listOfNotNull(stats.averageMinutes?.let { "$it min" }, stats.averageTurns?.let { "$it turns" })
+                if (length.isNotEmpty()) {
+                    Text("A game takes about ${length.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        }
+        if (stats.nemesis != null || stats.nemesisCommander != null) {
             item {
                 Panel {
-                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(recordLine(stats.wins, stats.losses, stats.draws), style = NumberStyle(40), color = colors.textPrimary)
-                        Text(
-                            "${stats.winRate}% win rate over ${plural(stats.games, "game")}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.accentLight,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-                    }
-                    val streaks = listOfNotNull(
-                        stats.streak?.let { (result, count) -> "$count ${when (result) { "WIN" -> "wins"; "LOSS" -> "losses"; else -> "draws" }} in a row now" },
-                        stats.longestWinStreak.takeIf { it > 1 }?.let { "Longest win streak $it" }
-                    )
+                    PanelTitle("Nemesis")
+                    stats.nemesis?.let { NemesisRow("Player", it) }
+                    stats.nemesisCommander?.let { NemesisRow("Commander", it) }
                     Text(
-                        streaks.joinToString(" · ").ifEmpty { "Across ${plural(decks.count { it.gameResults.isNotEmpty() }, "deck")}" },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textMuted,
-                        modifier = Modifier.padding(top = 8.dp)
+                        "Who you do worst against, out of those you've played $PLAYGROUP_MIN_GAMES or more times.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.textDim,
+                        modifier = Modifier.padding(top = 6.dp)
                     )
-                    val length = listOfNotNull(stats.averageMinutes?.let { "$it min" }, stats.averageTurns?.let { "$it turns" })
-                    if (length.isNotEmpty()) {
-                        Text("A game takes about ${length.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(top = 4.dp))
-                    }
                 }
             }
-            if (stats.nemesis != null || stats.nemesisCommander != null) {
-                item {
-                    Panel {
-                        PanelTitle("Nemesis")
-                        stats.nemesis?.let { NemesisRow("Player", it) }
-                        stats.nemesisCommander?.let { NemesisRow("Commander", it) }
-                        Text(
-                            "Who you do worst against, out of those you've played $PLAYGROUP_MIN_GAMES or more times.",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.textDim,
-                            modifier = Modifier.padding(top = 6.dp)
-                        )
-                    }
-                }
-            }
-            if (stats.ranked.isNotEmpty() || stats.unranked.isNotEmpty()) {
-                item {
-                    Panel {
-                        PanelTitle("Decks")
-                        stats.ranked.forEachIndexed { i, r -> DeckRow(i + 1, r) { onOpenDeck(r.deckId) } }
-                        if (stats.unranked.isNotEmpty()) {
-                            Text(
-                                "Fewer than $PLAYGROUP_MIN_GAMES games",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.textMuted,
-                                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                            )
-                            stats.unranked.forEach { r -> DeckRow(null, r) { onOpenDeck(r.deckId) } }
-                        }
-                    }
-                }
-            }
-            if (stats.opponents.isNotEmpty()) item { MatchupPanel("Against", stats.opponents) }
-            if (stats.commanders.isNotEmpty()) item { MatchupPanel("Commanders faced", stats.commanders) }
         }
+        if (stats.ranked.isNotEmpty() || stats.unranked.isNotEmpty()) {
+            item {
+                Panel {
+                    PanelTitle("Decks")
+                    stats.ranked.forEachIndexed { i, r -> DeckRow(i + 1, r) { onOpenDeck(r.deckId) } }
+                    if (stats.unranked.isNotEmpty()) {
+                        Text(
+                            "Fewer than $PLAYGROUP_MIN_GAMES games",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textMuted,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                        )
+                        stats.unranked.forEach { r -> DeckRow(null, r) { onOpenDeck(r.deckId) } }
+                    }
+                }
+            }
+        }
+        if (stats.opponents.isNotEmpty()) item { MatchupPanel("Against", stats.opponents) }
+        if (stats.commanders.isNotEmpty()) item { MatchupPanel("Commanders faced", stats.commanders) }
     }
 }
 
