@@ -8,6 +8,10 @@ import com.mtgcompanion.app.ui.collection.TagBinderScreen
 import com.mtgcompanion.app.ui.collection.ValueHistoryScreen
 import com.mtgcompanion.app.ui.collection.SpreadThinScreen
 import com.mtgcompanion.app.ui.collection.PlaceScreen
+import com.mtgcompanion.app.ui.collection.PlaceLabelScreen
+import com.mtgcompanion.app.ui.decks.PullListScreen
+import com.mtgcompanion.app.ui.decks.PutBackScreen
+import com.mtgcompanion.app.ui.scan.TickList
 import com.mtgcompanion.app.ui.lifecounter.PlaygroupScreen
 import com.mtgcompanion.app.ui.collection.TagBinderViewModel
 import com.mtgcompanion.app.ui.collection.SetCardsScreen
@@ -261,6 +265,19 @@ private object Routes {
     /** The scanner putting cards away into a storage place. */
     const val PUT_AWAY = "put_away/{placeId}"
     fun putAway(placeId: String) = "put_away/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
+    /** A storage place's label to print (and "All labels" from there). */
+    const val PLACE_LABEL = "place_label/{placeId}"
+    fun placeLabel(placeId: String) = "place_label/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
+    /** A deck's pull list — [place]: only what's in that place ("Pull from here" on its label). */
+    const val PULL_LIST = "pull_list/{deckId}?place={place}"
+    fun pullList(deckId: String, place: String? = null) =
+        "pull_list/$deckId" + (place?.let { "?place=" + URLEncoder.encode(it, StandardCharsets.UTF_8.name()) } ?: "")
+    /** A deck's put-back list: taking it apart. */
+    const val PUT_BACK = "put_back/{deckId}"
+    fun putBack(deckId: String) = "put_back/$deckId"
+    /** The scanner ticking a deck's pull list ([kind] "pull") or put-back list ("put_back"). */
+    const val SCAN_TICK = "scan_tick/{deckId}/{kind}"
+    fun scanTick(deckId: String, pull: Boolean) = "scan_tick/$deckId/" + if (pull) "pull" else "put_back"
     /** A tag's automatic binder: every owned card with that tag. */
     const val TAG_BINDER = "tag_binder/{tagId}"
     fun tagBinder(tagId: String) = "tag_binder/$tagId"
@@ -493,7 +510,81 @@ fun MtgNavGraph(
                     onPutAway = { id -> navController.navigate(Routes.putAway(id)) },
                     onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
                     // The app's scope, so the change is saved even if the screen is left at once.
-                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } }
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onLabel = { id -> navController.navigate(Routes.placeLabel(id)) }
+                )
+            }
+
+            destination(Routes.PLACE_LABEL, arguments = listOf(navArgument("placeId") { type = NavType.StringType })) { entry ->
+                val placeId = entry.arguments?.getString("placeId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                PlaceLabelScreen(placeId = placeId, collections = collections, decks = decks, onBack = { navController.popBackStack() })
+            }
+
+            destination(
+                Routes.PULL_LIST,
+                arguments = listOf(
+                    navArgument("deckId") { type = NavType.StringType },
+                    navArgument("place") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { entry ->
+                val deckId = entry.arguments?.getString("deckId").orEmpty()
+                val place = entry.arguments?.getString("place")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                PullListScreen(
+                    deckId = deckId,
+                    collections = collections,
+                    decks = decks,
+                    placeFilter = place,
+                    onBack = { navController.popBackStack() },
+                    onScan = { id -> navController.navigate(Routes.scanTick(id, pull = true)) },
+                    // Both stores are written, so a card is never in two places at once (as swapInProxy does).
+                    onApply = { cols, ds -> addToScope.launch { collectionRepository.applySync { cols }; deckRepository.change { ds } } }
+                )
+            }
+
+            destination(Routes.PUT_BACK, arguments = listOf(navArgument("deckId") { type = NavType.StringType })) { entry ->
+                val deckId = entry.arguments?.getString("deckId").orEmpty()
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                PutBackScreen(
+                    deckId = deckId,
+                    collections = collections,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onScan = { id -> navController.navigate(Routes.scanTick(id, pull = false)) },
+                    onApply = { cols, ds -> addToScope.launch { collectionRepository.applySync { cols }; deckRepository.change { ds } } }
+                )
+            }
+
+            destination(
+                Routes.SCAN_TICK,
+                arguments = listOf(navArgument("deckId") { type = NavType.StringType }, navArgument("kind") { type = NavType.StringType })
+            ) { entry ->
+                val deckId = entry.arguments?.getString("deckId").orEmpty()
+                val pull = entry.arguments?.getString("kind") != "put_back"
+                val viewModel: ScanViewModel = viewModel(
+                    key = "scan-tick",
+                    factory = ScanViewModel.Factory(
+                        LocalContext.current.applicationContext,
+                        collectionRepository,
+                        deckRepository,
+                        cardIndexRepository,
+                        settingsRepository,
+                        tickList = TickList(deckId, pull)
+                    )
+                )
+                ScanScreen(
+                    viewModel = viewModel,
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) }
                 )
             }
 
@@ -516,7 +607,9 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() },
                     onCardClick = { name -> navController.navigate(Routes.detail(name)) },
                     onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
-                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) }
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) }
                 )
             }
 
@@ -744,6 +837,8 @@ fun MtgNavGraph(
                     onWhoHasIt = if (supabaseSync.auth.configured) ({ names -> whoHas = names }) else null,
                     onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
                     onOpenBadge = { navController.navigate(Routes.tokenBadge(deckId)) },
+                    onPullList = { navController.navigate(Routes.pullList(deckId)) },
+                    onTakeApart = { navController.navigate(Routes.putBack(deckId)) },
                     initialTab = initialTab
                 )
                 whoHas?.let { names ->
@@ -783,7 +878,9 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() },
                     onCardClick = { name -> navController.navigate(Routes.detail(name)) },
                     onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
-                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) }
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) }
                 )
             }
 

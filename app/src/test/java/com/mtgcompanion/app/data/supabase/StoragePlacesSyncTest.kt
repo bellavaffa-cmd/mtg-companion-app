@@ -1,7 +1,9 @@
 package com.mtgcompanion.app.data.supabase
 
 import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.CameFrom
 import com.mtgcompanion.app.data.CollectionEntry
+import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.CopyPlace
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.PlaceKind
@@ -60,5 +62,22 @@ class StoragePlacesSyncTest {
             listOf(CopyPlace("red", 1, section = "Red"), CopyPlace("red", 1)),
             result.collectionChanges[UNSORTED_COLLECTION_ID]!!.entries[0].places
         )
+    }
+
+    @Test
+    fun `an older app's save of a deck doesn't lose where its cards came from`() {
+        val deckAdapter = localMoshi.adapter(Deck::class.java)
+        val deckKey = "deck:d1"
+        val mine = Deck("d1", "Krenko", cards = listOf(DeckCardEntry("a", "Sol Ring", null)), createdAt = 1, cameFrom = listOf(CameFrom("Sol Ring", "red", 1)))
+        val mineJson = deckAdapter.toJson(mine)
+        // An older app read it without "cameFrom", renamed it and saved.
+        val older = mine.copy(name = "Krenko goblins", cameFrom = null)
+        val row = RemoteRow("deck", "d1", deckAdapter.toJson(older), 200L, false, "2026-09-18T000000000002")
+        val state = CloudSyncState(items = mapOf(deckKey to ItemMeta(mineJson.hashCode(), 100L, base = mineJson, baseMs = 100L)), userId = "u", cursor = "2026-09-18T000000000001")
+        val result = core.pull(state, core.localJson(listOf(mine), emptyList()), listOf(row), emptyList(), 300L)
+        val healed = result.deckChanges["d1"]!!
+        assertEquals("Krenko goblins", healed.name)
+        assertEquals(listOf(CameFrom("Sol Ring", "red", 1)), healed.cameFrom)
+        assertTrue(deckKey in result.state.pending)
     }
 }

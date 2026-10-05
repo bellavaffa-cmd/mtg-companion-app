@@ -71,6 +71,15 @@ class DeckRepository(private val context: Context) {
         update { swap.decks }
     }
 
+    /**
+     * Writes decks changed together with the binders — a deck built from storage or taken apart
+     * (PullList.kt): [transform] gets the decks as they are and answers them changed. A user's edit,
+     * so a deck whose list changed gets a version.
+     */
+    suspend fun change(transform: (List<Deck>) -> List<Deck>) {
+        update(transform = transform)
+    }
+
     suspend fun setOwnership(deckId: String, ownership: DeckOwnership) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(ownership = ownership.name) else it } }
     }

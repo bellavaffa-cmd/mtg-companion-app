@@ -59,6 +59,15 @@ import com.mtgcompanion.app.data.pocketLabel
 import com.mtgcompanion.app.data.suggestSpot
 import com.mtgcompanion.app.data.undoPutAway
 import com.mtgcompanion.app.data.putAway as putAwayInto
+import com.mtgcompanion.app.data.PullProgress
+import com.mtgcompanion.app.data.PullSource
+import com.mtgcompanion.app.data.placeIdFromLabel
+import com.mtgcompanion.app.data.pullList
+import com.mtgcompanion.app.data.pullRowToTick
+import com.mtgcompanion.app.data.pulledCopies
+import com.mtgcompanion.app.data.putBackList
+import com.mtgcompanion.app.data.putBackRowToTick
+import com.mtgcompanion.app.data.sameCardName
 import android.graphics.Bitmap
 import android.media.MediaActionSound
 import androidx.lifecycle.ViewModel
@@ -157,6 +166,9 @@ private class PendingScan(
     val captureId: Int
 )
 
+/** The list scan-to-tick mode ticks: [deckId]'s pull list, or (when not [pull]) its put-back list. */
+data class TickList(val deckId: String, val pull: Boolean)
+
 /** One card put away this session (put-away mode): what happened to it, and how to take it back. */
 data class PutAwayRow(
     val id: Long,
@@ -190,7 +202,9 @@ class ScanViewModel(
     private val cardIndexRepository: CardIndexRepository,
     private val settingsRepository: SettingsRepository,
     /** Put-away mode: each card scanned is put away into this storage place at once (see StoragePlaces.kt). */
-    putAwayPlaceId: String? = null
+    putAwayPlaceId: String? = null,
+    /** Scan-to-tick mode: each card scanned ticks its row on this deck's pull list or put-back list (PullList.kt). */
+    tickList: TickList? = null
 ) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -910,6 +924,81 @@ class ScanViewModel(
 
     fun setPutAwayTarget(placeId: String) {
         _putAwayTarget.value = placeId
+        // Putting away is what the scanner does now, not ticking a list.
+        _tickList.value = null
+    }
+
+    // ---- Scan-to-tick mode ----
+
+    private val pullProgress = PullProgress(appContext)
+    private val _tickList = MutableStateFlow(tickList)
+    /** The list a scanned card ticks, or null when scanning does something else. */
+    val tickList: StateFlow<TickList?> = _tickList.asStateFlow()
+    private val _tickCount = MutableStateFlow<Pair<Int, Int>?>(null)
+    /** Copies ticked of the list's, once one has been ticked here. */
+    val tickCount: StateFlow<Pair<Int, Int>?> = _tickCount.asStateFlow()
+
+    /** Ticks [card]'s row on the list: the first not ticked yet, as the list's own Scan to tick does. */
+    private fun tickCard(card: ScryfallCard, list: TickList): Long {
+        val id = nextScanId++
+        val deck = decks.value.firstOrNull { it.id == list.deckId }
+        if (deck == null) {
+            _uiState.update { it.copy(status = "That deck isn't here any more") }
+            return id
+        }
+        val status: String
+        if (list.pull) {
+            val rows = pullList(deck, collections.value, decks.value).groups.flatMap { it.rows }
+            val ticked = pullProgress.ticked(PullProgress.ListKind.PULL, deck.id)
+            val row = pullRowToTick(rows, ticked, card.name)
+            status = when {
+                row == null -> if (rows.any { sameCardName(it.name, card.name) }) "${card.name} — already ticked" else "${card.name} isn't on the list"
+                row.source is PullSource.InDeck -> "${card.name} is only in another deck — tick it on the list to take it"
+                else -> {
+                    val now = pullProgress.tick(PullProgress.ListKind.PULL, deck.id, row.key)
+                    _tickCount.value = pulledCopies(rows, now) to rows.filter { it.source != PullSource.Missing }.sumOf { it.qty }
+                    "${card.name} — ticked (${row.where})"
+                }
+            }
+        } else {
+            val rows = putBackList(deck, collections.value, pullProgress.putBackMode(deck.id)).groups.flatMap { it.rows }
+            val ticked = pullProgress.ticked(PullProgress.ListKind.PUT_BACK, deck.id)
+            val row = putBackRowToTick(rows, ticked, card.name)
+            status = if (row == null) {
+                if (rows.any { sameCardName(it.name, card.name) }) "${card.name} — already ticked" else "${card.name} isn't on the list"
+            } else {
+                val now = pullProgress.tick(PullProgress.ListKind.PUT_BACK, deck.id, row.key)
+                _tickCount.value = rows.filter { it.key in now }.sumOf { it.qty } to rows.sumOf { it.qty }
+                "${card.name} — ticked"
+            }
+        }
+        _uiState.update { it.copy(status = status, successToken = it.successToken + 1) }
+        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        return id
+    }
+
+    // ---- Box labels ----
+
+    private val _labelPlace = MutableStateFlow<String?>(null)
+    /** The place whose scanned label is showing its sheet; cards wait while it's up. */
+    val labelPlace: StateFlow<String?> = _labelPlace.asStateFlow()
+    private var labelClosedAt = 0L
+
+    /**
+     * A QR code the camera read: a box label (PlaceLabel.kt) shows its place's sheet, unless one is up
+     * or was just closed (the label's still in view). A code that's only a place's id, as the first
+     * labels held, counts only when it's one of the user's places. Answers whether it was a label.
+     */
+    fun onLabel(text: String): Boolean {
+        val scan = placeIdFromLabel(text) ?: return false
+        if (scan.bare && placesOf(collections.value).none { it.id == scan.id }) return false
+        if (_labelPlace.value == null && System.currentTimeMillis() - labelClosedAt > 3_000) _labelPlace.value = scan.id
+        return true
+    }
+
+    fun closeLabel() {
+        _labelPlace.value = null
+        labelClosedAt = System.currentTimeMillis()
     }
 
     /** A scanned card as a new binder entry, with no copies yet — as the scanner's Add to… makes it. */
@@ -964,6 +1053,9 @@ class ScanViewModel(
 
     /** Every scan is its own row, newest first, so a card read twice shows twice. */
     private fun addScannedCard(card: ScryfallCard, exact: Boolean = false): Long {
+        // While a box label's sheet is up, cards wait.
+        if (_labelPlace.value != null) return nextScanId++
+        _tickList.value?.let { return tickCard(card, it) }
         _putAwayTarget.value?.let { return putAwayCard(card, it) }
         val row = ScanRow(nextScanId++, card, System.currentTimeMillis(), exact)
         val rows = listOf(row) + _uiState.value.scannedCards
@@ -1212,7 +1304,8 @@ class ScanViewModel(
         private val deckRepository: DeckRepository,
         private val cardIndexRepository: CardIndexRepository,
         private val settingsRepository: SettingsRepository,
-        private val putAwayPlaceId: String? = null
+        private val putAwayPlaceId: String? = null,
+        private val tickList: TickList? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1223,7 +1316,8 @@ class ScanViewModel(
                 deckRepository = deckRepository,
                 cardIndexRepository = cardIndexRepository,
                 settingsRepository = settingsRepository,
-                putAwayPlaceId = putAwayPlaceId
+                putAwayPlaceId = putAwayPlaceId,
+                tickList = tickList
             ) as T
         }
     }

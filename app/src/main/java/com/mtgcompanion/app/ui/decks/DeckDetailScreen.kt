@@ -10,6 +10,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.lazy.LazyRow
 import com.mtgcompanion.app.data.madeByLabel
 import com.mtgcompanion.app.data.holdsOwnCopies
+import com.mtgcompanion.app.data.holdsCards
+import com.mtgcompanion.app.data.pullNeeds
+import com.mtgcompanion.app.data.proxyCopies
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Unarchive
 import com.mtgcompanion.app.data.realCopiesOf
 import com.mtgcompanion.app.data.ProxyHeldElsewhere
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -247,6 +252,10 @@ fun DeckDetailScreen(
     onOpenDeck: ((String) -> Unit)? = null,
     /** Puts one of this deck's tokens onto an NFC e-paper badge. */
     onOpenBadge: (() -> Unit)? = null,
+    /** The deck's pull list: building it from storage (PullListScreen). */
+    onPullList: (() -> Unit)? = null,
+    /** The deck's put-back list: taking it apart (PutBackScreen). */
+    onTakeApart: (() -> Unit)? = null,
     /** The tab to open on ("Suggestions" for a deck just made with its commander); null for Cards. */
     initialTab: String? = null
 ) {
@@ -351,6 +360,14 @@ fun DeckDetailScreen(
                             if (onShare != null) add(CardMenuAction("Share with friends", Icons.Filled.Group, description = "View only — friends, pods or a link") { onShare() })
                             add(CardMenuAction("Playtest", Icons.Filled.Casino, description = "Mulligan, play or draw, then turns") { showGoldfish = true })
                             add(CardMenuAction("Compare with…", Icons.Filled.Layers, description = "Another deck or a saved version") { comparePicking = true })
+                            // Building it from storage, and taking it apart again (PullList.kt).
+                            if (onPullList != null) {
+                                if (!d.holdsCards) add(CardMenuAction("Build this deck", Icons.Filled.Inventory2, description = "A pull list: its cards, place by place") { onPullList() })
+                                else if (pullNeeds(d).isNotEmpty()) add(CardMenuAction("Pull list", Icons.Filled.Inventory2, description = "Fetch the cards it still needs from storage") { onPullList() })
+                            }
+                            if (onTakeApart != null && d.holdsCards && d.cards.any { it.quantity - proxyCopies(d, it) > 0 }) {
+                                add(CardMenuAction("Take apart", Icons.Filled.Unarchive, description = "A list to put its cards back where they go") { onTakeApart() })
+                            }
                             add(CardMenuAction("Cards I don't own", Icons.Filled.Sell, description = "Buy them, wishlist them, or ask friends") { showMissing = true })
                             if (d.mode.limited) {
                                 add(CardMenuAction("Add basic lands", Icons.Filled.Landscape, description = "17 for 40 cards, by the colours you play") { addingBasics = true })

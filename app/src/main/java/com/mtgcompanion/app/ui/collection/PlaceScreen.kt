@@ -75,7 +75,6 @@ import com.mtgcompanion.app.ui.common.ArtImage
 import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.StatFigure
 import com.mtgcompanion.app.ui.common.rememberMoney
-import com.mtgcompanion.app.ui.social.QrCode
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.theme.NumberStyle
 import kotlin.math.ceil
@@ -84,7 +83,7 @@ import kotlin.math.sqrt
 /**
  * One storage place, the web app's PlacePage (src/pages/PlacePage.tsx): its copies, their value and
  * its sections — a box's sections with their cards, a binder's pages of pockets — the places inside
- * it, "Put cards away" into it with the scanner, and a label to stick on it.
+ * it, "Put cards away" into it with the scanner, and a label to stick on it (PlaceLabelScreen).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,7 +95,9 @@ fun PlaceScreen(
     onOpenPlace: (String) -> Unit,
     onPutAway: (String) -> Unit,
     onOpenCard: (String) -> Unit,
-    onChange: (StorageChange) -> Unit
+    onChange: (StorageChange) -> Unit,
+    /** The place's label to print (PlaceLabelScreen). */
+    onLabel: (String) -> Unit
 ) {
     val colors = LocalAppColors.current
     val money = rememberMoney()
@@ -120,7 +121,6 @@ fun PlaceScreen(
     var editing by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
-    var label by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = colors.bg,
@@ -205,7 +205,7 @@ fun PlaceScreen(
                         Text("Put cards away", fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(start = 8.dp))
                     }
                     Button(
-                        onClick = { label = true },
+                        onClick = { onLabel(place.id) },
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
                         modifier = Modifier.height(48.dp)
@@ -324,25 +324,6 @@ fun PlaceScreen(
                 TextButton(onClick = { deleting = false; onChange { deletePlace(it, place.id) }; onBack() }) { Text("Delete place", color = colors.error) }
             },
             dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel", color = colors.textMuted) } }
-        )
-    }
-    if (place != null && label) {
-        AlertDialog(
-            onDismissRequest = { label = false },
-            containerColor = colors.surface,
-            title = { Text("Label for ${place.name}", color = colors.accentLight) },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    QrCode(text = place.id, size = 200.dp, label = "QR code for ${place.name}")
-                    Text(place.name, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
-                    Text(
-                        "Print it and stick it on. The code is the place's own, so it stays right if you rename it.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textMuted
-                    )
-                }
-            },
-            confirmButton = { TextButton(onClick = { label = false }) { Text("Done", color = colors.accent) } }
         )
     }
 }

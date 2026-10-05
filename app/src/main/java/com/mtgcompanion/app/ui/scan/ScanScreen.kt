@@ -39,6 +39,8 @@ import com.mtgcompanion.app.data.copyNumber
 import com.mtgcompanion.app.data.ScanRow
 import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.ui.collection.PlacePickerDialog
+import com.mtgcompanion.app.ui.collection.PlaceLabelPanel
+import com.mtgcompanion.app.data.placeIdFromLabel
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -166,7 +168,11 @@ fun ScanScreen(
     onBack: () -> Unit,
     onCardClick: (String) -> Unit = {},
     onOpenSharedLink: (String) -> Unit = {},
-    onOpenRemote: ((matchId: String, seat: Int) -> Unit)? = null
+    onOpenRemote: ((matchId: String, seat: Int) -> Unit)? = null,
+    /** A scanned box label's "Open box". */
+    onOpenPlace: (String) -> Unit = {},
+    /** A scanned box label's "Pull from here": the open pull list, only what's in that place. */
+    onPullFrom: (deckId: String, placeId: String) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -178,6 +184,12 @@ fun ScanScreen(
     val session by viewModel.session.collectAsState()
     val putAwayPlace = putAwayTarget?.let { id -> placesOf(collections).firstOrNull { it.id == id } }
     var choosingPlace by remember { mutableStateOf(false) }
+    // Scan-to-tick mode: each card ticks its row on a deck's pull or put-back list (PullList.kt).
+    val tickList by viewModel.tickList.collectAsState()
+    val tickCount by viewModel.tickCount.collectAsState()
+    val tickDeck = tickList?.let { t -> decks.firstOrNull { it.id == t.deckId } }
+    // A box label the camera read: its sheet (PlaceLabelPanel).
+    val labelPlace by viewModel.labelPlace.collectAsState()
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -208,9 +220,9 @@ fun ScanScreen(
     // Cards scanned but not put away yet: leaving would throw them away, so it asks first.
     var confirmLeave by remember { mutableStateOf(false) }
     val leave = {
-        if (putAwayTarget != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
+        if (putAwayTarget != null || tickList != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
     }
-    BackHandler(enabled = putAwayTarget == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
+    BackHandler(enabled = putAwayTarget == null && tickList == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
     var showManualAdd by remember { mutableStateOf(false) }
 
     // Bound once the camera provider resolves, so the torch button has something to control.
@@ -332,7 +344,7 @@ fun ScanScreen(
                                 val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                                 // While a code's panel is up, cards wait.
                                 val readCard = {
-                                    if (links.showing) imageProxy.close()
+                                    if (links.showing || viewModel.labelPlace.value != null) imageProxy.close()
                                     else viewModel.onFrame(
                                         inputImage,
                                         // Only taken when the small print needs a second, closer look.
@@ -345,6 +357,10 @@ fun ScanScreen(
                                         val text = if (task.isSuccessful) task.result.firstNotNullOfOrNull { it.rawValue } else null
                                         if (text != null && AppLink.parse(text) != null) {
                                             ContextCompat.getMainExecutor(ctx).execute { links.handle(text, ignoreOthers = true) }
+                                            imageProxy.close()
+                                        } else if (text != null && placeIdFromLabel(text) != null) {
+                                            // A box label: its place's sheet (PlaceLabel.kt).
+                                            ContextCompat.getMainExecutor(ctx).execute { viewModel.onLabel(text) }
                                             imageProxy.close()
                                         } else {
                                             readCard()
@@ -446,6 +462,12 @@ fun ScanScreen(
                 ScrimIconButton(onClick = leave, icon = Icons.AutoMirrored.Filled.ArrowBack, desc = "Back")
                 if (putAwayPlace != null) {
                     PutAwayTarget(putAwayPlace.name, onClick = { choosingPlace = true }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                } else if (tickList != null) {
+                    TickTarget(
+                        (if (tickList?.pull == true) "Ticking off: pull list for " else "Ticking off: put back list for ") + (tickDeck?.name ?: "a deck") +
+                            (tickCount?.let { " · ${it.first} of ${it.second}" } ?: ""),
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                    )
                 } else {
                     Box(modifier = Modifier.weight(1f))
                 }
@@ -552,7 +574,7 @@ fun ScanScreen(
         }
 
         // Bottom overlay: view-list button.
-        if (putAwayTarget == null) Button(
+        if (putAwayTarget == null && tickList == null) Button(
             onClick = { showList = true },
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
@@ -564,6 +586,20 @@ fun ScanScreen(
                 "View list (${state.scannedCards.size})",
                 style = MaterialTheme.typography.labelLarge,
                 color = Bg
+            )
+        }
+
+        // A box label the camera just read: put cards away here, open the box, or pull from it.
+        labelPlace?.let { id ->
+            PlaceLabelPanel(
+                placeId = id,
+                collections = collections,
+                decks = decks,
+                onPutAway = { place -> viewModel.closeLabel(); viewModel.setPutAwayTarget(place) },
+                onOpen = { place -> viewModel.closeLabel(); onOpenPlace(place) },
+                onPull = { deckId, place -> viewModel.closeLabel(); onPullFrom(deckId, place) },
+                onDismiss = viewModel::closeLabel,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
             )
         }
 

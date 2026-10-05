@@ -62,6 +62,29 @@ fun PutAwayTarget(name: String, onClick: () -> Unit, modifier: Modifier = Modifi
     }
 }
 
+/** Scan-to-tick mode's banner: which list the cards tick, and how far it's got. */
+@Composable
+fun TickTarget(text: String, modifier: Modifier = Modifier) {
+    val colors = LocalAppColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(colors.accent)
+            .padding(horizontal = 14.dp)
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = colors.onAccent,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
 private val Moved = Color(0xFF5BCB8F)
 
 /** The card just put away, and the session so far. */
