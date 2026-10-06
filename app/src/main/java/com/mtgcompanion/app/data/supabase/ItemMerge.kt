@@ -11,6 +11,7 @@ import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepAlertOptionsFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
+import com.mtgcompanion.app.data.keepGearFromOlderApp
 import com.mtgcompanion.app.data.keepLoansFromOlderApp
 import com.mtgcompanion.app.data.keepPlaceSizes
 import com.mtgcompanion.app.data.keepDeckExtrasFromOlderApp
@@ -18,6 +19,7 @@ import com.mtgcompanion.app.data.withMergedExtras
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
 import com.mtgcompanion.app.data.mergeCameFrom
 import com.mtgcompanion.app.data.mergeCopyPlaces
+import com.mtgcompanion.app.data.mergeGear
 import com.mtgcompanion.app.data.mergeLoans
 import com.mtgcompanion.app.data.mergePlaceLists
 import com.mtgcompanion.app.data.tidied
@@ -44,6 +46,8 @@ import com.mtgcompanion.app.data.tidied
  *    about them leaves them as they were.
  *  - Where a deck's copies came from (its "cameFrom", see PullList.kt) merges card by card the same
  *    way; a deck saved by an app that doesn't know about it leaves it as it was.
+ *  - The gear (on the Unsorted pile, see Gear.kt) merges item by item, the decks a pack of sleeves is
+ *    on like a deck's tags; a pile saved by an app that doesn't know about gear leaves it as it was.
  *  - The loans (on the Unsorted pile, see Loans.kt) merge loan by loan, their cards card by card, and
  *    the copies back only go up; a pile saved by an app that doesn't know about loans leaves them as
  *    they were.
@@ -210,14 +214,16 @@ object ItemMerge {
         mergeCollectionsKnowingPlaces(
             base,
             // ...and one that doesn't know about a wishlist target's options left those as they were.
-            keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine))))),
-            keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs))))),
+            // ...and one that doesn't know about gear left it as it was.
+            keepGearFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine)))))),
+            keepGearFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs)))))),
             minePreferred
         )
 
     private fun mergeCollectionsKnowingPlaces(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection = theirs.copy(
         storagePlaces = mergePlaceLists(base.storagePlaces, mine.storagePlaces, theirs.storagePlaces, minePreferred),
         loans = mergeLoans(base.loans, mine.loans, theirs.loans, minePreferred),
+        gear = mergeGear(base.gear, mine.gear, theirs.gear, minePreferred),
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         type = pick(base.type, mine.type, theirs.type, minePreferred),
         createdAt = minOf(mine.createdAt, theirs.createdAt),

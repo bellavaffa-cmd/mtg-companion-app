@@ -1961,6 +1961,7 @@ private fun StatsTab(
     val proxies by viewModel.proxies.collectAsState()
     val proxiesElsewhere by viewModel.proxiesElsewhere.collectAsState()
     val tokens by viewModel.tokens.collectAsState()
+    val gearNeeds by viewModel.gearNeeds.collectAsState()
     // Every panel folds away; which are open is remembered across decks (StatsPanels).
     val panelState by viewModel.statsPanels.collectAsState()
     val isOpen: (String) -> Boolean = { id -> StatsPanels.isOpen(id, panelState) }
@@ -2019,6 +2020,14 @@ private fun StatsTab(
             item(key = "tokens") {
                 CollapsibleStat("Tokens to bring", isOpen("tokens"), { toggle("tokens") }, summary = if (tokens.size == 1) "1 kind" else "${tokens.size} kinds") {
                     TokensPanel(tokens, onOpenBadge, onTokenClick = { badgeToken = it })
+                }
+            }
+        }
+        gearNeeds?.let { line ->
+            item(key = "gear_needs") {
+                Panel {
+                    SectionLabel("This deck needs")
+                    Text(line, style = MaterialTheme.typography.bodyMedium, color = TextMuted, modifier = Modifier.padding(top = 6.dp))
                 }
             }
         }

@@ -238,12 +238,47 @@ data class Collection(
      * no "loans" key was saved by an app that doesn't know about loans.
      */
     val loans: List<Loan>? = null,
+    /**
+     * The Unsorted pile only: the user's gear — sleeves, deck boxes, tokens, dice, playmats (see
+     * Gear.kt). Rides along with the pile like [loans] and merges item by item. Null (left out) until
+     * the first item; then kept, as an empty list once none are left.
+     */
+    val gear: List<GearItem>? = null,
     /** A sample binder from the welcome flow — see Deck.sample. Null (left out) on everything else. */
     val sample: Boolean? = null
 ) {
     val kind: CollectionType get() = CollectionType.fromName(type)
     /** The pile of cards not in a binder yet (see [UNSORTED_COLLECTION_ID]) — not a binder itself. */
     val isUnsorted: Boolean get() = id == UNSORTED_COLLECTION_ID
+}
+
+/**
+ * A piece of gear (Gear.kt). [kind] is a [GearKind] name. [count]: sleeves left, tokens of that name,
+ * dice… (1 for a deck box). [usedBy]: the decks, binders or places a pack of sleeves is on. [holds]:
+ * the deck (or binder) a deck box holds. [placeId]: where it's kept. Optional fields are null (left
+ * out of the JSON) when not set. The web app's GearItem, field for field.
+ */
+data class GearItem(
+    val id: String,
+    val kind: String = GearKind.OTHER.name,
+    val name: String,
+    val count: Int = 0,
+    val usedBy: List<String>? = null,
+    val holds: String? = null,
+    val placeId: String? = null,
+    val note: String? = null,
+    val createdAt: Long = 0L
+) {
+    val gearKind: GearKind get() = GearKind.fromName(kind)
+}
+
+/** What a piece of gear is. */
+enum class GearKind(val label: String) {
+    SLEEVES("Sleeves"), INNER_SLEEVES("Inner sleeves"), DECK_BOX("Deck box"), TOKENS("Tokens"), DICE("Dice"), PLAYMAT("Playmat"), OTHER("Other");
+
+    companion object {
+        fun fromName(name: String?): GearKind = entries.firstOrNull { it.name == name } ?: OTHER
+    }
 }
 
 data class CollectionStore(

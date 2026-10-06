@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Backpack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.PlayArrow
@@ -68,7 +69,7 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun GameNightScreen(viewModel: GameNightViewModel, onBack: () -> Unit, onOpenLifeCounter: () -> Unit) {
+fun GameNightScreen(viewModel: GameNightViewModel, onBack: () -> Unit, onOpenLifeCounter: () -> Unit, onOpenPack: (() -> Unit)? = null) {
     val colors = LocalAppColors.current
     val saved by viewModel.nights.collectAsState()
     val decks by viewModel.decks.collectAsState()
@@ -93,6 +94,14 @@ fun GameNightScreen(viewModel: GameNightViewModel, onBack: () -> Unit, onOpenLif
             TopAppBar(
                 title = { Text("Game night", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
                 navigationIcon = { BackButton(onClick = onBack) },
+                actions = {
+                    if (onOpenPack != null) {
+                        androidx.compose.material3.TextButton(onClick = onOpenPack) {
+                            Icon(Icons.Filled.Backpack, contentDescription = null, tint = colors.accentLight)
+                            Text("Pack your bag", color = colors.accentLight, modifier = Modifier.padding(start = 6.dp))
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bg)
             )
         }

@@ -24,6 +24,9 @@ import com.mtgcompanion.app.ui.collection.SpaceScreen
 import com.mtgcompanion.app.ui.collection.StorageSetupScreen
 import com.mtgcompanion.app.ui.collection.UpkeepScreen
 import com.mtgcompanion.app.ui.collection.SellScreen
+import com.mtgcompanion.app.ui.collection.GearScreen
+import com.mtgcompanion.app.ui.collection.PackListScreen
+import com.mtgcompanion.app.ui.collection.PackScreen
 import com.mtgcompanion.app.ui.collection.CopyPhotoScreen
 import com.mtgcompanion.app.ui.decks.PullListScreen
 import com.mtgcompanion.app.ui.decks.PutBackScreen
@@ -354,6 +357,12 @@ private object Routes {
     const val STORAGE_SETUP = "storage_setup"
     /** Upkeep: what's worth doing this week (Upkeep.kt). */
     const val UPKEEP = "upkeep"
+    /** Gear: sleeves, deck boxes, tokens, dice and playmats (Gear.kt). */
+    const val GEAR = "gear"
+    /** Pack your bag (EventBag.kt): the bags on this phone, and one bag's checklist. */
+    const val PACK_LIST = "pack"
+    const val PACK = "pack/{bagId}"
+    fun pack(bagId: String) = "pack/" + URLEncoder.encode(bagId, StandardCharsets.UTF_8.name())
     /** Photos of a copy of a card (CopyPhotos.kt). */
     const val COPY_PHOTOS = "copy_photos/{cardName}"
     fun copyPhotos(name: String) = "copy_photos/" + URLEncoder.encode(name, StandardCharsets.UTF_8.name())
@@ -506,7 +515,7 @@ fun MtgNavGraph(
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
                 Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
-                Routes.PLAY, Routes.GAME_NIGHT, Routes.PLAYGROUP, Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT -> NavDestination.LIFE_COUNTER
+                Routes.PLAY, Routes.GAME_NIGHT, Routes.PLAYGROUP, Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT, Routes.PACK_LIST, Routes.PACK -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
                 Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
                 else -> null
@@ -1067,6 +1076,17 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(Routes.GEAR) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                GearScreen(
+                    collections = collections,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } }
+                )
+            }
+
             destination(Routes.SELL) {
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
@@ -1231,7 +1251,8 @@ fun MtgNavGraph(
                     onOpenSell = { navController.navigate(Routes.SELL) },
                     onSetUpStorage = { navController.navigate(Routes.STORAGE_SETUP) },
                     onOpenUpkeep = { navController.navigate(Routes.UPKEEP) },
-                    onOpenHousehold = { navController.navigate(Routes.household()) }
+                    onOpenHousehold = { navController.navigate(Routes.household()) },
+                    onOpenGear = { navController.navigate(Routes.GEAR) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(
@@ -1462,7 +1483,37 @@ fun MtgNavGraph(
                     onOpenRules = { navController.navigateToTab(Routes.RULES) },
                     onOpenPlaygroup = { navController.navigate(Routes.PLAYGROUP) },
                     onOpenEvents = { navController.navigate(Routes.EVENTS) { launchSingleTop = true } },
-                    onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } }
+                    onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } },
+                    onOpenPack = { navController.navigate(Routes.PACK_LIST) { launchSingleTop = true } }
+                )
+            }
+
+            destination(Routes.PACK_LIST) {
+                val context = LocalContext.current
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                val tournaments = remember { TournamentRepository(context.applicationContext) }
+                val events by tournaments.events.collectAsState(initial = emptyList())
+                remember { GameNightStore.init(context) }
+                val nights by GameNightStore.nights.collectAsState()
+                PackListScreen(
+                    decks = decks,
+                    night = nights.current,
+                    events = events,
+                    onBack = { navController.popBackStack() },
+                    onOpenBag = { id -> navController.navigate(Routes.pack(id)) }
+                )
+            }
+
+            destination(Routes.PACK, arguments = listOf(navArgument("bagId") { type = NavType.StringType })) { entry ->
+                val bagId = entry.arguments?.getString("bagId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                PackScreen(
+                    bagId = bagId,
+                    collections = collections,
+                    decks = decks,
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() }
                 )
             }
 
@@ -1473,7 +1524,8 @@ fun MtgNavGraph(
                 GameNightScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
-                    onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) }
+                    onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) },
+                    onOpenPack = { navController.navigate(Routes.PACK_LIST) { launchSingleTop = true } }
                 )
             }
 

@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Backpack
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.Groups
@@ -89,6 +90,8 @@ fun PlayScreen(
     onOpenPlaygroup: () -> Unit = {},
     onOpenEvents: (() -> Unit)? = null,
     onOpenGameNight: () -> Unit = {},
+    /** Pack your bag for a game night or an event (PackScreen.kt). */
+    onOpenPack: (() -> Unit)? = null,
     settings: LifeCounterSettings = LifeCounterSettings(),
     status: PlayGroupStatus? = null
 ) {
@@ -125,6 +128,9 @@ fun PlayScreen(
                 PlayTile(Icons.Filled.Leaderboard, "Playgroup", status?.playgroup ?: "Your record", onOpenPlaygroup)
                 onOpenEvents?.let { open -> PlayTile(Icons.Filled.EmojiEvents, "Events", status?.events ?: "Swiss or Commander pods", open) }
             }
+        }
+        onOpenPack?.let { open ->
+            item { PlayRow(Icons.Filled.Backpack, "Pack your bag", "For a game night or an event: decks, tokens, trades and what to give back") { open() } }
         }
 
         item {
