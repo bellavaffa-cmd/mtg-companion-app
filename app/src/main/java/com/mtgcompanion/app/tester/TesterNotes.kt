@@ -9,6 +9,11 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "search-view",
+        "List or grid in search results",
+        "Search for something, then tap the grid/list button at the top right of Results. Your choice should stick next time, and match Settings › Card Display › Search results."
+    ),
+    TesterNote(
         "android-16",
         "Built for Android 16 — check the edges and the keyboard",
         "Type in Messages, Profile, a trade message, Search and a deck rename: the field and send button should sit just above the keyboard. Rename a player on the life counter: is the name field hidden by the keyboard? Swipe the status and navigation bars into view in light and dark themes: icons readable? Open the scanner and the QR scanner in portrait and landscape."

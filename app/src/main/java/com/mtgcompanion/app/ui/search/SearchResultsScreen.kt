@@ -30,6 +30,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -136,6 +138,17 @@ fun SearchResultsScreen(
                 title = { Text("Results", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 navigationIcon = {
                     BackButton(onClick = onBack)
+                },
+                actions = {
+                    // List or grid, here where the results are rather than only in Settings.
+                    val grid = viewMode == CardViewMode.GRID
+                    IconButton(onClick = { viewModel.setViewMode(if (grid) CardViewMode.LIST else CardViewMode.GRID) }) {
+                        Icon(
+                            if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView,
+                            contentDescription = if (grid) "Show as a list" else "Show as a grid",
+                            tint = Gold
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )

@@ -188,9 +188,13 @@ class SearchViewModel(
     private val _combos = MutableStateFlow<ComboSearchState>(ComboSearchState.Idle)
     val combos: StateFlow<ComboSearchState> = _combos.asStateFlow()
 
-    /** List or grid, as set in Settings > Card Display. */
+    /** List or grid, as set in Settings > Card Display or by the results' toggle (the same setting). */
     val viewMode: StateFlow<CardViewMode> = settingsRepository.searchViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
+
+    fun setViewMode(mode: CardViewMode) {
+        viewModelScope.launch { settingsRepository.setSearchViewMode(mode) }
+    }
 
     /** Grid column count, when [viewMode] is Grid. */
     val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
