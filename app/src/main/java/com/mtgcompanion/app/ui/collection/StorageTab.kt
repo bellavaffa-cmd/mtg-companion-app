@@ -112,7 +112,11 @@ fun StorageTab(
     /** The scanner sorting a new pile into piles (SortPanel.kt). */
     onSortPile: () -> Unit = {},
     /** Value by place (ValueByPlaceScreen.kt). */
-    onOpenValue: () -> Unit = {}
+    onOpenValue: () -> Unit = {},
+    /** How full each place is (SpaceScreen.kt). */
+    onOpenSpace: () -> Unit = {},
+    /** The To sell list (SellScreen.kt). */
+    onOpenSell: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -229,6 +233,12 @@ fun StorageTab(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 LoanButton("Sort a new pile", primary = false, modifier = Modifier.weight(1f), onClick = onSortPile)
                 LoanButton("Value by place", primary = false, modifier = Modifier.weight(1f), onClick = onOpenValue)
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                LoanButton("Space", primary = false, modifier = Modifier.weight(1f), onClick = onOpenSpace)
+                LoanButton("To sell", primary = false, modifier = Modifier.weight(1f), onClick = onOpenSell)
             }
         }
     }
@@ -355,8 +365,10 @@ fun PlaceDialog(place: StoragePlace?, parentId: String?, places: List<StoragePla
                 // A box's sorting rule, or a binder's order (BinderPages.kt).
                 sortRule = if (kind == PlaceKind.BOX || kind == PlaceKind.BINDER) rule.ifEmpty { null } else null,
                 createdAt = place?.createdAt ?: System.currentTimeMillis(),
-                // When it was last checked (PlaceCheck.kt) isn't changed here.
-                lastChecked = place?.lastChecked
+                // When it was last checked (PlaceCheck.kt) isn't changed here, nor its size (Change size, BoxSpace.kt).
+                lastChecked = place?.lastChecked,
+                capacity = place?.capacity,
+                pages = place?.pages
             ))
         }
     }

@@ -602,6 +602,16 @@ fun ScanScreen(
                 onAnotherCopy = viewModel::anotherCopy,
                 waitingToFit = waiting,
                 onFit = { putAwayPlace?.let { onFit(it.id) } },
+                // A place with a size that's full, or nearly (BoxSpace.kt).
+                spaceWarning = putAwayPlace?.let { p ->
+                    com.mtgcompanion.app.data.spaceOf(p, collections)?.let { space ->
+                        when {
+                            space.room <= 0 -> com.mtgcompanion.app.data.overflowLine(com.mtgcompanion.app.data.Overflow(p.id, p.name, 1, space.room))
+                            space.nearlyFull -> "${p.name}: " + com.mtgcompanion.app.data.roomLine(space).replaceFirstChar { it.lowercase() }
+                            else -> null
+                        }
+                    }
+                },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }

@@ -166,4 +166,17 @@ class SellingTest {
         val cleared = pile.copy(entries = pile.entries.map { if (it.forSale != null) it.copy(forSale = 0) else it })
         assertSame(cleared, keepForSaleFromOlderApp(pile, cleared))
     }
+
+    @Test
+    fun sellingSomeCopiesOfACardFromItsPage() {
+        assertEquals(7 to 0, sellCountsByName(cols, "Lightning Bolt"))
+        val after = setForSaleByName(cols, "lightning bolt", 6)
+        // The Unsorted pile's five first, then the binder's.
+        assertEquals(5, after[0].entries.first { it.scryfallId == "bolt" }.forSale)
+        assertEquals(1, after[1].entries[0].forSale)
+        assertEquals(7 to 6, sellCountsByName(after, "Lightning Bolt"))
+        val fewer = setForSaleByName(after, "Lightning Bolt", 2)
+        assertEquals(2, fewer[0].entries.first { it.scryfallId == "bolt" }.forSale)
+        assertEquals(0, fewer[1].entries[0].forSale)
+    }
 }

@@ -57,6 +57,8 @@ import com.mtgcompanion.app.data.placeUnplaced
 import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.suggestSpot
 import com.mtgcompanion.app.data.whereItIs
+import com.mtgcompanion.app.data.sellCountsByName
+import com.mtgcompanion.app.data.setForSaleByName
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.collection.PlacePickerDialog
 import com.mtgcompanion.app.ui.collection.StorageChange
@@ -84,13 +86,16 @@ fun WhereItIsPanel(
     /** The card's history on this phone (CopyHistoryScreen.kt). */
     onHistory: () -> Unit = {},
     /** The Loans screen, from a line of copies lent out. */
-    onOpenLoans: () -> Unit = {}
+    onOpenLoans: () -> Unit = {},
+    /** Photos of a copy (CopyPhotoScreen.kt). */
+    onPhotos: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
     val (lines, total) = remember(collections, decks, name) { whereItIs(collections, decks, name) }
     var giving by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
+    var selling by remember { mutableStateOf(false) }
     if (total == 0) return
     val unplaced = lines.firstOrNull { it.kind == WhereKind.NONE }?.qty ?: 0
     val placeLines = lines.filter { it.kind == WhereKind.PLACE }
@@ -167,6 +172,51 @@ fun WhereItIsPanel(
                 modifier = Modifier.weight(1f).height(44.dp)
             ) { Text("History") }
         }
+        // Selling (Selling.kt) and photos of a copy (CopyPhotos.kt): binder copies only.
+        val (binderCopies, toSell) = sellCountsByName(collections, name)
+        if (binderCopies > 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = { selling = true },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
+                modifier = Modifier.weight(1f).height(44.dp)
+            ) { Text(if (toSell > 0) "To sell: $toSell" else "Sell…") }
+            Button(
+                onClick = onPhotos,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
+                modifier = Modifier.weight(1f).height(44.dp)
+            ) { Text("Photos") }
+        }
+    }
+
+    if (selling) {
+        val (binderCopies, toSell) = sellCountsByName(collections, name)
+        var count by remember { mutableStateOf(toSell.coerceAtLeast(1).coerceAtMost(binderCopies)) }
+        AlertDialog(
+            onDismissRequest = { selling = false },
+            containerColor = colors.surface,
+            title = { Text("Sell $name", color = colors.accentLight, style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Copies go on the Storage tab's To sell list, with where they are.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Copies to sell", style = MaterialTheme.typography.labelMedium, color = colors.textMuted, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { count = (count - 1).coerceAtLeast(0) }, enabled = count > 0) {
+                            Icon(Icons.Filled.Remove, contentDescription = "One fewer", tint = colors.textPrimary)
+                        }
+                        Text("$count of $binderCopies", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                        IconButton(onClick = { count = (count + 1).coerceAtMost(binderCopies) }, enabled = count < binderCopies) {
+                            Icon(Icons.Filled.Add, contentDescription = "One more", tint = colors.textPrimary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { val n = count; onChange { setForSaleByName(it, name, n) }; selling = false }) { Text("Save", color = colors.accent) }
+            },
+            dismissButton = { TextButton(onClick = { selling = false }) { Text("Cancel", color = colors.textMuted) } }
+        )
     }
 
     if (giving) {

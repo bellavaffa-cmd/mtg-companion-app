@@ -175,6 +175,36 @@ fun unmarkToSell(collections: List<Collection>, row: SellRow): List<Collection> 
         if (c.id != row.collectionId) c else c.copy(entries = c.entries.map { if (it.scryfallId == row.scryfallId) withForSale(it, 0) else it })
     }
 
+/** Copies owned of the card called [name] in the binders and the Unsorted pile, and how many of them are to sell. */
+fun sellCountsByName(collections: List<Collection>, name: String): Pair<Int, Int> {
+    var copies = 0
+    var toSell = 0
+    for (c in owned(collections)) for (e in c.entries) {
+        if (!sameCardName(e.name, name)) continue
+        copies += (e.quantity + e.foilQuantity).coerceAtLeast(0)
+        toSell += forSaleOf(e)
+    }
+    return copies to toSell
+}
+
+/**
+ * [collections] with [n] copies of the card called [name] to sell — "Sell…" on a card's Where it is:
+ * the entries filled in order (the Unsorted pile's first, then the binders'), the rest with none.
+ */
+fun setForSaleByName(collections: List<Collection>, name: String, n: Int): List<Collection> {
+    var left = n.coerceAtLeast(0)
+    val marks = LinkedHashMap<String, Int>()
+    val mine = owned(collections)
+    for (c in mine.filter { it.isUnsorted } + mine.filter { !it.isUnsorted }) for (e in c.entries) {
+        if (!sameCardName(e.name, name)) continue
+        val take = minOf(left, (e.quantity + e.foilQuantity).coerceAtLeast(0))
+        if (take == 0 && e.forSale == null) continue
+        marks["${c.id}|${e.scryfallId}"] = take
+        left -= take
+    }
+    return withMarks(collections, marks)
+}
+
 // ---- Sold ----
 
 /** What "Mark N sold" did: the collection after, and the rows sold. */
@@ -267,6 +297,6 @@ fun keepForSaleFromOlderApp(source: Collection, theirs: Collection): Collection 
     val mine = source.entries.filter { it.forSale != null }.associate { it.scryfallId to it.forSale!! }
     if (mine.isEmpty() || theirs.entries.none { it.forSale == null && it.scryfallId in mine }) return theirs
     return theirs.copy(entries = theirs.entries.map { e ->
-        if (e.forSale != null) e else mine[e.scryfallId]?.let { withForSale(e, it) } ?: e
+        if (e.forSale != null) e else mine[e.scryfallId]?.let { e.copy(forSale = it.coerceIn(0, (e.quantity + e.foilQuantity).coerceAtLeast(0))) } ?: e
     })
 }

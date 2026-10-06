@@ -9,6 +9,21 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "box-space",
+        "Box space: how full each box and binder is",
+        "Collection › Storage › Space: tap Set size on a box (cards it holds) and a binder (pages). The bars should say \"96% full · 612 of 640\" and \"Room for about 28 more\". Put cards away into a full box, or sort a pile into one: a warning should say it's full. On a box sorted by colour, Split into two boxes keeps whole colours together, makes \"Red box 2\" and opens its label to print. Check the size shows on your other device."
+    ),
+    TesterNote(
+        "selling",
+        "To sell list",
+        "On a card's Where it is, tap Sell… and pick how many. Collection › Storage › To sell: each card says where it is (binder, page and slot, or box section) and its price, with the total at the top. Try + Spares over 4 and + Not in any deck, over \$5, TCGplayer mass entry (copies text) and Cardmarket CSV (saves a file), and Pull list. Tick one and Mark 1 sold: it should leave your collection and its pocket show empty in the binder. Check the list on your other device."
+    ),
+    TesterNote(
+        "copy-photos",
+        "Photos of your copy",
+        "On a card you own, Where it is › Photos: take the front and back (or choose photos), then Edit details for condition and what you paid. The photos stay on this phone only. Set \"Ask for photos when I add a card worth over\" and add a dear card from its page: it should offer to photograph it. Value by place › PDF report should end with the photos."
+    ),
+    TesterNote(
         "gather-message",
         "Adding cards to a binder says what moved",
         "Collection › All cards › Select all › Add to… a binder. Cards only in your decks stay in the decks, and the message should now say how many really moved and how many stayed in decks (before, it said all of them moved)."

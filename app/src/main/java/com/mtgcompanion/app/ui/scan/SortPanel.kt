@@ -53,6 +53,9 @@ import com.mtgcompanion.app.data.PileRule
 import com.mtgcompanion.app.data.Prices
 import com.mtgcompanion.app.data.SortSession
 import com.mtgcompanion.app.data.defaultPiles
+import com.mtgcompanion.app.data.overflowLine
+import com.mtgcompanion.app.data.overflows
+import com.mtgcompanion.app.data.pileAdds
 import com.mtgcompanion.app.data.pileDestination
 import com.mtgcompanion.app.data.pileGoesTo
 import com.mtgcompanion.app.data.pileTallies
@@ -165,6 +168,16 @@ fun SortPanel(session: SortSession, collections: List<Collection>, onChange: (So
                 }
                 if (pair.size == 1) Box(Modifier.weight(1f))
             }
+        }
+        // Places these piles would overflow (BoxSpace.kt).
+        overflows(collections, pileAdds(collections, session)).forEach { o ->
+            Text(
+                overflowLine(o),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = colors.warning,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.warning.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 8.dp)
+            )
         }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("${session.scans.size} ${if (session.scans.size == 1) "card" else "cards"} sorted", style = MaterialTheme.typography.labelMedium, color = colors.textMuted, modifier = Modifier.weight(1f))

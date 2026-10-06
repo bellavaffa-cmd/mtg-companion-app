@@ -96,7 +96,9 @@ fun PutAwayPanel(
     modifier: Modifier = Modifier,
     /** A binder in order: how many cards wait to be fitted in, and Add cards in order. */
     waitingToFit: Int = 0,
-    onFit: () -> Unit = {}
+    onFit: () -> Unit = {},
+    /** The place is full, or nearly (BoxSpace.kt): "Red box is full already." */
+    spaceWarning: String? = null
 ) {
     val colors = LocalAppColors.current
     Column(
@@ -107,6 +109,15 @@ fun PutAwayPanel(
             .background(colors.bg.copy(alpha = 0.94f))
             .padding(16.dp)
     ) {
+        if (spaceWarning != null) {
+            Text(
+                spaceWarning,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = colors.warning,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.warning.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
         if (waitingToFit > 0) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

@@ -154,7 +154,9 @@ fun CardDetailScreen(
     onLend: (String) -> Unit = {},
     /** A card's history on this phone, by name (CopyHistoryScreen.kt). */
     onHistory: (String) -> Unit = {},
-    onOpenLoans: () -> Unit = {}
+    onOpenLoans: () -> Unit = {},
+    /** Photos of a copy, by card name (CopyPhotoScreen.kt). */
+    onPhotos: (String) -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
@@ -174,6 +176,9 @@ fun CardDetailScreen(
     // the list it opens on: the page's own "Add to deck"/"Add to binder" go straight to theirs.
     var adding by remember { mutableStateOf<Pair<ScryfallCard, SourceKind?>?>(null) }
     val addTo = LocalAddToFeedback.current
+    // A card just added that's worth over the "ask for photos" setting (CopyPhotos.kt): its name.
+    var askPhotos by remember { mutableStateOf<String?>(null) }
+    remember { com.mtgcompanion.app.data.CopyPhotoStore.init(context) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     Scaffold(
@@ -255,7 +260,8 @@ fun CardDetailScreen(
                             onChange = viewModel::changeStorage,
                             onLend = { onLend(card.name) },
                             onHistory = { onHistory(card.name) },
-                            onOpenLoans = onOpenLoans
+                            onOpenLoans = onOpenLoans,
+                            onPhotos = { onPhotos(card.name) }
                         )
                     }
 
@@ -422,8 +428,27 @@ fun CardDetailScreen(
             onPick = { pick ->
                 adding = null
                 addTo.perform(addToMessage(AddVerb.ADD, card.name, pick), check = checkFor(card, pick)) { addCard(card, pick) }
+                // A dear card into a binder (not the Wishlist): offer to photograph the copy.
+                val printing = pick.printing ?: card
+                val usd = if (pick.foil) printing.prices?.usdFoil?.toDoubleOrNull() ?: printing.prices?.usd?.toDoubleOrNull()
+                else printing.prices?.usd?.toDoubleOrNull() ?: printing.prices?.usdFoil?.toDoubleOrNull()
+                val wishlist = collections.firstOrNull { it.id == pick.target.id }?.kind == com.mtgcompanion.app.data.CollectionType.WISHLIST
+                if (pick.target.kind == SourceKind.BINDER && !wishlist &&
+                    com.mtgcompanion.app.data.askForPhotos(usd, com.mtgcompanion.app.data.CopyPhotoStore.saved.value.askOver)
+                ) askPhotos = card.name
             },
             onDismiss = { adding = null }
+        )
+    }
+
+    askPhotos?.let { name ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { askPhotos = null },
+            containerColor = Surface,
+            title = { Text("Photograph your copy?", color = Gold) },
+            text = { Text("$name is worth more than your photo setting. Photos of the front and back stay on this device and go in the Value by place report.", color = TextMuted) },
+            confirmButton = { TextButton(onClick = { askPhotos = null; onPhotos(name) }) { Text("Take photos", color = Gold) } },
+            dismissButton = { TextButton(onClick = { askPhotos = null }) { Text("Not now", color = TextMuted) } }
         )
     }
 }

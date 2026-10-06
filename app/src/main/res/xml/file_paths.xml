@@ -2,4 +2,6 @@
 <paths>
     <!-- The app's external files dir, where the downloaded update APK is written. -->
     <external-files-path name="updates" path="." />
+    <!-- A photo of a copy, just taken by the camera app, before it's scaled into the app's files (CopyPhotoStore). -->
+    <cache-path name="photo_capture" path="photo_capture/" />
 </paths>

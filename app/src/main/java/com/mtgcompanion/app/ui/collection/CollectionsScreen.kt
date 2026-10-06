@@ -163,6 +163,9 @@ fun CollectionsScreen(
     onSortPile: () -> Unit = {},
     /** The Storage page's Value by place. */
     onOpenValue: () -> Unit = {},
+    /** The Storage page's Space and To sell (SpaceScreen.kt, SellScreen.kt). */
+    onOpenSpace: () -> Unit = {},
+    onOpenSell: () -> Unit = {},
     /** The empty pages' "Scan cards". */
     onOpenScan: () -> Unit = {}
 ) {
@@ -354,7 +357,9 @@ fun CollectionsScreen(
                         onChange = viewModel::changeStorage,
                         onOpenLoans = onOpenLoans,
                         onSortPile = onSortPile,
-                        onOpenValue = onOpenValue
+                        onOpenValue = onOpenValue,
+                        onOpenSpace = onOpenSpace,
+                        onOpenSell = onOpenSell
                     )
                 } else {
                     CollectionsTab(

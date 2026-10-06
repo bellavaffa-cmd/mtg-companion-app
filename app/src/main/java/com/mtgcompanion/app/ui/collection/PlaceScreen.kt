@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Handshake
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -88,6 +89,11 @@ import com.mtgcompanion.app.data.pockets
 import com.mtgcompanion.app.data.savePlace
 import com.mtgcompanion.app.data.sectionsOf
 import com.mtgcompanion.app.data.storageSummary
+import com.mtgcompanion.app.data.lastPileAdded
+import com.mtgcompanion.app.data.planSplit
+import com.mtgcompanion.app.data.spaceOf
+import com.mtgcompanion.app.data.splitBox
+import com.mtgcompanion.app.data.withSize
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.ArtImage
 import com.mtgcompanion.app.ui.common.BackButton
@@ -156,6 +162,8 @@ fun PlaceScreen(
     var editing by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var sizing by remember { mutableStateOf(false) }
+    var splitting by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = colors.bg,
@@ -182,6 +190,11 @@ fun PlaceScreen(
                                 text = { Text("New place inside", color = colors.textPrimary) },
                                 leadingIcon = { Icon(Icons.Filled.Add, null, tint = colors.textMuted) },
                                 onClick = { menu = false; adding = true }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Change size", color = colors.textPrimary) },
+                                leadingIcon = { Icon(Icons.Filled.Inventory2, null, tint = colors.textMuted) },
+                                onClick = { menu = false; sizing = true }
                             )
                             DropdownMenuItem(
                                 text = { Text("Lend cards from here", color = colors.textPrimary) },
@@ -231,6 +244,22 @@ fun PlaceScreen(
                     StatFigure({ Text("$copies", style = NumberStyle(28), color = colors.textPrimary) }, if (copies == 1) "copy" else "copies", Modifier.weight(1f))
                     StatFigure({ Text(value?.let { money.format(it, whole = true) } ?: "—", style = NumberStyle(28), color = colors.accent) }, "value", Modifier.weight(1f))
                     StatFigure({ Text("${third.first}", style = NumberStyle(28), color = colors.textPrimary) }, third.second, Modifier.weight(1f))
+                }
+            }
+            // How full it is, when it has a size (BoxSpace.kt).
+            spaceOf(place, collections)?.let { space ->
+                item {
+                    SpaceCard(
+                        place = place,
+                        space = space,
+                        lastPile = lastPileAdded(history, place.id),
+                        expanded = true,
+                        canSplit = place.placeKind != PlaceKind.BINDER && planSplit(place, cards) != null,
+                        onClick = null,
+                        onOpen = null,
+                        onSplit = { splitting = true },
+                        onSize = { sizing = true }
+                    )
                 }
             }
             item {
@@ -447,6 +476,34 @@ fun PlaceScreen(
             onChange { savePlace(it, made) }
             adding = false
         }
+    }
+    if (place != null && sizing) {
+        SizeDialog(place, onDismiss = { sizing = false }) { n ->
+            onChange { current -> placesOf(current).firstOrNull { it.id == place.id }?.let { savePlace(current, withSize(it, n)) } ?: current }
+            sizing = false
+        }
+    }
+    val plan = if (place != null && splitting) planSplit(place, cards) else null
+    if (place != null && plan != null) {
+        AlertDialog(
+            onDismissRequest = { splitting = false },
+            containerColor = colors.surface,
+            text = { SplitSection(place, plan, places) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val id = java.util.UUID.randomUUID().toString()
+                    val now = System.currentTimeMillis()
+                    onChange { current ->
+                        val p = placesOf(current).firstOrNull { it.id == place.id }
+                        val fresh = p?.let { planSplit(it, cardsIn(current, it.id)) }
+                        if (fresh == null) current else splitBox(current, place.id, fresh, id, now)
+                    }
+                    splitting = false
+                    onLabel(id)
+                }) { Text("Split and print new label", color = colors.accent) }
+            },
+            dismissButton = { TextButton(onClick = { splitting = false }) { Text("Cancel", color = colors.textMuted) } }
+        )
     }
     if (place != null && deleting) {
         val here = cards.sumOf { it.line.qty }

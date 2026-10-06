@@ -19,6 +19,9 @@ import com.mtgcompanion.app.ui.collection.LoansScreen
 import com.mtgcompanion.app.ui.collection.LendScreen
 import com.mtgcompanion.app.ui.collection.CopyHistoryScreen
 import com.mtgcompanion.app.ui.collection.ValueByPlaceScreen
+import com.mtgcompanion.app.ui.collection.SpaceScreen
+import com.mtgcompanion.app.ui.collection.SellScreen
+import com.mtgcompanion.app.ui.collection.CopyPhotoScreen
 import com.mtgcompanion.app.ui.decks.PullListScreen
 import com.mtgcompanion.app.ui.decks.PutBackScreen
 import com.mtgcompanion.app.ui.scan.TickList
@@ -326,6 +329,13 @@ private object Routes {
     fun copyHistory(name: String) = "copy_history/" + URLEncoder.encode(name, StandardCharsets.UTF_8.name())
     /** Value by place (ValueByPlace.kt). */
     const val VALUE_BY_PLACE = "value_by_place"
+    /** How full each place is (BoxSpace.kt). */
+    const val SPACE = "space"
+    /** The To sell list (Selling.kt). */
+    const val SELL = "sell"
+    /** Photos of a copy of a card (CopyPhotos.kt). */
+    const val COPY_PHOTOS = "copy_photos/{cardName}"
+    fun copyPhotos(name: String) = "copy_photos/" + URLEncoder.encode(name, StandardCharsets.UTF_8.name())
     /** The scanner sorting a new pile into piles (SortPiles.kt). */
     const val SORT_PILE = "sort_pile"
     /** A storage place's label to print (and "All labels" from there). */
@@ -884,6 +894,40 @@ fun MtgNavGraph(
                 ValueByPlaceScreen(collections = collections, decks = decks, onBack = { navController.popBackStack() })
             }
 
+            destination(Routes.SPACE) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                SpaceScreen(
+                    collections = collections,
+                    onBack = { navController.popBackStack() },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onLabel = { id -> navController.navigate(Routes.placeLabel(id)) }
+                )
+            }
+
+            destination(Routes.SELL) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                SellScreen(
+                    collections = collections,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onOpenCard = { name -> navController.navigate(Routes.detail(name)) }
+                )
+            }
+
+            destination(Routes.COPY_PHOTOS, arguments = listOf(navArgument("cardName") { type = NavType.StringType })) { entry ->
+                val name = entry.arguments?.getString("cardName")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                CopyPhotoScreen(
+                    cardName = name,
+                    collections = collections,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } }
+                )
+            }
+
             destination(Routes.SORT_PILE) {
                 val viewModel: ScanViewModel = viewModel(
                     key = "sort-pile",
@@ -1020,7 +1064,9 @@ fun MtgNavGraph(
                     onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
                     onOpenLoans = { navController.navigate(Routes.loans()) },
                     onSortPile = { navController.navigate(Routes.SORT_PILE) },
-                    onOpenValue = { navController.navigate(Routes.VALUE_BY_PLACE) }
+                    onOpenValue = { navController.navigate(Routes.VALUE_BY_PLACE) },
+                    onOpenSpace = { navController.navigate(Routes.SPACE) },
+                    onOpenSell = { navController.navigate(Routes.SELL) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(
@@ -1207,7 +1253,8 @@ fun MtgNavGraph(
                     onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
                     onLend = { name -> navController.navigate(Routes.lendCard(name)) },
                     onHistory = { name -> navController.navigate(Routes.copyHistory(name)) },
-                    onOpenLoans = { navController.navigate(Routes.loans()) }
+                    onOpenLoans = { navController.navigate(Routes.loans()) },
+                    onPhotos = { name -> navController.navigate(Routes.copyPhotos(name)) }
                 )
             }
 

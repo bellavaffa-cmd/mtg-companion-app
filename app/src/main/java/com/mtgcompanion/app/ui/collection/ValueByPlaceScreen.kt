@@ -42,6 +42,12 @@ import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.CsvMoney
+import com.mtgcompanion.app.data.CopyPhoto
+import com.mtgcompanion.app.data.CopyPhotoStore
+import com.mtgcompanion.app.data.boughtLabel
+import com.mtgcompanion.app.data.dayOf
+import com.mtgcompanion.app.data.photoDayLabel
+import com.mtgcompanion.app.data.photosForReport
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.Money
 import com.mtgcompanion.app.data.Prices
@@ -121,7 +127,16 @@ fun ValueByPlaceScreen(collections: List<Collection>, decks: List<Deck>, onBack:
                         csvSaver.launch("manabind-value-${LocalDate.now()}.csv")
                     }
                     LoanButton("PDF report", primary = true, enabled = rows.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                        printLabels(context, reportHtml(rows, totals, money), "Manabind collection report")
+                        // Photos of the copies still owned go in too (CopyPhotos.kt) — read from this phone.
+                        scope.launch {
+                            val photos = withContext(Dispatchers.IO) {
+                                CopyPhotoStore.init(context)
+                                photosForReport(CopyPhotoStore.saved.value.photos, rows.map { it.scryfallId }.toSet()).map { p ->
+                                    ReportPhoto(p, CopyPhotoStore.dataUrl(p.front), CopyPhotoStore.dataUrl(p.back))
+                                }
+                            }
+                            printLabels(context, reportHtml(rows, totals, money, photos), "Manabind collection report")
+                        }
                     }
                 }
             }
@@ -158,8 +173,11 @@ fun ValueByPlaceScreen(collections: List<Collection>, decks: List<Deck>, onBack:
 
 private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
-/** The PDF report as a page to print: the places with their value, then every card. */
-private fun reportHtml(rows: List<ValueRow>, totals: ValueTotals, money: Money): String {
+/** A copy's photos for the report, as data: URLs (null: none). */
+private class ReportPhoto(val photo: CopyPhoto, val front: String?, val back: String?)
+
+/** The PDF report as a page to print: the places with their value, then every card, then the photos of copies. */
+private fun reportHtml(rows: List<ValueRow>, totals: ValueTotals, money: Money, photos: List<ReportPhoto> = emptyList()): String {
     val date = LocalDate.now().format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.UK))
     val places = totals.groups.joinToString("") { g ->
         "<tr><td>${esc(listOf(g.detail, g.label).filter { it.isNotEmpty() }.joinToString(" › "))}</td><td>${g.copies}</td><td>${esc(money.format(g.usd))}</td></tr>"
@@ -168,6 +186,17 @@ private fun reportHtml(rows: List<ValueRow>, totals: ValueTotals, money: Money):
         "<tr><td>${esc(r.name)}</td><td>${esc(listOf(r.set, r.number).filter { it.isNotEmpty() }.joinToString(" "))}</td><td>${if (r.foil) "Foil" else ""}</td><td>${r.qty}</td>" +
             "<td>${esc(r.where)}</td><td>${esc(r.spot)}</td><td>${r.unitUsd?.let { esc(money.format(it)) } ?: ""}</td><td>${r.unitUsd?.let { esc(money.format(it * r.qty)) } ?: ""}</td></tr>"
     }
+    val shots = photos.filter { it.front != null || it.back != null }.takeIf { it.isNotEmpty() }?.let { list ->
+        "<h2>Photos of your copies</h2>" + list.joinToString("") { r ->
+            val p = r.photo
+            val lines = listOfNotNull(
+                boughtLabel(p) { money.format(it) }.takeIf { it.isNotEmpty() }?.let { "Bought for ${esc(it)}" },
+                p.photographedAt?.let { "Photographed ${esc(photoDayLabel(dayOf(it)))}" }
+            ).joinToString(" · ")
+            "<div class=\"shot\"><b>${esc(p.name)}${if (p.foil) " · foil" else ""}</b><br>${lines}<br>" +
+                listOfNotNull(r.front, r.back).joinToString("") { "<img src=\"$it\">" } + "</div>"
+        }
+    } ?: ""
     return """<!doctype html><html><head><meta charset="utf-8"><style>
         @page { margin: 12mm; }
         body { font: 10pt/1.35 sans-serif; color: #000; }
@@ -176,10 +205,14 @@ private fun reportHtml(rows: List<ValueRow>, totals: ValueTotals, money: Money):
         table { width: 100%; border-collapse: collapse; margin-bottom: 12pt; }
         th, td { border-bottom: 0.3mm solid #ccc; padding: 2pt 4pt; text-align: left; vertical-align: top; }
         tr { page-break-inside: avoid; }
+        h2 { font-size: 13pt; margin: 12pt 0 6pt; }
+        .shot { page-break-inside: avoid; margin-bottom: 10pt; }
+        .shot img { width: 55mm; margin: 4pt 6pt 0 0; border: 0.3mm solid #ccc; }
         </style></head><body>
         <h1>Manabind collection report</h1>
         <p>${esc(date)} · ${totals.copies} copies · ${esc(money.format(totals.usd))} · prices from Scryfall, in ${esc(money.currency.code)}</p>
         <table><thead><tr><th>Place</th><th>Copies</th><th>Value</th></tr></thead><tbody>$places</tbody></table>
         <table><thead><tr><th>Card</th><th>Set</th><th>Finish</th><th>Qty</th><th>Place</th><th>Spot</th><th>Each</th><th>Total</th></tr></thead><tbody>$cards</tbody></table>
+        $shots
         </body></html>"""
 }
