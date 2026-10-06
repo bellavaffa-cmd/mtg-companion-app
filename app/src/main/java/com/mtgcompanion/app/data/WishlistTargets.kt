@@ -28,19 +28,8 @@ fun targetFromPercent(now: Double?, percent: Int): Double? {
 /** One printing's name and prices (US dollars), for "Any printing counts". */
 data class PrintingPrice(val name: String, val usd: Double?, val usdFoil: Double?)
 
-private fun nameKey(name: String) = name.trim().lowercase()
-
-/**
- * Whether a printing called [printing] is the card [wanted]: the same name, whatever the case — or,
- * for a two-faced card known by its front face, that face ("Delver of Secrets" is "Delver of
- * Secrets // Insectile Aberration").
- */
-fun sameCard(wanted: String, printing: String): Boolean {
-    val w = nameKey(wanted)
-    val p = nameKey(printing)
-    if (w.isEmpty() || p.isEmpty()) return false
-    return w == p || p.substringBefore(" // ") == w || w.substringBefore(" // ") == p
-}
+// Whether a printing is the card wanted is the scanner's rule, sameCard (Sight.kt): either face of a
+// double-faced card counts.
 
 /**
  * The cheapest non-foil and foil prices among [printings] that are the card [name] (each on its
