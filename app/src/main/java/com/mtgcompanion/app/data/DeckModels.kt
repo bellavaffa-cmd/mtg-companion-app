@@ -229,6 +229,12 @@ data class Deck(
      */
     val categoryTargets: Map<String, Int>? = null,
     /**
+     * What changed in the list, when and where, and the versions saved by name — oldest first, capped
+     * (DeckHistory.kt). Null (left out of the JSON) until the list first changes; a deck saved without
+     * it was saved by an app from before it, and gets this device's back. The web app's Deck.history.
+     */
+    val history: List<DeckHistoryEntry>? = null,
+    /**
      * A sample from the welcome flow (Onboarding.kt): shown with a "Sample" label, never synced to the
      * account, and gone with one "Remove samples". Null (left out of the JSON) on everything else.
      */

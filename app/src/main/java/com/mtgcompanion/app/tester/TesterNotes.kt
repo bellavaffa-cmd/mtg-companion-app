@@ -14,6 +14,11 @@ val TESTER_NOTES: List<TesterNote> = listOf(
         "Open the Wishlist: the total should show next to its name, \"8 CARDS · 3 WITH A TARGET\" over the cards, and each card \"No target · tap to set one\" or \"Target \$15 · \$3.40 to go\". Tap one: Tell me when it's cheaper — try 10% off and 20% off (and Year's low, once the card has a month of price history), Any printing counts and Foil only, then Alert me under. Set a target above today's price: Under your price should show it with Buy at TCGplayer and Got it, and a notification should come once (not again until it drops further). Try Set targets for all… and check the targets on your other device."
     ),
     TesterNote(
+        "deck-history",
+        "Deck history: every change, named versions, going back",
+        "Open a deck › menu › History. Add and cut a few cards: within ten minutes they should stay one entry (\"+ 2 …\", \"− 1 …\", \"this phone\"), with \"Value \$412 → \$476\" once its prices have loaded. On a second phone signed in to the same account, the same history should show, its edits saying \"another phone\". Tap Save this version…, name it, log a game: the version should say \"Went 1–0 with this list.\" Tap See the deck as it was on an older entry: check Differences and Whole list, then Copy as new deck, and Go back to this on a Physical deck — it should offer the pull list for the cards coming back, and the ones taken out should be on the Unsorted pile."
+    ),
+    TesterNote(
         "box-space",
         "Box space: how full each box and binder is",
         "Collection › Storage › Space: tap Set size on a box (cards it holds) and a binder (pages). The bars should say \"96% full · 612 of 640\" and \"Room for about 28 more\". Put cards away into a full box, or sort a pile into one: a warning should say it's full. On a box sorted by colour, Split into two boxes keeps whole colours together, makes \"Red box 2\" and opens its label to print. Check the size shows on your other device."
