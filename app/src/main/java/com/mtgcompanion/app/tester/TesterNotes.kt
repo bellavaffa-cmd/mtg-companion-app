@@ -9,6 +9,11 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "household",
+        "Sharing storage at home",
+        "Needs a friend who lives with you, both with this build. Collection › Storage › Sharing storage at home › Start sharing, then Invite someone and pick them: they should get a notification and see the invitation on Friends › People. Once they accept, Share a place: the screen should say \"You and Alex keep cards on the same shelf\", each person's copies and value, and each place \"Yours 612 · Alex 0\". On their phone, your place should read \"Alex 342 · you can see, not change\" — tap it to see the cards, and Keep my cards here too (not on binders). Build a deck with a card only they have: its pull list should show Ask Alex, \"ask Alex · Red box\"; Borrow from Alex should put it under Loans › Borrowed. Stop sharing should hide each other's cards straight away. Before the server is updated, the screen should only say \"Household sharing isn't available yet\"."
+    ),
+    TesterNote(
         "wish-targets",
         "Price targets on your wishlist",
         "Open the Wishlist: the total should show next to its name, \"8 CARDS · 3 WITH A TARGET\" over the cards, and each card \"No target · tap to set one\" or \"Target \$15 · \$3.40 to go\". Tap one: Tell me when it's cheaper — try 10% off and 20% off (and Year's low, once the card has a month of price history), Any printing counts and Foil only, then Alert me under. Set a target above today's price: Under your price should show it with Buy at TCGplayer and Got it, and a notification should come once (not again until it drops further). Try Set targets for all… and check the targets on your other device."

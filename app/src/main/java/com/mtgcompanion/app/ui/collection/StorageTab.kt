@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Handshake
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MenuBook
@@ -116,7 +117,9 @@ fun StorageTab(
     /** How full each place is (SpaceScreen.kt). */
     onOpenSpace: () -> Unit = {},
     /** The To sell list (SellScreen.kt). */
-    onOpenSell: () -> Unit = {}
+    onOpenSell: () -> Unit = {},
+    /** Sharing storage at home (HouseholdScreen.kt). */
+    onOpenHousehold: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -227,6 +230,11 @@ fun StorageTab(
         item {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
                 PlaceRow(Icons.Filled.Handshake, "Lent out", "Your loans, and what friends lent you", count(summary.lent), gold = false, onClick = onOpenLoans)
+            }
+        }
+        item {
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                PlaceRow(Icons.Filled.Home, "Sharing storage at home", "Keep cards on the same shelf as someone you live with", "›", gold = false, onClick = onOpenHousehold)
             }
         }
         item {

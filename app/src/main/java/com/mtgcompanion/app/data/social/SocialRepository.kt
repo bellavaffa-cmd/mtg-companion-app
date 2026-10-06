@@ -22,6 +22,8 @@ class SocialRepository(private val auth: SupabaseAuth) {
     val matchChannel = MatchChannel(auth)
     /** Blocking, messages, reputation, activity and cards for trade (SocialMore.kt), once the server has them. */
     val more = SocialMore(api)
+    /** Sharing storage at home (HouseholdApi.kt), once the server has it. */
+    val household = HouseholdApi(api)
     /** New direct messages, live (DmChannel.kt). */
     val dmChannel = DmChannel(auth)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -53,6 +55,7 @@ class SocialRepository(private val auth: SupabaseAuth) {
                 _inbox.value = Inbox()
                 _error.value = null
                 more.reset()
+                household.reset()
                 if (it != null) refreshInbox()
             }
         }

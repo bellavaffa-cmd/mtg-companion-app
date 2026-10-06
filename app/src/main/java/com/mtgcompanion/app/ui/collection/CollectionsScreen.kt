@@ -166,6 +166,8 @@ fun CollectionsScreen(
     /** The Storage page's Space and To sell (SpaceScreen.kt, SellScreen.kt). */
     onOpenSpace: () -> Unit = {},
     onOpenSell: () -> Unit = {},
+    /** The Storage page's Sharing storage at home (HouseholdScreen.kt). */
+    onOpenHousehold: () -> Unit = {},
     /** The empty pages' "Scan cards". */
     onOpenScan: () -> Unit = {}
 ) {
@@ -359,7 +361,8 @@ fun CollectionsScreen(
                         onSortPile = onSortPile,
                         onOpenValue = onOpenValue,
                         onOpenSpace = onOpenSpace,
-                        onOpenSell = onOpenSell
+                        onOpenSell = onOpenSell,
+                        onOpenHousehold = onOpenHousehold
                     )
                 } else {
                     CollectionsTab(

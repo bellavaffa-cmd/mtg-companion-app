@@ -38,6 +38,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +73,15 @@ import com.mtgcompanion.app.data.pullGroupsIn
 import com.mtgcompanion.app.data.pullList
 import com.mtgcompanion.app.data.pullRowsAZ
 import com.mtgcompanion.app.data.pulledCopies
+import com.mtgcompanion.app.data.social.AskGroup
+import com.mtgcompanion.app.data.social.PullShort
+import com.mtgcompanion.app.data.social.Shelf
+import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.data.social.borrowCards
+import com.mtgcompanion.app.data.social.householdError
+import com.mtgcompanion.app.data.social.pullAsks
+import com.mtgcompanion.app.data.social.shelfLoanId
+import kotlinx.coroutines.launch
 import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.PillChip
 import com.mtgcompanion.app.ui.common.rememberMoney
@@ -89,6 +101,8 @@ fun PullListScreen(
     collections: List<Collection>,
     decks: List<Deck>,
     placeFilter: String?,
+    /** Sharing storage at home: the household's copies cover what isn't owned ("ask Alex"). Null leaves it out. */
+    social: SocialRepository? = null,
     onBack: () -> Unit,
     onScan: (deckId: String) -> Unit,
     /** Writes binders and decks changed together. */
@@ -109,7 +123,35 @@ fun PullListScreen(
     var moving by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf<MovePulledResult?>(null) }
     var copied by remember { mutableStateOf(false) }
-    val missingRows = list?.groups?.filter { it.kind == PullGroupKind.MISSING }?.flatMap { it.rows }.orEmpty()
+    val notOwned = list?.groups?.filter { it.kind == PullGroupKind.MISSING }?.flatMap { it.rows }.orEmpty()
+    // Sharing storage at home: what the people at home keep in the shared places covers some of what
+    // isn't owned — "ask Alex" (data/social/Household.kt). Nothing changes without a household.
+    val account = social?.accountFlow?.collectAsState()?.value
+    var shelves by remember { mutableStateOf<List<Shelf>?>(null) }
+    var shelvesLoad by remember { mutableIntStateOf(0) }
+    LaunchedEffect(account?.userId, shelvesLoad) { shelves = if (social != null && account != null) social.household.shelves() else null }
+    val me = account?.userId.orEmpty()
+    val asks = remember(notOwned, shelves, me) { pullAsks(notOwned.map { PullShort(it.name, it.scryfallId, it.qty) }, shelves, me) }
+    val missingRows = notOwned.mapNotNull { r -> asks.stillMissing.firstOrNull { it.name == r.name }?.let { r.copy(qty = it.qty) } }
+    val toBuy = missingRows.sumOf { it.qty }
+    var borrowing by remember { mutableStateOf<AskGroup?>(null) }
+    var borrowNote by remember { mutableStateOf<String?>(null) }
+    val borrowScope = rememberCoroutineScope()
+    fun borrow(g: AskGroup) {
+        borrowing = null
+        val household = social?.household ?: return
+        borrowScope.launch {
+            borrowNote = try {
+                val cards = borrowCards(g)
+                household.borrow(g.householdId, g.userId, shelfLoanId(), cards)
+                shelvesLoad++
+                val n = cards.sumOf { it.qty }
+                "$n ${if (n == 1) "card" else "cards"} borrowed from ${g.name}. They show under Loans."
+            } catch (e: Exception) {
+                householdError(e)
+            }
+        }
+    }
     var cost by remember { mutableStateOf<Double?>(null) }
     val missingIds = missingRows.map { it.scryfallId }.distinct().sorted()
     LaunchedEffect(missingIds) {
@@ -204,7 +246,7 @@ fun PullListScreen(
                     Row(Modifier.fillMaxWidth()) {
                         Text("$pulled of ${list.total} pulled", fontWeight = FontWeight.Bold, color = colors.textPrimary, modifier = Modifier.weight(1f))
                         Text(
-                            "${list.places} ${if (list.places == 1) "place" else "places"}" + if (list.toBuy > 0) " · ${list.toBuy} to buy" else "",
+                            "${list.places} ${if (list.places == 1) "place" else "places"}" + if (toBuy > 0) " · $toBuy to buy" else "",
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.textMuted
                         )
@@ -252,8 +294,30 @@ fun PullListScreen(
                     Text("Nothing on this list is kept in ${filterPlace.name}.", color = colors.textMuted)
                 }
             }
+            if (filterPlace == null) items(asks.groups, key = { "ask-${it.householdId}-${it.userId}" }) { g ->
+                val open = g.rows.filter { !it.borrowed }.sumOf { it.qty }
+                GroupCard(g.title, "${g.rows.sumOf { it.qty }} · on the shared shelf", true) {
+                    g.rows.forEach { r ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Text(
+                                r.name + if (r.qty > 1) " ×${r.qty}" else "",
+                                style = MaterialTheme.typography.bodyMedium, color = if (r.borrowed) colors.textMuted else colors.textPrimary,
+                                modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                            Text(r.hint, style = MaterialTheme.typography.labelMedium, color = colors.accentLight, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                    if (open > 0) Button(
+                        onClick = { borrowing = g },
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) { Text("Borrow from ${g.name}") }
+                }
+            }
+            if (filterPlace == null) borrowNote?.let { n -> item { Text(n, style = MaterialTheme.typography.bodyMedium, color = colors.accentLight) } }
             if (filterPlace == null && missingRows.isNotEmpty()) item {
-                GroupCard("Not owned", "${list.toBuy}" + (cost?.takeIf { it > 0 }?.let { " · ${money.format(it)}" } ?: ""), false) {
+                GroupCard("Not owned", "$toBuy" + (cost?.takeIf { it > 0 }?.let { " · ${money.format(it)}" } ?: ""), false) {
                     Text(missingRows.joinToString(", ") { if (it.qty > 1) "${it.name} ×${it.qty}" else it.name }, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                         Button(
@@ -280,6 +344,22 @@ fun PullListScreen(
                 text = { Text("$from will be a card short: it shows there as a proxy until a copy goes back.", color = colors.textMuted) },
                 confirmButton = { TextButton(onClick = { save(ticked + row.key); asking = null }) { Text("Take it", color = colors.accent) } },
                 dismissButton = { TextButton(onClick = { asking = null }) { Text("Leave it there", color = colors.textMuted) } }
+            )
+        }
+        borrowing?.let { g ->
+            AlertDialog(
+                onDismissRequest = { borrowing = null },
+                containerColor = colors.surface,
+                title = { Text("Borrow from ${g.name}?", color = colors.accentLight) },
+                text = {
+                    Text(
+                        borrowCards(g).joinToString(", ") { if (it.qty > 1) "${it.name} ×${it.qty}" else it.name } +
+                            ". Ask ${g.name} first: this records them as borrowed from ${g.name}, so they show under Loans until they go back. ${g.name}'s cards stay ${g.name}'s.",
+                        color = colors.textMuted
+                    )
+                },
+                confirmButton = { TextButton(onClick = { borrow(g) }) { Text("Borrow", color = colors.accent) } },
+                dismissButton = { TextButton(onClick = { borrowing = null }) { Text("Not now", color = colors.textMuted) } }
             )
         }
         if (moving) {
