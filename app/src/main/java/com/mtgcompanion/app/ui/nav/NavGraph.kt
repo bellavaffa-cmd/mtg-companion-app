@@ -215,6 +215,9 @@ import com.mtgcompanion.app.ui.rules.RulesScreen
 import com.mtgcompanion.app.ui.rules.RulingsRequest
 import com.mtgcompanion.app.ui.rules.RulesViewModel
 import com.mtgcompanion.app.ui.scan.ScanScreen
+import com.mtgcompanion.app.ui.scan.PageScanScreen
+import com.mtgcompanion.app.data.social.bringToGameNight
+import com.mtgcompanion.app.data.social.wantedAsDeckCards
 import com.mtgcompanion.app.ui.scan.ScanViewModel
 import com.mtgcompanion.app.ui.search.SearchResultsScreen
 import com.mtgcompanion.app.ui.search.SearchScreen
@@ -314,6 +317,9 @@ private object Routes {
     /** A binder's Add cards in order (BinderPages.kt). */
     const val PLACE_FIT = "place_fit/{placeId}"
     fun placeFit(placeId: String) = "place_fit/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
+    /** Scanning a whole binder page at once (PageScanScreen). */
+    const val PAGE_SCAN = "page_scan/{placeId}?page={page}"
+    fun pageScan(placeId: String, page: Int) = "page_scan/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name()) + "?page=$page"
     /** The scanner putting cards away into a storage place. */
     const val PUT_AWAY = "put_away/{placeId}"
     fun putAway(placeId: String) = "put_away/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
@@ -677,7 +683,44 @@ fun MtgNavGraph(
                     onCheck = { id -> navController.navigate(Routes.check(id)) },
                     onFit = { id -> navController.navigate(Routes.placeFit(id)) },
                     startPage = startPage,
-                    onLend = { id -> navController.navigate(Routes.lendFrom(id)) }
+                    onLend = { id -> navController.navigate(Routes.lendFrom(id)) },
+                    onScanPage = { id, page -> navController.navigate(Routes.pageScan(id, page)) },
+                    social = socialRepository,
+                    onProposeTrade = { friend, want, give ->
+                        socialRepository.draft = SocialRepository.TradeDraft(to = friend, want = want, give = give)
+                        navController.navigate(Routes.tradeNew(friend))
+                    },
+                    onBringToGameNight = { wanted ->
+                        addToScope.launch {
+                            var deckId: String? = null
+                            deckRepository.change { all ->
+                                val (next, id) = bringToGameNight(all, wantedAsDeckCards(wanted), java.util.UUID.randomUUID().toString())
+                                deckId = id
+                                next
+                            }
+                            deckId?.let { navController.navigate(Routes.pullList(it)) }
+                        }
+                    }
+                )
+            }
+
+            destination(
+                Routes.PAGE_SCAN,
+                arguments = listOf(
+                    navArgument("placeId") { type = NavType.StringType },
+                    navArgument("page") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { entry ->
+                val placeId = entry.arguments?.getString("placeId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val startPage = entry.arguments?.getString("page")?.toIntOrNull() ?: 1
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                PageScanScreen(
+                    placeId = placeId,
+                    startPage = startPage,
+                    collections = collections,
+                    cardIndexRepository = cardIndexRepository,
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onBack = { navController.popBackStack() }
                 )
             }
 
