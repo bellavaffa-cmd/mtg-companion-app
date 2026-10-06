@@ -5,6 +5,7 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.isSample
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepDeckExtrasFromOlderApp
+import com.mtgcompanion.app.data.keepHistoryFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
 import com.mtgcompanion.app.data.keepLastChecked
 import com.mtgcompanion.app.data.keepLoansFromOlderApp
@@ -262,7 +263,7 @@ internal class SyncCore(
                 // and its primer, folder, archive flag, companion and categories (DeckExtras.kt).
                 takeRow(row, deckAdapter, deckChanges, { mine ->
                     mine.copy(cards = emptyList(), considering = emptyList(), sideboard = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList(), cameFrom = null)
-                }, merge = { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) }, heal = { mine, theirs -> keepDeckExtrasFromOlderApp(mine, keepCameFromFromOlderApp(mine, theirs)) })
+                }, merge = { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) }, heal = { mine, theirs -> keepHistoryFromOlderApp(mine, keepDeckExtrasFromOlderApp(mine, keepCameFromFromOlderApp(mine, theirs))) })
             } else {
                 // First meeting: the places too are each device's own, kept as additions.
                 takeRow(

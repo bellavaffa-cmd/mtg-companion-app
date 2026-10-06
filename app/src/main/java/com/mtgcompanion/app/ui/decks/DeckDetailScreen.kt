@@ -146,6 +146,7 @@ import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Tune
@@ -284,6 +285,8 @@ fun DeckDetailScreen(
     onPullList: (() -> Unit)? = null,
     /** The deck's put-back list: taking it apart (PutBackScreen). */
     onTakeApart: (() -> Unit)? = null,
+    /** The deck's history: every change to its list, and versions saved by name (DeckHistoryScreen). */
+    onHistory: (() -> Unit)? = null,
     /** The tab to open on ("Suggestions" for a deck just made with its commander); null for Cards. */
     initialTab: String? = null
 ) {
@@ -396,6 +399,7 @@ fun DeckDetailScreen(
                             if (onShare != null) add(CardMenuAction("Share with friends", Icons.Filled.Group, description = "View only — friends, pods or a link") { onShare() })
                             add(CardMenuAction("Playtest", Icons.Filled.Casino, description = "Mulligan, play or draw, then turns") { showGoldfish = true })
                             add(CardMenuAction("Compare with…", Icons.Filled.Layers, description = "Another deck or a saved version") { comparePicking = true })
+                            if (onHistory != null) add(CardMenuAction("History", Icons.Filled.History, description = "Every change to the list, and versions saved by name") { onHistory() })
                             // Building it from storage, and taking it apart again (PullList.kt).
                             if (onPullList != null) {
                                 if (!d.holdsCards) add(CardMenuAction("Build this deck", Icons.Filled.Inventory2, description = "A pull list: its cards, place by place") { onPullList() })

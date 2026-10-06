@@ -6,6 +6,7 @@ import com.mtgcompanion.app.data.DeckValueHistory
 import com.mtgcompanion.app.data.ValuePoint
 import com.mtgcompanion.app.data.companionEntry
 import com.mtgcompanion.app.data.deckValueOf
+import com.mtgcompanion.app.data.HistoryDevice
 import com.mtgcompanion.app.data.withCompanion
 import com.mtgcompanion.app.data.withSideboardCopies
 import com.mtgcompanion.app.ui.common.toAddItem
@@ -323,7 +324,10 @@ class DeckDetailViewModel(
         if (d.cards.isEmpty()) return@mapLatest DeckAnalysis(loading = false, legality = evaluateLegality(d, emptyMap()))
         buildAnalysis(d).also { a ->
             // Today's value, for the deck's value over time (DeckValueHistory.kt).
-            deckValueOf(d, a.cardsById.mapValues { it.value.prices?.usd?.toDoubleOrNull() })?.let { (usd, cards) ->
+            val priced = a.cardsById.mapValues { it.value.prices?.usd?.toDoubleOrNull() }
+            // ...and kept for the deck's history, which notes the value before and after a change (DeckHistory.kt).
+            HistoryDevice.notePrices(priced)
+            deckValueOf(d, priced)?.let { (usd, cards) ->
                 runCatching { DeckValueHistory.record(deckId, usd, cards) }
             }
         }
@@ -332,6 +336,7 @@ class DeckDetailViewModel(
     /** scryfallId -> USD price for the deck's and considering list's cards. */
     val prices: StateFlow<Map<String, Double>> = deck.mapLatest { d ->
         fetchPrices(cardRepository, (d?.cards.orEmpty() + d?.sideboard.orEmpty() + d?.considering.orEmpty()).map { it.scryfallId }.distinct())
+            .also { HistoryDevice.notePrices(it) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /**

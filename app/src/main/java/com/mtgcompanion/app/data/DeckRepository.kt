@@ -84,6 +84,37 @@ class DeckRepository(private val context: Context) {
         update(transform = transform)
     }
 
+    // ---- History (see DeckHistory.kt) ----
+
+    /** Saves the deck's list as it is now as a named version, with an optional note. */
+    suspend fun saveNamedVersion(deckId: String, name: String, note: String) {
+        val history = HistoryDevice.context(context)
+        update { decks -> decks.map { if (it.id == deckId) withNamedVersion(it, name, note, history) else it } }
+    }
+
+    /**
+     * Takes the deck back to the list after history entry [entryId], recorded as one entry that keeps
+     * today's list in the history too. [known] gives a printing for a card coming back that the deck
+     * doesn't have. Answers the plan carried out (the deck as it was before, for the copies leaving),
+     * or null when the deck or the entry isn't there.
+     */
+    suspend fun restoreVersion(deckId: String, entryId: String, known: (String) -> DeckCardEntry?): Pair<Deck, RestorePlan>? {
+        val history = HistoryDevice.context(context)
+        var out: Pair<Deck, RestorePlan>? = null
+        update { decks ->
+            decks.map { deck ->
+                if (deck.id != deckId) return@map deck
+                val hist = historyOf(deck)
+                val entry = hist.firstOrNull { it.id == entryId } ?: return@map deck
+                val then = stateAt(hist, entryId) ?: return@map deck
+                val plan = restoreList(deck, then, known)
+                out = deck to plan
+                withRestore(deck, plan.deck, entry.at, history)
+            }
+        }
+        return out
+    }
+
     suspend fun setOwnership(deckId: String, ownership: DeckOwnership) {
         update { decks -> decks.map { if (it.id == deckId) it.copy(ownership = ownership.name) else it } }
     }
@@ -357,8 +388,13 @@ class DeckRepository(private val context: Context) {
             val store = prefs[key]?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
             val current = store?.decks ?: emptyList()
             val next = transform(current)
+            // ...and the change in its history (DeckHistory.kt). Samples are never synced, so they keep none.
             val recorded = if (recordVersions) {
-                next.map { after -> withVersion(current.find { it.id == after.id }, after) }
+                val history = HistoryDevice.context(context)
+                next.map { after ->
+                    val before = current.find { it.id == after.id }
+                    withVersion(before, if (after.sample == true) after else withHistory(before, after, history))
+                }
             } else next
             // Every write comes through here, so this is where a copy gets back the tags it already
             // had — however it came to be written (moved, re-added, scanned, imported).

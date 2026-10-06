@@ -5,6 +5,8 @@ import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckVersion
+import com.mtgcompanion.app.data.keepHistoryFromOlderApp
+import com.mtgcompanion.app.data.mergeHistory
 import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
@@ -47,6 +49,8 @@ import com.mtgcompanion.app.data.tidied
  *  - A deck's primer, folder, archive flag and companion go to whoever changed them; each category's
  *    target the same, one by one; a card's categories merge like its tags. A deck saved by an app that
  *    doesn't know them leaves them as they were (DeckExtras.kt).
+ *  - A deck's history (DeckHistory.kt) is every entry from both sides, once by id, the newer copy of
+ *    one both have; a deck saved by an app that doesn't know it leaves it as it was.
  * The web app merges the same way — see MtgCompanionWeb/src/sync/mergeItems.ts.
  */
 object ItemMerge {
@@ -174,10 +178,11 @@ object ItemMerge {
     fun mergeDecks(base: Deck, mine: Deck, theirs: Deck, minePreferred: Boolean): Deck =
         // A side saved by an app that doesn't know where the deck's copies came from left that as it was.
         // ...and the same for its primer, folder, archive flag, companion and categories.
+        // ...and its history (DeckHistory.kt).
         mergeDecksKnowingCameFrom(
             base,
-            keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, mine)),
-            keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, theirs)),
+            keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, mine))),
+            keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, theirs))),
             minePreferred
         )
 
@@ -194,7 +199,8 @@ object ItemMerge {
         sideboard = mergeDeckCards(base.sideboard, mine.sideboard, theirs.sideboard, minePreferred),
         tags = mergeStringSet(base.tags, mine.tags, theirs.tags),
         gameResults = mergeGameResults(base.gameResults, mine.gameResults, theirs.gameResults),
-        versions = mergeVersions(mine.versions, theirs.versions)
+        versions = mergeVersions(mine.versions, theirs.versions),
+        history = mergeHistory(mine.history, theirs.history)
     ), base, mine, theirs, minePreferred)
 
     fun mergeCollections(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection =

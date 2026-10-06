@@ -24,6 +24,11 @@ import com.mtgcompanion.app.ui.collection.SellScreen
 import com.mtgcompanion.app.ui.collection.CopyPhotoScreen
 import com.mtgcompanion.app.ui.decks.PullListScreen
 import com.mtgcompanion.app.ui.decks.PutBackScreen
+import com.mtgcompanion.app.ui.decks.DeckHistoryScreen
+import com.mtgcompanion.app.ui.decks.DeckVersionScreen
+import com.mtgcompanion.app.ui.decks.RestoreOutcome
+import com.mtgcompanion.app.data.DeckOwnership
+import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.ui.scan.TickList
 import com.mtgcompanion.app.ui.lifecounter.PlaygroupScreen
 import com.mtgcompanion.app.ui.collection.TagBinderViewModel
@@ -354,6 +359,11 @@ private object Routes {
     /** A deck's put-back list: taking it apart. */
     const val PUT_BACK = "put_back/{deckId}"
     fun putBack(deckId: String) = "put_back/$deckId"
+    /** A deck's history (DeckHistory.kt), and one earlier list from it. */
+    const val DECK_HISTORY = "deck_history/{deckId}"
+    fun deckHistory(deckId: String) = "deck_history/$deckId"
+    const val DECK_VERSION = "deck_version/{deckId}/{entryId}"
+    fun deckVersion(deckId: String, entryId: String) = "deck_version/$deckId/" + URLEncoder.encode(entryId, StandardCharsets.UTF_8.name())
     /** The scanner ticking a deck's pull list ([kind] "pull") or put-back list ("put_back"). */
     const val SCAN_TICK = "scan_tick/{deckId}/{kind}"
     fun scanTick(deckId: String, pull: Boolean) = "scan_tick/$deckId/" + if (pull) "pull" else "put_back"
@@ -827,6 +837,56 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(Routes.DECK_HISTORY, arguments = listOf(navArgument("deckId") { type = NavType.StringType })) { entry ->
+                val deckId = entry.arguments?.getString("deckId").orEmpty()
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                DeckHistoryScreen(
+                    deckId = deckId,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onOpen = { entryId -> navController.navigate(Routes.deckVersion(deckId, entryId)) },
+                    onSaveVersion = { name, note -> addToScope.launch { deckRepository.saveNamedVersion(deckId, name, note) } }
+                )
+            }
+
+            destination(
+                Routes.DECK_VERSION,
+                arguments = listOf(navArgument("deckId") { type = NavType.StringType }, navArgument("entryId") { type = NavType.StringType })
+            ) { entry ->
+                val deckId = entry.arguments?.getString("deckId").orEmpty()
+                val entryId = entry.arguments?.getString("entryId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                DeckVersionScreen(
+                    deckId = deckId,
+                    entryId = entryId,
+                    decks = decks,
+                    collections = collections,
+                    onBack = { navController.popBackStack() },
+                    onCopy = { name, cards, commander, partner ->
+                        val mode = decks.firstOrNull { it.id == deckId }?.mode ?: GameMode.DEFAULT
+                        addToScope.launch {
+                            val made = deckRepository.createDeckWithCards(name, mode, cards, commander, partner)
+                            navController.navigate(Routes.deckDetail(made.id)) { popUpTo(Routes.DECKS) }
+                        }
+                    },
+                    onRestore = { known ->
+                        val done = deckRepository.restoreVersion(deckId, entryId, known)
+                        done?.let { (before, plan) ->
+                            // Real copies going out land on the Unsorted pile, as when they're taken out by hand.
+                            var out = 0
+                            plan.cuts.forEach { (e, left) -> out += collectionRepository.returnFromDeck(before, e, left) }
+                            RestoreOutcome(plan.incoming, out, plan.missing.sumOf { it.q }, before.ownershipType == DeckOwnership.PHYSICAL)
+                        }
+                    },
+                    onPullList = {
+                        navController.popBackStack(Routes.DECK_DETAIL, inclusive = false)
+                        navController.navigate(Routes.pullList(deckId))
+                    },
+                    onDone = { navController.popBackStack(Routes.DECK_DETAIL, inclusive = false) }
+                )
+            }
+
             destination(
                 Routes.SCAN_TICK,
                 arguments = listOf(navArgument("deckId") { type = NavType.StringType }, navArgument("kind") { type = NavType.StringType })
@@ -1232,6 +1292,7 @@ fun MtgNavGraph(
                     onOpenBadge = { navController.navigate(Routes.tokenBadge(deckId)) },
                     onPullList = { navController.navigate(Routes.pullList(deckId)) },
                     onTakeApart = { navController.navigate(Routes.putBack(deckId)) },
+                    onHistory = { navController.navigate(Routes.deckHistory(deckId)) },
                     initialTab = initialTab
                 )
                 whoHas?.let { names ->
