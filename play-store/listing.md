@@ -83,6 +83,6 @@ Manabind is unofficial Fan Content permitted under the Fan Content Policy. Not a
   category; Entertainment fits a hobby tool, and listing under Games would suggest Manabind is
   itself a game. Lifestyle is the alternative.
 - **Tags:** collection, card games, trading cards.
-- **Contact email:** required, shown publicly. The owner chooses one (it isn't in the code).
+- **Contact email:** support@manabind.com (shown publicly).
 - **Website:** https://manabind.com
 - **Privacy policy:** https://manabind.com/privacy (live once the web change is pushed).

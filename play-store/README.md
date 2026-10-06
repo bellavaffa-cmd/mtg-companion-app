@@ -46,9 +46,9 @@ before relying on it.
    in the Supabase SQL editor (project `ftjwwbkqqoctlozubopv`) after reading it — it contains
    DELETE statements by design (only the caller's own rows). Then test with a throwaway account:
    in the app, and at manabind.com/delete-account.
-4. **Push the web change** (`/privacy`, `/delete-account`) so both URLs are live. Fill in the
-   contact on both pages (`src/account/contact.ts`, `CONTACT`, in the web repo): it points at the
-   GitHub issues page until you add an email address.
+4. **Web pages — done.** `/privacy`, `/delete-account` and `/community-rules` are live on
+   manabind.com, with support@manabind.com as the contact (`src/account/contact.ts` in the web repo).
+   Make sure that mailbox receives mail.
 5. **User-generated content terms — done on `ux/sdk` (app and web).** A one-time Community rules
    sheet before the first profile save, message, trade request/reply and share; the agreement is
    kept on the device and in the account's `user_metadata.community_rules_version`. The rules page
