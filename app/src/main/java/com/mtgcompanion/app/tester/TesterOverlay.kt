@@ -87,7 +87,7 @@ fun TesterOverlay(activity: Activity) {
     val lastScan by Tester.lastScan.collectAsState()
     val log by TesterLog.flow.collectAsState()
     var draft by remember { mutableStateOf<Draft?>(null) }
-    var notesOpen by remember { mutableStateOf(flags.seenNotesFor < Tester.SEQUENCE && TESTER_NOTES.isNotEmpty()) }
+    var notesOpen by remember { mutableStateOf(flags.seenNotesFor < Tester.BUILD && TESTER_NOTES.isNotEmpty()) }
 
     // The picture is taken first, while the screen still shows the problem and not this dialog.
     val startReport: (String, String, JSONObject?) -> Unit = { kind, about, extra ->
@@ -106,7 +106,7 @@ fun TesterOverlay(activity: Activity) {
     Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         if (flags.banner) {
             Text(
-                "TESTER · ${Tester.LABEL}",
+                "TESTER · build ${Tester.BUILD}",
                 color = Color.Black,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
@@ -187,7 +187,7 @@ fun TesterOverlay(activity: Activity) {
                 if (works) Tester.reports.submit("checklist", "${note.title}: works", JSONObject().put("item", note.id).put("verdict", "works"))
                 else startReport("checklist", "${note.title}: ", JSONObject().put("item", note.id).put("verdict", "problem"))
             },
-            onDone = { flags.seenNotesFor = Tester.SEQUENCE; notesOpen = false }
+            onDone = { flags.seenNotesFor = Tester.BUILD; notesOpen = false }
         )
     }
 
@@ -313,7 +313,7 @@ private fun NotesDialog(onVerdict: (TesterNote, works: Boolean) -> Unit, onDone:
     AlertDialog(
         onDismissRequest = onDone,
         containerColor = Surface,
-        title = { Text("New in tester ${Tester.LABEL}", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
+        title = { Text("New in tester build ${Tester.BUILD}", color = GoldLight, style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 TESTER_NOTES.forEach { note ->

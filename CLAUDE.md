@@ -37,14 +37,12 @@ filter wording — so a change to one usually needs the same change in the other
 - **Tester build:** work on a branch (not `master`), rewrite
   `app/src/main/java/com/mtgcompanion/app/tester/TesterNotes.kt` (the "what's new — Works / Problem"
   list shown on first open: one entry per change, saying how to try it), commit, then tag
-  `tester-X.Y.Z-N` — X.Y.Z is the versionName (the last release), N one more than the highest
-  existing `tester-X.Y.Z-*` tag, so numbering starts at 1 again after each release — and push
-  branch and tag. (Tester builds before 3.6.0 were `tester-1` … `tester-25`.)
+  `tester-N` — N is one more than the highest existing `tester-N` tag — and push branch and tag.
   CI publishes a pre-release with `manabind-tester-{arm64-v8a,armeabi-v7a,universal}.apk`. The
-  tester app updates itself to the newest tester build after its own (version first, then N).
+  tester app updates itself to the highest `tester-N` above its own build.
   Where tags can't be pushed (a cloud session can push branches but not tags), push the commit to
   the `tester-build` branch instead (`git push origin HEAD:tester-build`, force if it's behind): the Release
-  workflow takes the next `tester-X.Y.Z-N`, tags the commit and publishes it. A commit that's already a
+  workflow takes the next `tester-N`, tags the commit and publishes it. A commit that's already a
   tester build isn't built again. The owner approved this route; real releases still need a tag.
 - **Real release**, only on the owner's go-ahead: merge the tester branch into `master`
   (fast-forward), bump `versionCode` and `versionName` in `app/build.gradle` (versionCode is

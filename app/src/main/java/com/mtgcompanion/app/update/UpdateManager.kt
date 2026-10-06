@@ -82,7 +82,7 @@ class UpdateManager(
                         checking = false,
                         available = null,
                         message = if (silent) null
-                        else if (IS_TESTER) "You're on the latest tester build (${com.mtgcompanion.app.tester.Tester.LABEL})."
+                        else if (IS_TESTER) "You're on the latest tester build (${BuildConfig.TESTER_BUILD})."
                         else "You're on the latest version (${BuildConfig.VERSION_NAME})."
                     )
                 }
@@ -135,9 +135,8 @@ class UpdateManager(
             if (!resp.isSuccessful) throw IOException("GitHub API returned ${resp.code}")
             val releases = JSONArray(resp.body?.string().orEmpty())
             val byTag = (0 until releases.length()).map { releases.getJSONObject(it) }.associateBy { it.optString("tag_name") }
-            val newest = newestTesterTag(byTag.keys.toList(), TesterBuildId(BuildConfig.VERSION_CODE, BuildConfig.TESTER_BUILD)) ?: return null
-            val id = parseTesterTag(newest) ?: return null
-            return updateFrom(byTag.getValue(newest), id.label)
+            val newest = newestTesterBuild(byTag.keys.toList(), BuildConfig.TESTER_BUILD) ?: return null
+            return updateFrom(byTag.getValue("$TESTER_TAG$newest"), "tester build $newest")
         }
     }
 
@@ -220,30 +219,14 @@ class UpdateManager(
         /** The tester app (the beta build type): tried before a release, and updated on its own line. */
         val IS_TESTER = BuildConfig.BUILD_TYPE == "beta"
 
-        /**
-         * Tester builds are GitHub pre-releases tagged tester-3.6.0-1, tester-3.6.0-2, …: counted again
-         * from 1 after each release (the version they follow, then the number). Before 3.6.0 they were
-         * tester-1 … tester-25, counted from the very first.
-         */
+        /** Tester builds are GitHub pre-releases tagged tester-1, tester-2, … */
         const val TESTER_TAG = "tester-"
-        private val PER_RELEASE_TAG = Regex("""^tester-(\d+)\.(\d+)\.(\d+)-(\d+)$""")
-        private val OLD_TAG = Regex("""^tester-(\d+)$""")
 
-        /** A tester build from its tag; the old tester-N builds all come before any per-release one. */
-        fun parseTesterTag(tag: String): TesterBuildId? {
-            PER_RELEASE_TAG.matchEntire(tag)?.let { m ->
-                val (major, minor, patch, n) = m.destructured
-                return TesterBuildId(major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt(), n.toInt(), "$major.$minor.$patch")
-            }
-            return OLD_TAG.matchEntire(tag)?.let { TesterBuildId(0, it.groupValues[1].toInt()) }
-        }
-
-        /** The tag of the newest tester build among [tags] after [current], or null when there's none. */
-        fun newestTesterTag(tags: List<String>, current: TesterBuildId): String? =
-            tags.mapNotNull { tag -> parseTesterTag(tag)?.let { tag to it } }
-                .filter { it.second > current }
-                .maxByOrNull { it.second }
-                ?.first
+        /** The highest tester build number among [tags] above [current], or null when there's none. */
+        fun newestTesterBuild(tags: List<String>, current: Int): Int? =
+            tags.mapNotNull { tag -> tag.takeIf { it.startsWith(TESTER_TAG) }?.removePrefix(TESTER_TAG)?.toIntOrNull() }
+                .filter { it > current }
+                .maxOrNull()
 
         /**
          * Picks which of a release's APK assets this device should download.
@@ -290,15 +273,4 @@ class UpdateManager(
             return false
         }
     }
-}
-
-/**
- * Where a tester build sits in line: the release it follows (as a versionCode, 0 for the old tester-N
- * builds), then its number since that release.
- */
-data class TesterBuildId(val versionCode: Int, val build: Int, val version: String? = null) : Comparable<TesterBuildId> {
-    override fun compareTo(other: TesterBuildId): Int = compareValuesBy(this, other, { it.versionCode }, { it.build })
-
-    /** "3.6.0 tester build 2", or "tester build 25" for an old one. */
-    val label: String get() = if (version != null) "$version tester build $build" else "tester build $build"
 }

@@ -3,9 +3,8 @@ name: Release
 # Builds and publishes the signed APKs when a tag is pushed, so a release needs no particular
 # computer — only the tag:
 #
-#   tester-X.Y.Z-N  the Manabind Tester app (the `beta` build type), published as a pre-release that
-#              only the tester app's own updater offers. X.Y.Z is the release it follows (versionName)
-#              and N its tester build number since that release. (Before 3.6.0: tester-1 … tester-25.)
+#   tester-N   the Manabind Tester app (the `beta` build type), published as a pre-release that only
+#              the tester app's own updater offers. N is the tester build number.
 #   vX.Y.Z     the real app, published as the latest full release. app/build.gradle's versionName
 #              must already say X.Y.Z. Its notes come from release-notes/vX.Y.Z.md when that file
 #              exists. Besides the APKs it carries app-release.aab, the Google Play build of the
@@ -83,10 +82,8 @@ jobs:
               echo "This commit is already a tester build:"; echo "$tags" | grep "^$GITHUB_SHA"
               echo "kind=none" >> "$GITHUB_OUTPUT"; exit 0
             fi
-            # Counted from 1 again after each release: tester-<the version it follows>-N.
-            version=$(grep -E "^\s*versionName '" app/build.gradle | head -n 1 | sed -E "s/.*'(.*)'.*/\1/")
-            last=$(echo "$tags" | sed -nE "s#.*refs/tags/tester-${version//./\\.}-([0-9]+)\$#\1#p" | sort -n | tail -n 1)
-            TAG="tester-$version-$(( ${last:-0} + 1 ))"
+            last=$(echo "$tags" | sed -nE 's#.*refs/tags/tester-([0-9]+)$#\1#p' | sort -n | tail -n 1)
+            TAG="tester-$(( ${last:-0} + 1 ))"
           elif [ "$GITHUB_REF" = "refs/heads/release-build" ]; then
             version=$(grep -E "^\s*versionName '" app/build.gradle | head -n 1 | sed -E "s/.*'(.*)'.*/\1/")
             TAG="v$version"
@@ -104,9 +101,7 @@ jobs:
           echo "Building $TAG"
           if [[ "$TAG" == tester-* ]]; then
             echo "kind=tester" >> "$GITHUB_OUTPUT"
-            # tester-3.6.0-2 is build 2 (the old tester-25 style, 25).
-            echo "build=${TAG##*-}" >> "$GITHUB_OUTPUT"
-            echo "label=${TAG#tester-}" >> "$GITHUB_OUTPUT"
+            echo "build=${TAG#tester-}" >> "$GITHUB_OUTPUT"
           else
             version=$(grep -E "^\s*versionName '" app/build.gradle | head -n 1 | sed -E "s/.*'(.*)'.*/\1/")
             if [ "v$version" != "$TAG" ]; then
@@ -213,8 +208,8 @@ jobs:
             gh release edit "$TAG" --prerelease --latest=false
           else
             gh release create "$TAG" out/*.apk --prerelease --latest=false --target "$GITHUB_SHA" \
-              --title "Manabind Tester ${{ steps.plan.outputs.label }}" \
-              --notes "Tester build ${{ steps.plan.outputs.build }} after the last release (${{ steps.plan.outputs.label }}). Installs alongside the real app; the tester app updates itself to this."
+              --title "Manabind Tester build ${{ steps.plan.outputs.build }}" \
+              --notes "Tester build ${{ steps.plan.outputs.build }}. Installs alongside the real app; the tester app updates itself to this."
           fi
 
       - name: Publish the release

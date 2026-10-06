@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mtgcompanion.app.BuildConfig
 import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.ui.theme.Bg
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -102,7 +103,7 @@ fun TesterToolsScreen(supabaseSync: SupabaseSync, onBack: () -> Unit, onOpenSett
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("Tester ${Tester.LABEL}\n${Tester.device()}", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+            Text("Tester build ${Tester.BUILD} · ${BuildConfig.VERSION_NAME}\n${Tester.device()}", color = TextMuted, style = MaterialTheme.typography.bodySmall)
 
             Section("Tell the developer")
             Text("Shake the phone or tap the bug button on any screen to report a problem with a picture of it. For anything else:", color = TextMuted, style = MaterialTheme.typography.bodySmall)
