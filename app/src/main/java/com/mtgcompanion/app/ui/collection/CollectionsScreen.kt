@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.ViewModeButton
 import com.mtgcompanion.app.ui.common.EmptyAction
 import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.EmptyPrompt
@@ -597,13 +598,16 @@ private fun AllCardsTab(
                         unfocusedContainerColor = Surface
                     ),
                     trailingIcon = {
-                        IconButton(onClick = { filterOpen = !filterOpen }) {
-                            BadgedBox(badge = { if (filtersOn > 0) Badge(containerColor = Gold, contentColor = OnGold) { Text("$filtersOn") } }) {
-                                Icon(
-                                    Icons.Filled.FilterList,
-                                    contentDescription = if (filtering) "Filters, $filtersOn on" else "Filters",
-                                    tint = if (filtering || filterOpen) Gold else TextMuted
-                                )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            ViewModeButton(viewMode, viewModel::setViewMode)
+                            IconButton(onClick = { filterOpen = !filterOpen }) {
+                                BadgedBox(badge = { if (filtersOn > 0) Badge(containerColor = Gold, contentColor = OnGold) { Text("$filtersOn") } }) {
+                                    Icon(
+                                        Icons.Filled.FilterList,
+                                        contentDescription = if (filtering) "Filters, $filtersOn on" else "Filters",
+                                        tint = if (filtering || filterOpen) Gold else TextMuted
+                                    )
+                                }
                             }
                         }
                     },

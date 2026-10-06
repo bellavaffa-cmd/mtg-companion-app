@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.ui.common.ViewModeButton
 import com.mtgcompanion.app.ui.common.EmptyAction
 import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.EmptyPrompt
@@ -213,6 +214,7 @@ fun CollectionDetailScreen(
                 },
                 actions = {
                     SyncIconButton()
+                    ViewModeButton(viewMode, viewModel::setViewMode)
                     if (onShare != null) {
                         IconButton(onClick = onShare) {
                             Icon(Icons.Filled.GroupAdd, contentDescription = "Share with friends", tint = TextPrimary)

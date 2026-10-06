@@ -9,6 +9,11 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "view-buttons",
+        "List or grid button on every card list",
+        "Collection › All cards (next to Filters in the search box), any binder (top bar) and a deck's Suggestions (next to EDHREC suggestions): tap the grid/list button. Each should stick and match Settings › Card Display."
+    ),
+    TesterNote(
         "qr-sign-in",
         "Sign in with a QR code",
         "On a phone that's signed out (or the tester app after signing out), Settings › Account & sync › Sign in with a QR code. Scan it with another phone that's signed in (Manabind › Scan, or the camera opening manabind.com): approve, and the first phone should sign in and sync by itself. Let a code run out to check a new one appears."

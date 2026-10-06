@@ -81,6 +81,11 @@ class CollectionsViewModel(
     /** List or grid for the All Cards tab, and the shared grid column count, from Settings > Card Display. */
     val viewMode: StateFlow<CardViewMode> = settingsRepository.allCardsViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
+
+    fun setViewMode(mode: CardViewMode) {
+        viewModelScope.launch { settingsRepository.setAllCardsViewMode(mode) }
+    }
+
     val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)
 

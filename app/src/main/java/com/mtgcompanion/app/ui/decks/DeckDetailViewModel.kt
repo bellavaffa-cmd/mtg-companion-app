@@ -206,6 +206,10 @@ class DeckDetailViewModel(
     val recViewMode: StateFlow<CardViewMode> = settingsRepository.recViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
 
+    fun setRecViewMode(mode: CardViewMode) {
+        viewModelScope.launch { settingsRepository.setRecViewMode(mode) }
+    }
+
     /** Shared grid column count for both tabs above, when either is in Grid mode. */
     /** Open/closed panels on the Stats tab, the same for every deck (see [StatsPanels]). */
     val statsPanels: StateFlow<Map<String, Boolean>> = settingsRepository.statsPanels

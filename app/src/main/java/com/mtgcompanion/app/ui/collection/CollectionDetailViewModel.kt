@@ -88,6 +88,10 @@ class CollectionDetailViewModel(
     val viewMode: StateFlow<CardViewMode> = settingsRepository.collectionViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CardViewMode.DEFAULT)
 
+    fun setViewMode(mode: CardViewMode) {
+        viewModelScope.launch { settingsRepository.setCollectionViewMode(mode) }
+    }
+
     /** Grid column count, when [viewMode] is Grid. */
     val gridColumns: StateFlow<Int> = settingsRepository.gridColumns
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GRID_COLUMNS_DEFAULT)

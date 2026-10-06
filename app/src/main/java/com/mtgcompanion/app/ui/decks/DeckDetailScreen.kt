@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.decks
 
+import com.mtgcompanion.app.ui.common.ViewModeButton
 import com.mtgcompanion.app.ui.common.AddToPick
 import androidx.compose.material3.minimumInteractiveComponentSize
 import com.mtgcompanion.app.ui.common.a11yHeading
@@ -2430,7 +2431,12 @@ private fun AnalysisTab(
             onMarkCut = onMarkCut,
             onViewDetails = onViewDetails
         )
-        item { SectionLabel("EDHREC suggestions") }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { SectionLabel("EDHREC suggestions") }
+                if (!suggestions.isNullOrEmpty()) ViewModeButton(viewMode, viewModel::setRecViewMode)
+            }
+        }
         val sug = suggestions
         when {
             sug == null -> item {
