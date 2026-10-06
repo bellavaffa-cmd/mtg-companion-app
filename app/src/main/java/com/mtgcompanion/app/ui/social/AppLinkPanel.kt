@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -214,7 +215,7 @@ fun AppLinkPanel(handler: AppLinkHandler, profile: Profile?, onDone: () -> Unit,
         }
         is LinkResult.SignInWeb -> Column(panel, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Filled.Computer, contentDescription = null, tint = colors.accent)
+                Icon(if (r.browser.startsWith("Manabind")) Icons.Filled.PhoneAndroid else Icons.Filled.Computer, contentDescription = null, tint = colors.accent)
                 Text("Sign in ${r.browser}?", style = MaterialTheme.typography.titleMedium)
             }
             Text(

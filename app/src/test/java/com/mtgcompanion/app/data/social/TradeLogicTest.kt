@@ -131,6 +131,7 @@ class TradeLogicTest {
         // A browser waiting to be signed in (see qr_login).
         assertEquals(AppLink.WebSignIn("0123456789abcdef0123456789abcdef"), AppLink.parse("${base}login/0123456789abcdef0123456789abcdef"))
         assertNull(AppLink.parse("${base}login/short"))
+        assertEquals(AppLink.WebSignIn("0123456789abcdef0123456789abcdef"), AppLink.parse(SocialApi.loginLink("0123456789abcdef0123456789abcdef")))
         assertNull(AppLink.parse("https://example.com/add/bob"))
         assertNull(AppLink.parse("${base}join/not-a-code/3"))
         assertNull(AppLink.parse("${base}add/a"))

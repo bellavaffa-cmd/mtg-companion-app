@@ -7,6 +7,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.RowScope
 import com.mtgcompanion.app.ui.common.a11yHeading
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Block
 import com.mtgcompanion.app.data.social.SocialRepository
@@ -775,6 +776,7 @@ internal fun AccountSyncSection(sync: SupabaseSync) {
     var awaitingConfirmation by rememberSaveable { mutableStateOf(false) }
     var changingPassword by remember { mutableStateOf(false) }
     var signingOut by remember { mutableStateOf(false) }
+    var showingQr by remember { mutableStateOf(false) }
     // Changes that couldn't be synced before signing out, which signing out would lose.
     var unsyncedWarning by remember { mutableStateOf<Int?>(null) }
 
@@ -898,6 +900,17 @@ internal fun AccountSyncSection(sync: SupabaseSync) {
                 enabled = !busy
             ) { Text("Forgot password?", style = MaterialTheme.typography.labelLarge, color = Gold) }
         }
+        OutlinedButton(
+            onClick = { showingQr = true },
+            enabled = !busy,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Filled.QrCode2, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Sign in with a QR code", style = MaterialTheme.typography.labelLarge, color = Gold)
+        }
+        if (showingQr) QrSignInDialog(sync) { showingQr = false }
         notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = app.warning) }
         if (awaitingConfirmation && email.contains("@")) {
             TextButton(

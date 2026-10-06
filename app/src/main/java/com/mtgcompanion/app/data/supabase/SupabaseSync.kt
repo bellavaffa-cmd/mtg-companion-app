@@ -316,6 +316,13 @@ class SupabaseSync(
         runSync()
     }
 
+    /** Signs in once another device approves [request] (see SupabaseAuth.claimQrSignIn): true when it has. */
+    suspend fun claimQrSignIn(request: QrSignInRequest): Boolean {
+        if (!auth.claimQrSignIn(request)) return false
+        runSync()
+        return true
+    }
+
     /** Returns true if the new account is already signed in (no email confirmation required). */
     suspend fun signUp(email: String, password: String): Boolean {
         val signedIn = auth.signUp(email, password)

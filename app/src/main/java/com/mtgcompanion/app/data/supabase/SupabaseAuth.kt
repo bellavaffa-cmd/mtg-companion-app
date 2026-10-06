@@ -36,6 +36,9 @@ private val Context.supabaseAuthStore by preferencesDataStore(name = "supabase_a
 data class SupabaseAccount(val userId: String, val email: String)
 
 /** A sign-in put aside while another account is in use (see [SupabaseAuth.parkedSession]). */
+/** A waiting QR sign-in: [code] goes in the QR; [secret] never leaves this phone. */
+data class QrSignInRequest(val code: String, val secret: String, val expiresAt: Long)
+
 data class ParkedSession(val userId: String, val email: String, val refreshToken: String)
 
 /**
@@ -256,6 +259,51 @@ class SupabaseAuth(private val context: Context) {
         val body = JSONObject().put("email", email.trim()).put("password", password)
         saveSession(post("/auth/v1/token?grant_type=password", body))
     }
+
+    // ---- Signing in by showing a QR code (supabase/migrations/…_qr_login.sql, functions/qr-login) ----
+    //
+    // The same requests the web app makes (its src/sync/qrLogin.ts): this phone asks for a code, shows
+    // it, and a device already signed in scans it and approves. This phone alone holds the secret
+    // behind the code, so only it can collect the one-time token that follows.
+
+    /** A new sign-in request to show as a QR. [deviceName] is what the approving device is asked about. */
+    suspend fun startQrSignIn(deviceName: String): QrSignInRequest {
+        val secret = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }.toHex()
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(secret.toByteArray()).toHex()
+        val rows = org.json.JSONArray(rpc("start_qr_login", JSONObject().put("p_secret_hash", digest).put("p_browser", deviceName)))
+        val row = rows.optJSONObject(0) ?: throw IOException("start_qr_login: nothing came back")
+        val expiresAt = runCatching { java.time.OffsetDateTime.parse(row.getString("expires_at")).toInstant().toEpochMilli() }
+            .getOrElse { System.currentTimeMillis() + 120_000 }
+        return QrSignInRequest(row.getString("code"), secret, expiresAt)
+    }
+
+    /**
+     * Collects [request] if another device has approved it, and signs this phone in with it: true when
+     * signed in, false while nobody has approved yet.
+     */
+    suspend fun claimQrSignIn(request: QrSignInRequest): Boolean {
+        val answer = rpc("claim_qr_login", JSONObject().put("p_code", request.code).put("p_secret", request.secret)).trim()
+        if (answer.isEmpty() || answer == "null") return false
+        val tokenHash = answer.trim('"')
+        saveSession(post("/auth/v1/verify", JSONObject().put("type", "magiclink").put("token_hash", tokenHash)))
+        return true
+    }
+
+    /** A database function anyone may call, signed in or not; answers its JSON as text. */
+    private suspend fun rpc(fn: String, body: JSONObject): String = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(BuildConfig.SUPABASE_URL + "/rest/v1/rpc/$fn")
+            .header("apikey", BuildConfig.SUPABASE_ANON_KEY)
+            .header("Authorization", "Bearer ${BuildConfig.SUPABASE_ANON_KEY}")
+            .post(body.toString().toRequestBody(JSON_MEDIA))
+            .build()
+        http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("$fn: HTTP ${response.code}")
+            response.body?.string().orEmpty()
+        }
+    }
+
+    private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
 
     /**
      * Signs this device out on the server (best effort) and forgets its session. scope=local: the

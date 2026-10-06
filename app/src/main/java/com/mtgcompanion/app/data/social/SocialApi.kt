@@ -417,6 +417,7 @@ class SocialApi(private val auth: SupabaseAuth) {
         fun friendLink(username: String) = PUBLIC_APP_URL + "add/" + URLEncoder.encode(username, "UTF-8")
         fun seatLink(code: String, seat: Int) = PUBLIC_APP_URL + "join/$code/$seat"
         fun shareLink(token: String) = PUBLIC_APP_URL + "s/$token"
+        fun loginLink(code: String) = PUBLIC_APP_URL + "login/$code"
 
         private val MESSAGES = mapOf(
             "not_signed_in" to "Sign in first.",
