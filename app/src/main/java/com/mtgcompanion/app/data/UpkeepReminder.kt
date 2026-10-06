@@ -20,7 +20,9 @@ import com.mtgcompanion.app.MainActivity
 import com.mtgcompanion.app.R
 import com.mtgcompanion.app.data.social.PushNotifications
 import com.mtgcompanion.app.ui.lifecounter.GameNightStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
@@ -90,13 +92,18 @@ suspend fun upkeepNow(context: Context, collections: List<Collection>, decks: Li
     val nights = GameNightStore.gameNights().second.map { NightDay(it, dayOf(it)) }
     CardPriceHistory.init(context)
     val tracks = runCatching { CardPriceHistory.load() }.getOrDefault(emptyMap())
-    return upkeep(
-        collections, decks, now, dayOf(now), nights,
-        pulls = PullProgress(context).underway(),
-        lastImport = UpkeepStore.lastImport(context),
-        price = priceFromHistory(tracks),
-        money = { Prices.money.value.format(it, whole = true) }
-    )
+    val pulls = PullProgress(context).underway()
+    val lastImport = UpkeepStore.lastImport(context)
+    // Pull lists and a big collection take a moment: off the main thread.
+    return withContext(Dispatchers.Default) {
+        upkeep(
+            collections, decks, now, dayOf(now), nights,
+            pulls = pulls,
+            lastImport = lastImport,
+            price = priceFromHistory(tracks),
+            money = { Prices.money.value.format(it, whole = true) }
+        )
+    }
 }
 
 /**
