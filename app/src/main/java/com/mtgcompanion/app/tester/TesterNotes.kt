@@ -9,6 +9,16 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "page-scan",
+        "Scan a whole binder page",
+        "Open a binder in Collection › Storage, stay on Pages, go to a page and tap Scan this page. Lay the page flat, fill the frame (one card per box) and tap Scan this page: each pocket should show its card, Which one? (tap to pick the printing) or Empty, with \"6 read · 1 to check · 2 empty\". Try Check against record, then Record this page and look at the binder's page. Save · next page records it and moves on. Sleeve glare is the big unknown — tell us which pockets it gets wrong."
+    ),
+    TesterNote(
+        "friends-want",
+        "Friends want these, on a binder",
+        "Needs a friend whose shared wishlist has cards in one of your binders. Open that binder (Collection › Storage): under its pages, Friends want these lists each friend with count, value and each card's page and slot. Propose a trade should open the composer filled in; Bring to game night (when they have cards you want too) should open the \"Bring to game night\" pull list with those cards."
+    ),
+    TesterNote(
         "gather-message",
         "Adding cards to a binder says what moved",
         "Collection › All cards › Select all › Add to… a binder. Cards only in your decks stay in the decks, and the message should now say how many really moved and how many stayed in decks (before, it said all of them moved)."

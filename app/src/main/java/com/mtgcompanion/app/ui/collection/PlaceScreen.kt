@@ -59,6 +59,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.data.social.TradeCard
+import com.mtgcompanion.app.data.social.WantedHere
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CopyHistoryStore
 import com.mtgcompanion.app.data.movesOfPlace
@@ -123,7 +126,15 @@ fun PlaceScreen(
     /** The page a binder opens at. */
     startPage: Int = 1,
     /** Lend cards from the place (LendScreen.kt). */
-    onLend: (String) -> Unit = {}
+    onLend: (String) -> Unit = {},
+    /** Scan a whole binder page (PageScanScreen): the binder and the page shown. */
+    onScanPage: (String, Int) -> Unit = { _, _ -> },
+    /** For "Friends want these" on a binder; null leaves it out. */
+    social: SocialRepository? = null,
+    /** Propose a trade with a friend, started with both sides. */
+    onProposeTrade: (friend: String, want: List<TradeCard>, give: List<TradeCard>) -> Unit = { _, _, _ -> },
+    /** Bring to game night: the cards onto the game night deck's pull list. */
+    onBringToGameNight: (List<WantedHere>) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val historyContext = androidx.compose.ui.platform.LocalContext.current
@@ -310,6 +321,17 @@ fun PlaceScreen(
                     if (listView) BinderList(place, cards, onOpenCard)
                     else BinderPagesView(place, collections, cardData, page, { page = it }, onChange, onOpenCard)
                 }
+                if (!listView) item {
+                    Button(
+                        onClick = { onScanPage(place.id, page.coerceIn(1, binder.first.size + 1)) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
+                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                    ) {
+                        Icon(Icons.Filled.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Scan this page", fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
                 if (!listView && binder.second.isNotEmpty()) item {
                     CardGroup("Not in a pocket yet", binder.second.sumOf { it.line.qty }, binder.second, true, {}, onOpenCard)
                 }
@@ -359,6 +381,16 @@ fun PlaceScreen(
                 if (cards.isEmpty() && sections.isEmpty() && inside.isEmpty()) item {
                     Text("Nothing here yet. Put cards away to fill it.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
                 }
+            }
+            // Friends whose wishlists want cards in this binder (FriendsWant.kt).
+            if (binder != null && social != null && cards.isNotEmpty()) item {
+                FriendsWantSection(
+                    social = social,
+                    cards = cards,
+                    priceOf = { c -> prices?.get(c.entry.scryfallId)?.let { (plain, foil) -> if (c.line.isFoil) foil ?: plain else plain ?: foil } },
+                    onPropose = onProposeTrade,
+                    onBringToGameNight = onBringToGameNight
+                )
             }
             // What came and went lately, on this phone (CopyHistory.kt).
             val recent = movesOfPlace(history, placeAndInside(places, placeId), 10)
