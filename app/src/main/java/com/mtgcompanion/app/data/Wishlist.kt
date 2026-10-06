@@ -36,6 +36,9 @@ fun withWishlist(collections: List<Collection>, decks: List<Deck>): List<Collect
                 quantity = had.quantity + entry.quantity,
                 foilQuantity = had.foilQuantity + entry.foilQuantity,
                 priceAlert = had.priceAlert ?: entry.priceAlert,
+                // The target's options go with the target kept.
+                alertAnyPrinting = if (had.priceAlert == null && entry.priceAlert != null) entry.alertAnyPrinting ?: had.alertAnyPrinting else had.alertAnyPrinting,
+                alertFoilOnly = if (had.priceAlert == null && entry.priceAlert != null) entry.alertFoilOnly ?: had.alertFoilOnly else had.alertFoilOnly,
                 auto = false
             )
         }

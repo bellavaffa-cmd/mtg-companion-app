@@ -17,7 +17,7 @@ data class CollectionEntry(
      * the user can't change, and not [replaceable], which is only true inside one deck.
      */
     val userTags: List<String> = emptyList(),
-    /** Wishlists: tell the user when this card's price (USD, non-foil) is at or under this (see PriceAlerts). */
+    /** Wishlists: tell the user when this card's price (USD, non-foil) is at or under this — its target (see PriceAlerts). */
     val priceAlert: Double? = null,
     /** In the Wishlist by itself: a deck is considering it and the user doesn't own it (see [withWishlist]). */
     val auto: Boolean = false,
@@ -50,13 +50,23 @@ data class CollectionEntry(
      * are — so an entry with no "forSale" key on a device that had one was saved by an app that
      * doesn't know about selling, and keepForSaleFromOlderApp puts it back.
      */
-    val forSale: Int? = null
+    val forSale: Int? = null,
+    /**
+     * Wishlists: any printing of the card counts for [priceAlert] — the cheapest is checked (see
+     * WishlistTargets.kt). Null (left out) until a target is set with it; then true or false, so an
+     * entry without it on a device that had it was saved by an app that doesn't know it.
+     */
+    val alertAnyPrinting: Boolean? = null,
+    /** Wishlists: only a foil copy will do — [priceAlert] is checked against the foil price. Null and kept as [alertAnyPrinting]. */
+    val alertFoilOnly: Boolean? = null
 )
 
 // The entry as JSON — locally, in sync and in shared binders — is these fields by name. Keys added
 // for collecting, which the web app reads and writes the same way (all optional, left out when null):
 //   "priceAlert":      number, USD — wishlists: notify when the price is at or below it
 //   "priceAlertAbove": number, USD — owned binders: notify when the price is at or above it
+//   "alertAnyPrinting": boolean — wishlists: any printing counts for "priceAlert" (the cheapest is checked)
+//   "alertFoilOnly":   boolean — wishlists: "priceAlert" is checked against the foil price
 //   "condition":       "NM" | "LP" | "MP" | "HP" | "DMG" — for every copy in the entry
 //   "language":        "en" | "ja" | "de" | "fr" | "it" | "es" | "pt" | "ru" | "ko" | "zhs" | "zht"
 //   "places":          [{ "placeId": "…", "qty": 2, "foil": true, "section": "Red" }, { "placeId": "…", "qty": 1, "page": 3, "slot": 5 }]

@@ -43,6 +43,15 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import com.mtgcompanion.app.data.RoleTags
+import com.mtgcompanion.app.data.AlertHit
+import com.mtgcompanion.app.data.CardPriceHistory
+import com.mtgcompanion.app.data.PriceAlerts
+import com.mtgcompanion.app.data.PriceTrack
+import com.mtgcompanion.app.data.TargetOptions
+import com.mtgcompanion.app.data.alertHits
+import com.mtgcompanion.app.data.alertPrice
+import com.mtgcompanion.app.data.alertWatches
+import com.mtgcompanion.app.data.targetsForAll
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -125,6 +134,53 @@ class CollectionDetailViewModel(
         fetchPrices(cardRepository, c?.entries.orEmpty().map { it.scryfallId })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    /** Wishlists: each card's prices now (scryfallId -> non-foil, foil US dollars), for the target sheet. */
+    val pricePairs: StateFlow<Map<String, Pair<Double?, Double?>>> = collection
+        .map { c -> if (c?.kind == CollectionType.WISHLIST) c.entries.map { it.scryfallId }.sorted() else emptyList() }
+        .distinctUntilChanged()
+        .mapLatest { ids ->
+            if (ids.isEmpty()) emptyMap()
+            else runCatching {
+                cardRepository.getCardsByIds(ids).associate { it.id to (it.prices?.usd?.toDoubleOrNull() to it.prices?.usdFoil?.toDoubleOrNull()) }
+            }.getOrDefault(emptyMap())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /**
+     * Wishlists: the prices the targets are checked against, by AlertWatch.priceKey — a target any
+     * printing of which counts against the cheapest printing (PriceAlerts.alertPrices). Null until in.
+     */
+    private val alertPrices: StateFlow<Map<String, Pair<Double?, Double?>>?> = collection
+        .map { c -> if (c?.kind == CollectionType.WISHLIST) alertWatches(listOf(c)) else emptyList() }
+        .distinctUntilChanged()
+        .mapLatest { watches -> runCatching { PriceAlerts.alertPrices(watches, cardRepository) }.getOrNull() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * The price each card shows: today's, or for a wishlist card with a target, the one its target is
+     * checked against (the foil price for "Foil only", the cheapest printing's for "Any printing counts").
+     */
+    val shownPrices: StateFlow<Map<String, Double>> = combine(collection, prices, alertPrices) { c, own, checked ->
+        if (c == null || c.kind != CollectionType.WISHLIST || checked == null) own
+        else {
+            val out = own.toMutableMap()
+            for (w in alertWatches(listOf(c))) {
+                val (usd, foil) = checked[w.priceKey] ?: continue
+                val price = alertPrice(w, usd, foil)
+                if (price != null) out[w.entry.scryfallId] = price else out.remove(w.entry.scryfallId)
+            }
+            out
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** Wishlists: the cards under their target now; null until the prices are in. */
+    val underTarget: StateFlow<List<AlertHit>?> = combine(collection, alertPrices) { c, checked ->
+        if (c == null || c.kind != CollectionType.WISHLIST || checked == null) null else alertHits(alertWatches(listOf(c)), checked)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Each card's price history (CardPriceHistory), for the week's drop and the year's low; null until read. */
+    val priceTracks: StateFlow<Map<String, PriceTrack>?> = CardPriceHistory.tracks
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
@@ -143,6 +199,7 @@ class CollectionDetailViewModel(
     val tagging: StateFlow<Pair<Int, Int>?> = RoleTags.progress
 
     init {
+        viewModelScope.launch { runCatching { CardPriceHistory.load() } }
         viewModelScope.launch {
             collection.map { c -> c?.entries.orEmpty().map { it.name } }.distinctUntilChanged().collectLatest { names ->
                 if (names.isNotEmpty()) RoleTags.ensure(names, cardRepository)
@@ -154,9 +211,17 @@ class CollectionDetailViewModel(
         _query.value = newQuery
     }
 
-    /** A wishlist card's price alert (USD); null turns it off. */
-    fun setPriceAlert(entry: CollectionEntry, usd: Double?) {
-        viewModelScope.launch { repository.setPriceAlert(collectionId, entry.scryfallId, usd) }
+    /** A wishlist card's price alert — its target (USD) and which prices count; null turns it off. */
+    fun setPriceAlert(entry: CollectionEntry, usd: Double?, options: TargetOptions? = null) {
+        viewModelScope.launch { repository.setPriceAlert(collectionId, entry.scryfallId, usd, options) }
+    }
+
+    /** "Set targets for all…": [percent] off today's price for every card without a target; how many it set. */
+    fun targetsForAllCount(percent: Int): Int = targetsForAll(collection.value?.entries.orEmpty(), shownPrices.value, percent).size
+
+    fun setTargetsForAll(percent: Int) {
+        val targets = targetsForAll(collection.value?.entries.orEmpty(), shownPrices.value, percent)
+        viewModelScope.launch { repository.setPriceAlerts(collectionId, targets, TargetOptions(anyPrinting = true, foilOnly = false)) }
     }
 
     /** The condition and language of this binder's copies of a card; null clears one. */

@@ -7,6 +7,7 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckVersion
 import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
+import com.mtgcompanion.app.data.keepAlertOptionsFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
 import com.mtgcompanion.app.data.keepLoansFromOlderApp
 import com.mtgcompanion.app.data.keepPlaceSizes
@@ -202,8 +203,9 @@ object ItemMerge {
         // doesn't know about loans left those as they were.
         mergeCollectionsKnowingPlaces(
             base,
-            keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine)))),
-            keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs)))),
+            // ...and one that doesn't know about a wishlist target's options left those as they were.
+            keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine))))),
+            keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs))))),
             minePreferred
         )
 
@@ -231,6 +233,8 @@ object ItemMerge {
                     userTags = mergeStringSet(b.userTags, m.userTags, t.userTags),
                     priceAlert = pick(b.priceAlert, m.priceAlert, t.priceAlert, minePreferred),
                     priceAlertAbove = pick(b.priceAlertAbove, m.priceAlertAbove, t.priceAlertAbove, minePreferred),
+                    alertAnyPrinting = pick(b.alertAnyPrinting, m.alertAnyPrinting, t.alertAnyPrinting, minePreferred),
+                    alertFoilOnly = pick(b.alertFoilOnly, m.alertFoilOnly, t.alertFoilOnly, minePreferred),
                     condition = pick(b.condition, m.condition, t.condition, minePreferred),
                     language = pick(b.language, m.language, t.language, minePreferred),
                     forTrade = pick(b.forTrade, m.forTrade, t.forTrade, minePreferred),

@@ -23,29 +23,26 @@ import com.mtgcompanion.app.data.decksConsidering
 import com.mtgcompanion.app.data.isWishlist
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationAdd
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import com.mtgcompanion.app.data.PriceAlerts
+import com.mtgcompanion.app.data.gotItKept
+import com.mtgcompanion.app.data.targetCount
+import com.mtgcompanion.app.data.underYourPrice
+import com.mtgcompanion.app.data.wishlistTotal
+import com.mtgcompanion.app.data.withGotIt
+import com.mtgcompanion.app.data.buyCardUrl
+import androidx.compose.runtime.LaunchedEffect
 import com.mtgcompanion.app.data.CollectionType
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Sell
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
-import com.mtgcompanion.app.ui.theme.Surface2
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.zoomSource
@@ -148,7 +145,11 @@ fun CollectionDetailScreen(
     val entries by viewModel.entries.collectAsState()
     val query by viewModel.query.collectAsState()
     val dashboard by viewModel.dashboard.collectAsState()
-    val prices by viewModel.prices.collectAsState()
+    // A wishlist card with a target shows the price its target is checked against.
+    val prices by viewModel.shownPrices.collectAsState()
+    val pricePairs by viewModel.pricePairs.collectAsState()
+    val underTarget by viewModel.underTarget.collectAsState()
+    val priceTracks by viewModel.priceTracks.collectAsState()
     val cardTags by viewModel.cardTags.collectAsState()
     val knownUserTags by viewModel.knownUserTags.collectAsState()
     val userTagsByCard by viewModel.userTagsByCard.collectAsState()
@@ -167,6 +168,17 @@ fun CollectionDetailScreen(
     var removeTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     var alertTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     val isWishlist = collection?.kind == CollectionType.WISHLIST
+    var settingAll by remember { mutableStateOf(false) }
+    // "Got it" on the Under your price box, kept on this device: card -> its price then. A card that
+    // goes back over its target is forgotten, so the next time under shows again.
+    val appContext = LocalContext.current
+    var gotIt by remember { mutableStateOf(PriceAlerts.gotIt(appContext)) }
+    LaunchedEffect(underTarget) {
+        val hits = underTarget ?: return@LaunchedEffect
+        val kept = gotItKept(gotIt, hits)
+        if (kept != gotIt) { gotIt = kept; PriceAlerts.saveGotIt(appContext, kept) }
+    }
+    val under = underTarget?.let { underYourPrice(it, gotIt) }.orEmpty()
     var confirmDeleteBinder by remember { mutableStateOf(false) }
     val decks by viewModel.decks.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
@@ -199,6 +211,9 @@ fun CollectionDetailScreen(
                     SelectionAction("Export list", Icons.Filled.IosShare) { bulk = "export" },
                     SelectionAction("Remove from binder", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
                 )
+            ) else if (isWishlist && collection?.entries?.isNotEmpty() == true) WishlistFoot(
+                onSetAll = { settingAll = true },
+                onBuyAll = { collection?.let { c -> buyListUrl(c.entries.map { BuyLine(it.name, it.quantity) })?.let { openUrl(context, it) } } }
             )
         },
         topBar = {
@@ -208,7 +223,14 @@ fun CollectionDetailScreen(
                 onSelectAll = { selected = pickedIds + entries.map { it.scryfallId } },
                 onClear = { selected = emptySet() }
             ) else TopAppBar(
-                title = { Text(collection?.name ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(collection?.name ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).a11yHeading())
+                        // What the Wishlist would cost today.
+                        val worth = if (isWishlist) wishlistTotal(collection?.entries.orEmpty(), prices) else null
+                        if (worth != null) Text(rememberMoney().format(worth, whole = true), style = MaterialTheme.typography.titleLarge, color = Gold, maxLines = 1)
+                    }
+                },
                 navigationIcon = {
                     BackButton(onClick = onBack)
                 },
@@ -319,6 +341,18 @@ fun CollectionDetailScreen(
             }
 
             val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
+            if (isWishlist && under.isNotEmpty()) {
+                UnderYourPriceBox(
+                    hits = under,
+                    onBuy = {
+                        val url = if (under.size == 1) buyCardUrl(under.first().watch.entry.name)
+                        else buyListUrl(under.map { BuyLine(it.watch.entry.name, maxOf(1, it.watch.entry.quantity + it.watch.entry.foilQuantity)) })
+                        url?.let { openUrl(context, it) }
+                    },
+                    onGotIt = { gotIt = withGotIt(gotIt, under).also { PriceAlerts.saveGotIt(appContext, it) } },
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
+                )
+            }
             if (collection?.isWishlist == true) {
                 Text(
                     "Cards you want. They don't count as owned. Cards your decks are considering that you don't own are added here by themselves, until you own them — take one off and it stays off.",
@@ -384,7 +418,13 @@ fun CollectionDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     item {
-                        Text(
+                        if (isWishlist) Text(
+                            targetCount(collection?.entries.orEmpty()).uppercase(),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextMuted,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        ) else Text(
                             "$total cards · ${collection?.entries?.size ?: 0} unique",
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(bottom = 4.dp)
@@ -412,6 +452,7 @@ fun CollectionDetailScreen(
                                 onRemove = { removeTarget = entry },
                                 // A wishlist shows each card's price now, and can watch for it to drop.
                                 price = if (isWishlist) prices[entry.scryfallId] else null,
+                                priceTrack = if (isWishlist) priceTracks?.get(entry.scryfallId) else null,
                                 onPriceAlert = if (isWishlist) ({ alertTarget = entry }) else null,
                                 considering = if (entry.auto) decksConsidering(decks, entry.name).joinToString(", ").ifEmpty { null } else null
                             )
@@ -492,11 +533,20 @@ fun CollectionDetailScreen(
     }
 
     alertTarget?.let { entry ->
-        PriceAlertDialog(
+        TargetSheet(
             entry = entry,
-            price = prices[entry.scryfallId],
-            onSave = { usd -> viewModel.setPriceAlert(entry, usd); alertTarget = null },
+            now = pricePairs[entry.scryfallId],
+            track = priceTracks?.get(entry.scryfallId),
+            onSave = { usd, options -> viewModel.setPriceAlert(entry, usd, options); alertTarget = null },
             onDismiss = { alertTarget = null }
+        )
+    }
+
+    if (settingAll) {
+        SetTargetsForAllDialog(
+            count = viewModel::targetsForAllCount,
+            onSet = { percent -> viewModel.setTargetsForAll(percent); settingAll = false },
+            onDismiss = { settingAll = false }
         )
     }
 
@@ -587,7 +637,9 @@ private fun CollectionCardRow(
     onRemove: () -> Unit,
     /** Wishlists: today's price (null: none, or not a wishlist). */
     price: Double? = null,
-    /** Wishlists: opens this card's price alert. */
+    /** Wishlists: the card's price history, for the week's drop. */
+    priceTrack: com.mtgcompanion.app.data.PriceTrack? = null,
+    /** Wishlists: opens this card's target sheet; the row then says how far off its target it is. */
     onPriceAlert: (() -> Unit)? = null,
     /** The Wishlist: the decks considering a card it has because of them. */
     considering: String? = null
@@ -638,29 +690,37 @@ private fun CollectionCardRow(
                 considering?.let {
                     Text("Considering in $it", style = MaterialTheme.typography.labelMedium, color = GoldDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                // Wishlists: today's price and the alert, which a tap sets.
+                // Wishlists: the target and how far off it is ("Target $15 · $3.40 to go"), and the
+                // price now; a tap opens the target sheet.
                 onPriceAlert?.let { open ->
                     val alert = entry.priceAlert
                     val hit = price != null && alert != null && price <= alert
                     val money = rememberMoney()
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = open).padding(vertical = 2.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = open).padding(vertical = 2.dp)
                     ) {
                         Icon(
                             if (alert != null) Icons.Filled.NotificationsActive else Icons.Outlined.NotificationAdd,
-                            contentDescription = if (alert != null) "Price alert at ${money.format(alert)}" else "Set a price alert",
+                            contentDescription = null,
                             tint = if (alert != null) Gold else TextDim,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            listOfNotNull(price?.let { money.format(it) }, alert?.let { "≤ " + money.format(it).removeSuffix(".00") }).joinToString(" · ").ifEmpty { "Set alert" },
+                            wishlistTargetLine(entry, price, priceTrack, money),
                             style = MaterialTheme.typography.labelMedium,
                             color = if (hit) Gold else TextMuted,
-                            fontWeight = if (hit) FontWeight.SemiBold else null,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (price != null) Text(
+                            money.format(price),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (hit) Gold else TextPrimary,
+                            maxLines = 1
                         )
                     }
                 }
@@ -739,58 +799,4 @@ private fun CollectionCardTile(entry: CollectionEntry, selecting: Boolean, selec
             )
         }
     }
-}
-
-/** Sets (or turns off) the price a wishlist card should drop to before the user is told. */
-@Composable
-private fun PriceAlertDialog(entry: CollectionEntry, price: Double?, onSave: (Double?) -> Unit, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    // Typed in the currency prices show in; kept in US dollars, like the prices it's checked against.
-    val money = rememberMoney()
-    val decimals = money.currency.decimals
-    var text by remember {
-        mutableStateOf(
-            entry.priceAlert?.let { String.format(java.util.Locale.US, "%.${decimals}f", money.toLocal(it)) }
-                ?: price?.let { String.format(java.util.Locale.US, "%.${decimals}f", money.toLocal(it) * 0.9) }.orEmpty()
-        )
-    }
-    // Notifications need the user's OK (Android 13+); asked the first time an alert is set.
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    val value = text.toDoubleOrNull()?.takeIf { it > 0 }?.let { money.toUsd(it) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface2,
-        title = { Text("Price alert · ${entry.name}", color = TextPrimary) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    (price?.let { "It's ${money.format(it)} now. " } ?: "") + "Tell me when it's this much or less (${money.currency.code}, non-foil):",
-                    color = TextMuted
-                )
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { v -> text = v.filter { it.isDigit() || it == '.' } },
-                    singleLine = true,
-                    prefix = if (money.currency.after) null else ({ Text(money.currency.symbol, color = TextMuted) }),
-                    suffix = if (money.currency.after) ({ Text(money.currency.symbol, color = TextMuted) }) else null,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text("Checked a few times a day; you'll get a notification.", style = MaterialTheme.typography.labelMedium, color = TextDim)
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = value != null, onClick = {
-                if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                    permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }
-                onSave(value?.let { kotlin.math.round(it * 10_000) / 10_000 })
-            }) { Text("Save", color = Gold) }
-        },
-        dismissButton = {
-            TextButton(onClick = { if (entry.priceAlert != null) onSave(null) else onDismiss() }) {
-                Text(if (entry.priceAlert != null) "Turn off" else "Cancel", color = TextMuted)
-            }
-        }
-    )
 }

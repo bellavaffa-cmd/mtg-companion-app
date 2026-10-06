@@ -30,8 +30,8 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Price alerts: on wishlist cards, a price per card ([CollectionEntry.priceAlert], USD, non-foil) to
- * be told when Scryfall's price is at or under it; on owned binder cards, a price to be told when it
+ * Price alerts: on wishlist cards, a price per card ([CollectionEntry.priceAlert], USD, non-foil — or
+ * foil, or any printing's; see WishlistTargets.kt) to be told when Scryfall's price is at or under it; on owned binder cards, a price to be told when it
  * rises to or over it ([CollectionEntry.priceAlertAbove]). When each goes off is PriceAlertRules.kt.
  * Checked in the background a few times a day, and when the app opens. Scryfall updates its prices
  * once a day. The same check notes each card's price for its history (see CardPriceHistory), once a
@@ -41,6 +41,8 @@ object PriceAlerts {
     private const val WORK = "price_alerts"
     private const val CHANNEL = "price_alerts"
     private const val PREFS = "price_alerts"
+    /** The Wishlist's "Got it"s (WishlistTargets.kt underYourPrice): memory key -> the price then. This device only. */
+    private const val GOT_IT_PREFS = "wishlist_got_it"
 
     /** A card past its alert, at [price]. A card is told about again only when it moves further past. */
     data class Hit(val collectionId: String, val entry: CollectionEntry, val price: Double, val direction: AlertDirection = AlertDirection.BELOW)
@@ -60,6 +62,43 @@ object PriceAlerts {
     fun formatUsd(v: Double): String = Prices.money.value.format(v)
 
     /**
+     * The prices [watches] are checked against, by [AlertWatch.priceKey] (non-foil, foil US dollars):
+     * each watched printing's own, and for a target any printing of which counts, the cheapest
+     * printing's — its own printing's when the others can't be had. [known]: cards already fetched
+     * (by id), so they aren't asked for again.
+     */
+    suspend fun alertPrices(
+        watches: List<AlertWatch>,
+        cardRepository: CardRepository = CardRepository(),
+        known: Map<String, ScryfallCard> = emptyMap()
+    ): Map<String, Pair<Double?, Double?>> {
+        if (watches.isEmpty()) return emptyMap()
+        val missing = watches.map { it.entry.scryfallId }.distinct().filterNot { it in known }
+        val cards = known + cardRepository.getCardsByIds(missing).associateBy { it.id }
+        val out = HashMap<String, Pair<Double?, Double?>>()
+        for ((id, card) in cards) out[id] = card.prices?.usd?.toDoubleOrNull() to card.prices?.usdFoil?.toDoubleOrNull()
+        for (watch in watches) {
+            val key = watch.priceKey
+            if (key == watch.entry.scryfallId || key in out) continue
+            val printings = runCatching { cardRepository.getPrintings(watch.entry.name) }.getOrDefault(emptyList())
+                .map { PrintingPrice(it.name, it.prices?.usd?.toDoubleOrNull(), it.prices?.usdFoil?.toDoubleOrNull()) }
+            val own = out[watch.entry.scryfallId]?.let { listOf(PrintingPrice(watch.entry.name, it.first, it.second)) }.orEmpty()
+            out[key] = cheapestPrinting(watch.entry.name, printings + own)
+        }
+        return out
+    }
+
+    /** The Wishlist's "Got it"s, by memory key. */
+    fun gotIt(context: Context): Map<String, Double> =
+        context.getSharedPreferences(GOT_IT_PREFS, Context.MODE_PRIVATE).all.mapNotNull { (k, v) -> (v as? Float)?.let { k to it.toDouble() } }.toMap()
+
+    fun saveGotIt(context: Context, gotIt: Map<String, Double>) {
+        val edit = context.getSharedPreferences(GOT_IT_PREFS, Context.MODE_PRIVATE).edit().clear()
+        gotIt.forEach { (k, v) -> edit.putFloat(k, v.toFloat()) }
+        edit.apply()
+    }
+
+    /**
      * Cards now past their alert, not told about at this price yet; remembers them as told. [known]:
      * cards already fetched (by id), so they aren't asked for again.
      */
@@ -71,14 +110,14 @@ object PriceAlerts {
     ): List<Hit> {
         val watched = alertWatches(collections)
         if (watched.isEmpty()) return emptyList()
-        val missing = watched.map { it.entry.scryfallId }.distinct().filterNot { it in known }
-        val cards = known + cardRepository.getCardsByIds(missing).associateBy { it.id }
+        // A target any printing of which counts is checked against the cheapest printing.
+        val prices = alertPrices(watched, cardRepository, known)
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val edit = prefs.edit()
         val hits = mutableListOf<Hit>()
         for (watch in watched) {
-            val prices = cards[watch.entry.scryfallId]?.prices
-            val price = alertPrice(watch, prices?.usd?.toDoubleOrNull(), prices?.usdFoil?.toDoubleOrNull()) ?: continue
+            val (usd, foil) = prices[watch.priceKey] ?: continue
+            val price = alertPrice(watch, usd, foil) ?: continue
             val key = watch.memoryKey
             val told = if (prefs.contains(key)) prefs.getFloat(key, 0f).toDouble() else null
             when (val step = alertStep(watch, price, told)) {

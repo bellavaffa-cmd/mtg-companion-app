@@ -101,9 +101,15 @@ class CollectionRepository(private val context: Context) {
         updateEntries(collectionId) { entries -> entries.map { if (it.scryfallId == scryfallId) it.copy(priceAlertAbove = usd) else it } }
     }
 
-    /** A wishlist card's price alert (USD); null turns it off. */
-    suspend fun setPriceAlert(collectionId: String, scryfallId: String, usd: Double?) {
-        updateEntries(collectionId) { entries -> entries.map { if (it.scryfallId == scryfallId) it.copy(priceAlert = usd) else it } }
+    /** A wishlist card's price alert — its target (USD); null turns it off. [options]: which prices count (WishlistTargets.kt). */
+    suspend fun setPriceAlert(collectionId: String, scryfallId: String, usd: Double?, options: TargetOptions? = null) {
+        updateEntries(collectionId) { entries -> entries.map { if (it.scryfallId == scryfallId) withTarget(it, usd, options) else it } }
+    }
+
+    /** Several wishlist cards' targets in one change (scryfallId -> USD): "Set targets for all…". */
+    suspend fun setPriceAlerts(collectionId: String, targets: Map<String, Double>, options: TargetOptions) {
+        if (targets.isEmpty()) return
+        updateEntries(collectionId) { entries -> entries.map { e -> targets[e.scryfallId]?.let { withTarget(e, it, options) } ?: e } }
     }
 
     suspend fun setQuantity(collectionId: String, scryfallId: String, quantity: Int, foilQuantity: Int) {

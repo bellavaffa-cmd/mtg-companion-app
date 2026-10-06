@@ -15,6 +15,7 @@ import com.mtgcompanion.app.data.ValueHistory
 import com.mtgcompanion.app.data.CardPriceHistory
 import com.mtgcompanion.app.data.AlertHit
 import com.mtgcompanion.app.data.alertHits
+import com.mtgcompanion.app.data.PriceAlerts
 import com.mtgcompanion.app.data.alertWatches
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mtgcompanion.app.data.CollectionRepository
@@ -133,9 +134,7 @@ class HomeViewModel(
         .distinctUntilChanged()
         .mapLatest { watches ->
             if (watches.isEmpty()) return@mapLatest emptyList()
-            val prices = cardRepository.getCardsByIds(watches.map { it.entry.scryfallId }.distinct())
-                .associate { it.id to (it.prices?.usd?.toDoubleOrNull() to it.prices?.usdFoil?.toDoubleOrNull()) }
-            alertHits(watches, prices)
+            alertHits(watches, PriceAlerts.alertPrices(watches, cardRepository))
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

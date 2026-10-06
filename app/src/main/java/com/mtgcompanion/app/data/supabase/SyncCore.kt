@@ -5,6 +5,7 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.isSample
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepDeckExtrasFromOlderApp
+import com.mtgcompanion.app.data.keepAlertOptionsFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
 import com.mtgcompanion.app.data.keepLastChecked
 import com.mtgcompanion.app.data.keepLoansFromOlderApp
@@ -270,8 +271,9 @@ internal class SyncCore(
                     { b, m, t, p -> ItemMerge.mergeCollections(b, m, t, minePreferred = p) },
                     // ...and a place saved without when it was last checked (PlaceCheck.kt) keeps this device's,
                     // and the Unsorted pile saved without its loans (Loans.kt) keeps this device's, as do places saved
-                    // without their size (BoxSpace.kt) and cards without their copies to sell (Selling.kt).
-                    heal = { mine, theirs -> keepForSaleFromOlderApp(mine, keepPlaceSizes(mine, keepLoansFromOlderApp(mine, keepLastChecked(mine, keepPlacesFromOlderApp(mine, theirs))))) }
+                    // without their size (BoxSpace.kt) and cards without their copies to sell (Selling.kt), and
+                    // wishlist targets without their options (WishlistTargets.kt).
+                    heal = { mine, theirs -> keepAlertOptionsFromOlderApp(mine, keepForSaleFromOlderApp(mine, keepPlaceSizes(mine, keepLoansFromOlderApp(mine, keepLastChecked(mine, keepPlacesFromOlderApp(mine, theirs)))))) }
                 )
             }
             // A row this version can't read is read back by key every pass until an update can; the
