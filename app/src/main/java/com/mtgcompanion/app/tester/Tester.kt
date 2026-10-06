@@ -26,7 +26,17 @@ object Tester {
     /** True only in the tester app. */
     val on: Boolean = UpdateManager.IS_TESTER
 
+    /** This tester build's number, counted from 1 again after each release. */
     const val BUILD: Int = BuildConfig.TESTER_BUILD
+
+    /**
+     * Where this build sits across releases (version, then number), for "seen this build's notes":
+     * build 1 after 3.6.0 comes after build 25 before it.
+     */
+    const val SEQUENCE: Int = BuildConfig.VERSION_CODE * 1000 + BuildConfig.TESTER_BUILD
+
+    /** "3.6.0 build 2": the release this build follows and its number since. */
+    val LABEL: String = "${BuildConfig.VERSION_NAME.substringBefore("-tester")} build ${BuildConfig.TESTER_BUILD}"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
