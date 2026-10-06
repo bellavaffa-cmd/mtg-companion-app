@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.onboarding
 
+import com.mtgcompanion.app.data.PlaceTarget
+import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
+import com.mtgcompanion.app.data.afterImport
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -63,8 +66,9 @@ class WelcomeViewModel(
     val samplesError: StateFlow<String?> = _samplesError.asStateFlow()
 
     /** A list from another app into a new binder, or (no [name]) the Unsorted pile — CollectionsViewModel.importBinder's way. */
-    fun importBinder(name: String?, text: String) {
-        val lines = parseCardList(text).lines
+    fun importBinder(name: String?, text: String, targets: Map<String, PlaceTarget> = emptyMap()) {
+        val parsed = parseCardList(text)
+        val lines = parsed.lines
         if (lines.isEmpty()) return
         viewModelScope.launch {
             _importProgress.value = ImportProgress.Working(0, lines.size)
@@ -74,9 +78,11 @@ class WelcomeViewModel(
                 if (result.cards.isNotEmpty()) {
                     if (binderName == null) {
                         collectionRepository.addUnsorted(result.cards.map { it.toEntry() })
+                        collectionRepository.afterImport(UNSORTED_COLLECTION_ID, result, targets, parsed.locationColumn)
                     } else {
                         val binder = collectionRepository.createCollection(binderName, CollectionType.OWNED)
                         collectionRepository.addEntries(binder.id, result.cards.map { it.toEntry() })
+                        collectionRepository.afterImport(binder.id, result, targets, parsed.locationColumn)
                     }
                 }
                 ImportProgress.Done(result, binderName ?: "your collection (Unsorted)")

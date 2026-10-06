@@ -185,6 +185,7 @@ fun CollectionDetailScreen(
     val context = LocalContext.current
     var listDialog by remember { mutableStateOf<String?>(null) } // "import" or "export"
     val importProgress by viewModel.importProgress.collectAsState()
+    val storagePlaces by viewModel.places.collectAsState()
     // Cards picked by pressing and holding (scryfall ids), and the action open for them:
     // "move", "copy", "remove" or "export".
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -288,8 +289,9 @@ fun CollectionDetailScreen(
                 title = "Import into ${collection?.name ?: "binder"}",
                 askName = false,
                 progress = importProgress,
-                onImport = { _, text -> viewModel.importCards(text) },
-                onDismiss = { listDialog = null; viewModel.resetImport() }
+                onImport = { _, text, targets -> viewModel.importCards(text, targets) },
+                onDismiss = { listDialog = null; viewModel.resetImport() },
+                places = storagePlaces
             )
             "export" -> ExportCollectionDialog(collection?.name ?: "binder", viewModel::exportText, buildCsv = { viewModel.exportCsv() }) { listDialog = null }
         }

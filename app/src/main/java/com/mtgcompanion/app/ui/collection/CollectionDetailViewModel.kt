@@ -9,6 +9,10 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.CardListImporter
 import com.mtgcompanion.app.data.buildCardListText
 import com.mtgcompanion.app.data.buildCardListCsv
+import com.mtgcompanion.app.data.PlaceTarget
+import com.mtgcompanion.app.data.StoragePlace
+import com.mtgcompanion.app.data.afterImport
+import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.parseCardList
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -53,6 +57,7 @@ import com.mtgcompanion.app.data.alertPrice
 import com.mtgcompanion.app.data.alertWatches
 import com.mtgcompanion.app.data.targetsForAll
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -113,6 +118,10 @@ class CollectionDetailViewModel(
 
     /** The user's decks — for "Considering in …" on a card the Wishlist has because a deck is considering it. */
     val decks: StateFlow<List<Deck>> = deckRepository.decksFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** The user's storage places — for an import that says where its cards are kept (ImportPlaces.kt). */
+    val places: StateFlow<List<StoragePlace>> = repository.collectionsFlow.map { placesOf(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val collection: StateFlow<Collection?> = repository.collectionFlow(collectionId).stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), null
@@ -239,14 +248,16 @@ class CollectionDetailViewModel(
     val importProgress: StateFlow<ImportProgress> = _importProgress.asStateFlow()
 
     /** Adds a pasted or loaded card list (text or CSV) to this binder. */
-    fun importCards(text: String) {
-        val lines = parseCardList(text).lines
+    fun importCards(text: String, targets: Map<String, PlaceTarget> = emptyMap()) {
+        val parsed = parseCardList(text)
+        val lines = parsed.lines
         if (lines.isEmpty()) return
         viewModelScope.launch {
             _importProgress.value = ImportProgress.Working(0, lines.size)
             _importProgress.value = try {
                 val result = CardListImporter(cardRepository).resolve(lines) { done, total -> _importProgress.value = ImportProgress.Working(done, total) }
                 repository.addEntries(collectionId, result.cards.map { it.toEntry() })
+                repository.afterImport(collectionId, result, targets, parsed.locationColumn)
                 if (result.cards.isNotEmpty()) Usage.action(UsageAction.CARDS_IMPORTED)
                 ImportProgress.Done(result, collection.value?.name ?: "this binder")
             } catch (e: java.io.IOException) {
@@ -278,7 +289,7 @@ class CollectionDetailViewModel(
         val printings = cardRepository.getCardsByIds(entries.map { it.scryfallId })
             .mapNotNull { c -> if (c.set != null && c.collectorNumber != null) c.id to (c.set to c.collectorNumber) else null }
             .toMap()
-        return buildCardListCsv(entries, printings)
+        return buildCardListCsv(entries, printings, placesOf(repository.collectionsFlow.first()))
     }
 
     fun setQuantity(entry: CollectionEntry, quantity: Int, foilQuantity: Int) {

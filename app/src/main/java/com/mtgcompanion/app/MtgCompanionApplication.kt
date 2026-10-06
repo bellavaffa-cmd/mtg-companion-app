@@ -86,6 +86,9 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         PushNotifications.init(this)
         // Wishlist price alerts, checked a few times a day.
         PriceAlerts.schedule(this)
+        // Storage upkeep: the last import, and the weekly reminder when it's on (UpkeepReminder.kt).
+        com.mtgcompanion.app.data.UpkeepStore.init(this)
+        if (com.mtgcompanion.app.data.UpkeepStore.weeklyOn(this)) com.mtgcompanion.app.data.UpkeepReminder.schedule(this)
         // What each card does (mana ramp, removal…), remembered from earlier lookups.
         RoleTags.init(this)
         // Prices in the chosen currency, at the day's exchange rate; and the collection's value over time.

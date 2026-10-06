@@ -29,10 +29,16 @@ data class ListLine(
     /** From a CSV's Condition column, as a code (see CopyDetails.kt); null when it hasn't one. */
     val condition: String? = null,
     /** From a CSV's Language column, as a Scryfall code; null when it hasn't one. */
-    val language: String? = null
+    val language: String? = null,
+    /**
+     * From a CSV's location column — "Binder 1", "Box R" (see ImportPlaces.kt); null when the list
+     * has no such column or the cell is blank.
+     */
+    val location: String? = null
 )
 
-data class ParsedList(val lines: List<ListLine>, val skipped: List<String>) {
+/** [locationColumn]: the header of the column that says where cards are kept, as the file spells it; null when none. */
+data class ParsedList(val lines: List<ListLine>, val skipped: List<String>, val locationColumn: String? = null) {
     val cardCount: Int get() = lines.sumOf { it.quantity }
 }
 
@@ -156,6 +162,7 @@ private fun parseCsv(rows: List<String>, sep: Char): ParsedList {
     val idAt = header.column(Columns.id)
     val conditionAt = header.column(Columns.condition)
     val languageAt = header.column(Columns.language)
+    val locationAt = locationColumnIn(header)
     val lines = mutableListOf<ListLine>()
     val skipped = mutableListOf<String>()
     for (row in rows.drop(1)) {
@@ -175,10 +182,12 @@ private fun parseCsv(rows: List<String>, sep: Char): ParsedList {
             // TCGplayer puts the finish in the condition: "Near Mint Foil".
             foil = isFoilValue(get(foilAt)) || FOIL_CONDITION.containsMatchIn(get(conditionAt)),
             condition = conditionCode(get(conditionAt)),
-            language = languageCode(get(languageAt))
+            language = languageCode(get(languageAt)),
+            location = get(locationAt).ifEmpty { null }
         )
     }
-    return ParsedList(lines, skipped)
+    val column = if (locationAt >= 0) csvCells(rows.first(), sep).getOrNull(locationAt) else null
+    return ParsedList(lines, skipped, column)
 }
 
 private fun looksLikeCsv(firstRow: String, sep: Char): Boolean {
@@ -251,19 +260,29 @@ fun buildCardListText(entries: List<CollectionEntry>, printings: Map<String, Pai
 private fun csvCell(value: String): String =
     if (value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + value.replace("\"", "\"\"") + "\"" else value
 
-/** The header [buildCardListCsv] writes — Moxfield's own column names, which the others read too. */
-const val CARD_LIST_CSV_HEADER = "Count,Name,Edition,Collector Number,Foil,Condition,Language,Scryfall ID"
+/**
+ * The header [buildCardListCsv] writes — Moxfield's own column names, which the others read too, and
+ * "Place": where the copies are kept, which an import here reads back (ImportPlaces.kt).
+ */
+const val CARD_LIST_CSV_HEADER = "Count,Name,Edition,Collector Number,Foil,Condition,Language,Scryfall ID,Place"
 
 /**
- * The binder's cards as a CSV collection file: one row per card and finish (foils on their own row,
- * "foil" in the Foil column), with the copies' condition and language in words ("Near Mint",
- * "Japanese") when they've been set. [printings] (scryfallId → set code to collector number) fills
- * Edition and Collector Number. Reads back in with [parseCardList], here and in other apps.
+ * The binder's cards as a CSV collection file: one row per card, finish and place (foils on their own
+ * row, "foil" in the Foil column; copies in two places two rows, those with no place a row with a
+ * blank Place), with the copies' condition and language in words ("Near Mint", "Japanese") when
+ * they've been set. [printings] (scryfallId → set code to collector number) fills Edition and
+ * Collector Number; [places] (the user's storage places) names each row's place. Reads back in with
+ * [parseCardList], here and in other apps.
  */
-fun buildCardListCsv(entries: List<CollectionEntry>, printings: Map<String, Pair<String, String>> = emptyMap()): String {
+fun buildCardListCsv(
+    entries: List<CollectionEntry>,
+    printings: Map<String, Pair<String, String>> = emptyMap(),
+    places: List<StoragePlace> = emptyList()
+): String {
+    val names = places.associate { it.id to it.name }
     val rows = entries.sortedBy { it.name.lowercase() }.flatMap { e ->
         val p = printings[e.scryfallId]
-        fun row(count: Int, foil: Boolean) = listOf(
+        fun row(count: Int, foil: Boolean, place: String) = listOf(
             count.toString(),
             e.name,
             p?.first?.lowercase().orEmpty(),
@@ -271,12 +290,28 @@ fun buildCardListCsv(entries: List<CollectionEntry>, printings: Map<String, Pair
             if (foil) "foil" else "",
             e.condition?.let(::conditionName).orEmpty(),
             e.language?.let(::languageName).orEmpty(),
-            e.scryfallId
+            e.scryfallId,
+            place
         ).joinToString(",") { csvCell(it) }
-        listOfNotNull(
-            if (e.quantity > 0) row(e.quantity, false) else null,
-            if (e.foilQuantity > 0) row(e.foilQuantity, true) else null
-        )
+        val out = mutableListOf<String>()
+        for (foil in listOf(false, true)) {
+            var left = if (foil) e.foilQuantity else e.quantity
+            if (left <= 0) continue
+            val byPlace = LinkedHashMap<String, Int>()
+            for (line in placedCopies(e)) {
+                if (line.isFoil != foil) continue
+                val name = names[line.placeId] ?: continue
+                byPlace[name] = (byPlace[name] ?: 0) + line.qty
+            }
+            for ((name, n) in byPlace) {
+                val take = minOf(n, left)
+                if (take <= 0) continue
+                out += row(take, foil, name)
+                left -= take
+            }
+            if (left > 0) out += row(left, foil, "")
+        }
+        out
     }
     return (listOf(CARD_LIST_CSV_HEADER) + rows).joinToString("\n")
 }

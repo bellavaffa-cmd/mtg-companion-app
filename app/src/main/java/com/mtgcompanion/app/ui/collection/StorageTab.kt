@@ -116,7 +116,11 @@ fun StorageTab(
     /** How full each place is (SpaceScreen.kt). */
     onOpenSpace: () -> Unit = {},
     /** The To sell list (SellScreen.kt). */
-    onOpenSell: () -> Unit = {}
+    onOpenSell: () -> Unit = {},
+    /** Getting started with storage (StorageSetupScreen.kt). */
+    onSetUp: () -> Unit = {},
+    /** Upkeep: what's worth doing this week (UpkeepScreen.kt). */
+    onOpenUpkeep: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -124,6 +128,7 @@ fun StorageTab(
     var editing by remember { mutableStateOf(false) }
     var choosing by remember { mutableStateOf(false) }
     val share = if (summary.total > 0) summary.placed.toFloat() / summary.total else 0f
+    val upkeep = rememberUpkeep(collections, decks)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -177,8 +182,11 @@ fun StorageTab(
             item {
                 EmptyPrompt(
                     Icons.Filled.Inventory2,
-                    "No places yet. Make one for each box, binder or shelf, and the app remembers where each copy is.",
-                    actions = listOf(EmptyAction("New place", Icons.Filled.Add) { editing = true })
+                    "No places yet. Say roughly what you keep your cards in — binders, boxes, a shelf — and the app makes the places, their labels, and keeps track of where each copy is.",
+                    actions = listOf(
+                        EmptyAction("Get started", Icons.Filled.Inventory2, onSetUp),
+                        EmptyAction("New place", Icons.Filled.Add) { editing = true }
+                    )
                 )
             }
         }
@@ -227,6 +235,13 @@ fun StorageTab(
         item {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
                 PlaceRow(Icons.Filled.Handshake, "Lent out", "Your loans, and what friends lent you", count(summary.lent), gold = false, onClick = onOpenLoans)
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                val n = upkeep?.items?.size ?: 0
+                LoanButton(if (n > 0) "Upkeep · $n" else "Upkeep", primary = n > 0, modifier = Modifier.weight(1f), onClick = onOpenUpkeep)
+                LoanButton("Set up storage", primary = false, modifier = Modifier.weight(1f), onClick = onSetUp)
             }
         }
         item {

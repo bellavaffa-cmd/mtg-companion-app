@@ -196,8 +196,9 @@ class CardListTextTest {
         ).joinToString("\r\n")
         assertEquals(
             listOf(
-                ListLine(2, "Arcane Signet", "cmr", "297", foil = true, condition = "NM", language = "en"),
-                ListLine(1, "Counterspell", "mh2", "267", condition = "LP", language = "de")
+                // Its Folder Name says where they're kept (ImportPlaces.kt).
+                ListLine(2, "Arcane Signet", "cmr", "297", foil = true, condition = "NM", language = "en", location = "Binder"),
+                ListLine(1, "Counterspell", "mh2", "267", condition = "LP", language = "de", location = "Binder")
             ),
             parseCardList(csv).lines
         )

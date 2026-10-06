@@ -4,6 +4,8 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,10 +18,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +35,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,10 +49,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mtgcompanion.app.data.ImportResult
+import com.mtgcompanion.app.data.LocationCount
+import com.mtgcompanion.app.data.PlaceTarget
+import com.mtgcompanion.app.data.StoragePlace
+import com.mtgcompanion.app.data.locationCounts
 import com.mtgcompanion.app.data.parseCardList
+import com.mtgcompanion.app.data.placeTree
+import com.mtgcompanion.app.data.suggestTargets
 import com.mtgcompanion.app.ui.common.PillChip
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
@@ -71,9 +86,11 @@ fun ImportCardsDialog(
     title: String,
     askName: Boolean,
     progress: ImportProgress,
-    onImport: (name: String?, text: String) -> Unit,
+    onImport: (name: String?, text: String, targets: Map<String, PlaceTarget>) -> Unit,
     onDismiss: () -> Unit,
-    startInNewBinder: Boolean = true
+    startInNewBinder: Boolean = true,
+    /** The user's storage places, for a CSV that says where its cards are kept (ImportPlaces.kt). */
+    places: List<StoragePlace> = emptyList()
 ) {
     // With [askName], cards go to a new binder or — "No binder" — the Unsorted pile.
     var newBinder by remember { mutableStateOf(startInNewBinder) }
@@ -84,6 +101,15 @@ fun ImportCardsDialog(
     var name by remember { mutableStateOf("") }
     var fileError by remember { mutableStateOf<String?>(null) }
     val parsed = remember(text) { parseCardList(text) }
+    val counts = remember(parsed) { locationCounts(parsed.lines) }
+    val targets = remember { mutableStateMapOf<String, PlaceTarget>() }
+    LaunchedEffect(counts, places) {
+        val suggested = suggestTargets(counts, places)
+        // Keep what the user already picked for a value still there.
+        val kept = targets.filterKeys { it in suggested }
+        targets.clear()
+        targets.putAll(suggested + kept)
+    }
     val working = progress is ImportProgress.Working
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -191,6 +217,9 @@ fun ImportCardsDialog(
                         )
                     }
                 }
+                if (counts.isNotEmpty()) {
+                    ImportPlacesSection(counts, targets, places, enabled = !working) { key, t -> targets[key] = t }
+                }
                 if (progress is ImportProgress.Working) {
                     Text("Finding cards… ${progress.done}/${progress.total}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                     LinearProgressIndicator(
@@ -208,7 +237,7 @@ fun ImportCardsDialog(
         confirmButton = {
             TextButton(
                 enabled = !working && parsed.lines.isNotEmpty() && (!askName || !newBinder || name.isNotBlank()),
-                onClick = { onImport(if (askName && !newBinder) null else name.trim(), text) }
+                onClick = { onImport(if (askName && !newBinder) null else name.trim(), text, targets.toMap()) }
             ) { Text(if (parsed.cardCount > 0) "Import ${parsed.cardCount} ${if (parsed.cardCount == 1) "card" else "cards"}" else "Import", color = colors.accent) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !working) { Text("Cancel", color = colors.textMuted) } }
@@ -307,4 +336,85 @@ fun ExportCollectionDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = colors.textMuted) } }
     )
+}
+
+/**
+ * Import with locations: each value of the list's location column ("Binder 1", "Box R", blank) with
+ * its copies, and where they go — one of the user's places, a new place, or no place yet.
+ */
+@Composable
+private fun ImportPlacesSection(
+    counts: List<LocationCount>,
+    targets: Map<String, PlaceTarget>,
+    places: List<StoragePlace>,
+    enabled: Boolean,
+    onPick: (String, PlaceTarget) -> Unit
+) {
+    val colors = LocalAppColors.current
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface2).padding(10.dp)
+    ) {
+        Text("Import with locations", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+        Text("We found a column that looks like where cards are kept. Match each value to a place.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        counts.forEach { c -> key(c.key) {
+            var open by remember { mutableStateOf(false) }
+            val target = targets[c.key] ?: PlaceTarget.None
+            val label = when (target) {
+                is PlaceTarget.Existing -> "→ " + (places.firstOrNull { it.id == target.placeId }?.name ?: "a place")
+                PlaceTarget.New -> "Make a new place"
+                PlaceTarget.None -> "No place yet"
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (c.value.isEmpty()) "Blank" else "“${c.value}”",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("${c.copies}", style = MaterialTheme.typography.labelLarge, color = colors.textMuted, modifier = Modifier.padding(horizontal = 8.dp))
+                Box(Modifier.weight(1.3f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(colors.surface)
+                            .clickable(enabled = enabled) { open = true }
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (target is PlaceTarget.Existing) colors.accentLight else colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = colors.textMuted, modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = colors.surface) {
+                        DropdownMenuItem(text = { Text("No place yet", color = colors.textPrimary) }, onClick = { onPick(c.key, PlaceTarget.None); open = false })
+                        if (c.value.isNotEmpty()) {
+                            DropdownMenuItem(text = { Text("Make a new place", color = colors.textPrimary) }, onClick = { onPick(c.key, PlaceTarget.New); open = false })
+                        }
+                        placeTree(places).forEach { n ->
+                            DropdownMenuItem(
+                                text = { Text("  ".repeat(n.depth) + n.place.name, color = colors.textPrimary) },
+                                onClick = { onPick(c.key, PlaceTarget.Existing(n.place.id)); open = false }
+                            )
+                        }
+                    }
+                }
+            }
+        } }
+        Text(
+            "Works with Manabind exports and other apps' CSV files that have a binder, box or location column. Exports now include places too.",
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.textDim
+        )
+    }
 }

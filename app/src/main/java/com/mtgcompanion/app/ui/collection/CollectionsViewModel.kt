@@ -15,6 +15,10 @@ import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.buildCardListText
 import com.mtgcompanion.app.data.buildCardListCsv
+import com.mtgcompanion.app.data.PlaceTarget
+import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
+import com.mtgcompanion.app.data.afterImport
+import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.BreakdownCard
 import com.mtgcompanion.app.data.CollectionBreakdown
 import com.mtgcompanion.app.data.SetInfo
@@ -398,7 +402,7 @@ class CollectionsViewModel(
         val printings = cardRepository.getCardsByIds(entries.map { it.scryfallId }.distinct())
             .mapNotNull { c -> if (c.set != null && c.collectorNumber != null) c.id to (c.set to c.collectorNumber) else null }
             .toMap()
-        return buildCardListCsv(entries, printings)
+        return buildCardListCsv(entries, printings, placesOf(repository.collectionsFlow.first()))
     }
 
     /** The pile of cards not in a binder yet, if there is one. */
@@ -409,8 +413,9 @@ class CollectionsViewModel(
      * Imports a pasted or loaded card list (text or CSV): into a new binder named [name], or with no
      * name into the Unsorted pile, to be sorted into binders later.
      */
-    fun importBinder(name: String?, text: String) {
-        val lines = parseCardList(text).lines
+    fun importBinder(name: String?, text: String, targets: Map<String, PlaceTarget> = emptyMap()) {
+        val parsed = parseCardList(text)
+        val lines = parsed.lines
         if (lines.isEmpty()) return
         viewModelScope.launch {
             _importProgress.value = ImportProgress.Working(0, lines.size)
@@ -420,9 +425,11 @@ class CollectionsViewModel(
                 if (result.cards.isNotEmpty()) {
                     if (binderName == null) {
                         repository.addUnsorted(result.cards.map { it.toEntry() })
+                        repository.afterImport(UNSORTED_COLLECTION_ID, result, targets, parsed.locationColumn)
                     } else {
                         val binder = repository.createCollection(binderName, CollectionType.OWNED)
                         repository.addEntries(binder.id, result.cards.map { it.toEntry() })
+                        repository.afterImport(binder.id, result, targets, parsed.locationColumn)
                     }
                 }
                 ImportProgress.Done(result, binderName ?: "your collection (Unsorted)")

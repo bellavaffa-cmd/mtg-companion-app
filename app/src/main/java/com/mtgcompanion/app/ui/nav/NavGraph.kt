@@ -20,6 +20,8 @@ import com.mtgcompanion.app.ui.collection.LendScreen
 import com.mtgcompanion.app.ui.collection.CopyHistoryScreen
 import com.mtgcompanion.app.ui.collection.ValueByPlaceScreen
 import com.mtgcompanion.app.ui.collection.SpaceScreen
+import com.mtgcompanion.app.ui.collection.StorageSetupScreen
+import com.mtgcompanion.app.ui.collection.UpkeepScreen
 import com.mtgcompanion.app.ui.collection.SellScreen
 import com.mtgcompanion.app.ui.collection.CopyPhotoScreen
 import com.mtgcompanion.app.ui.decks.PullListScreen
@@ -344,6 +346,10 @@ private object Routes {
     const val SPACE = "space"
     /** The To sell list (Selling.kt). */
     const val SELL = "sell"
+    /** Getting started with storage (StorageSetup.kt). */
+    const val STORAGE_SETUP = "storage_setup"
+    /** Upkeep: what's worth doing this week (Upkeep.kt). */
+    const val UPKEEP = "upkeep"
     /** Photos of a copy of a card (CopyPhotos.kt). */
     const val COPY_PHOTOS = "copy_photos/{cardName}"
     fun copyPhotos(name: String) = "copy_photos/" + URLEncoder.encode(name, StandardCharsets.UTF_8.name())
@@ -423,6 +429,8 @@ fun MtgNavGraph(
             open == "life" -> { navController.navigate(Routes.LIFE_COUNTER) { launchSingleTop = true }; return@LaunchedEffect }
             open == "scan" -> { navController.navigateToTab(Routes.SCAN); return@LaunchedEffect }
             open == "value" -> { navController.navigate(Routes.VALUE_HISTORY) { launchSingleTop = true }; return@LaunchedEffect }
+            // The weekly Upkeep reminder (UpkeepReminder.kt).
+            open == "upkeep" -> { navController.navigate(Routes.UPKEEP) { launchSingleTop = true }; return@LaunchedEffect }
             open.startsWith("card:") -> { navController.navigate(Routes.detail(open.removePrefix("card:"))) { launchSingleTop = true }; return@LaunchedEffect }
         }
         // A price alert: the wishlist it's on.
@@ -1008,6 +1016,35 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(Routes.STORAGE_SETUP) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                StorageSetupScreen(
+                    collections = collections,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onLabel = { id -> navController.navigate(Routes.placeLabel(id)) },
+                    onPutAway = { id -> navController.navigate(Routes.putAway(id)) }
+                )
+            }
+
+            destination(Routes.UPKEEP) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                UpkeepScreen(
+                    collections = collections,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onPutAway = { id -> navController.navigate(Routes.putAway(id)) },
+                    onSetUp = { navController.navigate(Routes.STORAGE_SETUP) },
+                    onCheck = { id -> navController.navigate(Routes.check(id)) },
+                    onOpenLoans = { navController.navigate(Routes.loans()) },
+                    onOpenSpace = { navController.navigate(Routes.SPACE) },
+                    onOpenPullList = { id -> navController.navigate(Routes.pullList(id)) }
+                )
+            }
+
             destination(Routes.SELL) {
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
@@ -1169,7 +1206,9 @@ fun MtgNavGraph(
                     onSortPile = { navController.navigate(Routes.SORT_PILE) },
                     onOpenValue = { navController.navigate(Routes.VALUE_BY_PLACE) },
                     onOpenSpace = { navController.navigate(Routes.SPACE) },
-                    onOpenSell = { navController.navigate(Routes.SELL) }
+                    onOpenSell = { navController.navigate(Routes.SELL) },
+                    onSetUpStorage = { navController.navigate(Routes.STORAGE_SETUP) },
+                    onOpenUpkeep = { navController.navigate(Routes.UPKEEP) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(

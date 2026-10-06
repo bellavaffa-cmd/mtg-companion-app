@@ -14,7 +14,9 @@ data class ImportedCard(
     val foilQuantity: Int,
     /** The copies' condition and language, when the list said (a CSV's columns); the first line's wins. */
     val condition: String? = null,
-    val language: String? = null
+    val language: String? = null,
+    /** Where the list said the copies are kept (a CSV's location column, ImportPlaces.kt), line by line. */
+    val locations: List<ImportedLocation> = emptyList()
 ) {
     fun toEntry() = CollectionEntry(
         card.id, card.name, card.displayImageUrl, quantity, foilQuantity, card.backImageUrl, card.tags,
@@ -64,7 +66,11 @@ class CardListImporter(private val cards: CardRepository = CardRepository()) {
             val line = lines[i]
             val had = byCard[card.id] ?: ImportedCard(card, 0, 0)
             // One entry describes all its copies, so lines of the same card share the first one's say.
-            val item = had.copy(condition = had.condition ?: line.condition, language = had.language ?: line.language)
+            val item = had.copy(
+                condition = had.condition ?: line.condition,
+                language = had.language ?: line.language,
+                locations = if (line.location != null) had.locations + ImportedLocation(line.location, line.quantity, line.foil) else had.locations
+            )
             byCard[card.id] = if (line.foil) item.copy(foilQuantity = item.foilQuantity + line.quantity) else item.copy(quantity = item.quantity + line.quantity)
         }
         return ImportResult(byCard.values.toList(), missing)

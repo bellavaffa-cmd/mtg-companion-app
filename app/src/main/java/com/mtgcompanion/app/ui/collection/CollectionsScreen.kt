@@ -166,6 +166,9 @@ fun CollectionsScreen(
     /** The Storage page's Space and To sell (SpaceScreen.kt, SellScreen.kt). */
     onOpenSpace: () -> Unit = {},
     onOpenSell: () -> Unit = {},
+    /** Getting started with storage, and Upkeep (StorageSetupScreen.kt, UpkeepScreen.kt). */
+    onSetUpStorage: () -> Unit = {},
+    onOpenUpkeep: () -> Unit = {},
     /** The empty pages' "Scan cards". */
     onOpenScan: () -> Unit = {}
 ) {
@@ -290,6 +293,7 @@ fun CollectionsScreen(
                 progress = importProgress,
                 onImport = viewModel::importBinder,
                 onDismiss = { showImport = false; viewModel.resetImport() },
+                places = placesOf(collections),
                 // From All cards, the whole collection comes in unsorted; from Binders, as a binder.
                 startInNewBinder = pagerState.currentPage == 1
             )
@@ -359,7 +363,9 @@ fun CollectionsScreen(
                         onSortPile = onSortPile,
                         onOpenValue = onOpenValue,
                         onOpenSpace = onOpenSpace,
-                        onOpenSell = onOpenSell
+                        onOpenSell = onOpenSell,
+                        onSetUp = onSetUpStorage,
+                        onOpenUpkeep = onOpenUpkeep
                     )
                 } else {
                     CollectionsTab(

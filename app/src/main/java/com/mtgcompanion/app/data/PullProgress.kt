@@ -18,9 +18,19 @@ class PullProgress(context: Context) {
         prefs.getStringSet(kind.prefix + deckId, null)?.toSet() ?: emptySet()
 
     fun setTicked(kind: ListKind, deckId: String, keys: Set<String>) {
+        val started = kind == ListKind.PULL && keys.isNotEmpty() && ticked(kind, deckId).isEmpty()
         prefs.edit().apply {
             if (keys.isEmpty()) remove(kind.prefix + deckId) else putStringSet(kind.prefix + deckId, HashSet(keys))
+            // When the pull list was started, for Upkeep's "started Tuesday".
+            if (kind == ListKind.PULL && keys.isEmpty()) remove(STARTED_PREFIX + deckId)
+            if (started) putLong(STARTED_PREFIX + deckId, System.currentTimeMillis())
         }.apply()
+    }
+
+    /** The decks' pull lists with something ticked, and since when (Upkeep.kt). */
+    fun underway(): List<PullUnderway> = prefs.all.keys.filter { it.startsWith(ListKind.PULL.prefix) }.map { key ->
+        val deckId = key.removePrefix(ListKind.PULL.prefix)
+        PullUnderway(deckId, ticked(ListKind.PULL, deckId), prefs.getLong(STARTED_PREFIX + deckId, 0L).takeIf { it > 0 })
     }
 
     /** Ticks one more row (for the scanner), and answers the ticks now. */
@@ -53,6 +63,7 @@ class PullProgress(context: Context) {
 
     private companion object {
         const val MODE_PREFIX = "put_back_mode:"
+        const val STARTED_PREFIX = "pull_started:"
         const val OPEN_KEY = "open_pull"
     }
 }
