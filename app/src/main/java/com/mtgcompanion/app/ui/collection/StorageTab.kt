@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Backpack
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Home
@@ -68,6 +69,8 @@ import com.mtgcompanion.app.data.canMoveInto
 import com.mtgcompanion.app.data.childrenOf
 import com.mtgcompanion.app.data.copiesWithin
 import com.mtgcompanion.app.data.defaultSections
+import com.mtgcompanion.app.data.gearOf
+import com.mtgcompanion.app.data.gearSummary
 import com.mtgcompanion.app.data.placeAndInside
 import com.mtgcompanion.app.data.placeSubtitle
 import com.mtgcompanion.app.data.placeTree
@@ -128,7 +131,9 @@ fun StorageTab(
     /** Sharing storage at home (HouseholdScreen.kt). */
     onOpenHousehold: () -> Unit = {},
     /** Sealed product (SealedScreen.kt). */
-    onOpenSealed: () -> Unit = {}
+    onOpenSealed: () -> Unit = {},
+    /** Gear: sleeves, deck boxes, tokens (GearScreen.kt). */
+    onOpenGear: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -255,6 +260,11 @@ fun StorageTab(
                     if (sealed.isNotEmpty()) "${count(boxes)} sealed · ${money.format(sealedTotalUsd(sealed), whole = true)}" else "Booster boxes, bundles and precons",
                     count(boxes), gold = false, onClick = onOpenSealed
                 )
+            }
+        }
+        item {
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                PlaceRow(Icons.Filled.Backpack, "Gear", gearSummary(gearOf(collections), decks), "›", gold = false, onClick = onOpenGear)
             }
         }
         item {

@@ -609,6 +609,16 @@ class DeckDetailViewModel(
         needed.map { TokenArt(it, art[it.id]?.displayImageUrl) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** "This deck needs" (Gear.kt): sleeves, a deck box and its tokens, and whether the gear has them all. */
+    val gearNeeds: StateFlow<String?> = combine(deck, tokens, repository.decksFlow, collectionRepository.collectionsFlow) { d, t, decks, collections ->
+        d?.let {
+            com.mtgcompanion.app.data.deckNeedsLine(
+                it,
+                com.mtgcompanion.app.data.deckNeeds(it, com.mtgcompanion.app.data.gearOf(collections), t.filter { a -> !a.token.isEmblem }.map { a -> a.token.name }, decks, collections)
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     private suspend fun buildAnalysis(d: Deck): DeckAnalysis {
         // The sideboard's cards too, for the legality check — nothing else here looks at them.
         val byId = cardRepository.getCardsByIds((d.cards + d.sideboard).map { it.scryfallId }.distinct()).associateBy { it.id }

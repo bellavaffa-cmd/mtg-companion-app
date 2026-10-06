@@ -173,6 +173,8 @@ fun CollectionsScreen(
     onOpenUpkeep: () -> Unit = {},
     /** The Storage page's Sharing storage at home (HouseholdScreen.kt). */
     onOpenHousehold: () -> Unit = {},
+    /** The Storage page's Gear (GearScreen.kt). */
+    onOpenGear: () -> Unit = {},
     /** The empty pages' "Scan cards". */
     onOpenScan: () -> Unit = {}
 ) {
@@ -371,7 +373,8 @@ fun CollectionsScreen(
                         onOpenSealed = onOpenSealed,
                         onSetUp = onSetUpStorage,
                         onOpenUpkeep = onOpenUpkeep,
-                        onOpenHousehold = onOpenHousehold
+                        onOpenHousehold = onOpenHousehold,
+                        onOpenGear = onOpenGear
                     )
                 } else {
                     CollectionsTab(

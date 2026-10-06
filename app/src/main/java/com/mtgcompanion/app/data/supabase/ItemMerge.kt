@@ -11,6 +11,7 @@ import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepAlertOptionsFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
+import com.mtgcompanion.app.data.keepGearFromOlderApp
 import com.mtgcompanion.app.data.keepLoansFromOlderApp
 import com.mtgcompanion.app.data.keepGradedFromOlderApp
 import com.mtgcompanion.app.data.keepSealedFromOlderApp
@@ -22,6 +23,7 @@ import com.mtgcompanion.app.data.withMergedExtras
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
 import com.mtgcompanion.app.data.mergeCameFrom
 import com.mtgcompanion.app.data.mergeCopyPlaces
+import com.mtgcompanion.app.data.mergeGear
 import com.mtgcompanion.app.data.mergeLoans
 import com.mtgcompanion.app.data.mergePlaceLists
 import com.mtgcompanion.app.data.tidied
@@ -48,6 +50,8 @@ import com.mtgcompanion.app.data.tidied
  *    about them leaves them as they were.
  *  - Where a deck's copies came from (its "cameFrom", see PullList.kt) merges card by card the same
  *    way; a deck saved by an app that doesn't know about it leaves it as it was.
+ *  - The gear (on the Unsorted pile, see Gear.kt) merges item by item, the decks a pack of sleeves is
+ *    on like a deck's tags; a pile saved by an app that doesn't know about gear leaves it as it was.
  *  - The loans (on the Unsorted pile, see Loans.kt) merge loan by loan, their cards card by card, and
  *    the copies back only go up; a pile saved by an app that doesn't know about loans leaves them as
  *    they were.
@@ -217,9 +221,9 @@ object ItemMerge {
         mergeCollectionsKnowingPlaces(
             base,
             // ...and one that doesn't know about a wishlist target's options left those as they were.
-            // ...and one that doesn't know about sealed product or graded copies left those as they were.
-            keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine))))))),
-            keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs))))))),
+            // ...and one that doesn't know about sealed product, graded copies or gear left those as they were.
+            keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine)))))))),
+            keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs)))))))),
             minePreferred
         )
 
@@ -228,6 +232,7 @@ object ItemMerge {
         loans = mergeLoans(base.loans, mine.loans, theirs.loans, minePreferred),
         sealed = mergeSealed(base.sealed, mine.sealed, theirs.sealed, minePreferred),
         graded = mergeGraded(base.graded, mine.graded, theirs.graded, minePreferred),
+        gear = mergeGear(base.gear, mine.gear, theirs.gear, minePreferred),
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         type = pick(base.type, mine.type, theirs.type, minePreferred),
         createdAt = minOf(mine.createdAt, theirs.createdAt),
