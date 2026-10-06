@@ -169,6 +169,8 @@ fun CollectionsScreen(
     /** Getting started with storage, and Upkeep (StorageSetupScreen.kt, UpkeepScreen.kt). */
     onSetUpStorage: () -> Unit = {},
     onOpenUpkeep: () -> Unit = {},
+    /** The Storage page's Sharing storage at home (HouseholdScreen.kt). */
+    onOpenHousehold: () -> Unit = {},
     /** The empty pages' "Scan cards". */
     onOpenScan: () -> Unit = {}
 ) {
@@ -365,7 +367,8 @@ fun CollectionsScreen(
                         onOpenSpace = onOpenSpace,
                         onOpenSell = onOpenSell,
                         onSetUp = onSetUpStorage,
-                        onOpenUpkeep = onOpenUpkeep
+                        onOpenUpkeep = onOpenUpkeep,
+                        onOpenHousehold = onOpenHousehold
                     )
                 } else {
                     CollectionsTab(

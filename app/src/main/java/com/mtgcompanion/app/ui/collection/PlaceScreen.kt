@@ -140,7 +140,9 @@ fun PlaceScreen(
     /** Propose a trade with a friend, started with both sides. */
     onProposeTrade: (friend: String, want: List<TradeCard>, give: List<TradeCard>) -> Unit = { _, _, _ -> },
     /** Bring to game night: the cards onto the game night deck's pull list. */
-    onBringToGameNight: (List<WantedHere>) -> Unit = {}
+    onBringToGameNight: (List<WantedHere>) -> Unit = {},
+    /** Sharing storage at home (HouseholdScreen.kt): the household this place is shared in. */
+    onOpenHousehold: (String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val historyContext = androidx.compose.ui.platform.LocalContext.current
@@ -308,6 +310,8 @@ fun PlaceScreen(
                     }
                 }
             }
+            // Sharing storage at home: who else sees it, or Share at home (nothing before the server has households).
+            if (social != null) item { HomeShareLine(place, social, onOpenHousehold) }
             if (binder == null) place.rule?.let { rule ->
                 item {
                     Text(

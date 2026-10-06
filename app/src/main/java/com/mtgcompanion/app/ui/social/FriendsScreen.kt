@@ -91,6 +91,9 @@ import com.mtgcompanion.app.data.social.SocialApi
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.SectionHeader
+import com.mtgcompanion.app.ui.collection.HouseholdInvitesList
+import com.mtgcompanion.app.ui.collection.HouseholdsState
+import com.mtgcompanion.app.ui.collection.rememberHouseholds
 import com.mtgcompanion.app.ui.common.readableWidth
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.launch
@@ -100,7 +103,9 @@ data class FriendsMoreActions(
     val onOpenConversation: (friendId: String) -> Unit = {},
     val onOpenForTrade: () -> Unit = {},
     val onOpenActivity: (ActivityItem) -> Unit = {},
-    val onOpenMatch: (TradeMatch) -> Unit = {}
+    val onOpenMatch: (TradeMatch) -> Unit = {},
+    /** Sharing storage at home: a household, by id, once an invitation is accepted (HouseholdScreen.kt). */
+    val onOpenHousehold: (householdId: String) -> Unit = {}
 )
 
 /**
@@ -198,7 +203,7 @@ private fun FriendsContent(
         )
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (tab) {
-                FriendsTab.PEOPLE -> PeopleTab(social, overview, onOpenFriend, onOpenSharedTab, onShowQr)
+                FriendsTab.PEOPLE -> PeopleTab(social, overview, onOpenFriend, onOpenSharedTab, onShowQr, more.onOpenHousehold)
                 FriendsTab.MESSAGES -> ConversationList(social, overview, more.onOpenConversation)
                 FriendsTab.TRADES -> TradesTab(social, collectionRepository, overview, withMore == true, onOpenLoans, onCounterTrade, more)
                 FriendsTab.ACTIVITY -> ActivityList(social, header = {}, onOpen = more.onOpenActivity)
@@ -214,7 +219,8 @@ private fun PeopleTab(
     overview: Overview,
     onOpenFriend: (String) -> Unit,
     onOpenSharedTab: () -> Unit,
-    onShowQr: () -> Unit
+    onShowQr: () -> Unit,
+    onOpenHousehold: (String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
@@ -223,6 +229,8 @@ private fun PeopleTab(
     var newPod by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    var homesReload by remember { mutableIntStateOf(0) }
+    val homes = rememberHouseholds(social, homesReload)
     val incoming = overview.friends.filter { !it.accepted && it.incoming }
     val outgoing = overview.friends.filter { !it.accepted && !it.incoming }
     val friends = overview.acceptedFriends.sortedBy { overview.person(it.userId)?.displayName?.lowercase() }
@@ -248,6 +256,13 @@ private fun PeopleTab(
                     }
                 }
             }
+        }
+
+        // Invitations to share storage at home (HouseholdScreen.kt); nothing before the server has households.
+        val homeInvites = (homes as? HouseholdsState.Ready)?.data?.invites.orEmpty()
+        if (homeInvites.isNotEmpty()) {
+            item { SectionHeader("Sharing storage at home") }
+            item(key = "home-invites") { HouseholdInvitesList(homeInvites, social, onDone = { accepted -> homesReload++; if (accepted != null) onOpenHousehold(accepted) }) }
         }
 
         item { SectionHeader(if (friends.isEmpty()) "Friends" else "Friends · ${friends.size}") }

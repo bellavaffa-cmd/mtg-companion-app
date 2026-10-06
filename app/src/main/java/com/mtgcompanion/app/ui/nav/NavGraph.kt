@@ -16,6 +16,7 @@ import com.mtgcompanion.app.ui.collection.BinderFitScreen
 import com.mtgcompanion.app.ui.collection.CheckResultsScreen
 import com.mtgcompanion.app.ui.collection.PlaceLabelScreen
 import com.mtgcompanion.app.ui.collection.LoansScreen
+import com.mtgcompanion.app.ui.collection.HouseholdScreen
 import com.mtgcompanion.app.ui.collection.LendScreen
 import com.mtgcompanion.app.ui.collection.CopyHistoryScreen
 import com.mtgcompanion.app.ui.collection.ValueByPlaceScreen
@@ -330,6 +331,9 @@ private object Routes {
     /** The scanner putting cards away into a storage place. */
     const val PUT_AWAY = "put_away/{placeId}"
     fun putAway(placeId: String) = "put_away/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
+    /** Sharing storage at home (HouseholdScreen.kt): the user's households, or one of them by [id]. */
+    const val HOUSEHOLD = "household?id={id}"
+    fun household(id: String? = null) = "household" + (id?.let { "?id=" + URLEncoder.encode(it, StandardCharsets.UTF_8.name()) } ?: "")
     /** Loans: lent out and borrowed (LoansScreen.kt); [tab] "borrowed" opens on what friends lent. */
     const val LOANS = "loans?tab={tab}"
     fun loans(borrowed: Boolean = false) = "loans" + if (borrowed) "?tab=borrowed" else ""
@@ -704,6 +708,7 @@ fun MtgNavGraph(
                     onLend = { id -> navController.navigate(Routes.lendFrom(id)) },
                     onScanPage = { id, page -> navController.navigate(Routes.pageScan(id, page)) },
                     social = socialRepository,
+                    onOpenHousehold = { id -> navController.navigate(Routes.household(id)) },
                     onProposeTrade = { friend, want, give ->
                         socialRepository.draft = SocialRepository.TradeDraft(to = friend, want = want, give = give)
                         navController.navigate(Routes.tradeNew(friend))
@@ -824,6 +829,7 @@ fun MtgNavGraph(
                     collections = collections,
                     decks = decks,
                     placeFilter = place,
+                    social = socialRepository,
                     onBack = { navController.popBackStack() },
                     onScan = { id -> navController.navigate(Routes.scanTick(id, pull = true)) },
                     // Both stores are written, so a card is never in two places at once (as swapInProxy does).
@@ -947,6 +953,22 @@ fun MtgNavGraph(
                     onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
                     onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) },
                     onFit = { id -> navController.navigate(Routes.placeFit(id)) }
+                )
+            }
+
+            destination(
+                Routes.HOUSEHOLD,
+                arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })
+            ) { entry ->
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                HouseholdScreen(
+                    householdId = entry.arguments?.getString("id")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) },
+                    collections = collections,
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onOpenHousehold = { id -> navController.navigate(Routes.household(id)) { popUpTo(Routes.HOUSEHOLD) { inclusive = true } } },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } }
                 )
             }
 
@@ -1208,7 +1230,8 @@ fun MtgNavGraph(
                     onOpenSpace = { navController.navigate(Routes.SPACE) },
                     onOpenSell = { navController.navigate(Routes.SELL) },
                     onSetUpStorage = { navController.navigate(Routes.STORAGE_SETUP) },
-                    onOpenUpkeep = { navController.navigate(Routes.UPKEEP) }
+                    onOpenUpkeep = { navController.navigate(Routes.UPKEEP) },
+                    onOpenHousehold = { navController.navigate(Routes.household()) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(
@@ -1556,6 +1579,7 @@ fun MtgNavGraph(
                     onOpenLoans = { navController.navigate(Routes.loans(borrowed = true)) },
                     onCounterTrade = { id -> navController.navigate(Routes.tradeNew(id)) },
                     more = FriendsMoreActions(
+                        onOpenHousehold = { id -> navController.navigate(Routes.household(id)) },
                         onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) },
                         onOpenForTrade = { navController.navigate(Routes.FOR_TRADE) },
                         onOpenActivity = { item ->
