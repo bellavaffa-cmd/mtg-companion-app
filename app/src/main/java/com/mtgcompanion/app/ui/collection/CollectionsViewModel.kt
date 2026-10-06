@@ -314,7 +314,23 @@ class CollectionsViewModel(
     suspend fun sendPicked(ids: Set<String>, pick: AddToPick, ops: AddToOps) {
         val target = ops.resolve(pick)
         if (target.kind == SourceKind.BINDER) {
+            // All cards lists deck cards too, but gathering only moves copies out of binders: say
+            // what actually moved rather than counting the whole selection (tester report, build 19).
+            val owned = repository.collectionsFlow.first().filter { it.kind == CollectionType.OWNED }
+            val already = owned.firstOrNull { it.id == target.id }?.entries.orEmpty().map { it.scryfallId }.toSet()
+            val elsewhere = owned.filter { it.id != target.id }.flatMap { c -> c.entries.map { it.scryfallId } }.toSet()
+            val moving = ids.count { it in elsewhere }
+            val deckOnly = ids.count { it !in elsewhere && it !in already }
             repository.gatherInto(target.id, ids)
+            if (moving < ids.size) {
+                ops.message = if (moving == 0) "Nothing moved to ${target.name}"
+                else "Moved $moving ${if (moving == 1) "card" else "cards"} to ${target.name}"
+                if (deckOnly > 0) ops.addNote(
+                    "$deckOnly ${if (deckOnly == 1) "is" else "are"} only in decks and stayed there — a copy is in a deck or a binder, not both."
+                )
+                val there = ids.count { it in already && it !in elsewhere }
+                if (there > 0) ops.addNote("$there ${if (there == 1) "was" else "were"} already there.")
+            }
             return
         }
         val deck = deckRepository.decksFlow.first().firstOrNull { it.id == target.id }
@@ -355,7 +371,7 @@ class CollectionsViewModel(
      * a deck's copies for a card only in decks. [exact] names each card's printing.
      */
     suspend fun exportText(ids: Set<String>, exact: Boolean): String {
-        val owned = collections.value.filter { it.kind == CollectionType.OWNED }.flatMap { it.entries }.filter { it.scryfallId in ids }
+        val owned = repository.collectionsFlow.first().filter { it.kind == CollectionType.OWNED }.flatMap { it.entries }.filter { it.scryfallId in ids }
         val byCard = owned.groupBy { it.scryfallId }.map { (_, copies) ->
             copies.first().copy(quantity = copies.sumOf { it.quantity }, foilQuantity = copies.sumOf { it.foilQuantity })
         }
@@ -374,7 +390,7 @@ class CollectionsViewModel(
      * condition and language go too; a card only in decks as one row of its copies there.
      */
     suspend fun exportCsv(ids: Set<String>): String {
-        val owned = collections.value.filter { it.kind == CollectionType.OWNED }.flatMap { it.entries }.filter { it.scryfallId in ids }
+        val owned = repository.collectionsFlow.first().filter { it.kind == CollectionType.OWNED }.flatMap { it.entries }.filter { it.scryfallId in ids }
         val deckOnly = allCards.value.filter { it.scryfallId in ids && owned.none { e -> e.scryfallId == it.scryfallId } }
             .map { CollectionEntry(it.scryfallId, it.name, it.imageUrl, quantity = it.total - it.proxies) }
             .filter { it.quantity > 0 }

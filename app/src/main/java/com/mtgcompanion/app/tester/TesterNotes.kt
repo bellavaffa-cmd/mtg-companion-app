@@ -9,6 +9,11 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "gather-message",
+        "Adding cards to a binder says what moved",
+        "Collection › All cards › Select all › Add to… a binder. Cards only in your decks stay in the decks, and the message should now say how many really moved and how many stayed in decks (before, it said all of them moved)."
+    ),
+    TesterNote(
         "view-buttons",
         "List or grid button on every card list",
         "Collection › All cards (next to Filters in the search box), any binder (top bar) and a deck's Suggestions (next to EDHREC suggestions): tap the grid/list button. Each should stick and match Settings › Card Display."
