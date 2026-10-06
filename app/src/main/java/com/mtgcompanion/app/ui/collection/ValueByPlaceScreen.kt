@@ -57,6 +57,8 @@ import com.mtgcompanion.app.data.ValueRow
 import com.mtgcompanion.app.data.ValueTotals
 import com.mtgcompanion.app.data.lentCopies
 import com.mtgcompanion.app.data.valueCsv
+import com.mtgcompanion.app.data.finishOf
+import com.mtgcompanion.app.data.gradedOf
 import com.mtgcompanion.app.data.valueGroups
 import com.mtgcompanion.app.data.valueRows
 import com.mtgcompanion.app.ui.common.BackButton
@@ -85,7 +87,8 @@ fun ValueByPlaceScreen(collections: List<Collection>, decks: List<Deck>, onBack:
     val ids = remember(collections, decks) {
         (collections.filter { it.kind != CollectionType.WISHLIST }.flatMap { c -> c.entries.map { it.scryfallId } } +
             decks.flatMap { d -> d.cards.map { it.scryfallId } } +
-            lentCopies(collections, decks).map { it.card.scryfallId }).distinct().sorted()
+            lentCopies(collections, decks).map { it.card.scryfallId } +
+            gradedOf(collections).map { it.scryfallId }).distinct().sorted()
     }
     var facts by remember { mutableStateOf<Map<String, PrintingFacts>?>(null) }
     LaunchedEffect(ids) {
@@ -151,7 +154,11 @@ fun ValueByPlaceScreen(collections: List<Collection>, decks: List<Deck>, onBack:
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface).padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Everything you own", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
                     Text(if (facts == null) "…" else money.format(totals.usd, whole = true), fontSize = 40.sp, fontWeight = FontWeight.Bold, color = colors.accent)
-                    Text("${String.format(Locale.UK, "%,d", totals.copies)} ${if (totals.copies == 1) "copy" else "copies"} · prices from today", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+                    val entered = totals.sealed > 0 || rows.any { it.label == "Graded" }
+                    Text(
+                        "${holding(totals.copies, totals.sealed)} · prices from today" + if (entered) ", graded and sealed at the value you entered" else "",
+                        style = MaterialTheme.typography.labelSmall, color = colors.textMuted
+                    )
                 }
             }
             items(totals.groups, key = { it.key }) { g ->
@@ -163,13 +170,19 @@ fun ValueByPlaceScreen(collections: List<Collection>, decks: List<Deck>, onBack:
                     Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(colors.surface2)) {
                         Box(Modifier.fillMaxWidth((g.usd / max).toFloat().coerceIn(0f, 1f)).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(if (g.kind == ValueKind.NONE) colors.textDim else colors.accent))
                     }
-                    Text("${g.copies} ${if (g.copies == 1) "copy" else "copies"}", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+                    Text(holding(g.copies, g.sealed), style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
                 }
             }
             if (totals.groups.isEmpty()) item { Text("Nothing owned yet.", color = colors.textMuted) }
         }
     }
 }
+
+/** "12 copies", "12 copies · 2 sealed", "1 sealed". */
+private fun holding(copies: Int, sealed: Int): String = listOf(
+    if (copies > 0 || sealed == 0) "${String.format(Locale.UK, "%,d", copies)} ${if (copies == 1) "copy" else "copies"}" else "",
+    if (sealed > 0) "${String.format(Locale.UK, "%,d", sealed)} sealed" else ""
+).filter { it.isNotEmpty() }.joinToString(" · ")
 
 private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
@@ -183,7 +196,7 @@ private fun reportHtml(rows: List<ValueRow>, totals: ValueTotals, money: Money, 
         "<tr><td>${esc(listOf(g.detail, g.label).filter { it.isNotEmpty() }.joinToString(" › "))}</td><td>${g.copies}</td><td>${esc(money.format(g.usd))}</td></tr>"
     }
     val cards = rows.sortedWith(compareBy<ValueRow>({ it.where.lowercase() }, { it.name.lowercase() })).joinToString("") { r ->
-        "<tr><td>${esc(r.name)}</td><td>${esc(listOf(r.set, r.number).filter { it.isNotEmpty() }.joinToString(" "))}</td><td>${if (r.foil) "Foil" else ""}</td><td>${r.qty}</td>" +
+        "<tr><td>${esc(r.name)}</td><td>${esc(listOf(r.set, r.number).filter { it.isNotEmpty() }.joinToString(" "))}</td><td>${esc(if (r.label != null) finishOf(r) else if (r.foil) "Foil" else "")}</td><td>${r.qty}</td>" +
             "<td>${esc(r.where)}</td><td>${esc(r.spot)}</td><td>${r.unitUsd?.let { esc(money.format(it)) } ?: ""}</td><td>${r.unitUsd?.let { esc(money.format(it * r.qty)) } ?: ""}</td></tr>"
     }
     val shots = photos.filter { it.front != null || it.back != null }.takeIf { it.isNotEmpty() }?.let { list ->

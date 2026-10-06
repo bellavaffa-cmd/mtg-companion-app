@@ -24,6 +24,8 @@ import com.mtgcompanion.app.ui.collection.SpaceScreen
 import com.mtgcompanion.app.ui.collection.StorageSetupScreen
 import com.mtgcompanion.app.ui.collection.UpkeepScreen
 import com.mtgcompanion.app.ui.collection.SellScreen
+import com.mtgcompanion.app.ui.collection.SealedScreen
+import com.mtgcompanion.app.ui.collection.GradedScreen
 import com.mtgcompanion.app.ui.collection.CopyPhotoScreen
 import com.mtgcompanion.app.ui.decks.PullListScreen
 import com.mtgcompanion.app.ui.decks.PutBackScreen
@@ -350,6 +352,12 @@ private object Routes {
     const val SPACE = "space"
     /** The To sell list (Selling.kt). */
     const val SELL = "sell"
+    /** Sealed product (Sealed.kt). */
+    const val SEALED = "sealed"
+    /** A graded copy: a new one of [card], or the one marked with [id] (Graded.kt). */
+    const val GRADED = "graded?card={card}&id={id}"
+    fun gradedNew(name: String) = "graded?card=" + URLEncoder.encode(name, StandardCharsets.UTF_8.name())
+    fun gradedCopy(id: String) = "graded?id=" + URLEncoder.encode(id, StandardCharsets.UTF_8.name())
     /** Getting started with storage (StorageSetup.kt). */
     const val STORAGE_SETUP = "storage_setup"
     /** Upkeep: what's worth doing this week (Upkeep.kt). */
@@ -1079,6 +1087,40 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(Routes.SEALED) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                SealedScreen(
+                    collections = collections,
+                    deckRepository = deckRepository,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onSortPile = { navController.navigate(Routes.SORT_PILE) },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) }
+                )
+            }
+
+            destination(
+                Routes.GRADED,
+                arguments = listOf(
+                    navArgument("card") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { entry ->
+                val card = entry.arguments?.getString("card")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
+                val id = entry.arguments?.getString("id")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                // The copies to pick from are read once, so wait for the library to load.
+                var loaded by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { collectionRepository.collectionsFlow.first(); loaded = true }
+                if (loaded) GradedScreen(
+                    cardName = card,
+                    gradedId = id,
+                    collections = collections,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } }
+                )
+            }
+
             destination(Routes.COPY_PHOTOS, arguments = listOf(navArgument("cardName") { type = NavType.StringType })) { entry ->
                 val name = entry.arguments?.getString("cardName")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
@@ -1229,6 +1271,7 @@ fun MtgNavGraph(
                     onOpenValue = { navController.navigate(Routes.VALUE_BY_PLACE) },
                     onOpenSpace = { navController.navigate(Routes.SPACE) },
                     onOpenSell = { navController.navigate(Routes.SELL) },
+                    onOpenSealed = { navController.navigate(Routes.SEALED) },
                     onSetUpStorage = { navController.navigate(Routes.STORAGE_SETUP) },
                     onOpenUpkeep = { navController.navigate(Routes.UPKEEP) },
                     onOpenHousehold = { navController.navigate(Routes.household()) }
@@ -1420,7 +1463,8 @@ fun MtgNavGraph(
                     onLend = { name -> navController.navigate(Routes.lendCard(name)) },
                     onHistory = { name -> navController.navigate(Routes.copyHistory(name)) },
                     onOpenLoans = { navController.navigate(Routes.loans()) },
-                    onPhotos = { name -> navController.navigate(Routes.copyPhotos(name)) }
+                    onPhotos = { name -> navController.navigate(Routes.copyPhotos(name)) },
+                    onGraded = { name, id -> navController.navigate(if (id != null) Routes.gradedCopy(id) else Routes.gradedNew(name)) }
                 )
             }
 

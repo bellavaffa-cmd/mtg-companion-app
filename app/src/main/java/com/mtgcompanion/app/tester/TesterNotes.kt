@@ -9,23 +9,13 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "household",
-        "Sharing storage at home",
-        "Needs a friend who lives with you, both with this build. Collection › Storage › Sharing storage at home › Start sharing, then Invite someone and pick them: they should get a notification and see the invitation on Friends › People. Once they accept, Share a place: the screen should say \"You and Alex keep cards on the same shelf\", each person's copies and value, and each place \"Yours 612 · Alex 0\". On their phone, your place should read \"Alex 342 · you can see, not change\" — tap it to see the cards, and Keep my cards here too (not on binders). Build a deck with a card only they have: its pull list should show Ask Alex, \"ask Alex · Red box\"; Borrow from Alex should put it under Loans › Borrowed. Stop sharing should hide each other's cards straight away. Before the server is updated, the screen should only say \"Household sharing isn't available yet\"."
+        "sealed",
+        "Sealed product",
+        "Collection › Storage › Sealed › + Add sealed product: type a set (\"dusk\") — it should offer Duskmourn Play Booster Box, Collector Box, Bundle…; type a precon (\"Blame Game\") for \"Precon: Blame Game\"; or keep any words as your own product. Set how many, the place, paid each and worth now each, Save. The row should read \"×2 · Cupboard, hall · paid \$210 each\" with the value and +13% (green) or −9% (orange), the total at the top, and \"value you entered\" where there's no price paid. Open a booster box: one should come off and the scanner open as Sorting a new pile, named after the box. Open the precon: one should come off and a deck with its list filled in should open. Value by place should count them, \"2 sealed\". Check the list on your other device and on manabind.com."
     ),
     TesterNote(
-        "storage-setup",
-        "Getting started with storage",
-        "On a phone with no storage places (or Collection › Storage › Set up storage): tap Get started. Step 1: set how many binders (tap \"9 per page\" to change the pockets), bulk boxes (tap \"by colour, then A–Z\" to change the sorting) and shelves; deck boxes should say Automatic. Step 2: rename a couple, then Make places. Step 3: Print labels should open a label (All labels from there), and Put away on a box should open the scanner; the bar should show the share of copies with a place. Check the places on your other device."
-    ),
-    TesterNote(
-        "storage-upkeep",
-        "Upkeep: what's worth doing this week",
-        "Collection › Storage › Upkeep: it should say \"92% of copies have a place\" and \"N things worth doing this week\". Rows to look for: copies with no place (after an import it should say \"Most came from today's import\") → Put away; a place not checked in 90 days with value inside → Check; an overdue loan → Remind; a box 90% full or more → Split; a pull list half ticked → Carry on. Each button should open the right screen. Turn on Weekly reminder: a notification should come about a week later (only when there's something to do)."
-    ),
-    TesterNote(
-        "import-places",
-        "Import with locations",
-        "Export a binder as CSV (it now has a Place column), or use a ManaBox, Dragon Shield or other CSV with a binder, box, folder or location column. Import it (Collection › Import list): under the cards, Import with locations should list each value with its count — your own places matched already, others \"Make a new place\", blanks \"No place yet\". Change one, import, and check the copies are in those places on the Storage tab."
+        "graded",
+        "Graded cards",
+        "On a card you own, Where it is › Mark a copy as graded: pick PSA, BGS, CGC or Other, a grade, the cert number and your value, which copy and where it's kept, then Mark as graded. Where it is should show \"PSA 10\" with a Graded label, its place and cert, and your value. The copy should leave its binder: a deck that needs the card should now list it as missing, it shouldn't count as a spare or turn up on a pull list. Value by place should count it at your value in its place. Tap it: Out of its slab should make it a raw copy again, back where it was; Remove takes it out of the collection."
     )
 )

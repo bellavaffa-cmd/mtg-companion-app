@@ -8,6 +8,8 @@ import java.util.Locale
  * spreadsheet (CSV) or a printed report, for insurance or a move.
  *
  * Prices are Scryfall's, in US dollars; the CSV converts them to the user's currency (Prices.kt).
+ * Graded copies (Graded.kt) and sealed product (Sealed.kt) count at the value the user entered — card
+ * prices are for raw copies, and no app has prices for sealed product — with a "Graded" or "Sealed" label.
  *
  * Pure, so it can be tested. Mirrors the web app's src/collection/valueByPlace.ts rule for rule, with
  * the same tests (ValueByPlaceTest.kt ↔ tests/collection/valueByPlace.test.ts).
@@ -36,7 +38,11 @@ data class ValueRow(
     val group: String,
     val where: String,
     val spot: String,
-    val unitUsd: Double?
+    val unitUsd: Double?,
+    /** "Graded" (its value the one entered) or "Sealed"; null for a raw copy. */
+    val label: String? = null,
+    /** A graded copy's slab: "PSA 10". */
+    val grade: String? = null
 )
 
 /** One copy's price: a foil's foil price (or else the plain one), a plain copy's plain price (or else the foil one). */
@@ -101,14 +107,51 @@ fun valueRows(collections: List<Collection>, decks: List<Deck>, facts: (String) 
             l.card.isFoil, l.qty, ValueKind.LENT, "lent", "Lent out › ${l.loan.to}", ""
         )
     }
+    // Graded copies and sealed product, at the value entered; in their place, or with no place yet.
+    fun inPlace(placeId: String?) = placeId != null && placeId in known
+    for (g in gradedOf(collections)) {
+        val p = facts(g.scryfallId)
+        val here = inPlace(g.placeId)
+        rows += ValueRow(
+            g.name, g.scryfallId, p?.set?.uppercase() ?: "", p?.number ?: "", g.isFoil, "", "", 1,
+            if (here) ValueKind.PLACE else ValueKind.NONE, if (here) g.placeId!! else "none", if (here) placePath(places, g.placeId!!) else "No place yet",
+            if (here) g.section.orEmpty() else "", g.valueUsd, label = "Graded", grade = gradeLabel(g)
+        )
+    }
+    for (s in sealedOf(collections)) {
+        if (s.count <= 0) continue
+        val here = inPlace(s.placeId)
+        rows += ValueRow(
+            s.name, "", s.setCode?.uppercase().orEmpty(), "", false, "", "", s.count,
+            if (here) ValueKind.PLACE else ValueKind.NONE, if (here) s.placeId!! else "none", if (here) placePath(places, s.placeId!!) else "No place yet",
+            "", s.valueUsd, label = "Sealed"
+        )
+    }
     return rows
 }
 
+/** A row's finish, as the spreadsheet and the report say it: "Foil", "Normal", "Graded PSA 10", "Sealed". */
+fun finishOf(r: ValueRow): String = when (r.label) {
+    "Sealed" -> "Sealed"
+    "Graded" -> listOf("Graded ${r.grade.orEmpty()}".trim(), if (r.foil) "foil" else "").filter { it.isNotEmpty() }.joinToString(", ")
+    else -> if (r.foil) "Foil" else "Normal"
+}
+
 /** One bar on the screen: a place (its name, and the places it's in), the deck boxes, lent out or no place. */
-data class ValueGroup(val key: String, val kind: ValueKind, val label: String, val detail: String, val usd: Double, val copies: Int)
+data class ValueGroup(
+    val key: String,
+    val kind: ValueKind,
+    val label: String,
+    val detail: String,
+    val usd: Double,
+    /** Cards in it, graded copies too. */
+    val copies: Int,
+    /** Sealed products in it (each box, bundle or precon). */
+    val sealed: Int = 0
+)
 
 /** The rows added up: a group per place holding copies, the deck boxes, lent out and no place yet; the total. */
-data class ValueTotals(val groups: List<ValueGroup>, val usd: Double, val copies: Int)
+data class ValueTotals(val groups: List<ValueGroup>, val usd: Double, val copies: Int, val sealed: Int = 0)
 
 /** The rows added up — the most valuable first, no place yet last. */
 fun valueGroups(rows: List<ValueRow>, collections: List<Collection>): ValueTotals {
@@ -124,14 +167,20 @@ fun valueGroups(rows: List<ValueRow>, collections: List<Collection>): ValueTotal
                 0.0, 0
             )
         }
-        groups[r.group] = g.copy(usd = g.usd + (r.unitUsd ?: 0.0) * r.qty, copies = g.copies + r.qty)
+        val isSealed = r.label == "Sealed"
+        groups[r.group] = g.copy(
+            usd = g.usd + (r.unitUsd ?: 0.0) * r.qty,
+            copies = g.copies + if (isSealed) 0 else r.qty,
+            sealed = g.sealed + if (isSealed) r.qty else 0
+        )
     }
     val all = groups.values.toList()
     val order = compareByDescending<ValueGroup> { it.usd }.thenByDescending { it.copies }.thenBy { it.label }
     return ValueTotals(
         all.filter { it.kind != ValueKind.NONE }.sortedWith(order) + all.filter { it.kind == ValueKind.NONE },
         all.sumOf { it.usd },
-        all.sumOf { it.copies }
+        all.sumOf { it.copies },
+        all.sumOf { it.sealed }
     )
 }
 
@@ -157,7 +206,7 @@ fun valueCsv(rows: List<ValueRow>, money: CsvMoney): String {
     val out = mutableListOf("Name,Set,Number,Finish,Condition,Language,Quantity,Place,Spot,Unit price (${money.code}),Total (${money.code})")
     for (r in sorted) {
         out += listOf(
-            r.name, r.set, r.number, if (r.foil) "Foil" else "Normal", r.condition, r.language, r.qty.toString(), r.where, r.spot,
+            r.name, r.set, r.number, finishOf(r), r.condition, r.language, r.qty.toString(), r.where, r.spot,
             r.unitUsd?.let { amount(it) } ?: "", r.unitUsd?.let { amount(it * r.qty) } ?: ""
         ).joinToString(",") { cell(it) }
     }

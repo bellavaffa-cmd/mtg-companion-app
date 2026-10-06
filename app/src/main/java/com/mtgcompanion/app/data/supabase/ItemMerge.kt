@@ -12,6 +12,10 @@ import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepAlertOptionsFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
 import com.mtgcompanion.app.data.keepLoansFromOlderApp
+import com.mtgcompanion.app.data.keepGradedFromOlderApp
+import com.mtgcompanion.app.data.keepSealedFromOlderApp
+import com.mtgcompanion.app.data.mergeGraded
+import com.mtgcompanion.app.data.mergeSealed
 import com.mtgcompanion.app.data.keepPlaceSizes
 import com.mtgcompanion.app.data.keepDeckExtrasFromOlderApp
 import com.mtgcompanion.app.data.withMergedExtras
@@ -47,6 +51,9 @@ import com.mtgcompanion.app.data.tidied
  *  - The loans (on the Unsorted pile, see Loans.kt) merge loan by loan, their cards card by card, and
  *    the copies back only go up; a pile saved by an app that doesn't know about loans leaves them as
  *    they were.
+ *  - Sealed product and graded copies (on the Unsorted pile, see Sealed.kt and Graded.kt) merge product
+ *    by product and slab by slab; a sealed product's count adds up like a card's. A pile saved by an
+ *    app that doesn't know about them leaves them as they were.
  *  - A deck's primer, folder, archive flag and companion go to whoever changed them; each category's
  *    target the same, one by one; a card's categories merge like its tags. A deck saved by an app that
  *    doesn't know them leaves them as they were (DeckExtras.kt).
@@ -210,14 +217,17 @@ object ItemMerge {
         mergeCollectionsKnowingPlaces(
             base,
             // ...and one that doesn't know about a wishlist target's options left those as they were.
-            keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine))))),
-            keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs))))),
+            // ...and one that doesn't know about sealed product or graded copies left those as they were.
+            keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine))))))),
+            keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs))))))),
             minePreferred
         )
 
     private fun mergeCollectionsKnowingPlaces(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection = theirs.copy(
         storagePlaces = mergePlaceLists(base.storagePlaces, mine.storagePlaces, theirs.storagePlaces, minePreferred),
         loans = mergeLoans(base.loans, mine.loans, theirs.loans, minePreferred),
+        sealed = mergeSealed(base.sealed, mine.sealed, theirs.sealed, minePreferred),
+        graded = mergeGraded(base.graded, mine.graded, theirs.graded, minePreferred),
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         type = pick(base.type, mine.type, theirs.type, minePreferred),
         createdAt = minOf(mine.createdAt, theirs.createdAt),

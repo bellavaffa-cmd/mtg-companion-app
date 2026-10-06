@@ -10,6 +10,8 @@ import com.mtgcompanion.app.data.keepHistoryFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
 import com.mtgcompanion.app.data.keepLastChecked
 import com.mtgcompanion.app.data.keepLoansFromOlderApp
+import com.mtgcompanion.app.data.keepGradedFromOlderApp
+import com.mtgcompanion.app.data.keepSealedFromOlderApp
 import com.mtgcompanion.app.data.keepPlaceSizes
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
 import com.squareup.moshi.JsonAdapter
@@ -268,13 +270,14 @@ internal class SyncCore(
             } else {
                 // First meeting: the places too are each device's own, kept as additions.
                 takeRow(
-                    row, collectionAdapter, collectionChanges, { mine -> mine.copy(entries = emptyList(), storagePlaces = null, loans = null) },
+                    row, collectionAdapter, collectionChanges, { mine -> mine.copy(entries = emptyList(), storagePlaces = null, loans = null, sealed = null, graded = null) },
                     { b, m, t, p -> ItemMerge.mergeCollections(b, m, t, minePreferred = p) },
                     // ...and a place saved without when it was last checked (PlaceCheck.kt) keeps this device's,
                     // and the Unsorted pile saved without its loans (Loans.kt) keeps this device's, as do places saved
                     // without their size (BoxSpace.kt) and cards without their copies to sell (Selling.kt), and
                     // wishlist targets without their options (WishlistTargets.kt).
-                    heal = { mine, theirs -> keepAlertOptionsFromOlderApp(mine, keepForSaleFromOlderApp(mine, keepPlaceSizes(mine, keepLoansFromOlderApp(mine, keepLastChecked(mine, keepPlacesFromOlderApp(mine, theirs)))))) }
+                    // ...and the pile saved without its sealed product or graded copies (Sealed.kt, Graded.kt).
+                    heal = { mine, theirs -> keepGradedFromOlderApp(mine, keepSealedFromOlderApp(mine, keepAlertOptionsFromOlderApp(mine, keepForSaleFromOlderApp(mine, keepPlaceSizes(mine, keepLoansFromOlderApp(mine, keepLastChecked(mine, keepPlacesFromOlderApp(mine, theirs)))))))) }
                 )
             }
             // A row this version can't read is read back by key every pass until an update can; the
@@ -391,7 +394,7 @@ internal fun rescueDecks(decks: List<Deck>, rescue: Rescue, adapter: JsonAdapter
 
 /** The same, for binders. */
 internal fun rescueCollections(collections: List<Collection>, rescue: Rescue, adapter: JsonAdapter<Collection>): List<Collection> =
-    rescueItems(collections, rescue, "collection", adapter, { it.id }, { mine -> mine.copy(entries = emptyList(), storagePlaces = null, loans = null) }) { b, m, t ->
+    rescueItems(collections, rescue, "collection", adapter, { it.id }, { mine -> mine.copy(entries = emptyList(), storagePlaces = null, loans = null, sealed = null, graded = null) }) { b, m, t ->
         ItemMerge.mergeCollections(b, m, t, minePreferred = true)
     }
 

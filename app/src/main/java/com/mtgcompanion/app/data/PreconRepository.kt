@@ -43,3 +43,37 @@ class PreconRepository {
         return PreconContents(map(data.commander), map(data.mainBoard))
     }
 }
+
+/**
+ * Makes the precon in MTGJSON's [fileName] a new Commander deck called [name], each card resolved on
+ * Scryfall — from the Precons screen, and when a sealed precon is opened (Sealed.kt). Throws with a
+ * message to show when it can't. The web app's importPreconDeck (src/decks/preconImport.ts).
+ */
+suspend fun importPreconDeck(
+    fileName: String,
+    name: String,
+    deckRepository: DeckRepository,
+    preconRepository: PreconRepository = PreconRepository(),
+    cardRepository: CardRepository = CardRepository()
+): Deck {
+    val contents = preconRepository.getContents(fileName)
+    val all = contents.commander + contents.cards
+    val ids = all.mapNotNull { it.scryfallId }.distinct()
+    if (ids.isEmpty()) throw IllegalStateException("Couldn't resolve any cards for this precon.")
+    val cardsById = cardRepository.getCardsByIds(ids).associateBy { it.id }
+    val deckEntries = all.mapNotNull { entry ->
+        val id = entry.scryfallId ?: return@mapNotNull null
+        val card = cardsById[id] ?: return@mapNotNull null
+        DeckCardEntry(card.id, card.name, card.displayImageUrl, entry.quantity, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl, card.tags)
+    }
+    if (deckEntries.isEmpty()) throw IllegalStateException("None of this precon's cards could be found on Scryfall.")
+    // MTGJSON lists 2 commanders for a partner precon — set both when present.
+    val commanderEntries = contents.commander.mapNotNull { it.scryfallId }.mapNotNull { id -> deckEntries.firstOrNull { it.scryfallId == id } }
+    return deckRepository.createDeckWithCards(
+        name,
+        GameMode.COMMANDER,
+        deckEntries,
+        commander = commanderEntries.getOrNull(0),
+        partnerCommander = commanderEntries.getOrNull(1)
+    )
+}

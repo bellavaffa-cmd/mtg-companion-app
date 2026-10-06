@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.PlaceKind
@@ -58,6 +59,9 @@ import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.suggestSpot
 import com.mtgcompanion.app.data.whereItIs
 import com.mtgcompanion.app.data.sellCountsByName
+import com.mtgcompanion.app.data.gradedWhere
+import com.mtgcompanion.app.ui.common.rememberMoney
+import androidx.compose.material.icons.filled.Verified
 import com.mtgcompanion.app.data.setForSaleByName
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.collection.PlacePickerDialog
@@ -88,7 +92,9 @@ fun WhereItIsPanel(
     /** The Loans screen, from a line of copies lent out. */
     onOpenLoans: () -> Unit = {},
     /** Photos of a copy (CopyPhotoScreen.kt). */
-    onPhotos: () -> Unit = {}
+    onPhotos: () -> Unit = {},
+    /** A graded copy: a new one of this card (null), or the one marked with that id (GradedScreen.kt). */
+    onGraded: (String?) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -96,7 +102,10 @@ fun WhereItIsPanel(
     var giving by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
     var selling by remember { mutableStateOf(false) }
-    if (total == 0) return
+    val money = rememberMoney()
+    // Graded copies (Graded.kt): kept apart from the raw ones, each with its slab and value.
+    val graded = remember(collections, name) { gradedWhere(collections, name) }
+    if (total == 0 && graded.isEmpty()) return
     val unplaced = lines.firstOrNull { it.kind == WhereKind.NONE }?.qty ?: 0
     val placeLines = lines.filter { it.kind == WhereKind.PLACE }
     val facts = card?.let { cardFactsOf(it) } ?: CardFacts(name)
@@ -107,7 +116,7 @@ fun WhereItIsPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Where it is", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
-            Text("$total ${if (total == 1) "copy" else "copies"}", style = MaterialTheme.typography.labelLarge, color = colors.textMuted)
+            Text("$total ${if (total == 1) "copy" else "copies"}" + if (graded.isNotEmpty()) " · ${graded.size} graded" else "", style = MaterialTheme.typography.labelLarge, color = colors.textMuted)
         }
         lines.forEach { line ->
             val icon: ImageVector = when (line.kind) {
@@ -138,6 +147,33 @@ fun WhereItIsPanel(
                     if (line.detail.isNotEmpty()) Text(line.detail, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Text("×${line.qty}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+            }
+        }
+        graded.forEach { g ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colors.surface2)
+                    .clickable { onGraded(g.id) }
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                Icon(Icons.Filled.Verified, contentDescription = null, tint = colors.accent, modifier = Modifier.size(20.dp))
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(g.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "Graded",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.accentLight,
+                            modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(6.dp)).background(colors.accent.copy(alpha = 0.16f)).padding(horizontal = 6.dp, vertical = 1.dp)
+                        )
+                    }
+                    Text(g.detail, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text(g.valueUsd?.let { money.format(it, whole = true) } ?: "×1", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary)
             }
         }
         if (places.isNotEmpty() && (placeLines.isNotEmpty() || unplaced > 0)) {
@@ -172,6 +208,12 @@ fun WhereItIsPanel(
                 modifier = Modifier.weight(1f).height(44.dp)
             ) { Text("History") }
         }
+        Button(
+            onClick = { onGraded(null) },
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary),
+            modifier = Modifier.fillMaxWidth().height(44.dp)
+        ) { Text("Mark a copy as graded") }
         // Selling (Selling.kt) and photos of a copy (CopyPhotos.kt): binder copies only.
         val (binderCopies, toSell) = sellCountsByName(collections, name)
         if (binderCopies > 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

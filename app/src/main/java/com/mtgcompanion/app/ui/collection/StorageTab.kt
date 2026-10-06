@@ -75,6 +75,9 @@ import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.savePlace
 import com.mtgcompanion.app.data.storageSummary
 import com.mtgcompanion.app.ui.theme.LocalAppColors
+import com.mtgcompanion.app.ui.common.rememberMoney
+import com.mtgcompanion.app.data.sealedOf
+import com.mtgcompanion.app.data.sealedTotalUsd
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.UUID
@@ -123,7 +126,9 @@ fun StorageTab(
     /** Upkeep: what's worth doing this week (UpkeepScreen.kt). */
     onOpenUpkeep: () -> Unit = {},
     /** Sharing storage at home (HouseholdScreen.kt). */
-    onOpenHousehold: () -> Unit = {}
+    onOpenHousehold: () -> Unit = {},
+    /** Sealed product (SealedScreen.kt). */
+    onOpenSealed: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -132,6 +137,7 @@ fun StorageTab(
     var choosing by remember { mutableStateOf(false) }
     val share = if (summary.total > 0) summary.placed.toFloat() / summary.total else 0f
     val upkeep = rememberUpkeep(collections, decks)
+    val money = rememberMoney()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -241,6 +247,17 @@ fun StorageTab(
             }
         }
         item {
+            val sealed = sealedOf(collections)
+            val boxes = sealed.sumOf { it.count }
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                PlaceRow(
+                    Icons.Filled.Inventory2, "Sealed",
+                    if (sealed.isNotEmpty()) "${count(boxes)} sealed · ${money.format(sealedTotalUsd(sealed), whole = true)}" else "Booster boxes, bundles and precons",
+                    count(boxes), gold = false, onClick = onOpenSealed
+                )
+            }
+        }
+        item {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
                 PlaceRow(Icons.Filled.Home, "Sharing storage at home", "Keep cards on the same shelf as someone you live with", "›", gold = false, onClick = onOpenHousehold)
             }
@@ -325,7 +342,7 @@ fun PlacePickerDialog(title: String, places: List<StoragePlace>, onDismiss: () -
 
 /** A dropdown picking one of [options] (value to label), shown as a field. */
 @Composable
-private fun PickField(label: String, value: String, options: List<Pair<String, String>>, onPick: (String) -> Unit) {
+internal fun PickField(label: String, value: String, options: List<Pair<String, String>>, onPick: (String) -> Unit) {
     val colors = LocalAppColors.current
     var open by remember { mutableStateOf(false) }
     Column {

@@ -166,6 +166,8 @@ fun CollectionsScreen(
     /** The Storage page's Space and To sell (SpaceScreen.kt, SellScreen.kt). */
     onOpenSpace: () -> Unit = {},
     onOpenSell: () -> Unit = {},
+    /** Sealed product (SealedScreen.kt). */
+    onOpenSealed: () -> Unit = {},
     /** Getting started with storage, and Upkeep (StorageSetupScreen.kt, UpkeepScreen.kt). */
     onSetUpStorage: () -> Unit = {},
     onOpenUpkeep: () -> Unit = {},
@@ -366,6 +368,7 @@ fun CollectionsScreen(
                         onOpenValue = onOpenValue,
                         onOpenSpace = onOpenSpace,
                         onOpenSell = onOpenSell,
+                        onOpenSealed = onOpenSealed,
                         onSetUp = onSetUpStorage,
                         onOpenUpkeep = onOpenUpkeep,
                         onOpenHousehold = onOpenHousehold

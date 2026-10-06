@@ -4,12 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtgcompanion.app.data.CardRepository
-import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckRepository
-import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.PreconContents
 import com.mtgcompanion.app.data.PreconInfo
 import com.mtgcompanion.app.data.PreconRepository
+import com.mtgcompanion.app.data.importPreconDeck
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,34 +46,10 @@ class PreconsViewModel(
     fun importAsDeck(precon: PreconInfo, onImported: (deckId: String) -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val contents = preconRepository.getContents(precon.fileName)
-                val all = contents.commander + contents.cards
-                val ids = all.mapNotNull { it.scryfallId }.distinct()
-                if (ids.isEmpty()) {
-                    onError("Couldn't resolve any cards for this precon.")
-                    return@launch
-                }
-                val cardsById = cardRepository.getCardsByIds(ids).associateBy { it.id }
-                val deckEntries = all.mapNotNull { entry ->
-                    val id = entry.scryfallId ?: return@mapNotNull null
-                    val card = cardsById[id] ?: return@mapNotNull null
-                    DeckCardEntry(card.id, card.name, card.displayImageUrl, entry.quantity, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl, card.tags)
-                }
-                if (deckEntries.isEmpty()) {
-                    onError("None of this precon's cards could be found on Scryfall.")
-                    return@launch
-                }
-                // MTGJSON lists 2 commanders for a partner precon — set both when present.
-                val commanderScryfallIds = contents.commander.mapNotNull { it.scryfallId }
-                val commanderEntries = commanderScryfallIds.mapNotNull { id -> deckEntries.firstOrNull { it.scryfallId == id } }
-                val deck = deckRepository.createDeckWithCards(
-                    precon.name,
-                    GameMode.COMMANDER,
-                    deckEntries,
-                    commander = commanderEntries.getOrNull(0),
-                    partnerCommander = commanderEntries.getOrNull(1)
-                )
+                val deck = importPreconDeck(precon.fileName, precon.name, deckRepository, preconRepository, cardRepository)
                 onImported(deck.id)
+            } catch (e: IllegalStateException) {
+                onError(e.message ?: "Import failed.")
             } catch (e: Exception) {
                 onError("Import failed: ${e.message ?: "unknown error"}")
             }

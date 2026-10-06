@@ -179,6 +179,83 @@ data class Loan(
     val returnedAt: Long? = null
 )
 
+// The pile's "sealed" and "graded" as JSON — locally and in sync, the web app's exactly:
+//   "sealed": [{ "id": "…", "name": "Duskmourn Play Booster Box", "kind": "PLAY_BOX", "setCode": "dsk", "count": 2,
+//                "placeId": "…", "paidUsd": 210, "valueUsd": 238, "valueAt": 1790000000000, "createdAt": 1790000000000 },
+//              { "id": "…", "name": "Precon: Blame Game", "kind": "PRECON", "preconFile": "BlameGame_DSC", "count": 1 }]
+//   "graded": [{ "id": "…", "scryfallId": "…", "name": "Sheoldred, the Apocalypse", "imageUrl": "…", "foil": true,
+//                "company": "PSA", "companyName": "…", "grade": "10", "cert": "…", "valueUsd": 450, "placeId": "…",
+//                "section": "Slabs", "collectionId": "…", "createdAt": 1790000000000 }]
+// Optional keys are null (left out) when not said. Values are what the user entered, in US dollars: no
+// app has prices for sealed product or graded copies.
+
+/**
+ * Sealed product the user keeps: [count] of one product in one place ([placeId]). [kind] is a
+ * [SealedKind] name. [paidUsd] and [valueUsd] are each, in US dollars, as the user entered them
+ * ([valueAt]: when the value was last entered). A precon names its MTGJSON deck ([preconFile]) so
+ * opening it makes the deck. The web app's SealedProduct, field for field (src/types/models.ts).
+ */
+data class SealedProduct(
+    val id: String,
+    val name: String,
+    val kind: String = SealedKind.OTHER.name,
+    val setCode: String? = null,
+    val preconFile: String? = null,
+    val count: Int = 0,
+    val placeId: String? = null,
+    val paidUsd: Double? = null,
+    val valueUsd: Double? = null,
+    val valueAt: Long? = null,
+    val createdAt: Long = 0L
+) {
+    val sealedKind: SealedKind get() = SealedKind.fromName(kind)
+}
+
+/** What a sealed product is. */
+enum class SealedKind(val label: String) {
+    PLAY_BOX("Play Booster Box"), COLLECTOR_BOX("Collector Box"), SET_BOX("Set Booster Box"), DRAFT_BOX("Draft Booster Box"),
+    BUNDLE("Bundle"), PRECON("Precon"), OTHER("Other");
+    companion object {
+        fun fromName(name: String?): SealedKind = entries.firstOrNull { it.name == name } ?: OTHER
+    }
+}
+
+/**
+ * One graded copy (a slab), kept apart from the raw copies: it isn't in any binder's counts, so it
+ * never fills a deck slot or counts as a spare. [company] is a [GradingCompany] name; [grade] as the
+ * slab says it ("10", "9.5"); [cert]: its cert number; [valueUsd]: what the user says it's worth (card
+ * prices are for ungraded copies); where it is ([placeId], [section]); [collectionId]: the binder the
+ * copy came from, to go back to if it's cracked out. [companyName]: who, when [company] is OTHER.
+ * [foil] is true or null, never false. The web app's GradedCard, field for field.
+ */
+data class GradedCard(
+    val id: String,
+    val scryfallId: String,
+    val name: String,
+    val imageUrl: String? = null,
+    val foil: Boolean? = null,
+    val company: String = GradingCompany.OTHER.name,
+    val companyName: String? = null,
+    val grade: String = "",
+    val cert: String? = null,
+    val valueUsd: Double? = null,
+    val placeId: String? = null,
+    val section: String? = null,
+    val collectionId: String? = null,
+    val createdAt: Long = 0L
+) {
+    val isFoil: Boolean get() = foil == true
+    val grader: GradingCompany get() = GradingCompany.fromName(company)
+}
+
+/** Who graded a copy. */
+enum class GradingCompany(val label: String) {
+    PSA("PSA"), BGS("BGS"), CGC("CGC"), OTHER("Other");
+    companion object {
+        fun fromName(name: String?): GradingCompany = entries.firstOrNull { it.name == name } ?: OTHER
+    }
+}
+
 /** What a storage place is. */
 enum class PlaceKind(val label: String) {
     BOX("Box"), BINDER("Binder"), DECK_BOX("Deck box"), SHELF("Shelf"), OTHER("Other");
@@ -238,6 +315,18 @@ data class Collection(
      * no "loans" key was saved by an app that doesn't know about loans.
      */
     val loans: List<Loan>? = null,
+    /**
+     * The Unsorted pile only: sealed product the user keeps — booster boxes, bundles, precons (see
+     * Sealed.kt). Rides along with the pile like [loans], merged product by product. Null (left out)
+     * until the first one; then kept, as an empty list once none are left — so a pile with no "sealed"
+     * key was saved by an app that doesn't know about sealed product.
+     */
+    val sealed: List<SealedProduct>? = null,
+    /**
+     * The Unsorted pile only: graded copies — slabs, kept apart from raw copies (see Graded.kt). Rides
+     * along like [sealed], merged slab by slab; null and kept the same way.
+     */
+    val graded: List<GradedCard>? = null,
     /** A sample binder from the welcome flow — see Deck.sample. Null (left out) on everything else. */
     val sample: Boolean? = null
 ) {

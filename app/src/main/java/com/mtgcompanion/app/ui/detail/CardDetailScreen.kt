@@ -140,6 +140,7 @@ import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
 import com.mtgcompanion.app.ui.theme.TextPrimary
 import com.mtgcompanion.app.data.whereItIs
+import com.mtgcompanion.app.data.gradedWhere
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -156,7 +157,9 @@ fun CardDetailScreen(
     onHistory: (String) -> Unit = {},
     onOpenLoans: () -> Unit = {},
     /** Photos of a copy, by card name (CopyPhotoScreen.kt). */
-    onPhotos: (String) -> Unit = {}
+    onPhotos: (String) -> Unit = {},
+    /** A graded copy of the card: a new one ([String] null) or one already marked (GradedScreen.kt). */
+    onGraded: (name: String, id: String?) -> Unit = { _, _ -> }
 ) {
     val state by viewModel.uiState.collectAsState()
     val decks by viewModel.decks.collectAsState()
@@ -212,7 +215,7 @@ fun CardDetailScreen(
 
             state.card != null -> {
                 val card = state.card!!
-                val ownsCopies = remember(collections, decks, card.name) { whereItIs(collections, decks, card.name).second > 0 }
+                val ownsCopies = remember(collections, decks, card.name) { whereItIs(collections, decks, card.name).second > 0 || gradedWhere(collections, card.name).isNotEmpty() }
                 // A legendary creature has two distinct EDHREC datasets: recs for building around it
                 // as a commander, vs. recs for it as an inclusion in someone else's deck.
                 val showingCommanderView = card.canBeCommander && state.viewAsCommander
@@ -261,7 +264,8 @@ fun CardDetailScreen(
                             onLend = { onLend(card.name) },
                             onHistory = { onHistory(card.name) },
                             onOpenLoans = onOpenLoans,
-                            onPhotos = { onPhotos(card.name) }
+                            onPhotos = { onPhotos(card.name) },
+                            onGraded = { id -> onGraded(card.name, id) }
                         )
                     }
 
