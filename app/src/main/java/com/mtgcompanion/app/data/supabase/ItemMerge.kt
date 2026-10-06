@@ -7,7 +7,9 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckVersion
 import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
+import com.mtgcompanion.app.data.keepForSaleFromOlderApp
 import com.mtgcompanion.app.data.keepLoansFromOlderApp
+import com.mtgcompanion.app.data.keepPlaceSizes
 import com.mtgcompanion.app.data.keepDeckExtrasFromOlderApp
 import com.mtgcompanion.app.data.withMergedExtras
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
@@ -34,7 +36,9 @@ import com.mtgcompanion.app.data.tidied
  *  - Where a binder card's copies are kept (its "places") merges line by line like the cards do, and
  *    the storage places themselves (on the Unsorted pile) place by place — see StoragePlaces.kt. A
  *    binder saved by an app that doesn't know about places leaves them as they were. When a place was
- *    last checked (PlaceCheck.kt) merges to the later check.
+ *    last checked (PlaceCheck.kt) merges to the later check. A place's size (BoxSpace.kt) and a card's
+ *    copies to sell (Selling.kt) go to whoever changed them; one saved by an app that doesn't know
+ *    about them leaves them as they were.
  *  - Where a deck's copies came from (its "cameFrom", see PullList.kt) merges card by card the same
  *    way; a deck saved by an app that doesn't know about it leaves it as it was.
  *  - The loans (on the Unsorted pile, see Loans.kt) merge loan by loan, their cards card by card, and
@@ -198,8 +202,8 @@ object ItemMerge {
         // doesn't know about loans left those as they were.
         mergeCollectionsKnowingPlaces(
             base,
-            keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine)),
-            keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs)),
+            keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine)))),
+            keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs)))),
             minePreferred
         )
 
@@ -230,6 +234,7 @@ object ItemMerge {
                     condition = pick(b.condition, m.condition, t.condition, minePreferred),
                     language = pick(b.language, m.language, t.language, minePreferred),
                     forTrade = pick(b.forTrade, m.forTrade, t.forTrade, minePreferred),
+                    forSale = pick(b.forSale, m.forSale, t.forSale, minePreferred),
                     auto = pick(b.auto, m.auto, t.auto, minePreferred)
                 )
             }

@@ -43,7 +43,14 @@ data class CollectionEntry(
      * Owned binders: how many of these copies the user offers for trade — friends see them (see
      * social/SocialMoreLogic.kt). Never more than the copies; null (left out) when none.
      */
-    val forTrade: Int? = null
+    val forTrade: Int? = null,
+    /**
+     * Owned binders: how many of these copies the user means to sell (see Selling.kt). Never more than
+     * the copies. Null (left out) until the entry is first marked to sell; then kept, as 0 once none
+     * are — so an entry with no "forSale" key on a device that had one was saved by an app that
+     * doesn't know about selling, and keepForSaleFromOlderApp puts it back.
+     */
+    val forSale: Int? = null
 )
 
 // The entry as JSON — locally, in sync and in shared binders — is these fields by name. Keys added
@@ -55,6 +62,7 @@ data class CollectionEntry(
 //   "places":          [{ "placeId": "…", "qty": 2, "foil": true, "section": "Red" }, { "placeId": "…", "qty": 1, "page": 3, "slot": 5 }]
 //                      where the copies are kept ([CopyPlace]); "foil", "section", "page" and "slot" left out when not said
 //   "forTrade":        number — owned binders: how many of the copies are for trade (friends can see them)
+//   "forSale":         number — owned binders: how many of the copies are to sell (0 once none are; Selling.kt)
 // Copies of one printing in different conditions aren't split into entries: the entry says one.
 
 /**
@@ -100,7 +108,15 @@ data class StoragePlace(
      * null (left out) until then. It only moves on: two devices' checks merge to the later one, and a
      * place saved by an app that doesn't know it keeps it.
      */
-    val lastChecked: Long? = null
+    val lastChecked: Long? = null,
+    /**
+     * How many cards a box (or any place but a binder) holds, for how full it is (BoxSpace.kt). Null
+     * (left out) until a size is set; 0 once it's taken off — so a place with no "capacity" on a
+     * device that had one was saved by an app that doesn't know about sizes (keepPlaceSizes).
+     */
+    val capacity: Int? = null,
+    /** A binder's pages: its size is pages × pockets per page. Null and 0 as [capacity]. */
+    val pages: Int? = null
 ) {
     val placeKind: PlaceKind get() = PlaceKind.fromName(kind)
     val rule: SortRule? get() = SortRule.fromName(sortRule)

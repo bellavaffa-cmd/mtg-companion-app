@@ -52,7 +52,10 @@ fun storagePlace(p: StoragePlace): StoragePlace = p.copy(
     sections = p.sections?.takeIf { it.isNotEmpty() },
     pocketsPerPage = p.pocketsPerPage?.takeIf { it > 0 },
     sortRule = SortRule.fromName(p.sortRule)?.name,
-    lastChecked = p.lastChecked?.takeIf { it > 0 }
+    lastChecked = p.lastChecked?.takeIf { it > 0 },
+    // A size taken off stays as 0, so an older app's save can be told from it (keepPlaceSizes).
+    capacity = p.capacity?.coerceAtLeast(0),
+    pages = p.pages?.coerceAtLeast(0)
 )
 
 /** [collections] with [place] added, or put in place of the one with its id. */
@@ -942,7 +945,9 @@ fun mergePlaceLists(base: List<StoragePlace>?, mine: List<StoragePlace>?, theirs
             sortRule = pick(bp.sortRule, mp.sortRule, tp.sortRule, minePreferred),
             createdAt = minOf(mp.createdAt, tp.createdAt),
             // Only ever moves on, so the later check wins — and a side that dropped it didn't clear it.
-            lastChecked = maxOf(bp.lastChecked ?: 0L, mp.lastChecked ?: 0L, tp.lastChecked ?: 0L).takeIf { it > 0 }
+            lastChecked = maxOf(bp.lastChecked ?: 0L, mp.lastChecked ?: 0L, tp.lastChecked ?: 0L).takeIf { it > 0 },
+            capacity = pick(bp.capacity, mp.capacity, tp.capacity, minePreferred),
+            pages = pick(bp.pages, mp.pages, tp.pages, minePreferred)
         ))
     }
     return out
@@ -959,6 +964,27 @@ fun keepLastChecked(source: Collection, theirs: Collection): Collection {
     return theirs.copy(storagePlaces = theirPlaces.map { p ->
         val kept = mine[p.id] ?: 0L
         if (kept > (p.lastChecked ?: 0L)) p.copy(lastChecked = kept) else p
+    })
+}
+
+/**
+ * [theirs] with each place's size ("capacity", a binder's "pages") put back where [source] has one and
+ * [theirs] doesn't say — a place saved by an app that doesn't know about sizes comes without them. A
+ * size taken off is kept as 0, so it isn't put back. The same object when nothing changes.
+ */
+fun keepPlaceSizes(source: Collection, theirs: Collection): Collection {
+    val theirPlaces = theirs.storagePlaces ?: return theirs
+    val mine = source.storagePlaces?.associateBy { it.id } ?: return theirs
+    fun lost(p: StoragePlace): Boolean {
+        val m = mine[p.id] ?: return false
+        return (p.capacity == null && m.capacity != null) || (p.pages == null && m.pages != null)
+    }
+    if (theirPlaces.none(::lost)) return theirs
+    return theirs.copy(storagePlaces = theirPlaces.map { p ->
+        if (!lost(p)) p else {
+            val m = mine.getValue(p.id)
+            p.copy(capacity = p.capacity ?: m.capacity, pages = p.pages ?: m.pages)
+        }
     })
 }
 

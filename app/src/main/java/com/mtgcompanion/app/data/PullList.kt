@@ -305,6 +305,57 @@ fun pullList(deck: Deck, collections: List<Collection>, decks: List<Deck>): Pull
     )
 }
 
+/**
+ * The To sell list (Selling.kt) as a pull list: each row's copies at the spot they're kept, grouped in
+ * walking order as a deck's are, then the ones with no place yet. Ticked off the same way; the row keys
+ * stay the same while the list does.
+ */
+fun sellPullList(collections: List<Collection>): PullListData {
+    val places = placesOf(collections)
+    val byId = places.associateBy { it.id }
+    val groups = LinkedHashMap<String, GroupBuilder>()
+    fun collectionName(id: String) = collections.firstOrNull { it.id == id }?.name ?: "a binder"
+    for (row in sellRows(collections)) {
+        val facts = CardFacts(row.name)
+        for (line in row.lines) {
+            val head = placeGroup(places, line.placeId, line.section)
+            val g = groups.getOrPut(head.key) {
+                GroupBuilder(head.key, PullGroupKind.PLACE, head.title, head.detail, line.placeId, line.section?.takeIf { it.isNotEmpty() })
+            }
+            val spot = spotHint(byId[line.placeId], line.page, line.slot, facts)
+            val hint = listOfNotNull(spot, if (line.isFoil) "foil" else null).joinToString(" · ").ifEmpty { null }
+            g.rows += PullRow(
+                "sell:${row.key}:${copyKey(line)}", row.name, row.scryfallId, line.qty,
+                PullSource.Place(row.collectionId, row.scryfallId, line), hint, listOfNotNull(g.title.ifEmpty { null }, hint).joinToString(" · ")
+            )
+        }
+        if (row.loose > 0) {
+            val g = groups.getOrPut("loose") { GroupBuilder("loose", PullGroupKind.LOOSE, "No place yet", "Owned, not put away", null, null) }
+            val hint = "In ${collectionName(row.collectionId)}"
+            g.rows += PullRow("sell:${row.key}:loose", row.name, row.scryfallId, row.loose, PullSource.Loose(row.collectionId, row.scryfallId, false), hint, hint)
+        }
+    }
+    val built = groups.values.map { g ->
+        val rows = if (g.kind == PullGroupKind.PLACE) {
+            g.rows.sortedWith(compareBy(inPlaceOrder) { r ->
+                val line = (r.source as? PullSource.Place)?.line
+                Triple(r.name, line?.page, line?.slot)
+            })
+        } else {
+            g.rows.sortedBy { nameKey(it.name) }
+        }
+        PullGroup(g.key, g.kind, g.title, g.detail, g.placeId, g.section, rows)
+    }
+    val inPlaces = sortPlaceGroups(built.filter { it.kind == PullGroupKind.PLACE }, places, { it.placeId }, { it.section })
+    val rest = built.filter { it.kind == PullGroupKind.LOOSE }
+    return PullListData(
+        groups = inPlaces + rest,
+        total = built.sumOf { g -> g.rows.sumOf { it.qty } },
+        toBuy = 0,
+        places = inPlaces.mapNotNull { it.placeId }.distinct().size
+    )
+}
+
 /** Every row of the list that can be pulled (not the cards not owned), A–Z. */
 fun pullRowsAZ(list: PullListData): List<PullRow> =
     list.groups.filter { it.kind != PullGroupKind.MISSING }.flatMap { it.rows }
