@@ -381,7 +381,7 @@ fun DeckVersionScreen(
         ) {
             item { SegmentedTabs(labels = listOf("Differences", "Whole list"), selected = if (whole) 1 else 0, onSelect = { whole = it == 1 }) }
             if (whole) {
-                item { SectionLabel("WHOLE LIST · ${cardCount(then)}") }
+                item { HistorySectionLabel("WHOLE LIST · ${cardCount(then)}") }
                 item {
                     LinesCard(wholeList(then).map { l -> Triple(null, if (l.q > 1) "${l.q} ${l.n}" else l.n, if (l.n in then.commanders) "Commander" else null) })
                 }
@@ -389,11 +389,11 @@ fun DeckVersionScreen(
                 item { Text("The same list as now.", color = colors.textMuted) }
             } else {
                 if (diff.first.isNotEmpty()) {
-                    item { SectionLabel("IN IT THEN, NOT NOW · ${diff.first.sumOf { it.q }}") }
+                    item { HistorySectionLabel("IN IT THEN, NOT NOW · ${diff.first.sumOf { it.q }}") }
                     item { LinesCard(diff.first.map { l -> Triple("−", if (l.q > 1) "${l.q} ${l.n}" else l.n, priceOf(l.n)) }) }
                 }
                 if (diff.second.isNotEmpty()) {
-                    item { SectionLabel("ADDED SINCE · ${diff.second.sumOf { it.q }}") }
+                    item { HistorySectionLabel("ADDED SINCE · ${diff.second.sumOf { it.q }}") }
                     item { LinesCard(diff.second.map { l -> Triple("+", if (l.q > 1) "${l.q} ${l.n}" else l.n, priceOf(l.n)) }) }
                 }
             }
@@ -428,7 +428,7 @@ fun DeckVersionScreen(
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+private fun HistorySectionLabel(text: String) {
     Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, color = LocalAppColors.current.textMuted, modifier = Modifier.padding(top = 6.dp))
 }
 
