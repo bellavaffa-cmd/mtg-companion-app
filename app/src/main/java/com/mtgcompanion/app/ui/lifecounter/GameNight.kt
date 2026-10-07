@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.ui.lifecounter
 
 import com.mtgcompanion.app.data.GameResult
+import com.mtgcompanion.app.data.PodPlayer
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -364,3 +365,26 @@ fun nightResultOf(nightId: String, pod: NightPod, players: List<NightPlayer>, wi
 /** A fresh night, or [from]'s players (with what they played) on a new night. */
 fun newNight(id: String, now: Long, from: GameNight? = null): GameNight =
     GameNight(id = id, createdAt = now, format = from?.format ?: NightFormat.COMMANDER, seed = 0, players = from?.players.orEmpty())
+
+// ---- Sending the night's results to a pod's league (League.kt) ----
+
+/**
+ * [pod]'s game as a pod game (PodStats.kt) for the league: the user by [me] (their account), friends
+ * by account, guests by name; [result]'s winner WIN and everyone else LOSS, or a draw when nobody
+ * was left standing. Null while there's no result, or fewer than two players. It's sent under
+ * [nightResultId], so sending again (or from another phone) updates the same game.
+ */
+fun nightPodPlayers(pod: NightPod, players: List<NightPlayer>, result: PodResult?, me: String): List<PodPlayer>? {
+    if (result == null) return null
+    val seated = pod.playerIds.mapNotNull { id -> players.firstOrNull { it.id == id } }
+    if (seated.size < 2) return null
+    return seated.map { p ->
+        PodPlayer(
+            userId = when (p.kind) { NightPlayerKind.ME -> me; NightPlayerKind.FRIEND -> p.userId; NightPlayerKind.GUEST -> null },
+            name = p.name.trim().take(40),
+            commander = p.commander?.trim()?.takeIf { it.isNotEmpty() }?.take(120),
+            deck = p.deck?.trim()?.takeIf { it.isNotEmpty() }?.take(80),
+            result = when { result.winnerId == null -> "DRAW"; result.winnerId == p.id -> "WIN"; else -> "LOSS" }
+        )
+    }
+}

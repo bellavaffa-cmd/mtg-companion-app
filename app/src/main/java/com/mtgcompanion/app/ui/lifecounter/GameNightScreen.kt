@@ -53,6 +53,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.leaguePodFor
+import com.mtgcompanion.app.data.rulesSummary
+import androidx.compose.runtime.LaunchedEffect
 import com.mtgcompanion.app.data.social.ShareKind
 import com.mtgcompanion.app.data.social.SharedSummary
 import com.mtgcompanion.app.data.social.TonightPlayer
@@ -84,6 +87,11 @@ fun GameNightScreen(
     val overview by viewModel.overview.collectAsState()
     val tableGames by viewModel.tableGames.collectAsState()
     val suggesting by viewModel.suggesting.collectAsState()
+    val leagues by viewModel.leagues.collectAsState()
+    val leagueNote by viewModel.leagueNote.collectAsState()
+    val sendingToLeague by viewModel.sendingToLeague.collectAsState()
+    LaunchedEffect(overview?.me?.userId, overview?.pods?.map { it.id }) { viewModel.loadLeagues() }
+    var leaguePodId by remember { mutableStateOf<String?>(null) }
     val night = saved.current
     val previousPairs = remember(saved.previous) { pairingsOf(saved.previous) }
     var guest by remember { mutableStateOf("") }
@@ -123,6 +131,20 @@ fun GameNightScreen(
                 Text(
                     "Who's here and what they're playing, split into fair pods by power bracket. Start a pod's game on the life counter; your result saves to your deck.",
                     style = MaterialTheme.typography.bodySmall, color = colors.textMuted
+                )
+            }
+            val nightUsers = night.players.mapNotNull { if (it.kind == NightPlayerKind.ME) overview?.me?.userId else it.userId }.toSet()
+            val league = leagues.firstOrNull { it.podId == leaguePodId }
+                ?: leaguePodFor(leagues.map { it.podId to it.podMembers }, nightUsers)?.let { id -> leagues.firstOrNull { it.podId == id } }
+            if (league != null) item {
+                LeagueCard(
+                    league = league,
+                    others = leagues,
+                    canSend = night.pods.isNotEmpty(),
+                    sending = sendingToLeague,
+                    note = leagueNote,
+                    onPick = { leaguePodId = it },
+                    onSend = { viewModel.sendToLeague(league) }
                 )
             }
             item {
@@ -225,6 +247,43 @@ private fun kindLabel(kind: NightPlayerKind) = when (kind) {
     NightPlayerKind.ME -> "You"
     NightPlayerKind.FRIEND -> "Friend"
     NightPlayerKind.GUEST -> "Guest"
+}
+
+/** "This counts for Season 2": the pod whose league tonight's games go to, and sending them there. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LeagueCard(
+    league: GameNightViewModel.NightLeague,
+    others: List<GameNightViewModel.NightLeague>,
+    canSend: Boolean,
+    sending: Boolean,
+    note: String?,
+    onPick: (String) -> Unit,
+    onSend: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    Card {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Icons.Filled.EmojiEvents, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
+            Text("This counts for ${league.season.name}", style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
+        }
+        Text("${league.podName} · ${rulesSummary(league.season.rules)}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        if (others.size > 1) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                others.forEach { l -> PillChip(l.podName, selected = l.podId == league.podId, onClick = { onPick(l.podId) }) }
+            }
+        }
+        if (canSend) {
+            OutlinedButton(onClick = onSend, enabled = !sending) {
+                Text(if (sending) "Sending…" else "Send results to the league")
+            }
+            Text(
+                "Each pod's winner goes to ${league.podName}'s games and its league table. Sending again updates them.",
+                style = MaterialTheme.typography.labelMedium, color = colors.textDim
+            )
+        }
+        note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.accentLight) }
+    }
 }
 
 @Composable
