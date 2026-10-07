@@ -132,7 +132,12 @@ object PushNotifications {
     fun show(context: Context, data: Map<String, String>) {
         if (!permissionGranted(context) || !_enabled.value) return
         // "messages": a direct message (supabase/migrations/20261006020000_social_more.sql), on the friends channel.
-        val open = when (data["open"]) { "trades" -> "trades"; "messages" -> "messages"; else -> "friends" }
+        // "night:<id>" / "pod:<id>": a game night or a pod's chat (20261006070000_game_nights_chat.sql).
+        val open = when (data["open"]) {
+            "trades" -> "trades"
+            "messages" -> "messages"
+            else -> data["open"]?.takeIf { notificationTarget(it) != null } ?: "friends"
+        }
         val intent = Intent(context, MainActivity::class.java)
             .putExtra(EXTRA_OPEN, open)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)

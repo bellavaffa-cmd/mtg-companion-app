@@ -24,6 +24,8 @@ class SocialRepository(private val auth: SupabaseAuth) {
     val more = SocialMore(api)
     /** Sharing storage at home (HouseholdApi.kt), once the server has it. */
     val household = HouseholdApi(api)
+    /** Game night invites and pod chat (GameNightsApi.kt), once the server has them. */
+    val nights = GameNightsApi(api)
     /** New direct messages, live (DmChannel.kt). */
     val dmChannel = DmChannel(auth)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -56,6 +58,7 @@ class SocialRepository(private val auth: SupabaseAuth) {
                 _error.value = null
                 more.reset()
                 household.reset()
+                nights.reset()
                 if (it != null) refreshInbox()
             }
         }

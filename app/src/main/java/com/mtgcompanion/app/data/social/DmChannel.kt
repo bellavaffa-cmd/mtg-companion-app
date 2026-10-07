@@ -27,7 +27,14 @@ class DmChannel(private val auth: SupabaseAuth) {
      * gets each message; [onRejoined] runs after a drop, so the screen can reload what it missed.
      * Callbacks come on OkHttp's thread.
      */
-    fun watch(scope: CoroutineScope, userId: String, onMessage: (DirectMessage) -> Unit, onRejoined: () -> Unit): Job = scope.launch {
+    fun watch(
+        scope: CoroutineScope,
+        userId: String,
+        onMessage: (DirectMessage) -> Unit,
+        onRejoined: () -> Unit,
+        /** Pod chat and game nights on the same channel (GameNightsApi.kt): "pod_message" and "game_night", with their payload. */
+        onOther: ((String, JSONObject) -> Unit)? = null
+    ): Job = scope.launch {
         var attempt = 0
         var joinedBefore = false
         val config = JSONObject()
@@ -50,6 +57,8 @@ class DmChannel(private val auth: SupabaseAuth) {
                     onMessage = { event, payload ->
                         if (event == "broadcast" && payload != null && payload.optString("event") == "message") {
                             payload.optJSONObject("payload")?.let { runCatching { parseDirectMessage(it) }.getOrNull() }?.let(onMessage)
+                        } else if (event == "broadcast" && payload != null && onOther != null) {
+                            payload.optJSONObject("payload")?.let { onOther(payload.optString("event"), it) }
                         }
                     })
             }

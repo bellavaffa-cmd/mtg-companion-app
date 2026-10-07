@@ -170,6 +170,10 @@ import com.mtgcompanion.app.ui.social.ConversationScreen
 import com.mtgcompanion.app.ui.social.ForTradeScreen
 import com.mtgcompanion.app.ui.social.FriendsMoreActions
 import com.mtgcompanion.app.ui.social.MessagesScreen
+import com.mtgcompanion.app.data.social.notificationTarget
+import com.mtgcompanion.app.ui.social.GameNightFormScreen
+import com.mtgcompanion.app.ui.social.GameNightInviteScreen
+import com.mtgcompanion.app.ui.social.PodChatScreen
 import com.mtgcompanion.app.ui.social.QrScanScreen
 import com.mtgcompanion.app.ui.social.ShareCollectionDialog
 import com.mtgcompanion.app.ui.social.ShareDialog
@@ -319,6 +323,16 @@ private object Routes {
     const val CONVERSATION = "conversation/{userId}"
     fun conversation(userId: String) = "conversation/$userId"
     const val FOR_TRADE = "for_trade"
+    /** A game night invite (GameNightInviteScreen.kt), planning one in a pod, changing one, and a pod's chat (PodChatScreen.kt). */
+    const val NIGHT = "night/{nightId}"
+    fun night(id: String) = "night/" + URLEncoder.encode(id, StandardCharsets.UTF_8.name())
+    const val NIGHT_FORM = "night_form?pod={pod}&night={night}"
+    fun nightForm(pod: String?, night: String? = null) = "night_form?" + listOfNotNull(
+        pod?.let { "pod=" + URLEncoder.encode(it, StandardCharsets.UTF_8.name()) },
+        night?.let { "night=" + URLEncoder.encode(it, StandardCharsets.UTF_8.name()) }
+    ).joinToString("&")
+    const val POD_CHAT = "pod_chat/{podId}"
+    fun podChat(id: String) = "pod_chat/" + URLEncoder.encode(id, StandardCharsets.UTF_8.name())
     const val QR_SCAN = "qr_scan"
     /** A player's phone as the remote for their seat at a life counter table. */
     const val REMOTE = "remote/{matchId}/{seat}"
@@ -476,6 +490,11 @@ fun MtgNavGraph(
             // The weekly Upkeep reminder (UpkeepReminder.kt).
             open == "upkeep" -> { navController.navigate(Routes.UPKEEP) { launchSingleTop = true }; return@LaunchedEffect }
             open.startsWith("card:") -> { navController.navigate(Routes.detail(open.removePrefix("card:"))) { launchSingleTop = true }; return@LaunchedEffect }
+        }
+        // A game night or a pod's chat (push from 20261006070000_game_nights_chat.sql, or the reminder).
+        notificationTarget(open)?.let { (kind, id) ->
+            navController.navigate(if (kind == "night") Routes.night(id) else Routes.podChat(id)) { launchSingleTop = true }
+            return@LaunchedEffect
         }
         // A price alert: the wishlist it's on.
         if (open.startsWith("binder:")) {
@@ -1292,7 +1311,11 @@ fun MtgNavGraph(
                     // The app's scope, so the result is saved even if the screen is left at once.
                     onAddGameResult = { deckId, result -> addToScope.launch { deckRepository.addGameResult(deckId, result) } },
                     onStartGame = { navController.navigate(Routes.LIFE_COUNTER) },
-                    onOpenDecks = { navController.navigateToTab(Routes.DECKS) }
+                    onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
+                    // For now the way into a pod's chat and game nights (until Friends and Play show them).
+                    onOpenPodChat = { id -> navController.navigate(Routes.podChat(id)) },
+                    onPlanGameNight = { id -> navController.navigate(Routes.nightForm(id)) },
+                    onOpenGameNight = { id -> navController.navigate(Routes.night(id)) }
                 )
             }
 
@@ -1819,6 +1842,62 @@ fun MtgNavGraph(
                     onSignIn = signIn,
                     onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) },
                     onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) }
+                )
+            }
+
+            destination(Routes.NIGHT, arguments = listOf(navArgument("nightId") { type = NavType.StringType })) { entry ->
+                val nightId = entry.arguments?.getString("nightId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                GameNightInviteScreen(
+                    social = socialRepository,
+                    nightId = nightId,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onEdit = { id -> navController.navigate(Routes.nightForm(null, id)) },
+                    onOpenBag = { id -> navController.navigate(Routes.pack(id)) },
+                    onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } },
+                    onOpenLoans = { navController.navigate(Routes.loans(borrowed = true)) },
+                    tonight = { players -> tonightMatches(players, collections, decks) }
+                )
+            }
+
+            destination(
+                Routes.NIGHT_FORM,
+                arguments = listOf(
+                    navArgument("pod") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("night") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { entry ->
+                val editing = entry.arguments?.getString("night")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
+                GameNightFormScreen(
+                    social = socialRepository,
+                    podId = entry.arguments?.getString("pod")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) },
+                    nightId = editing,
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onSaved = { id ->
+                        navController.popBackStack()
+                        // Changing a night goes back to its invite; a new one opens its own.
+                        if (editing == null) navController.navigate(Routes.night(id)) { launchSingleTop = true }
+                    }
+                )
+            }
+
+            destination(Routes.POD_CHAT, arguments = listOf(navArgument("podId") { type = NavType.StringType })) { entry ->
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                PodChatScreen(
+                    social = socialRepository,
+                    podId = entry.arguments?.getString("podId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty(),
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onSignIn = signIn,
+                    onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenNight = { id -> navController.navigate(Routes.night(id)) },
+                    onPlanNight = { pod -> navController.navigate(Routes.nightForm(pod)) },
+                    onOpenPod = { navController.navigate(Routes.PLAYGROUP) },
+                    onOpenSharedDeck = { owner, itemId -> navController.navigate(Routes.shared(owner, "deck", itemId)) }
                 )
             }
 

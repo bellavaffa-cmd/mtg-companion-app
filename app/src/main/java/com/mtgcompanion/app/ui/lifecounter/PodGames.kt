@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -111,7 +112,10 @@ fun PodView(
     pod: Pod,
     me: Profile,
     decks: List<Deck>,
-    onAddGameResult: (String, GameResult) -> Unit
+    onAddGameResult: (String, GameResult) -> Unit,
+    onOpenPodChat: ((String) -> Unit)? = null,
+    onPlanGameNight: ((String) -> Unit)? = null,
+    onOpenGameNight: ((String) -> Unit)? = null
 ) {
     val colors = LocalAppColors.current
     var games by remember(pod.id) { mutableStateOf<List<PodGame>?>(null) }
@@ -174,6 +178,10 @@ fun PodView(
                 }
                 GoldButton("Record a game", { recording = true }, icon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp)) })
             }
+        }
+        // For now the way into the pod's chat and game nights; the lead wires them into Friends and Play.
+        if (onOpenPodChat != null && onPlanGameNight != null && onOpenGameNight != null) item {
+            PodNightAndChat(social, pod.id, onOpenPodChat, onPlanGameNight, onOpenGameNight)
         }
         val current = games
         if (current != null) item {
@@ -688,6 +696,24 @@ private fun Dropdown(label: String, options: List<Pair<String, String>>, selecte
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * On a pod's page: its next game night, Plan a game night and Pod chat. A temporary way in until
+ * Friends' Chats tab and Play show them. Nothing before the server has invites.
+ */
+@Composable
+private fun PodNightAndChat(social: SocialRepository, podId: String, onOpenChat: (String) -> Unit, onPlan: (String) -> Unit, onOpenNight: (String) -> Unit) {
+    val available by social.nights.available.collectAsState()
+    LaunchedEffect(Unit) { social.nights.check() }
+    if (available != true) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        com.mtgcompanion.app.ui.social.NextGameNightCard(social, onOpenNight, podId = podId)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LineButton("Pod chat", { onOpenChat(podId) })
+            LineButton("Plan a game night", { onPlan(podId) })
         }
     }
 }

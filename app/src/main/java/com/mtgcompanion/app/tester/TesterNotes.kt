@@ -9,6 +9,16 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "game-night-invites",
+        "Game night invites",
+        "Play › Playgroup, pick a pod › Plan a game night: pick the day and time, where (\"Priya's\"), a note, and any friends from outside the pod, then Invite the pod. Everyone in the pod should get a notification (\"Priya invited you to game night\") that opens the invite: the date in gold, \"At Priya's\", \"Thursday crew · counts for Season 2 · asked by Priya\" when a season runs, Going / Maybe / Can't, and Bringing to pick your deck (\"Going · Krenko\" in Who's coming). WHO'S COMING should say how many of how many, the organiser \"Going · hosting\". Ready for the night: Pack your bag should open a bag with who's coming and your deck; Trade matches tonight shows the friends coming; Give back … shows when you've borrowed from someone coming. Add to calendar opens your calendar app filled in; Make pods on the night opens Game night with everyone coming. The organiser can Change (everyone is told the new time or place) and Call it off. A day before, you should get \"Game night tomorrow\" unless you said Can't. On the pod's page the next night shows as a card. Until the server is updated it should say \"Game night invites aren't available yet\"."
+    ),
+    TesterNote(
+        "pod-chat",
+        "Pod chat",
+        "Play › Playgroup, pick a pod › Pod chat: the pod's name with \"Priya, Sam and you\" under it. Send a message: everyone in the pod should get it at once (and a notification if the app is closed), with your name over a run of your messages and a heading for each day. Record a game in the pod: \"Priya won with Atraxa. Sam took first blood.\" should appear, marked LEAGUE · SEASON 2 with the table under it when a season runs. Planning a game night puts a card in the chat with Going?. The + button shares a game night, a deck or a card. Tap someone's name to report or block them; once blocked, their messages are gone from your chat. Until the server is updated it should say \"Pod chat isn't available yet\"."
+    ),
+    TesterNote(
         "print-proxies",
         "Print proxies",
         "Open a deck › menu › Print proxies…: the cards you don't own should be picked already (a deck you hold: its proxies), with − and + to choose how many of each. Pick A4 or Letter, \"PROXY — not for sale\", Low ink and Back faces too, then Print or save PDF and save it as a PDF. Nine cards a page, cut lines along every edge; printed at 100%, a card should measure 63 × 88 mm. Also try Print proxies under Not owned on a deck's pull list (with \"Mark as proxies in …\" on, the deck should show those cards as proxies afterwards) and on Collection › Spread thin, which picks the copies each card is short."
