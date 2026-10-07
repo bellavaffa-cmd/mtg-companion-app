@@ -75,7 +75,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CollectionRepository
-import com.mtgcompanion.app.data.social.ActivityItem
+import com.mtgcompanion.app.data.social.ActivityTarget
 import com.mtgcompanion.app.data.social.FriendsTab
 import com.mtgcompanion.app.data.social.FriendsWaiting
 import com.mtgcompanion.app.data.social.friendsTabCounts
@@ -102,7 +102,7 @@ import kotlinx.coroutines.launch
 data class FriendsMoreActions(
     val onOpenConversation: (friendId: String) -> Unit = {},
     val onOpenForTrade: () -> Unit = {},
-    val onOpenActivity: (ActivityItem) -> Unit = {},
+    val onOpenActivity: (ActivityTarget) -> Unit = {},
     val onOpenMatch: (TradeMatch) -> Unit = {},
     /** Sharing storage at home: a household, by id, once an invitation is accepted (HouseholdScreen.kt). */
     val onOpenHousehold: (householdId: String) -> Unit = {}

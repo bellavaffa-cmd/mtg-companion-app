@@ -505,7 +505,17 @@ class SocialApi(private val auth: SupabaseAuth) {
             "dm_too_long" to "Keep messages under 2,000 characters.",
             "cant_message" to "You can only message friends.",
             "slow_down" to "You're sending messages very fast — wait a minute.",
-            "cant_rate" to "You can rate a trade once you've updated your binders for it."
+            "cant_rate" to "You can rate a trade once you've updated your binders for it.",
+            // supabase/migrations/20261006080000_activity_comments.sql (see ActivityComments.kt)
+            "bad_prefs" to "Those settings couldn't be saved.",
+            "empty_comment" to "Write something first.",
+            "comment_too_long" to "Keep comments under 1,000 characters.",
+            "bad_comment_card" to "That card couldn't be added to the comment.",
+            "cant_comment" to "Only friends the deck is shared with can comment.",
+            "bad_parent" to "That comment isn't there any more.",
+            "comment_slow_down" to "You're commenting very fast — wait a minute.",
+            "too_many_comments" to "This deck has 1,000 comments already.",
+            "not_your_comment" to "Only its author or the deck’s owner can do that."
         )
     }
 }

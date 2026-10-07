@@ -9,6 +9,21 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "friends-activity",
+        "A richer friends' Activity",
+        "Needs the server update; until then Activity shows what it did before, in the new layout. Friends › Activity, with a friend who marks a card for trade that's on your Wishlist: \"Priya added Rhystic Study to their trade binder\", \"It's on your wishlist · 1 h ago\" and \"Ask Priya for it\", which should open Propose a trade with that card asked for. A friend who shares a new deck: \"Sam built a new deck: …\" with \"Look and comment\" opening the deck on Comments. Record games in a pod with a season running: \"Thursday crew: Priya leads Season 2 by 3 points\" (and \"2 game nights left\" for a season of so many nights); ending it: \"Season 2 champion: Priya\". A friend who turned on their To sell list: \"Jo is selling 12 cards\", \"2 are on your wishlist\", and See them listing the cards with Ask Jo for them. Comments on your decks show up too, with Reply."
+    ),
+    TesterNote(
+        "activity-privacy",
+        "What friends see of you",
+        "Settings › Privacy › Friends' activity: New and changed decks, Cards for trade and League results should be on, Your To sell list off. Turn one off and ask a friend to pull down their Activity: those items of yours should be gone (league news then says \"New results in Season 2\" instead of naming you). Turn the To sell list on and mark cards to sell: your friends should see \"<you> is selling N cards\". The line under Activity, \"Choose what's shared in Settings › Privacy\", should open that page."
+    ),
+    TesterNote(
+        "deck-comments",
+        "Comments on shared decks",
+        "Open a deck a friend shares with you (Friends › Shared, or from Activity): Cards and Comments tabs. Write a comment, or tap On a card and pick one (\"Priya · on Gray Merchant of Asphodel\"), or pick one of your own cards for trade to suggest (\"on the deck · suggests Skullclamp\") — that comment gets \"Offer it in a trade\", opening Propose a trade with your copy offered. Reply to a comment (one level). The owner should get a notification and see it in Activity; on their deck they can hide (eye) or delete any comment, and Consider a swap opens their deck's Considering tab. Your own comments can be deleted; anyone else's has the flag to report or block. The tab shows the count (\"Comments · 3\"). Someone the deck isn't shared with can't open it at all."
+    ),
+    TesterNote(
         "print-proxies",
         "Print proxies",
         "Open a deck › menu › Print proxies…: the cards you don't own should be picked already (a deck you hold: its proxies), with − and + to choose how many of each. Pick A4 or Letter, \"PROXY — not for sale\", Low ink and Back faces too, then Print or save PDF and save it as a PDF. Nine cards a page, cut lines along every edge; printed at 100%, a card should measure 63 × 88 mm. Also try Print proxies under Not owned on a deck's pull list (with \"Mark as proxies in …\" on, the deck should show those cards as proxies afterwards) and on Collection › Spread thin, which picks the copies each card is short."

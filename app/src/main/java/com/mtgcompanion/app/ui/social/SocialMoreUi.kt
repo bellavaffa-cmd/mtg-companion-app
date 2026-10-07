@@ -1,23 +1,18 @@
 package com.mtgcompanion.app.ui.social
 
-import com.mtgcompanion.app.ui.common.EmptyPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -36,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -53,11 +46,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import com.mtgcompanion.app.data.social.ActivityItem
+import com.mtgcompanion.app.data.social.ActivityTarget
 import com.mtgcompanion.app.data.social.BlockedPerson
 import com.mtgcompanion.app.data.social.MessagePart
 import com.mtgcompanion.app.data.social.Overview
@@ -66,15 +57,12 @@ import com.mtgcompanion.app.data.social.Reputation
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.data.social.Trade
 import com.mtgcompanion.app.data.social.TradeMatch
-import com.mtgcompanion.app.data.social.activityText
 import com.mtgcompanion.app.data.social.canRate
 import com.mtgcompanion.app.data.social.matchSentence
 import com.mtgcompanion.app.data.social.messageParts
 import com.mtgcompanion.app.data.social.positiveLine
-import com.mtgcompanion.app.data.social.timeAgo
 import com.mtgcompanion.app.data.social.tradesLine
 import com.mtgcompanion.app.data.social.withYouLine
-import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.SectionHeader
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.launch
@@ -393,90 +381,11 @@ fun TradeMatchesBlock(social: SocialRepository, overview: Overview, onOpen: (Tra
     }
 }
 
-/** The Friends screen's Activity tab: what friends have shared, changed, played and put up for trade. */
+/**
+ * The Friends screen's Activity tab: what friends have shared, built, put up for trade or for sale,
+ * league news and comments on the user's decks (ActivityFeed.kt). [onOpen]: where a tap goes.
+ */
 @Composable
-fun ActivityList(social: SocialRepository, header: @Composable () -> Unit, onOpen: (ActivityItem) -> Unit) {
-    val colors = LocalAppColors.current
-    val scope = rememberCoroutineScope()
-    val available = rememberSocialMore(social)
-    val items = remember { mutableStateListOf<ActivityItem>() }
-    var loaded by remember { mutableStateOf(false) }
-    var more by remember { mutableStateOf(true) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val now = remember { System.currentTimeMillis() }
-    val page = 30
-    fun load(before: Long?) {
-        busy = true
-        scope.launch {
-            try {
-                val next = social.more.activity(before, page)
-                if (before == null) items.clear()
-                items.addAll(next)
-                more = next.size >= page
-                loaded = true
-                error = null
-            } catch (e: Exception) {
-                error = e.message
-            } finally {
-                busy = false
-            }
-        }
-    }
-    LaunchedEffect(available) { if (available == true) load(null) }
-
-    LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { header() }
-        when {
-            available == false -> item { EmptyState(Icons.Filled.DynamicFeed, "Not available yet.") }
-            error != null && !loaded -> item {
-                EmptyState(Icons.Filled.CloudOff, error.orEmpty()) { LineButton("Try again", { load(null) }, enabled = !busy) }
-            }
-            !loaded -> item { Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = colors.accent) } }
-            items.isEmpty() -> item {
-                EmptyPrompt(Icons.Filled.DynamicFeed, "Nothing from friends yet. When they share a deck, record a game or put cards up for trade, it shows here.")
-            }
-            else -> {
-                items.forEachIndexed { i, a ->
-                    item(key = "a-$i-${a.kind}-${a.at}") { ActivityRow(a, now) { onOpen(a) } }
-                }
-                if (more) item {
-                    LineButton(if (busy) "Loading…" else "Show older", { load(items.lastOrNull()?.at) }, enabled = !busy, modifier = Modifier.fillMaxWidth())
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ActivityRow(item: ActivityItem, now: Long, onClick: () -> Unit) {
-    val colors = LocalAppColors.current
-    val text = activityText(item)
-    val art = item.cover ?: item.cards.firstOrNull { it.second != null }?.second
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        Avatar(item.actor, 40.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                buildAnnotatedString {
-                    pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-                    append(item.actor.displayName)
-                    pop()
-                    append(" " + text.action)
-                },
-                style = MaterialTheme.typography.bodyMedium
-            )
-            text.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            Text(timeAgo(item.at, now), style = MaterialTheme.typography.labelSmall, color = colors.textDim)
-        }
-        if (art != null) AsyncImage(
-            model = art.toArtCropUrl(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 56.dp, height = 42.dp).clip(RoundedCornerShape(10.dp)).background(colors.surface2)
-        )
-    }
+fun ActivityList(social: SocialRepository, header: @Composable () -> Unit, onOpen: (ActivityTarget) -> Unit) {
+    ActivityFeed(social, header, onOpen)
 }

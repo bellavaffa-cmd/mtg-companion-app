@@ -16,7 +16,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.data.usage.Usage
+import com.mtgcompanion.app.ui.social.ActivityPrivacySection
 import com.mtgcompanion.app.ui.social.rememberCommunityRules
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 
@@ -24,9 +26,12 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
 internal const val USAGE_NOTE = "Manabind counts which screens and features get used each day, under a random id that " +
     "changes every 90 days and never with card names, decks, messages or your account; turned off, nothing is counted or sent."
 
-/** Settings → Privacy: the anonymous usage counts (data/usage), on unless turned off. */
+/**
+ * Settings → Privacy: the anonymous usage counts (data/usage), on unless turned off, and what
+ * friends' Activity shows of the user (ActivityPrivacySection, once signed in and the server has it).
+ */
 @Composable
-internal fun PrivacySection() {
+internal fun PrivacySection(social: SocialRepository? = null) {
     val colors = LocalAppColors.current
     val on by Usage.enabled.collectAsState()
     Row(
@@ -44,6 +49,7 @@ internal fun PrivacySection() {
             colors = SwitchDefaults.colors(checkedTrackColor = colors.accent, checkedThumbColor = colors.onAccent)
         )
     }
+    if (social != null) ActivityPrivacySection(social)
     // What's allowed in profiles, messages, trades and sharing, and how to report or block.
     val communityRules = rememberCommunityRules()
     Column(Modifier.fillMaxWidth().clickable { communityRules.show() }.padding(vertical = 8.dp)) {
