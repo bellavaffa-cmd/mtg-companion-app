@@ -220,7 +220,7 @@ private fun FriendsContent(
     LaunchedEffect(withMore, overview, tab) { if (withMore == true) runCatching { social.more.unread() }.onSuccess { social.setUnread(it) } }
     // Pod chats' unread count goes in "Chats · N" and the badge too (the Chats tab keeps it fresh while open).
     LaunchedEffect(overview, tab) {
-        if (social.nights.check()) runCatching { social.nights.chats() }.onSuccess { c -> social.setPodUnread(c.sumOf { it.unread }) }
+        if (social.nights.check()) runCatching { social.nights.unread() }.onSuccess { social.setPodUnread(it) }
     }
     val requests = overview.friends.count { !it.accepted && it.incoming }
     val inbox = overview.trades.count { com.mtgcompanion.app.data.social.waitingOnMe(it, me.userId) }
