@@ -147,11 +147,11 @@ fun ProxyPrintDialog(
             ) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionLabel("Paper")
+                        ProxySectionLabel("Paper")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             PaperSize.entries.forEach { p -> PillChip(p.label, options.paper == p, { options = options.copy(paper = p) }) }
                         }
-                        SectionLabel("On the sheet")
+                        ProxySectionLabel("On the sheet")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             PillChip(PROXY_MARK, options.marked, { options = options.copy(marked = !options.marked) })
                             PillChip("Low ink", options.lowInk, { options = options.copy(lowInk = !options.lowInk) })
@@ -165,7 +165,7 @@ fun ProxyPrintDialog(
                             color = colors.textMuted
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)) { SectionLabel("Cards") }
+                            Box(Modifier.weight(1f)) { ProxySectionLabel("Cards") }
                             if (pickedCopies(picks) > 0) {
                                 TextButton(onClick = { picks = picks.map { it.copy(copies = 0) } }) { Text("Clear", color = colors.accent) }
                             }
@@ -204,7 +204,7 @@ fun ProxyPrintDialog(
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+private fun ProxySectionLabel(text: String) {
     val colors = LocalAppColors.current
     Text(text, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, modifier = Modifier.padding(top = 8.dp))
 }
