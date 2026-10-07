@@ -69,6 +69,8 @@ class SettingsRepository(private val context: Context) {
     private val cardOfDayImageUrlKey = stringPreferencesKey("card_of_day_image_url")
     private val statsPanelsKey = stringSetPreferencesKey("deck_stats_panels")
     private val savedFiltersKey = stringPreferencesKey("saved_filters")
+    /** Settings › Scanner's sounds (ScanSounds.kt), each kept as text under the web app's names. */
+    private val scanSoundKeys = ScanSoundKeys.ALL.associateWith { stringPreferencesKey(it) }
 
 
     val searchViewMode: Flow<CardViewMode> = context.dataStore.data.map { CardViewMode.fromName(it[searchViewModeKey]) }
@@ -115,6 +117,20 @@ class SettingsRepository(private val context: Context) {
 
     /** How careful the scanner is (see [ScanMode]); Accurate until changed. */
     val scanMode: Flow<ScanMode> = context.dataStore.data.map { ScanMode.fromName(it[scanModeKey]) }
+
+    /** The scanner's sounds and buzz (Settings › Scanner). */
+    val scanSound: Flow<ScanSoundSettings> = context.dataStore.data.map { prefs -> parseScanSound { key -> scanSoundKeys[key]?.let { prefs[it] } } }
+
+    suspend fun setScanSound(settings: ScanSoundSettings) {
+        context.dataStore.edit {
+            it[scanSoundKeys.getValue(ScanSoundKeys.ON)] = settings.on.toString()
+            it[scanSoundKeys.getValue(ScanSoundKeys.VOLUME)] = settings.volume.coerceIn(0, 100).toString()
+            it[scanSoundKeys.getValue(ScanSoundKeys.MODE)] = settings.mode.key
+            it[scanSoundKeys.getValue(ScanSoundKeys.THRESHOLD)] = thresholdText(settings.threshold)
+            it[scanSoundKeys.getValue(ScanSoundKeys.VIBRATE)] = settings.vibrate.toString()
+            it[scanSoundKeys.getValue(ScanSoundKeys.SILENT)] = settings.silent.toString()
+        }
+    }
 
     suspend fun setScanMode(mode: ScanMode) {
         context.dataStore.edit { it[scanModeKey] = mode.name }
@@ -213,10 +229,10 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    /** Appearance, card display, prices, the scanner's mode, the decks' grouping and the saved filters. */
+    /** Appearance, card display, prices, the scanner's mode and sounds, the decks' grouping and the saved filters. */
     private val backupStringKeys
         get() = listOf(
             searchViewModeKey, scanModeKey, collectionViewModeKey, deckViewModeKey, deckGroupingKey, allCardsViewModeKey,
             recViewModeKey, appBrightnessKey, accentThemeKey, currencyKey, savedFiltersKey
-        )
+        ) + scanSoundKeys.values
 }

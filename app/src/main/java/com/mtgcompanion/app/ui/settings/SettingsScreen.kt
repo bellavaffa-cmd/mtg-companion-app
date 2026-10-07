@@ -64,6 +64,9 @@ import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import com.mtgcompanion.app.data.ScanSoundSettings
+import com.mtgcompanion.app.data.scanSoundSummary
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.mtgcompanion.app.data.Currencies
 import com.mtgcompanion.app.data.Prices
@@ -135,6 +138,7 @@ enum class SettingsSection(val id: String, val title: String, val icon: ImageVec
     APPEARANCE("appearance", "Appearance", Icons.Filled.DarkMode),
     CARD_DISPLAY("card-display", "Card Display", Icons.Filled.GridView),
     PRICES("prices", "Prices", Icons.Filled.Sell),
+    SCANNER("scanner", "Scanner", Icons.AutoMirrored.Filled.VolumeUp),
     DATA("data", "Data and speed", Icons.Filled.Speed),
     OFFLINE_SEARCH("offline-search", "Offline Search", Icons.Filled.CloudOff),
     CARD_RECOGNITION("card-recognition", "Card Recognition", Icons.Filled.CameraAlt),
@@ -185,6 +189,7 @@ fun SettingsScreen(
     val recognition by cardIndexRepository.status.collectAsState()
     val update by updateManager.state.collectAsState()
     val usageOn by Usage.enabled.collectAsState()
+    val scanSound by settingsRepository.scanSound.collectAsState(initial = ScanSoundSettings())
 
     fun summaryOf(section: SettingsSection): String = when (section) {
         SettingsSection.ACCOUNT -> when {
@@ -209,6 +214,7 @@ fun SettingsScreen(
             }
         }
         SettingsSection.PRICES -> Currencies.of(chosenCurrency).let { "${it.name} (${it.code})" }
+        SettingsSection.SCANNER -> scanSoundSummary(scanSound)
         SettingsSection.DATA -> "Backup and restore, and how quick the app is"
         SettingsSection.OFFLINE_SEARCH -> if (offline.hasData) "${offline.cardCount} cards downloaded" else "Not downloaded"
         SettingsSection.CARD_RECOGNITION -> if (recognition.ready) "${recognition.cardCount} card pictures" else "Downloads the first time you scan"
@@ -336,6 +342,7 @@ fun SettingsSectionScreen(
                 SettingsSection.APPEARANCE -> AppearanceSection(settingsRepository)
                 SettingsSection.CARD_DISPLAY -> CardDisplaySection(settingsRepository)
                 SettingsSection.PRICES -> PricesSection(settingsRepository)
+                SettingsSection.SCANNER -> ScannerSection(settingsRepository)
                 SettingsSection.DATA -> DataAndSpeedSection()
                 SettingsSection.OFFLINE_SEARCH -> OfflineSearchSection(offlineCardRepository)
                 SettingsSection.CARD_RECOGNITION -> CardRecognitionSection(cardIndexRepository)

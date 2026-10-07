@@ -6,6 +6,10 @@ import com.mtgcompanion.app.ui.common.toAddItem
 import com.mtgcompanion.app.ui.common.AddCheck
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.filled.AutoAwesome
 import com.mtgcompanion.app.ui.common.AddToPicker
 import com.mtgcompanion.app.ui.common.AddVerb
@@ -129,9 +133,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
@@ -265,14 +267,12 @@ fun ScanScreen(
         }
     }
 
-    // A brief "got it" flash on the framing guide + a haptic buzz on every successful add,
-    // alongside the existing shutter sound — successToken only changes on a real success (not on
-    // a failed lookup, which also uses state.status), so this can't misfire on those.
-    val haptic = LocalHapticFeedback.current
+    // A brief "got it" flash on the framing guide on every successful add — successToken only
+    // changes on a real success (not on a failed lookup, which also uses state.status), so this can't
+    // misfire on those. The sound and buzz come from ScanFeedback, as the card is recognised.
     val successFlash = remember { Animatable(0f) }
     LaunchedEffect(state.successToken) {
         if (state.successToken > 0) {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             successFlash.snapTo(1f)
             successFlash.animateTo(0f, animationSpec = tween(500))
         }
@@ -578,11 +578,17 @@ fun ScanScreen(
                 }
             }
             state.status?.let { status ->
+                // TalkBack reads each new line as it comes, a recognised card's with its rarity ("Rare").
+                val spoken = state.statusRarity?.takeIf { it.first == status }?.let { "$status, ${it.second}" } ?: status
                 Text(
                     status,
                     style = MaterialTheme.typography.bodySmall,
                     color = GoldLight,
                     modifier = Modifier
+                        .semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            contentDescription = spoken
+                        }
                         .padding(top = 8.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Bg.copy(alpha = 0.7f))

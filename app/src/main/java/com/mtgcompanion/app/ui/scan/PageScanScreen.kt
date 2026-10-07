@@ -106,6 +106,7 @@ import com.mtgcompanion.app.data.recordPage
 import com.mtgcompanion.app.data.recordedLine
 import com.mtgcompanion.app.data.recordedOnPage
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
+import com.mtgcompanion.app.data.bestCue
 import com.mtgcompanion.app.ui.collection.StorageChange
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
@@ -239,13 +240,23 @@ fun PageScanScreen(
         else CollectionEntry(card.scryfallId, card.name, null)
     }
 
-    fun loadCards(list: List<PageCell>) {
+    /** Fetches the cards [list] shows that aren't here yet; [onLoaded] gets every card known once they're in. */
+    fun loadCards(list: List<PageCell>, onLoaded: (Map<String, ScryfallCard>) -> Unit = {}) {
         val ids = list.flatMap { listOfNotNull(it.card?.scryfallId) + it.options.map { o -> o.scryfallId } }.distinct().filter { it !in cardData }
-        if (ids.isEmpty()) return
+        if (ids.isEmpty()) {
+            onLoaded(cardData)
+            return
+        }
         scope.launch {
             val got = runCatching { cardRepository.getCardsByIds(ids) }.getOrDefault(emptyList())
             cardData = cardData + got.associateBy { it.id }
+            onLoaded(cardData)
         }
+    }
+
+    /** One sound for the page, not one a pocket: the best card read on it (Settings › Scanner). */
+    fun cuePage(list: List<PageCell>, known: Map<String, ScryfallCard>) {
+        bestCue(list.mapNotNull { cell -> cell.card?.let { known[it.scryfallId] }?.let { ScanFeedback.cueOf(it) } })?.let { ScanFeedback.play(it) }
     }
 
     fun record(): String? {
@@ -285,7 +296,7 @@ fun PageScanScreen(
                     cells = read
                     checking = false
                     if (!reader.canSee) message = "Card recognition is still downloading, so only titles were read. Tap a pocket to fix it."
-                    loadCards(read)
+                    loadCards(read) { known -> cuePage(read, known) }
                     phase = Phase.RESULTS
                 }
             }

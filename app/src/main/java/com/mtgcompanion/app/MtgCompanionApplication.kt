@@ -95,6 +95,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         RoleTags.init(this)
         // Prices in the chosen currency, at the day's exchange rate; and the collection's value over time.
         Prices.init(this, settingsRepository, appScope)
+        // The scanner's sounds, synthesised now so the first card scanned plays at once (Settings › Scanner).
+        com.mtgcompanion.app.ui.scan.ScanFeedback.init(this, settingsRepository, appScope)
         ValueHistory.init(this)
         DeckValueHistory.init(this)
         PriceMovers.init(this)

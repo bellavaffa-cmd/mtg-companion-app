@@ -19,6 +19,7 @@ import com.mtgcompanion.app.data.parseSetCode
 import kotlinx.coroutines.flow.update
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.ScanMode
+import com.mtgcompanion.app.data.rarityLabel
 import java.util.concurrent.Executors
 import com.mtgcompanion.app.data.sensorBox
 import com.mtgcompanion.app.data.relativeTo
@@ -87,7 +88,6 @@ import com.mtgcompanion.app.data.putBackList
 import com.mtgcompanion.app.data.putBackRowToTick
 import com.mtgcompanion.app.data.sameCardName
 import android.graphics.Bitmap
-import android.media.MediaActionSound
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -208,6 +208,8 @@ data class ScanUiState(
      * used for non-success messages like a failed lookup) so the UI can trigger a haptic/visual
      * flash only on real successes, via a LaunchedEffect keyed on this value. */
     val successToken: Int = 0,
+    /** A recognised card's line and its rarity ("Rare"): TalkBack hears the rarity with that line, and only that one. */
+    val statusRarity: Pair<String, String>? = null,
     /** How careful the scanner is being — see ScanMode. */
     val scanMode: ScanMode = ScanMode.ACCURATE
 )
@@ -328,8 +330,8 @@ class ScanViewModel(
     // and this doubles as the deliberate way to re-scan the same physical card to bump its count.
     private val forceScanNext = AtomicBoolean(false)
 
-    // A camera-shutter click played on each successful scan.
-    private val scanSound = MediaActionSound().apply { load(MediaActionSound.SHUTTER_CLICK) }
+    /** A screen reader's line for a card just recognised: [status] with the card's rarity, "Added Sol Ring, Uncommon". */
+    private fun spoken(status: String, card: ScryfallCard): Pair<String, String>? = rarityLabel(card.rarity)?.let { status to it }
 
     private val _uiState = MutableStateFlow(ScanUiState(scannedCards = ScanPile.read()))
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
@@ -975,8 +977,9 @@ class ScanViewModel(
         val next = session.copy(scans = session.scans + CheckScan(card.id, card.name, card.displayImageUrl, null, exact))
         setCheck(next)
         val line = reconcile(collections.value, decks.value, CheckScope(next.placeId, next.section), next.scans).lines.lastOrNull()
-        _uiState.update { it.copy(status = "${card.name} — ${line?.label ?: "scanned"}", successToken = it.successToken + 1) }
-        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        val status = "${card.name} — ${line?.label ?: "scanned"}"
+        _uiState.update { it.copy(status = status, statusRarity = spoken(status, card), successToken = it.successToken + 1) }
+        ScanFeedback.cardRecognised(card)
         return id
     }
 
@@ -1031,8 +1034,9 @@ class ScanViewModel(
             choice?.index ?: -1, choice?.why.orEmpty(), choice?.decks?.takeIf { it.isNotEmpty() }
         )
         setSort(now.copy(scans = now.scans + scan))
-        _uiState.update { it.copy(status = if (choice != null) "${card.name} — pile ${choice.index + 1}" else "${card.name} — no pile fits", successToken = it.successToken + 1) }
-        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        val status = if (choice != null) "${card.name} — pile ${choice.index + 1}" else "${card.name} — no pile fits"
+        _uiState.update { it.copy(status = status, statusRarity = spoken(status, card), successToken = it.successToken + 1) }
+        ScanFeedback.cardRecognised(card)
         return id
     }
 
@@ -1100,8 +1104,8 @@ class ScanViewModel(
                 "${card.name} — ticked"
             }
         }
-        _uiState.update { it.copy(status = status, successToken = it.successToken + 1) }
-        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        _uiState.update { it.copy(status = status, statusRarity = spoken(status, card), successToken = it.successToken + 1) }
+        ScanFeedback.cardRecognised(card)
         return id
     }
 
@@ -1165,9 +1169,10 @@ class ScanViewModel(
                 }
             }
             _session.update { listOf(done) + it }
-            _uiState.update { it.copy(status = "${card.name} — ${done.label}", successToken = it.successToken + 1) }
+            val status = "${card.name} — ${done.label}"
+            _uiState.update { it.copy(status = status, statusRarity = spoken(status, card), successToken = it.successToken + 1) }
         }
-        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        ScanFeedback.cardRecognised(card)
         return id
     }
 
@@ -1212,8 +1217,8 @@ class ScanViewModel(
             "Added ${card.name}"
         }
         setScanned(rows, status)
-        _uiState.value = _uiState.value.copy(successToken = _uiState.value.successToken + 1)
-        scanSound.play(MediaActionSound.SHUTTER_CLICK)
+        _uiState.value = _uiState.value.copy(statusRarity = spoken(status, card), successToken = _uiState.value.successToken + 1)
+        ScanFeedback.cardRecognised(card)
         return row.id
     }
 
@@ -1326,7 +1331,6 @@ class ScanViewModel(
     }
 
     override fun onCleared() {
-        scanSound.release()
         recognizer.close()
         stripReader.close()
         stripThread.shutdown()
