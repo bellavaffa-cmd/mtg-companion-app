@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -54,11 +53,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.mtgcompanion.app.data.social.ChatRow
 import com.mtgcompanion.app.data.social.Conversation
 import com.mtgcompanion.app.data.social.DirectMessage
 import com.mtgcompanion.app.data.social.MESSAGE_MAX
 import com.mtgcompanion.app.data.social.Overview
 import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.data.social.mergeChatRows
 import com.mtgcompanion.app.data.social.mergeMessages
 import com.mtgcompanion.app.data.social.previewLine
 import com.mtgcompanion.app.data.social.timeAgo
@@ -120,8 +121,9 @@ fun MessagesScreen(
 }
 
 /**
- * Every conversation — on this screen and on Friends' Chats tab, where [header] puts the pod chats
- * (FriendsSlots.kt) above them.
+ * Every conversation — on this screen and on Friends' Chats tab, where [onOpenPodChat] given also
+ * lists the user's pod chats (PodChatScreen.kt), merged with the direct messages by when each last
+ * had a message (mergeChatRows).
  */
 @Composable
 internal fun ConversationList(
@@ -129,7 +131,7 @@ internal fun ConversationList(
     overview: Overview,
     onOpen: (String) -> Unit,
     onOpenFriends: (() -> Unit)? = null,
-    header: LazyListScope.() -> Unit = {}
+    onOpenPodChat: ((podId: String) -> Unit)? = null
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
@@ -152,6 +154,7 @@ internal fun ConversationList(
     }
     LaunchedEffect(available) { if (available == true) load() }
     DirectMessagesEffect(social, available == true, onMessage = { load() }, onRejoined = { load() })
+    val pods = if (onOpenPodChat != null) rememberPodChats(social).orEmpty() else emptyList()
 
     val current = list
     when {
@@ -161,8 +164,7 @@ internal fun ConversationList(
         else -> {
             val others = overview.acceptedFriends.filter { f -> current.none { it.other.userId == f.userId } }
             LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                header()
-                if (current.isEmpty()) item {
+                if (current.isEmpty() && pods.isEmpty()) item {
                     if (others.isNotEmpty()) EmptyPrompt(Icons.Filled.ChatBubble, "No messages yet. Pick a friend below to start a conversation.")
                     else EmptyPrompt(
                         Icons.Filled.ChatBubble,
@@ -170,13 +172,23 @@ internal fun ConversationList(
                         actions = listOfNotNull(onOpenFriends?.let { EmptyAction("Add a friend", Icons.Filled.PersonAdd, it) })
                     )
                 }
-                current.forEach { c ->
-                    item(key = c.id) {
-                        PersonRow(
-                            c.other,
-                            detail = previewLine(c.lastSender, c.lastBody, me) + (c.lastAt?.let { " · " + timeAgo(it, now) } ?: ""),
-                            onClick = { onOpen(c.other.userId) }
-                        ) { if (c.unread > 0) CountBadge(c.unread) }
+                val rows = mergeChatRows(
+                    current.map { ChatRow("dm", it.id, it.lastAt, it.unread) },
+                    pods.map { ChatRow("pod", it.podId, it.last?.createdAt, it.unread) }
+                )
+                rows.forEach { r ->
+                    if (r.kind == "pod") {
+                        val p = pods.firstOrNull { it.podId == r.id } ?: return@forEach
+                        item(key = "pod-${p.podId}") { PodChatRow(p, me, now) { onOpenPodChat?.invoke(it) } }
+                    } else {
+                        val c = current.firstOrNull { it.id == r.id } ?: return@forEach
+                        item(key = c.id) {
+                            PersonRow(
+                                c.other,
+                                detail = previewLine(c.lastSender, c.lastBody, me) + (c.lastAt?.let { " · " + timeAgo(it, now) } ?: ""),
+                                onClick = { onOpen(c.other.userId) }
+                            ) { if (c.unread > 0) CountBadge(c.unread) }
+                        }
                     }
                 }
                 if (others.isNotEmpty()) {

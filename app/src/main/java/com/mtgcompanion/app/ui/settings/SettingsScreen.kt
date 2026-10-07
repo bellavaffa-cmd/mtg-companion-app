@@ -341,7 +341,7 @@ fun SettingsSectionScreen(
                 SettingsSection.CARD_RECOGNITION -> CardRecognitionSection(cardIndexRepository)
                 SettingsSection.APP_UPDATES -> AppUpdatesSection(updateManager)
                 SettingsSection.BLOCKED -> if (socialRepository != null) BlockedPeopleSection(socialRepository) else Text("Not available yet.", color = TextMuted)
-                SettingsSection.PRIVACY -> PrivacySection()
+                SettingsSection.PRIVACY -> PrivacySection(socialRepository)
             }
         }
         }

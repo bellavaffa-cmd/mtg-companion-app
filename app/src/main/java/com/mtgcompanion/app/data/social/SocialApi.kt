@@ -515,7 +515,17 @@ class SocialApi(private val auth: SupabaseAuth) {
             "night_cancelled" to "That game night was called off.",
             "night_over" to "That game night is over.",
             "bad_answer" to "Pick Going, Maybe or Can't.",
-            "bad_share" to "That can't be shared here."
+            "bad_share" to "That can't be shared here.",
+            // supabase/migrations/20261006080000_activity_comments.sql (see ActivityComments.kt)
+            "bad_prefs" to "Those settings couldn't be saved.",
+            "empty_comment" to "Write something first.",
+            "comment_too_long" to "Keep comments under 1,000 characters.",
+            "bad_comment_card" to "That card couldn't be added to the comment.",
+            "cant_comment" to "Only friends the deck is shared with can comment.",
+            "bad_parent" to "That comment isn't there any more.",
+            "comment_slow_down" to "You're commenting very fast — wait a minute.",
+            "too_many_comments" to "This deck has 1,000 comments already.",
+            "not_your_comment" to "Only its author or the deck’s owner can do that."
         )
     }
 }

@@ -101,9 +101,18 @@ fun rememberPodLeagues(social: SocialRepository, pods: List<Pod>, me: String): M
     return leagues
 }
 
-/** Your pods, side by side: each pod's name and "5 people · Season 2 · you're 2nd". */
+/**
+ * Your pods, side by side: each pod's name and "5 people · Season 2 · you're 2nd"; [onOpen] for a tap,
+ * and when given, Plan a game night ([onPlan]) and Members ([onEdit]) under them.
+ */
 @Composable
-fun PodsRow(pods: List<Pod>, leagues: Map<String, PodLeague>, onOpen: (Pod) -> Unit) {
+fun PodsRow(
+    pods: List<Pod>,
+    leagues: Map<String, PodLeague>,
+    onOpen: (Pod) -> Unit,
+    onPlan: ((Pod) -> Unit)? = null,
+    onEdit: ((Pod) -> Unit)? = null
+) {
     val colors = LocalAppColors.current
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
         pods.forEach { pod ->
@@ -118,9 +127,24 @@ fun PodsRow(pods: List<Pod>, leagues: Map<String, PodLeague>, onOpen: (Pod) -> U
                     if (league == null) peopleLine(pod.members.size) else podLine(pod.members.size, league.season, league.rank),
                     style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
+                if (onPlan != null || onEdit != null) Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    onPlan?.let { plan -> PodCardLink("Plan a game night", colors.accent) { plan(pod) } }
+                    onEdit?.let { edit -> PodCardLink("Members", colors.textMuted) { edit(pod) } }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun PodCardLink(text: String, color: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = color,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp)
+    )
 }
 
 /** What friends want from you: a line per friend (cards, where, value) and Make offers. */

@@ -164,12 +164,14 @@ import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.DriveImporter
 import com.mtgcompanion.app.data.PlayerProfileRepository
 import com.mtgcompanion.app.data.SettingsRepository
+import com.mtgcompanion.app.data.social.ActivityTarget
 import com.mtgcompanion.app.data.social.ShareKind
 import com.mtgcompanion.app.data.social.SharedSummary
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.ui.social.FriendScreen
 import com.mtgcompanion.app.ui.social.FriendsScreen
 import com.mtgcompanion.app.ui.social.NextGameNightCard
+import com.mtgcompanion.app.ui.social.NightCardVariant
 import com.mtgcompanion.app.ui.social.ConversationScreen
 import com.mtgcompanion.app.ui.social.ForTradeScreen
 import com.mtgcompanion.app.ui.social.FriendsMoreActions
@@ -316,7 +318,8 @@ private object Routes {
     const val FRIEND = "friend/{userId}"
     const val TRADES = "trades"
     const val TRADE_NEW = "trade_new/{userId}"
-    const val SHARED = "shared/{owner}/{kind}/{itemId}"
+    /** A shared deck or binder; ?tab=comments opens a deck on its Comments (DeckComments.kt). */
+    const val SHARED = "shared/{owner}/{kind}/{itemId}?tab={tab}"
     const val SHARED_LINK = "shared_link/{token}"
     const val SHARED_COLLECTION = "shared_collection/{owner}"
     const val FRIEND_SHARED = "friend_shared/{owner}"
@@ -343,7 +346,8 @@ private object Routes {
     fun remote(matchId: String, seat: Int) = "remote/$matchId/$seat"
     fun friend(userId: String) = "friend/$userId"
     fun tradeNew(userId: String) = "trade_new/$userId"
-    fun shared(owner: String, kind: String, itemId: String) = "shared/$owner/$kind/" + URLEncoder.encode(itemId, StandardCharsets.UTF_8.name())
+    fun shared(owner: String, kind: String, itemId: String, comments: Boolean = false) =
+        "shared/$owner/$kind/" + URLEncoder.encode(itemId, StandardCharsets.UTF_8.name()) + if (comments) "?tab=comments" else ""
     fun sharedLink(token: String) = "shared_link/$token"
     const val DETAIL = "detail/{cardName}"
     /** [tab]: the tab to open on ("Suggestions"), when not the first. */
@@ -480,7 +484,8 @@ fun MtgNavGraph(
     // The Friends tab's badge: friend requests, trades waiting on the user and unread messages.
     val socialInbox by socialRepository.inbox.collectAsState()
     val socialUnread by socialRepository.unread.collectAsState()
-    val barBadge = friendsBadge(socialInbox.friendRequests, socialUnread, socialInbox.trades)
+    val podUnread by socialRepository.podUnread.collectAsState()
+    val barBadge = friendsBadge(socialInbox.friendRequests, socialUnread + podUnread, socialInbox.trades)
 
     // A tapped notification: open Friends on the tab it's about.
     val openRequest by pendingOpen.collectAsState()
@@ -1671,8 +1676,8 @@ fun MtgNavGraph(
                     onOpenEvents = { navController.navigate(Routes.EVENTS) { launchSingleTop = true } },
                     onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } },
                     onOpenPack = { navController.navigate(Routes.PACK_LIST) { launchSingleTop = true } },
-                    // The next game night (FriendsSlots.kt), as at the top of Friends › People.
-                    nextGameNight = { NextGameNightCard(socialRepository, onOpen = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } }) }
+                    // The next game night (NextGameNightCard.kt), as at the top of Friends › People: its invite.
+                    nextGameNight = { NextGameNightCard(socialRepository, onOpen = { id -> navController.navigate(Routes.night(id)) }, variant = NightCardVariant.PLAY) }
                 )
             }
 
@@ -1829,17 +1834,19 @@ fun MtgNavGraph(
                     more = FriendsMoreActions(
                         onOpenHousehold = { id -> navController.navigate(Routes.household(id)) },
                         onOpenLent = { navController.navigate(Routes.loans()) },
-                        onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } },
+                        onOpenNight = { id -> navController.navigate(Routes.night(id)) },
+                        onOpenPodChat = { id -> navController.navigate(Routes.podChat(id)) },
+                        onPlanGameNight = { id -> navController.navigate(Routes.nightForm(id)) },
                         onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) },
                         onOpenForTrade = { navController.navigate(Routes.FOR_TRADE) },
-                        onOpenActivity = { item ->
-                            val owner = item.actor.userId
-                            when {
-                                (item.kind == "shared" || item.kind == "deck_updated") && item.itemId != null && item.itemKind != null ->
-                                    navController.navigate(Routes.shared(owner, item.itemKind, item.itemId))
-                                item.kind == "shared" -> navController.navigate(Routes.friendShared(owner))
-                                item.kind == "pod_game" -> navController.navigate(Routes.PLAYGROUP)
-                                else -> navController.navigate(Routes.friend(owner))
+                        onOpenActivity = { target ->
+                            when (target) {
+                                is ActivityTarget.SharedItem -> navController.navigate(Routes.shared(target.owner, target.kind, target.itemId, target.comments))
+                                is ActivityTarget.FriendShared -> navController.navigate(Routes.friendShared(target.owner))
+                                is ActivityTarget.Friend -> navController.navigate(Routes.friend(target.userId))
+                                ActivityTarget.Playgroup -> navController.navigate(Routes.PLAYGROUP)
+                                is ActivityTarget.Trade -> navController.navigate(Routes.tradeNew(target.friend))
+                                ActivityTarget.Privacy -> navController.navigate(Routes.settingsSection("privacy"))
                             }
                         },
                         onOpenMatch = { m ->
@@ -2006,7 +2013,8 @@ fun MtgNavGraph(
                 arguments = listOf(
                     navArgument("owner") { type = NavType.StringType },
                     navArgument("kind") { type = NavType.StringType },
-                    navArgument("itemId") { type = NavType.StringType }
+                    navArgument("itemId") { type = NavType.StringType },
+                    navArgument("tab") { type = NavType.StringType; nullable = true; defaultValue = null }
                 )
             ) { entry ->
                 val args = entry.arguments
@@ -2020,7 +2028,10 @@ fun MtgNavGraph(
                     ),
                     onBack = { navController.popBackStack() },
                     onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
-                    onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) }
+                    onProposeTrade = { id -> navController.navigate(Routes.tradeNew(id)) },
+                    collectionRepository = collectionRepository,
+                    openComments = args?.getString("tab") == "comments",
+                    onConsiderSwap = { id -> navController.navigate(Routes.deckDetail(id, "Considering")) }
                 )
             }
 

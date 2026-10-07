@@ -22,6 +22,8 @@ class SocialRepository(private val auth: SupabaseAuth) {
     val matchChannel = MatchChannel(auth)
     /** Blocking, messages, reputation, activity and cards for trade (SocialMore.kt), once the server has them. */
     val more = SocialMore(api)
+    /** The richer Activity feed, its Privacy switches and deck comments (ActivityComments.kt). */
+    val activity = ActivityComments(api, more)
     /** Sharing storage at home (HouseholdApi.kt), once the server has it. */
     val household = HouseholdApi(api)
     /** Game night invites and pod chat (GameNightsApi.kt), once the server has them. */
@@ -51,6 +53,12 @@ class SocialRepository(private val auth: SupabaseAuth) {
     /** The Friends screen tells the badge what it just read. */
     fun setUnread(n: Int) { _unread.value = maxOf(0, n) }
 
+    private val _podUnread = MutableStateFlow(0)
+    /** Unread pod chat messages (PodChat.kt), counted with [unread] on the Friends badge and Chats tab. */
+    val podUnread: StateFlow<Int> = _podUnread.asStateFlow()
+
+    fun setPodUnread(n: Int) { _podUnread.value = maxOf(0, n) }
+
     val configured: Boolean get() = auth.configured
     val accountFlow = auth.account
     val userId: String? get() = auth.account.value?.userId
@@ -63,8 +71,10 @@ class SocialRepository(private val auth: SupabaseAuth) {
                 _overview.value = null
                 _inbox.value = Inbox()
                 _unread.value = 0
+                _podUnread.value = 0
                 _error.value = null
                 more.reset()
+                activity.reset()
                 household.reset()
                 nights.reset()
                 if (it != null) refreshInbox()

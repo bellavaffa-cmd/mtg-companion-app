@@ -97,7 +97,7 @@ import org.json.JSONObject
 
 // A pod's group chat (the Chats mockup): messages with who sent them and when, league results and
 // game night invites inline (tap Going? to answer), sharing a game night, a deck or a card, and block
-// or report from a sender's name. PodChatRows lists every pod's chat for the Chats
+// or report from a sender's name. rememberPodChats and PodChatRow give the Chats
 // list. The web app's twin is src/pages/PodChatPage.tsx.
 
 /** What arrives on the user's channel for pod chat: a message, a night changed, or back after a drop. */
@@ -550,47 +550,50 @@ private fun ShareRow(text: String, onClick: () -> Unit) {
 }
 
 /**
- * Every pod's chat as rows for the Chats list — name, last message, unread count — newest first.
- * Shows nothing until the server has pod chat. [onUnread]: the total, for a badge.
+ * Every pod's chat for the Chats list (MessagesScreen.kt's ConversationList, merged with the direct
+ * messages by mergeChatRows): null until loaded, and empty until the server has pod chat. Reloads as
+ * messages arrive, and tells the Friends badge how many wait unread (SocialRepository.podUnread).
  */
 @Composable
-fun PodChatRows(social: SocialRepository, onOpen: (String) -> Unit, onUnread: (Int) -> Unit = {}) {
-    val colors = LocalAppColors.current
+fun rememberPodChats(social: SocialRepository): List<PodChat>? {
     val scope = rememberCoroutineScope()
     val account by social.accountFlow.collectAsState()
     val available by social.nights.available.collectAsState()
-    val me = account?.userId ?: return
-    var chats by remember { mutableStateOf<List<PodChat>?>(null) }
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val me = account?.userId
+    var chats by remember(me) { mutableStateOf<List<PodChat>?>(null) }
     fun load() {
         scope.launch {
-            runCatching { social.nights.chats() }.onSuccess { c -> chats = c; now = System.currentTimeMillis(); onUnread(c.sumOf { it.unread }) }
+            runCatching { social.nights.chats() }.onSuccess { c -> chats = c; social.setPodUnread(c.sumOf { it.unread }) }
         }
     }
-    LaunchedEffect(me) { if (social.nights.check()) load() }
+    LaunchedEffect(me) {
+        if (me == null) return@LaunchedEffect
+        if (social.nights.check()) load() else chats = emptyList()
+    }
     PodLiveEffect(social, available == true) { e -> if (e.message != null || e.rejoined) load() }
-    val list = chats
-    if (available != true || list.isNullOrEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        list.forEach { c ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface)
-                    .clickable(role = Role.Button) { onOpen(c.podId) }.padding(horizontal = 12.dp, vertical = 10.dp)
-            ) {
-                Box(Modifier.size(44.dp).clip(CircleShape).background(colors.accentGlow), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Groups, contentDescription = null, tint = colors.accent)
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(c.name, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        podPreview(c.last, me) + (c.last?.let { " · " + timeAgo(it.createdAt, now) } ?: ""),
-                        style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (c.unread > 0) CountBadge(c.unread)
-            }
+    return if (available == false) emptyList() else chats
+}
+
+/** One pod's chat as a row of the Chats list: name, last message and when, unread count. */
+@Composable
+fun PodChatRow(chat: PodChat, me: String, now: Long, onOpen: (String) -> Unit) {
+    val colors = LocalAppColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface)
+            .clickable(role = Role.Button) { onOpen(chat.podId) }.padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Box(Modifier.size(44.dp).clip(CircleShape).background(colors.accentGlow), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Groups, contentDescription = null, tint = colors.accent)
         }
+        Column(Modifier.weight(1f)) {
+            Text(chat.name, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                podPreview(chat.last, me) + (chat.last?.let { " · " + timeAgo(it.createdAt, now) } ?: ""),
+                style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (chat.unread > 0) CountBadge(chat.unread)
     }
 }

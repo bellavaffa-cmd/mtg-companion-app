@@ -62,7 +62,10 @@ import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
+import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.social.commentsTabLabel
+import com.mtgcompanion.app.ui.common.SegmentedTabs
 import com.mtgcompanion.app.data.localMoshi
 import com.mtgcompanion.app.data.social.ShareKind
 import com.mtgcompanion.app.data.social.SharedItem
@@ -107,7 +110,13 @@ fun SharedItemScreen(
     source: SharedSource,
     onBack: () -> Unit,
     onOpenDeck: (String) -> Unit,
-    onProposeTrade: (friendId: String) -> Unit
+    onProposeTrade: (friendId: String) -> Unit,
+    /** The user's binders, for "Offer it in a trade" and suggesting a card in a comment. */
+    collectionRepository: CollectionRepository? = null,
+    /** Open a deck on its Comments (from Activity: "Look and comment", "Reply"). */
+    openComments: Boolean = false,
+    /** The owner's "Consider a swap": their own deck [deckId] on its Considering tab. */
+    onConsiderSwap: (deckId: String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val account by social.accountFlow.collectAsState()
@@ -156,7 +165,12 @@ fun SharedItemScreen(
                     )
                     is Loaded.Failed -> EmptyState(Icons.Filled.CloudOff, l.message)
                     is Loaded.Ok -> if (l.item.kind == ShareKind.DECK) {
-                        SharedDeck(l.item, deckRepository, canCopy = account != null, onOpenDeck = onOpenDeck)
+                        SharedDeck(
+                            l.item, deckRepository, canCopy = account != null, onOpenDeck = onOpenDeck,
+                            comments = if (source is SharedSource.FromFriend && account != null) {
+                                SharedDeckComments(social, collectionRepository, openComments, onConsiderSwap, onProposeTrade, account?.userId)
+                            } else null
+                        )
                     } else {
                         SharedBinder(
                             social = social,
@@ -188,8 +202,18 @@ private fun primaryType(typeLine: String?): String {
     return TYPE_ORDER.firstOrNull { front.contains(it) } ?: "Other"
 }
 
+/** What a shared deck's Comments tab needs (DeckComments.kt): only for a signed-in friend, or its owner. */
+private data class SharedDeckComments(
+    val social: SocialRepository,
+    val collectionRepository: CollectionRepository?,
+    val openFirst: Boolean,
+    val onConsiderSwap: (String) -> Unit,
+    val onProposeTrade: (String) -> Unit,
+    val me: String?
+)
+
 @Composable
-private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy: Boolean, onOpenDeck: (String) -> Unit) {
+private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy: Boolean, onOpenDeck: (String) -> Unit, comments: SharedDeckComments? = null) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val deck = remember(item.data) { runCatching { localMoshi.adapter(Deck::class.java).fromJson(item.data) }.getOrNull() }
@@ -197,16 +221,28 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
     var zoom by remember { mutableStateOf<DeckCardEntry?>(null) }
     var query by remember { mutableStateOf("") }
     val tagging = rememberCardTags(remember(deck) { deck?.cards.orEmpty().map { it.name } })
+    // Cards | Comments, once the server has comments.
+    val commentsReady = comments?.let { rememberActivityComments(it.social) } == true
+    var onComments by remember { mutableStateOf(comments?.openFirst == true) }
+    val thread = comments?.let { rememberDeckComments(it.social, item.owner, deck?.id.orEmpty(), enabled = commentsReady && deck != null) }
+    val collectionsFlow = remember(comments?.collectionRepository) {
+        comments?.collectionRepository?.collectionsFlow ?: kotlinx.coroutines.flow.flowOf(emptyList<Collection>())
+    }
+    val collections by collectionsFlow.collectAsState(initial = emptyList())
     if (deck == null) {
         EmptyState(Icons.Filled.CloudOff, "This deck couldn't be read. Updating the app may help.")
         return
     }
+    val tabs = commentsReady && thread != null
+    val showComments = tabs && onComments
+    val deckCards = remember(deck) { listOfNotNull(deck.commander, deck.partnerCommander).plus(deck.cards).map { PickCard(it.name, it.imageUrl) } }
     val shown = deck.cards.byNameOrTag(query) { it.name }
     val groups = shown.sortedBy { it.name }.groupBy { primaryType(it.typeLine) }.toList()
         .sortedBy { (type, _) -> TYPE_ORDER.indexOf(type).let { if (it == -1) 99 else it } }
     val commanders = listOfNotNull(deck.commander, deck.partnerCommander).byNameOrTag(query) { it.name }
 
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Box(Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(24.dp)).background(colors.surface)) {
                 deck.commander?.imageUrl?.let { AsyncImage(model = it.toArtCropUrl(), contentDescription = null, contentScale = ContentScale.Crop, alpha = 0.5f, modifier = Modifier.fillMaxSize()) }
@@ -220,6 +256,24 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
         item {
             Text("${deck.cards.sumOf { it.quantity }} cards · ${deck.cards.size} unique", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
         }
+        if (tabs) item(key = "tabs") {
+            SegmentedTabs(
+                labels = listOf("Cards", commentsTabLabel(thread!!.count)),
+                selected = if (showComments) 1 else 0,
+                onSelect = { onComments = it == 1 },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        if (showComments && thread != null && comments != null) {
+            deckCommentItems(
+                thread, comments.social, comments.me, deckCards, collections,
+                onConsiderSwap = { comments.onConsiderSwap(deck.id) },
+                onOffer = { card ->
+                    comments.social.draft = SocialRepository.TradeDraft(to = item.owner.userId, give = listOf(card))
+                    comments.onProposeTrade(item.owner.userId)
+                }
+            )
+        } else {
         if (canCopy) item {
             val id = copied
             if (id != null) {
@@ -270,6 +324,9 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
         }
         if (deck.cards.isEmpty()) item { Notice("This deck has no cards yet.") }
         else if (shown.isEmpty()) item { Notice("No cards match “$query”.") }
+        }
+    }
+    if (showComments && thread != null && comments != null) CommentComposer(thread, comments.me, deckCards, collections)
     }
     zoom?.let { c ->
         val list = (commanders + groups.flatMap { it.second }).distinctBy { it.scryfallId }.ifEmpty { listOf(c) }

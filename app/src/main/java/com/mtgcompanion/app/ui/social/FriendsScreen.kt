@@ -75,7 +75,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CollectionRepository
-import com.mtgcompanion.app.data.social.ActivityItem
+import com.mtgcompanion.app.data.social.ActivityTarget
 import com.mtgcompanion.app.data.social.FriendsTab
 import com.mtgcompanion.app.data.social.FriendsWaiting
 import com.mtgcompanion.app.data.social.friendsTabCounts
@@ -110,18 +110,18 @@ import kotlinx.coroutines.launch
 data class FriendsMoreActions(
     val onOpenConversation: (friendId: String) -> Unit = {},
     val onOpenForTrade: () -> Unit = {},
-    val onOpenActivity: (ActivityItem) -> Unit = {},
+    val onOpenActivity: (ActivityTarget) -> Unit = {},
     val onOpenMatch: (TradeMatch) -> Unit = {},
     /** Sharing storage at home: a household, by id, once an invitation is accepted (HouseholdScreen.kt). */
     val onOpenHousehold: (householdId: String) -> Unit = {},
     /** What the user lent: the Loans screen on Lent (a friend's "Loan" quick action). */
     val onOpenLent: () -> Unit = {},
-    /** Game night, from the next game night card (FriendsSlots.kt). */
-    val onOpenGameNight: () -> Unit = {},
-    /** A pod's chat (FriendsSlots.kt's podChats), by pod id. */
+    /** A game night's invite, by id, from the next game night card (NextGameNightCard.kt). */
+    val onOpenNight: (nightId: String) -> Unit = {},
+    /** A pod's chat, by pod id: from Chats, and a pod tapped on People (PodChatScreen.kt). */
     val onOpenPodChat: (podId: String) -> Unit = {},
-    /** A pod tapped on People; null opens the pod's members to edit, as before. */
-    val onOpenPod: ((Pod) -> Unit)? = null
+    /** Plan a game night for a pod, by pod id (GameNightFormScreen). */
+    val onPlanGameNight: (podId: String) -> Unit = {}
 )
 
 /**
@@ -214,8 +214,14 @@ private fun FriendsContent(
     val tabs = friendsTabs(withMore)
     val tab = friendsTabFor(asked, withMore)
 
-    val unread by social.unread.collectAsState()
+    val dmUnread by social.unread.collectAsState()
+    val podUnread by social.podUnread.collectAsState()
+    val unread = dmUnread + podUnread
     LaunchedEffect(withMore, overview, tab) { if (withMore == true) runCatching { social.more.unread() }.onSuccess { social.setUnread(it) } }
+    // Pod chats' unread count goes in "Chats · N" and the badge too (the Chats tab keeps it fresh while open).
+    LaunchedEffect(overview, tab) {
+        if (social.nights.check()) runCatching { social.nights.chats() }.onSuccess { c -> social.setPodUnread(c.sumOf { it.unread }) }
+    }
     val requests = overview.friends.count { !it.accepted && it.incoming }
     val inbox = overview.trades.count { com.mtgcompanion.app.data.social.waitingOnMe(it, me.userId) }
     // The counts go in the labels: "Chats · 3", "Trades · 2".
@@ -231,10 +237,10 @@ private fun FriendsContent(
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (tab) {
                 FriendsTab.PEOPLE -> PeopleTab(social, collectionRepository, overview, onOpenFriend, onOpenSharedTab, more)
-                FriendsTab.MESSAGES -> ConversationList(social, overview, more.onOpenConversation, header = { podChats(social, overview, more.onOpenPodChat) })
+                FriendsTab.MESSAGES -> ConversationList(social, overview, more.onOpenConversation, onOpenPodChat = more.onOpenPodChat)
                 FriendsTab.TRADES -> TradesTab(social, collectionRepository, overview, withMore == true, onOpenLoans, onCounterTrade, more)
-                // New kinds of activity go in ActivityExtras (FriendsSlots.kt), above friends' feed.
-                FriendsTab.ACTIVITY -> ActivityList(social, header = { ActivityExtras(social, overview) }, onOpen = more.onOpenActivity)
+                // Friends' feed with its new kinds (ActivityFeed.kt): each item opens where it's about.
+                FriendsTab.ACTIVITY -> ActivityList(social, header = {}, onOpen = more.onOpenActivity)
             }
         }
     }
@@ -275,6 +281,9 @@ private fun PeopleTab(
     val households = (homes as? HouseholdsState.Ready)?.data?.households.orEmpty()
     val leagues = rememberPodLeagues(social, overview.pods, me.userId)
     val money = rememberMoney()
+    // Pod chat and game nights (supabase/migrations/20261006070000_game_nights_chat.sql).
+    val podChat = social.nights.available.collectAsState().value == true
+    LaunchedEffect(Unit) { social.nights.check() }
 
     fun run(action: suspend () -> Unit) {
         scope.launch {
@@ -284,8 +293,8 @@ private fun PeopleTab(
     }
 
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        // The next game night (FriendsSlots.kt): nothing until there's one to show.
-        item(key = "next-night") { NextGameNightCard(social, more.onOpenGameNight) }
+        // The next game night (NextGameNightCard.kt): nothing until there's one to show.
+        item(key = "next-night") { NextGameNightCard(social, more.onOpenNight) }
         error?.let { item { Notice(it, warn = true) } }
 
         if (incoming.isNotEmpty()) {
@@ -311,10 +320,16 @@ private fun PeopleTab(
         if (overview.pods.isEmpty()) {
             item { Notice("A pod is a group of friends — your playgroup. Share a deck with a whole pod at once.") }
         } else {
-            item(key = "pods") { PodsRow(overview.pods, leagues) { pod ->
-                    val open = more.onOpenPod
-                    if (open != null) { open(pod) } else { podDialog = pod }
-                } }
+            // A pod opens its chat once the server has pod chat (before that, its members to edit as
+            // before); each card also offers Plan a game night, and Members.
+            item(key = "pods") {
+                PodsRow(
+                    overview.pods, leagues,
+                    onOpen = { pod -> if (podChat) more.onOpenPodChat(pod.id) else podDialog = pod },
+                    onPlan = if (podChat) ({ pod -> more.onPlanGameNight(pod.id) }) else null,
+                    onEdit = if (podChat) ({ pod -> podDialog = pod }) else null
+                )
+            }
         }
 
         item { SectionHeader(if (friends.isEmpty()) "Friends" else "Friends · ${friends.size}") }
