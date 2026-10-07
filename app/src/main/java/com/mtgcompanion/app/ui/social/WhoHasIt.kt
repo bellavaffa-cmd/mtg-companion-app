@@ -41,7 +41,29 @@ import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.theme.LocalAppColors
-import java.util.Locale
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextOverflow
+import com.mtgcompanion.app.data.DeckRepository
+import com.mtgcompanion.app.data.namesDecksUse
+import com.mtgcompanion.app.data.social.CardPrice
+import com.mtgcompanion.app.data.social.TradeMatch
+import com.mtgcompanion.app.data.social.TradeSide
+import com.mtgcompanion.app.data.social.candidatesFor
+import com.mtgcompanion.app.data.social.evenOut
+import com.mtgcompanion.app.data.social.evenOutTitle
+import com.mtgcompanion.app.data.social.fairness
+import com.mtgcompanion.app.data.social.shortSide
+import com.mtgcompanion.app.data.social.unpricedLine
+import com.mtgcompanion.app.data.social.verdictLine
+import kotlin.math.roundToInt
 
 /**
  * "Who has it?": a deck's missing cards ([names]), each with the friends whose shared binders hold a
@@ -130,73 +152,135 @@ fun WhoHasItDialog(social: SocialRepository, names: List<String>, onAsk: (owner:
 }
 
 
+/** The trade matches, asked once a minute at most: every trade on the Trades screen shares one answer. */
+private object TradeMatchCache {
+    private var at = 0L
+    private var list: List<TradeMatch>? = null
+
+    suspend fun get(social: SocialRepository): List<TradeMatch> {
+        list?.takeIf { System.currentTimeMillis() - at < 60_000 }?.let { return it }
+        val fresh = runCatching { social.more.tradeMatches() }.getOrNull() ?: return emptyList()
+        list = fresh
+        at = System.currentTimeMillis()
+        return fresh
+    }
+}
+
 /**
- * Both sides' total value, and whether that's roughly even: within $2, or 10% of the bigger side.
- * Scryfall's prices are a guide (market prices, updated daily), not an appraisal.
+ * Is the trade fair? Both sides' total value at today's prices (data/social/TradeFairness.kt), the
+ * difference, a balance bar, and — when [onAdd] is given and it's uneven — up to three cards from
+ * [friend]'s trade matches that would even it out, one tap to add. Fair is within $2, or a tenth of
+ * the bigger side. Scryfall's prices are a guide (market prices, updated daily), not an appraisal.
+ * The web app's social/TradeValue.tsx.
  */
 @Composable
-fun TradeValue(get: List<TradeCard>, give: List<TradeCard>) {
+fun TradeValue(
+    get: List<TradeCard>,
+    give: List<TradeCard>,
+    social: SocialRepository? = null,
+    /** The other person (a user id): their trade matches give the cards to even it out. */
+    friend: String? = null,
+    friendName: String? = null,
+    addLabel: String = "Add",
+    /** Puts a suggested card on the trade: on the user's ask (WANT) or offer (GIVE). */
+    onAdd: ((TradeSide, TradeCard) -> Unit)? = null
+) {
     if (get.isEmpty() && give.isEmpty()) return
     val colors = LocalAppColors.current
-    val ids = (get + give).map { it.scryfallId }.distinct().sorted()
-    var prices by remember { mutableStateOf<Map<String, Pair<Double?, Double?>>?>(null) }
-    var failed by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val deckRepository = remember { DeckRepository(context.applicationContext) }
+    val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+    val decksUse = remember(decks) { namesDecksUse(decks) }
+    val available = if (social != null) rememberSocialMore(social) else false
+    var match by remember { mutableStateOf<TradeMatch?>(null) }
+    LaunchedEffect(available, friend, onAdd != null) {
+        if (available != true || social == null || friend == null || onAdd == null) return@LaunchedEffect
+        match = TradeMatchCache.get(social).firstOrNull { it.friend == friend }
+    }
+    val extra = remember(match, decksUse) {
+        candidatesFor(TradeSide.WANT, match, decksUse) + candidatesFor(TradeSide.GIVE, match, decksUse)
+    }
+    val ids = (get + give + extra).map { it.scryfallId }.distinct().sorted()
+    var loaded by remember { mutableStateOf<Pair<List<String>, Map<String, CardPrice>>?>(null) }
+    var failed by remember { mutableStateOf<List<String>?>(null) }
     LaunchedEffect(ids) {
-        failed = false
         try {
-            prices = CardRepository().getCardsByIds(ids).associate { it.id to (it.prices?.usd?.toDoubleOrNull() to it.prices?.usdFoil?.toDoubleOrNull()) }
+            val book = CardRepository().getCardsByIds(ids).associate { it.id to CardPrice(it.prices?.usd?.toDoubleOrNull(), it.prices?.usdFoil?.toDoubleOrNull()) }
+            loaded = ids to book
+            failed = null
         } catch (e: Exception) {
-            failed = true
+            failed = ids
         }
     }
-    val p = prices
-    if (p == null) {
-        if (failed) Text("Couldn't load prices.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+    val last = loaded
+    // The last answer still does while it has every card (a card taken off), so the totals don't blink.
+    val prices = when {
+        last != null && (last.first == ids || ids.all { it in last.second }) -> last.second
+        else -> null
+    }
+    if (prices == null) {
+        Text(
+            if (failed == ids) "Couldn't load prices." else "Looking up prices…",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textMuted,
+            modifier = Modifier.padding(top = 8.dp)
+        )
         return
     }
-    fun total(cards: List<TradeCard>): Pair<Double, Int> {
-        var sum = 0.0
-        var unpriced = 0
-        for (c in cards) {
-            val (normal, foil) = p[c.scryfallId] ?: (null to null)
-            val each = if (c.foil) foil ?: normal else normal ?: foil
-            if (each == null) unpriced += c.quantity else sum += each * c.quantity
-        }
-        return sum to unpriced
-    }
-    val (mine, u1) = total(get)
-    val (theirs, u2) = total(give)
+    val f = fairness(get, give, prices)
     // Nothing priced: no verdict to give.
-    if (mine == 0.0 && theirs == 0.0) {
-        Text("There are no prices for these cards, so their value can't be compared.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(top = 8.dp))
+    if (f == null) {
+        val n = (get + give).sumOf { it.quantity }
+        Text(
+            (if (n == 1) "This card has no price" else "None of these $n cards have a price") + ", so their value can't be compared.",
+            style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(top = 8.dp)
+        )
         return
     }
-    val diff = mine - theirs
-    // Within $2 (or a tenth) either way is fair — worked out in US dollars, shown in the chosen currency.
-    val fair = kotlin.math.abs(diff) <= maxOf(2.0, 0.1 * maxOf(mine, theirs))
+    // Worked out in US dollars, shown in the chosen currency.
     val money = rememberMoney()
-    val usd = { v: Double -> money.format(v) }
+    val fmt = { v: Double -> money.format(v) }
+    val side = shortSide(f)
+    val suggestions = if (side != null && onAdd != null) evenOut(f.diff, candidatesFor(side, match, decksUse), get + give, prices) else emptyList()
+    val getPct = (f.getShare * 100).roundToInt()
     Column(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(16.dp)).background(colors.surface2).padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
-        Row { Text("You get", color = colors.textPrimary, modifier = Modifier.weight(1f)); Text(usd(mine), color = colors.textPrimary) }
-        Row { Text("You give", color = colors.textPrimary, modifier = Modifier.weight(1f)); Text(usd(theirs), color = colors.textPrimary) }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
-            Icon(if (fair) Icons.Filled.Balance else Icons.Filled.Warning, contentDescription = null, tint = if (fair) colors.success else colors.accent, modifier = Modifier.size(18.dp))
-            Text(
-                when {
-                    fair && kotlin.math.abs(diff) < 0.005 -> "Even — a fair trade"
-                    fair -> "Within ${usd(kotlin.math.abs(diff))} — a fair trade"
-                    diff > 0 -> "You get ${usd(diff)} more"
-                    else -> "You give ${usd(-diff)} more"
-                },
-                fontWeight = FontWeight.SemiBold,
-                color = colors.textPrimary
-            )
+        Row { Text("You get", color = colors.textPrimary, modifier = Modifier.weight(1f)); Text(fmt(f.get.sum), color = colors.textPrimary, fontWeight = FontWeight.SemiBold) }
+        Row { Text("You give", color = colors.textPrimary, modifier = Modifier.weight(1f)); Text(fmt(f.give.sum), color = colors.textPrimary, fontWeight = FontWeight.SemiBold) }
+        // The balance bar: the user's side (accent) against theirs, the middle marked.
+        Box(
+            Modifier.padding(top = 8.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(50)).background(colors.surface3)
+                .clearAndSetSemantics { contentDescription = "You get $getPct% of the value, you give ${100 - getPct}%" }
+        ) {
+            Box(Modifier.fillMaxWidth(f.getShare.toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(colors.accent))
+            Box(Modifier.align(Alignment.Center).width(2.dp).fillMaxHeight().background(colors.textPrimary.copy(alpha = 0.55f)))
         }
-        if (u1 + u2 > 0) {
-            Text("${u1 + u2} ${if (u1 + u2 == 1) "card has no price and is" else "cards have no price and are"} left out.", style = MaterialTheme.typography.labelSmall, color = colors.textDim)
+        Row(Modifier.clearAndSetSemantics { }) {
+            Text("You get", style = MaterialTheme.typography.labelSmall, color = colors.textDim, modifier = Modifier.weight(1f))
+            Text("You give", style = MaterialTheme.typography.labelSmall, color = colors.textDim)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+            Icon(if (f.fair) Icons.Filled.Balance else Icons.Filled.Warning, contentDescription = null, tint = if (f.fair) colors.success else colors.accent, modifier = Modifier.size(18.dp))
+            Text(verdictLine(f, fmt), fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+        }
+        unpricedLine(f.unpriced)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = colors.textDim) }
+        if (side != null && onAdd != null && suggestions.isNotEmpty()) {
+            Text(evenOutTitle(side, friendName ?: "them"), style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(top = 8.dp))
+            suggestions.forEach { s ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        s.card.name + if (s.card.foil) " · foil" else "",
+                        color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                    )
+                    Text(fmt(s.price), style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                    TextButton(onClick = { onAdd(side, s.card) }) {
+                        Icon(Icons.Filled.Add, contentDescription = null, tint = colors.accent, modifier = Modifier.size(16.dp))
+                        Text(addLabel, color = colors.accent, modifier = Modifier.padding(start = 4.dp))
+                    }
+                }
+            }
         }
     }
 }

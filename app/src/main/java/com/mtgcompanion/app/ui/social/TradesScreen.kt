@@ -83,6 +83,7 @@ import com.mtgcompanion.app.data.social.Trade
 import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.ui.common.CopyBadge
 import com.mtgcompanion.app.data.social.TradeStatus
+import com.mtgcompanion.app.data.social.TradeSide
 import com.mtgcompanion.app.data.social.awaitingMyUpdate
 import com.mtgcompanion.app.data.social.cardTotal
 import com.mtgcompanion.app.data.social.tradeChanges
@@ -247,7 +248,24 @@ private fun TradeCardView(social: SocialRepository, collectionRepository: Collec
         }
         TradeSideList("You give", sides.give)
         TradeSideList("You get", sides.get)
-        if (trade.status == TradeStatus.OPEN) TradeValue(get = sides.get, give = sides.give)
+        if (trade.status == TradeStatus.OPEN) TradeValue(
+            get = sides.get,
+            give = sides.give,
+            social = social,
+            friend = sides.other,
+            friendName = theirName,
+            addLabel = "Counter with it",
+            // A card that evens it out starts a counter-offer: their trade turned around, with the card added.
+            onAdd = if (!incoming) null else { side: TradeSide, card: TradeCard ->
+                social.draft = SocialRepository.TradeDraft(
+                    to = sides.other,
+                    replyTo = trade.id,
+                    want = if (side == TradeSide.WANT) sides.get + card else sides.get,
+                    give = if (side == TradeSide.GIVE) sides.give + card else sides.give
+                )
+                onCounter(sides.other)
+            }
+        )
         trade.message?.let { TradeMessage(if (trade.fromUser == me) "You" else theirName, it) }
         trade.reply?.let { TradeMessage(if (trade.toUser == me) "You" else theirName, it) }
         error?.let { Notice(it, warn = true) }
@@ -556,7 +574,12 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
         item { TradeCardList(draft.want, "Nothing yet — pick from ${friend.displayName}'s shared binders.") { c -> update(draft.copy(want = draft.want.filterNot { it.key == c.key })) } }
         item { SectionHeader(if (draft.give.isEmpty()) "You offer" else "You offer · ${draft.give.cardTotal()}", action = "Pick cards", onAction = { picking = false }) }
         item { TradeCardList(draft.give, "Nothing — or pick cards from your binders to offer.") { c -> update(draft.copy(give = draft.give.filterNot { it.key == c.key })) } }
-        item { TradeValue(get = draft.want, give = draft.give) }
+        item {
+            TradeValue(get = draft.want, give = draft.give, social = social, friend = friendId, friendName = friend.displayName) { side, card ->
+                fun add(list: List<TradeCard>) = if (list.any { it.key == card.key }) list else list + card
+                update(if (side == TradeSide.WANT) draft.copy(want = add(draft.want)) else draft.copy(give = add(draft.give)))
+            }
+        }
         item {
             OutlinedTextField(
                 value = draft.message,

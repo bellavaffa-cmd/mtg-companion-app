@@ -9,6 +9,16 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "trade-fairness",
+        "Is the trade fair?",
+        "Friends › a friend › Propose a trade: pick a dear card of theirs and a cheap one of yours. Under the cards it should show You get and You give at today's prices (in your currency from Settings), a bar with your side filled in against the middle line, and \"You give \$12.00 more\" (or \"Within \$1.50 — a fair trade\" when it's close). When it's uneven and they have cards you want (or want cards you have spare or for trade), \"To even it out…\" lists up to three, closest to the gap first: tap Add and it goes on the right side and the bar moves. A card with no price should say \"1 card has no price and is left out.\" On Trades, a trade a friend sent you shows the same; tapping Counter with it opens a counter-offer with that card added."
+    ),
+    TesterNote(
+        "trade-matches-tonight",
+        "Trade matches tonight",
+        "Play › Game night: add a friend whose wishlist you share and a guest by name. Below the pods, \"Trade matches tonight\" should show the friend with the cards on their wishlist you have spare or marked for trade, each with where it is (\"Trade binder · Page 4, slot 6\", \"Red box\"), and their for-trade cards you want. Propose a trade should open the composer with both sides filled in; Bring them should put the cards on the \"Bring to game night\" pull list and turn into Open pull list. The guest should say \"Add Priya as a friend to see what they want.\" Pack your bag › a bag with that friend in Who's coming should show the same under the checklist."
+    ),
+    TesterNote(
         "zoom-level",
         "Zoomed cards stay level",
         "Search for something, tap a card and swipe through the results: every card should sit at the same height and size, whatever is under it (prices, printings, tags). Long info scrolls under the card instead of pushing it up."

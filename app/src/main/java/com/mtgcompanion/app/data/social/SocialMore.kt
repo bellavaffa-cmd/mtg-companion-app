@@ -63,8 +63,14 @@ data class ForTradeCard(
     fun asTrade() = TradeCard(scryfallId, name, imageUrl, foil = quantity <= 0, quantity = 1, collectionId = itemId, condition = condition)
 }
 
-/** Wishlist matches both ways with one friend: their cards the user wants, the user's they want. */
-data class TradeMatch(val friend: String, val theyHave: List<TradeCard>, val theyWant: List<TradeCard>)
+/**
+ * Wishlist matches both ways with one friend: their cards the user wants, the user's they want.
+ * [marked]: the [TradeCard.key]s of the lines whose copies are marked for trade (the server's
+ * "forTrade" on each card — the web app's MatchCard.forTrade).
+ */
+data class TradeMatch(val friend: String, val theyHave: List<TradeCard>, val theyWant: List<TradeCard>, val marked: Set<String> = emptySet()) {
+    fun isMarked(card: TradeCard): Boolean = card.key in marked
+}
 
 /** One item of the Friends Activity tab, as activity_feed answers it. [cards]: name to picture. */
 data class ActivityItem(
@@ -141,7 +147,16 @@ internal fun parseForTrade(text: String): List<ForTradeCard>? {
 }
 
 internal fun parseTradeMatches(text: String): List<TradeMatch> = jsonArray(text).objects { o ->
-    TradeMatch(o.getString("friend"), parseTradeCards(o.optJSONArray("they_have")), parseTradeCards(o.optJSONArray("they_want")))
+    val have = o.optJSONArray("they_have")
+    val want = o.optJSONArray("they_want")
+    TradeMatch(o.getString("friend"), parseTradeCards(have), parseTradeCards(want), markedKeys(have) + markedKeys(want))
+}
+
+/** The keys of the lines in [a] marked "forTrade". */
+private fun markedKeys(a: JSONArray?): Set<String> {
+    if (a == null) return emptySet()
+    val cards = parseTradeCards(a)
+    return (0 until a.length()).filter { a.getJSONObject(it).optBoolean("forTrade") }.map { cards[it].key }.toSet()
 }
 
 /** A JSON array from a function's answer ("null" or nothing: empty). */

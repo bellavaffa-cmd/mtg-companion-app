@@ -73,6 +73,9 @@ import com.mtgcompanion.app.data.shownLines
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.data.social.TradeMatch
 import com.mtgcompanion.app.data.social.friendsWantHere
+import com.mtgcompanion.app.data.social.TonightPlayer
+import com.mtgcompanion.app.data.social.playersFromNames
+import com.mtgcompanion.app.data.isComing
 import com.mtgcompanion.app.data.tickAll
 import com.mtgcompanion.app.data.toggleTick
 import com.mtgcompanion.app.data.tokensToBring
@@ -241,7 +244,9 @@ fun PackScreen(
     collections: List<Collection>,
     decks: List<Deck>,
     social: SocialRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    /** "Trade matches tonight" for who's coming (ui/social/TradeMatchesTonight.kt). */
+    tonight: (@Composable (players: List<TonightPlayer>) -> Unit)? = null
 ) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
@@ -273,6 +278,11 @@ fun PackScreen(
         }
     }
     var editing by remember { mutableStateOf(false) }
+    // Who's coming, as players: a name that's a friend's gets their account (Trade matches tonight).
+    val coming = remember(bag?.attendees, overview) {
+        val friends = overview?.let { o -> o.acceptedFriends.mapNotNull { f -> o.person(f.userId)?.displayName?.takeIf { it.isNotBlank() }?.let { f.userId to it } } }.orEmpty()
+        playersFromNames(bag?.attendees.orEmpty(), friends, ::isComing)
+    }
 
     val lines = remember(bag, chosen, cards, collections, matches, overview, borrowed) {
         if (bag == null) emptyList() else {
@@ -356,6 +366,7 @@ fun PackScreen(
                 }
             }
             if (bag.comingHome && shown.isEmpty()) item { Text("Nothing was ticked as packed, so there's nothing to check off.", color = colors.textMuted) }
+            if (!bag.comingHome && tonight != null) item(key = "tonight") { tonight(coming) }
             item {
                 Text(
                     "Delete this bag", color = colors.accentLight, style = MaterialTheme.typography.labelLarge,
