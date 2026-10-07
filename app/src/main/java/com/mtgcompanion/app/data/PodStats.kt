@@ -14,7 +14,11 @@ data class PodPlayer(
     val name: String,
     val commander: String? = null,
     val deck: String? = null,
-    val result: String
+    val result: String,
+    /** Where they finished (1 = won, 2 = second…), when it was recorded. For league points (League.kt). */
+    val place: Int? = null,
+    /** Whether they knocked out the first player of the game. */
+    val firstBlood: Boolean = false
 )
 
 data class PodGame(
@@ -167,6 +171,7 @@ fun podGameProblem(players: List<PodPlayer>): String? = when {
     players.any { it.name.trim().length > 40 } -> "Keep names to 40 characters."
     players.map { playerKey(it) }.toSet().size != players.size -> "Someone is in the game twice."
     players.count { it.result == "WIN" } > 1 -> "Only one player can win."
+    players.count { it.firstBlood } > 1 -> "Only one player can draw first blood."
     else -> null
 }
 
@@ -180,6 +185,11 @@ fun podPlayersJson(players: List<PodPlayer>): JSONArray = JSONArray().apply {
                 .put("commander", p.commander ?: JSONObject.NULL)
                 .put("deck", p.deck ?: JSONObject.NULL)
                 .put("result", p.result)
+                .apply {
+                    // Only sent when known: older servers drop keys they don't know.
+                    p.place?.let { put("place", it) }
+                    if (p.firstBlood) put("firstBlood", true)
+                }
         )
     }
 }
@@ -210,7 +220,9 @@ fun parsePodGames(text: String): List<PodGame> {
                     name = p.optString("name"),
                     commander = p.stringOrNull("commander"),
                     deck = p.stringOrNull("deck"),
-                    result = p.optString("result").uppercase()
+                    result = p.optString("result").uppercase(),
+                    place = p.intOrNull("place")?.takeIf { it in 1..10 },
+                    firstBlood = p.optBoolean("firstBlood", false)
                 )
             }
         )

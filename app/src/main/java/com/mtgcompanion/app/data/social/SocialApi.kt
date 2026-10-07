@@ -7,6 +7,12 @@ import com.mtgcompanion.app.data.PodGame
 import com.mtgcompanion.app.data.PodPlayer
 import com.mtgcompanion.app.data.parsePodGames
 import com.mtgcompanion.app.data.podPlayersJson
+import com.mtgcompanion.app.data.LeagueRules
+import com.mtgcompanion.app.data.Season
+import com.mtgcompanion.app.data.LeagueStanding
+import com.mtgcompanion.app.data.parseSeasons
+import com.mtgcompanion.app.data.rulesJson
+import com.mtgcompanion.app.data.standingsJson
 import com.mtgcompanion.app.data.supabase.JSON_MEDIA
 import com.mtgcompanion.app.data.supabase.SupabaseAuth
 import kotlinx.coroutines.Dispatchers
@@ -211,6 +217,37 @@ class SocialApi(private val auth: SupabaseAuth) {
 
     /** Whoever recorded a game, or the pod's owner, deletes it. */
     suspend fun deletePodGame(gameId: String) { call("delete_pod_game", JSONObject().put("p_game", gameId)) }
+
+    // ---- A pod's league seasons (supabase/migrations/20261006060000_pod_seasons.sql) ----
+    // Until that migration is applied these throw SocialException("unavailable"), and the screens
+    // say "Leagues aren't available yet" (League.kt, LeagueView.kt).
+
+    /** A pod's seasons, newest first. */
+    suspend fun podSeasons(podId: String): List<Season> = parseSeasons(call("pod_seasons", JSONObject().put("p_pod", podId)))
+
+    private fun seasonArgs(name: String, startsOn: String, endsOn: String?, maxNights: Int?, rules: LeagueRules): JSONObject =
+        JSONObject().put("p_name", name.trim()).put("p_starts_on", startsOn)
+            .put("p_ends_on", endsOn ?: JSONObject.NULL).put("p_max_nights", maxNights ?: JSONObject.NULL)
+            .put("p_rules", rulesJson(rules))
+
+    /** Starts a season in a pod; answers its id. Days are "YYYY-MM-DD". */
+    suspend fun createPodSeason(podId: String, name: String, startsOn: String, endsOn: String?, maxNights: Int?, rules: LeagueRules): String =
+        call("create_pod_season", seasonArgs(name, startsOn, endsOn, maxNights, rules).put("p_pod", podId)).trim().trim('"')
+
+    suspend fun updatePodSeason(seasonId: String, name: String, startsOn: String, endsOn: String?, maxNights: Int?, rules: LeagueRules) {
+        call("update_pod_season", seasonArgs(name, startsOn, endsOn, maxNights, rules).put("p_season", seasonId))
+    }
+
+    /** Ends a season, keeping its final table and champion as they are now. */
+    suspend fun endPodSeason(seasonId: String, endedAt: Long, champion: String?, standings: List<LeagueStanding>) {
+        call(
+            "end_pod_season",
+            JSONObject().put("p_season", seasonId)
+                .put("p_ended_at", java.time.Instant.ofEpochMilli(endedAt).toString())
+                .put("p_champion", champion ?: JSONObject.NULL)
+                .put("p_standings", standingsJson(standings))
+        )
+    }
 
     // ---- Loans to friends (supabase/migrations/20261006010000_loans.sql) ----
     // The loan itself is the library's (Loans.kt); these only let the friend see it. Every call is
@@ -450,6 +487,12 @@ class SocialApi(private val auth: SupabaseAuth) {
             "not_in_pod" to "You're not in that pod any more.",
             "bad_players" to "Check the players: 2 to 10, each with a name, and one winner at most.",
             "too_many_games" to "This pod has 5,000 games recorded — delete some old ones first.",
+            // supabase/migrations/20261006060000_pod_seasons.sql (League.kt)
+            "season_running" to "This pod already has a season running — end it first.",
+            "season_over" to "That season has ended.",
+            "not_season_owner" to "Only whoever started the season, or the pod's owner, can change it.",
+            "bad_season" to "Check the season: a name, the day it starts, and points from 0 to 10.",
+            "too_many_seasons" to "This pod has 100 seasons already.",
             "too_many_loans" to "You have 500 loans open — get some cards back first.",
             // supabase/migrations/20261006020000_social_more.sql (see SocialMore.kt)
             "unavailable" to "Not available yet.",

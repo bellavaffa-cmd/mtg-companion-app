@@ -9,6 +9,11 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.social.Overview
 import com.mtgcompanion.app.data.social.Profile
+import com.mtgcompanion.app.data.Season
+import com.mtgcompanion.app.data.runningSeason
+import com.mtgcompanion.app.data.social.SocialException
+import kotlinx.coroutines.CancellationException
+import java.time.LocalDate
 import com.mtgcompanion.app.data.social.SocialRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -130,6 +135,83 @@ class GameNightViewModel(
     }
 
     fun startNewNight() = GameNightStore.startNewNight()
+
+    // ---- The league (League.kt): "This counts for Season 2" ----
+
+    /** A pod of the user's with a season on today. */
+    data class NightLeague(val podId: String, val podName: String, val podMembers: List<String>, val season: Season)
+
+    private val _leagues = MutableStateFlow<List<NightLeague>>(emptyList())
+    /** The user's pods with a season on today; empty when none (or leagues aren't available yet). */
+    val leagues: StateFlow<List<NightLeague>> = _leagues.asStateFlow()
+    private val _leagueNote = MutableStateFlow<String?>(null)
+    /** What sending the night's results said. */
+    val leagueNote: StateFlow<String?> = _leagueNote.asStateFlow()
+    private val _sendingToLeague = MutableStateFlow(false)
+    val sendingToLeague: StateFlow<Boolean> = _sendingToLeague.asStateFlow()
+
+    /** Looks for running seasons in the user's pods. Quietly finds none when offline or not available yet. */
+    fun loadLeagues() {
+        val o = social.overview.value ?: return
+        if (o.me == null || o.pods.isEmpty()) return
+        viewModelScope.launch {
+            val today = LocalDate.now().toString()
+            val found = mutableListOf<NightLeague>()
+            for (pod in o.pods) {
+                val seasons = try {
+                    social.api.podSeasons(pod.id)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: SocialException) {
+                    if (e.code == "unavailable") break else continue
+                } catch (e: Exception) {
+                    continue
+                }
+                val s = runningSeason(seasons) ?: continue
+                if (s.startsOn <= today && (s.endsOn == null || s.endsOn >= today)) found += NightLeague(pod.id, pod.name, pod.members, s)
+            }
+            _leagues.value = found
+        }
+    }
+
+    /**
+     * Sends every pod's result tonight to [league]'s pod as a pod game, so it counts for its season.
+     * Each is sent under [nightResultId]: sending again, or from another phone, updates the same game.
+     */
+    fun sendToLeague(league: NightLeague) {
+        val me = social.overview.value?.me ?: return
+        if (_sendingToLeague.value) return
+        _sendingToLeague.value = true
+        _leagueNote.value = null
+        viewModelScope.launch {
+            val n = night
+            var sent = 0
+            var problem: String? = null
+            for (pod in n.pods) {
+                val players = nightPodPlayers(pod, n.players, podWinner(pod, n.players, tableGames.value), me.userId) ?: continue
+                try {
+                    social.api.recordPodGame(
+                        league.podId,
+                        nightResultId(n.id, pod.id),
+                        pod.startedAt ?: n.createdAt,
+                        if (n.format == NightFormat.COMMANDER) "COMMANDER" else "",
+                        null,
+                        null,
+                        players
+                    )
+                    sent++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    problem = e.message ?: "Something went wrong."
+                    break
+                }
+            }
+            _leagueNote.value = problem ?: if (sent == 0) "No results yet — pick each pod's winner first."
+            else "Sent ${if (sent == 1) "1 game" else "$sent games"} to ${league.season.name} in ${league.podName}."
+            _sendingToLeague.value = false
+        }
+    }
 
     class Factory(
         private val context: Context,

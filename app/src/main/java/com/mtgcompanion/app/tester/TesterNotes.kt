@@ -9,6 +9,11 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "pod-league",
+        "League mode for your playgroup",
+        "Play › Playgroup, pick a pod: under the pod's name, League › Start Season 1. Pick when it ends (after 8 game nights, on a date, or when you end it) and the points (Standard: 3 for a win, 1 for second, 1 for first blood; Wins only; Everyone scores; or change any number). Record a game: with Standard, it should ask for Second place and First blood too. The table should show points, games, wins, win % and streak (\"W2\"), and Points per game night. Someone else in the pod should see the same table on their phone or on manabind.com. End season: it should say who is champion (\"Season 1 champion: Priya\") and move to Past seasons with its final table, and Start Season 2 should come back. Game night with a season running: \"This counts for Season 1\" at the top; pick winners, then Send results to the league — the games should turn up in the pod. Until the server is updated it should say \"Leagues aren't available yet\"."
+    ),
+    TesterNote(
         "zoom-level",
         "Zoomed cards stay level",
         "Search for something, tap a card and swipe through the results: every card should sit at the same height and size, whatever is under it (prices, printings, tags). Long info scrolls under the card instead of pushing it up."

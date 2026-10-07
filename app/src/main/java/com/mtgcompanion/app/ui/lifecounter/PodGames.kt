@@ -63,6 +63,10 @@ import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.PLAYGROUP_MIN_GAMES
 import com.mtgcompanion.app.data.PodGame
 import com.mtgcompanion.app.data.PodPlayer
+import com.mtgcompanion.app.data.LeagueRules
+import com.mtgcompanion.app.data.Season
+import com.mtgcompanion.app.data.runningSeason
+import com.mtgcompanion.app.data.social.SocialException
 import com.mtgcompanion.app.data.canDeletePodGame
 import com.mtgcompanion.app.data.deckResultOf
 import com.mtgcompanion.app.data.podGameProblem
@@ -117,6 +121,24 @@ fun PodView(
     var recording by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<PodGame?>(null) }
     val scope = rememberCoroutineScope()
+    // The pod's league seasons (LeagueView.kt): null while loading.
+    var seasons by remember(pod.id) { mutableStateOf<List<Season>?>(null) }
+    var leagueUnavailable by remember(pod.id) { mutableStateOf(false) }
+    var leagueError by remember(pod.id) { mutableStateOf<String?>(null) }
+    var leagueReload by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(pod.id, reload, leagueReload) {
+        try {
+            seasons = social.api.podSeasons(pod.id)
+            leagueError = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SocialException) {
+            if (e.code == "unavailable") leagueUnavailable = true else leagueError = e.message
+        } catch (e: Exception) {
+            leagueError = e.message ?: "Something went wrong."
+        }
+    }
 
     // A different pod (or a reload) cancels the last load, so an old answer never lands.
     LaunchedEffect(pod.id, reload) {
@@ -154,6 +176,9 @@ fun PodView(
             }
         }
         val current = games
+        if (current != null) item {
+            LeagueSection(social, overview, pod, me, current, seasons, leagueUnavailable, leagueError) { leagueReload++ }
+        }
         when {
             current == null && error != null -> item {
                 PodEmpty(Icons.Filled.CloudOff, error.orEmpty()) { LineButton("Try again", { reload++ }, enabled = !loading) }
@@ -233,6 +258,7 @@ fun PodView(
             pod = pod,
             me = me,
             decks = decks,
+            league = seasons?.let { runningSeason(it) }?.rules,
             onRecorded = { game, deckId ->
                 recording = false
                 if (deckId != null && game != null) onAddGameResult(deckId, game)
@@ -375,6 +401,8 @@ private fun RecordGameDialog(
     pod: Pod,
     me: Profile,
     decks: List<Deck>,
+    /** The running season's rules: when they give points for second place or first blood, those can be picked. */
+    league: LeagueRules?,
     onRecorded: (GameResult?, String?) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -385,6 +413,9 @@ private fun RecordGameDialog(
     var guest by remember { mutableStateOf("") }
     // A seat's id, or DRAW.
     var winner by remember { mutableStateOf("") }
+    // Seat ids, or "" for nobody.
+    var second by remember { mutableStateOf("") }
+    var firstBlood by remember { mutableStateOf("") }
     var format by remember { mutableStateOf(GameMode.COMMANDER) }
     var turns by remember { mutableStateOf("") }
     var minutes by remember { mutableStateOf("") }
@@ -404,6 +435,8 @@ private fun RecordGameDialog(
         if (seat != null) {
             seats = seats.filter { it.id != seat.id }
             if (winner == seat.id) winner = ""
+            if (second == seat.id) second = ""
+            if (firstBlood == seat.id) firstBlood = ""
         } else {
             seats = seats + Seat(userId = userId, name = memberName(userId))
         }
@@ -423,7 +456,14 @@ private fun RecordGameDialog(
                 name = s.name.trim(),
                 commander = s.commander.trim().ifEmpty { null },
                 deck = s.deck.trim().ifEmpty { null },
-                result = if (winner == DRAW) "DRAW" else if (winner == s.id) "WIN" else "LOSS"
+                result = if (winner == DRAW) "DRAW" else if (winner == s.id) "WIN" else "LOSS",
+                place = when {
+                    winner == DRAW -> null
+                    winner == s.id -> if (second.isNotEmpty()) 1 else null
+                    second == s.id -> 2
+                    else -> null
+                },
+                firstBlood = firstBlood == s.id
             )
         }
         val problem = if (winner.isEmpty()) "Pick who won, or Draw." else podGameProblem(players)
@@ -493,6 +533,8 @@ private fun RecordGameDialog(
                                 if (s.userId != null) toggleMember(s.userId) else {
                                     seats = seats.filter { it.id != s.id }
                                     if (winner == s.id) winner = ""
+                                    if (second == s.id) second = ""
+                                    if (firstBlood == s.id) firstBlood = ""
                                 }
                             }) { Icon(Icons.Filled.Close, contentDescription = "Remove ${s.name}", tint = colors.textDim) }
                         }
@@ -539,8 +581,27 @@ private fun RecordGameDialog(
                     options = seats.map { it.id to it.name } + (DRAW to "Draw"),
                     selected = winner,
                     placeholder = "Pick the winner",
-                    onSelect = { winner = it }
+                    onSelect = { winner = it; if (second == it) second = "" }
                 )
+                // Only asked for while the pod's running season gives points for them.
+                if (league != null && league.second > 0 && winner.isNotEmpty() && winner != DRAW) {
+                    Spacer(Modifier.height(14.dp))
+                    Dropdown(
+                        label = "Second place (optional)",
+                        options = listOf("" to "Not recorded") + seats.filter { it.id != winner }.map { it.id to it.name },
+                        selected = second,
+                        onSelect = { second = it }
+                    )
+                }
+                if (league != null && league.firstBlood > 0) {
+                    Spacer(Modifier.height(14.dp))
+                    Dropdown(
+                        label = "First blood (optional)",
+                        options = listOf("" to "Not recorded") + seats.map { it.id to it.name },
+                        selected = firstBlood,
+                        onSelect = { firstBlood = it }
+                    )
+                }
                 Spacer(Modifier.height(14.dp))
                 Dropdown(
                     label = "Format",
