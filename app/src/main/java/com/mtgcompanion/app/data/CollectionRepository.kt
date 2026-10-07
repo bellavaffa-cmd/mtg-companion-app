@@ -200,14 +200,22 @@ class CollectionRepository(private val context: Context) {
     }
 
     /** These entries with [added] merged in: copies of a card already here are added on. */
-    private fun List<CollectionEntry>.mergeIn(added: List<CollectionEntry>): List<CollectionEntry> =
-        added.fold(this) { list, entry ->
-            if (list.any { it.scryfallId == entry.scryfallId }) {
-                list.map { if (it.scryfallId != entry.scryfallId) it else it.withCopiesOf(entry) }
+    private fun List<CollectionEntry>.mergeIn(added: List<CollectionEntry>): List<CollectionEntry> {
+        // By printing, so importing thousands of cards doesn't search the binder once per card.
+        val out = toMutableList()
+        val at = HashMap<String, Int>()
+        out.forEachIndexed { i, e -> at.putIfAbsent(e.scryfallId, i) }
+        for (entry in added) {
+            val i = at[entry.scryfallId]
+            if (i == null) {
+                at[entry.scryfallId] = out.size
+                out += entry
             } else {
-                list + entry
+                out[i] = out[i].withCopiesOf(entry)
             }
         }
+        return out
+    }
 
     /** Adds cards to the Unsorted pile (owned, not in a binder yet), making the pile if there isn't one. */
     suspend fun addUnsorted(added: List<CollectionEntry>) {
@@ -258,13 +266,36 @@ class CollectionRepository(private val context: Context) {
         }
     }
 
+    /**
+     * A restored backup's binders (Backup.kt): [transform] gets the binders as they are and answers them
+     * restored. Ones that come back are no longer counted as deleted, so the sync sends them again.
+     */
+    suspend fun restoreBackup(restored: Set<String>, transform: (List<Collection>) -> List<Collection>) {
+        update(undeleting = restored, transform = transform)
+    }
+
     /** Writes what a sync pulled, as a change to the binders as they are at that moment. */
     suspend fun applySync(transform: (List<Collection>) -> List<Collection>) {
         update(transform = transform)
     }
 
+    /**
+     * The stored JSON read once per change, not once for each screen and flow watching it: a big
+     * collection is megabytes of JSON, and a dozen collectors each parsing every change was most of the
+     * time a change took. Everyone gets the same (immutable) objects.
+     */
+    @Volatile private var parsed: Pair<String, CollectionStore?>? = null
+
+    private fun storeOf(json: String?): CollectionStore? {
+        if (json == null) return null
+        parsed?.let { (was, store) -> if (was === json || was == json) return store }
+        val store = runCatching { adapter.fromJson(json) }.getOrNull()
+        parsed = json to store
+        return store
+    }
+
     private fun readCollections(prefs: Preferences): List<Collection> {
-        val store = prefs[key]?.let { runCatching { adapter.fromJson(it) }.getOrNull() } ?: return emptyList()
+        val store = storeOf(prefs[key]) ?: return emptyList()
         if (store.collections.isNotEmpty()) return store.collections
         // Migrate a legacy single-collection store into one default collection.
         val legacy = store.entries.orEmpty()
@@ -308,17 +339,18 @@ class CollectionRepository(private val context: Context) {
 
     /** Which binders the user has deleted here — see DeckRepository.deletedFlow. */
     val deletedFlow: Flow<Map<String, Long>> = context.collectionDataStore.data.map { prefs ->
-        prefs[key]?.let { json -> runCatching { adapter.fromJson(json)?.deleted }.getOrNull() } ?: emptyMap()
+        storeOf(prefs[key])?.deleted ?: emptyMap()
     }
 
     private suspend fun update(
         deleting: String? = null,
+        undeleting: Set<String> = emptySet(),
         tagging: Pair<String, List<String>>? = null,
         transform: (List<Collection>) -> List<Collection>
     ) {
         context.collectionDataStore.edit { prefs ->
             val current = readCollections(prefs)
-            val store = prefs[key]?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
+            val store = storeOf(prefs[key])
             val next = transform(current)
             // See DeckRepository.update: one place where a copy gets back the tags it already had.
             val was = store?.userTags.orEmpty().let { if (tagging == null) it else it.ledgerWith(tagging.first, tagging.second) }
@@ -326,7 +358,7 @@ class CollectionRepository(private val context: Context) {
             prefs[key] = adapter.toJson(
                 CollectionStore(
                     collections = next.withRememberedUserTagsIn(ledger),
-                    deleted = noteDeleted(store?.deleted, deleting),
+                    deleted = noteDeleted(store?.deleted, deleting) - undeleting,
                     userTags = ledger
                 )
             )

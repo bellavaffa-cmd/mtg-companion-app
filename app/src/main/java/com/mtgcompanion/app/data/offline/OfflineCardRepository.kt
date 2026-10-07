@@ -204,6 +204,24 @@ class OfflineCardRepository(context: Context) {
         results
     }
 
+    /**
+     * Which of [names] (lower case) the offline card database has — for Settings › Data and speed's
+     * "Card data saved for offline". Empty when it hasn't been downloaded.
+     */
+    suspend fun savedNames(names: Collection<String>): Set<String> = withContext(Dispatchers.IO) {
+        if (!_status.value.hasData || names.isEmpty()) return@withContext emptySet()
+        val out = HashSet<String>()
+        runCatching {
+            names.distinct().chunked(500).forEach { chunk ->
+                val marks = chunk.joinToString(",") { "?" }
+                store.readableDatabase.rawQuery("SELECT name_lower FROM cards WHERE name_lower IN ($marks)", chunk.toTypedArray()).use { cursor ->
+                    while (cursor.moveToNext()) out += cursor.getString(0)
+                }
+            }
+        }
+        out
+    }
+
     /** Exact-name lookup for offline card detail. */
     suspend fun getByName(name: String): ScryfallCard? = withContext(Dispatchers.IO) {
         store.readableDatabase

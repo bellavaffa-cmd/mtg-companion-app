@@ -109,12 +109,35 @@ fun rememberedUserTags(
 }
 
 /** [decks] with what [ledger] knows written onto every copy. */
-fun List<Deck>.withRememberedUserTags(ledger: Map<String, List<String>>): List<Deck> =
-    ledger.entries.fold(this) { decks, (id, tags) -> decks.map { it.withUserTags(id, tags) } }
+fun List<Deck>.withRememberedUserTags(ledger: Map<String, List<String>>): List<Deck> {
+    if (ledger.isEmpty()) return this
+    // One pass over every copy, not one per tagged printing: every write comes through here, and a
+    // big collection has thousands of each.
+    fun one(e: DeckCardEntry): DeckCardEntry = ledger[e.scryfallId]?.let { e.tagged(it) } ?: e
+    fun all(list: List<DeckCardEntry>): List<DeckCardEntry> {
+        val out = list.map { one(it) }
+        return if (out.indices.all { out[it] === list[it] }) list else out
+    }
+    return map { d ->
+        val commander = d.commander?.let { one(it) }
+        val partner = d.partnerCommander?.let { one(it) }
+        val cards = all(d.cards)
+        val considering = all(d.considering)
+        val sideboard = all(d.sideboard)
+        if (commander === d.commander && partner === d.partnerCommander && cards === d.cards && considering === d.considering && sideboard === d.sideboard) d
+        else d.copy(commander = commander, partnerCommander = partner, cards = cards, considering = considering, sideboard = sideboard)
+    }
+}
 
 /** [collections] with what [ledger] knows written onto every copy. */
-fun List<Collection>.withRememberedUserTagsIn(ledger: Map<String, List<String>>): List<Collection> =
-    ledger.entries.fold(this) { cols, (id, tags) -> cols.map { it.withUserTags(id, tags) } }
+fun List<Collection>.withRememberedUserTagsIn(ledger: Map<String, List<String>>): List<Collection> {
+    if (ledger.isEmpty()) return this
+    // One pass, as for the decks above.
+    return map { c ->
+        val entries = c.entries.map { e -> ledger[e.scryfallId]?.let { tags -> if (e.userTags == tags) e else e.copy(userTags = tags) } ?: e }
+        if (entries.indices.all { entries[it] === c.entries[it] }) c else c.copy(entries = entries)
+    }
+}
 
 /** What a store should remember once [tags] are set on [scryfallId] — empty forgets it. */
 fun Map<String, List<String>>.ledgerWith(scryfallId: String, tags: List<String>): Map<String, List<String>> =

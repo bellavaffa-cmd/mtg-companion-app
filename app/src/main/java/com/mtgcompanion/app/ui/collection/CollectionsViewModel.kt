@@ -54,6 +54,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
+import com.mtgcompanion.app.data.DataAndSpeed
 import kotlinx.coroutines.launch
 
 /** One card aggregated across every collection and deck, with the total copies and where they are. */
@@ -101,41 +104,23 @@ class CollectionsViewModel(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
-    /** Every card owned anywhere (all collections + all decks), deduped by card and summed. */
+    /** Whether All cards has been worked out since this screen opened (for Data and speed's timing). */
+    private val opened = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Every card owned anywhere (all collections + all decks), deduped by card and summed (AllCards.kt).
+     * Worked out off the main thread: a big collection is tens of thousands of copies. How long it took
+     * when the screen opened is what Settings › Data and speed shows as "Opening All cards".
+     */
     val allCards: StateFlow<List<AllCardEntry>> =
         combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
-            // Accumulate total copies plus the list of binders/decks holding each card.
-            class Acc(val name: String, val imageUrl: String?, val backImageUrl: String?, val tags: List<String>) {
-                var total = 0
-                var proxies = 0
-                val sources = mutableListOf<CardSource>()
-            }
-            val byCard = LinkedHashMap<String, Acc>()
-            fun add(id: String, name: String, imageUrl: String?, backImageUrl: String?, tags: List<String>, qty: Int, source: CardSource, proxy: Boolean = false) {
-                if (qty <= 0) return
-                val acc = byCard.getOrPut(id) { Acc(name, imageUrl, backImageUrl, tags) }
-                acc.total += qty
-                if (proxy) acc.proxies += qty
-                acc.sources += source
-            }
-            // Wishlist binders track cards not yet owned, so they don't count toward "owned" totals.
-            collections.filter { it.kind == CollectionType.OWNED }.forEach { collection ->
-                collection.entries.forEach {
-                    val qty = it.quantity + it.foilQuantity
-                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, qty, CardSource(SourceKind.BINDER, collection.id, collection.name, qty))
+            val started = System.nanoTime()
+            allCardEntries(collections, decks).also {
+                if (it.isNotEmpty() && opened.compareAndSet(false, true)) {
+                    DataAndSpeed.noteAllCardsOpened((System.nanoTime() - started) / 1_000_000L, it.size)
                 }
             }
-            decks.forEach { deck ->
-                deck.cards.forEach {
-                    // A deck marked Proxy is proxies until real copies are swapped in, card by card.
-                    val proxies = proxyCopies(deck, it)
-                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, it.quantity - proxies, CardSource(SourceKind.DECK, deck.id, deck.name, it.quantity - proxies))
-                    add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, proxies, CardSource(SourceKind.DECK, deck.id, deck.name, proxies), proxy = true)
-                }
-            }
-            byCard.map { (id, acc) -> AllCardEntry(id, acc.name, acc.imageUrl, acc.total, acc.proxies, acc.sources.toList(), acc.backImageUrl, acc.tags) }
-                .sortedBy { it.name.lowercase() }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         // All cards is searched by tag too, and lists the decks' cards as well as the binders'.
@@ -177,6 +162,7 @@ class CollectionsViewModel(
     /** scryfallId -> the copies owned (finish, condition, language, binders, decks), for Your copies. */
     val copyFacts: StateFlow<Map<String, CopyFacts>> =
         combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks -> copyFactsOf(collections, decks) }
+            .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /** The filters saved by name on Advanced filters, kept on this device. */
@@ -291,13 +277,13 @@ class CollectionsViewModel(
     val spares: StateFlow<List<Spare>> =
         combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
             spares(collections, decks)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** How many cards the decks use more copies of than the user owns (see SpreadThin.kt); null with no decks. */
     val thinCount: StateFlow<Int?> =
         combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
             if (decks.isEmpty()) null else spreadThin(collections, decks).size
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** Binders picked cards can be gathered into: owned ones and the Unsorted pile, not wishlists. */
     val binderTargets: StateFlow<List<MoveTarget>> = repository.collectionsFlow
@@ -379,7 +365,8 @@ class CollectionsViewModel(
         val byCard = owned.groupBy { it.scryfallId }.map { (_, copies) ->
             copies.first().copy(quantity = copies.sumOf { it.quantity }, foilQuantity = copies.sumOf { it.foilQuantity })
         }
-        val deckOnly = allCards.value.filter { it.scryfallId in ids && byCard.none { e -> e.scryfallId == it.scryfallId } }
+        val inBinders = byCard.mapTo(HashSet()) { it.scryfallId }
+        val deckOnly = allCards.value.filter { it.scryfallId in ids && it.scryfallId !in inBinders }
             .map { CollectionEntry(it.scryfallId, it.name, it.imageUrl, quantity = it.total) }
         val entries = byCard + deckOnly
         if (!exact) return buildCardListText(entries)
@@ -395,7 +382,8 @@ class CollectionsViewModel(
      */
     suspend fun exportCsv(ids: Set<String>): String {
         val owned = repository.collectionsFlow.first().filter { it.kind == CollectionType.OWNED }.flatMap { it.entries }.filter { it.scryfallId in ids }
-        val deckOnly = allCards.value.filter { it.scryfallId in ids && owned.none { e -> e.scryfallId == it.scryfallId } }
+        val inBinders = owned.mapTo(HashSet()) { it.scryfallId }
+        val deckOnly = allCards.value.filter { it.scryfallId in ids && it.scryfallId !in inBinders }
             .map { CollectionEntry(it.scryfallId, it.name, it.imageUrl, quantity = it.total - it.proxies) }
             .filter { it.quantity > 0 }
         val entries = owned + deckOnly

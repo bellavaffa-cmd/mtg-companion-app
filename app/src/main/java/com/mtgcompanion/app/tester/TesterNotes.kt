@@ -9,6 +9,21 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "data-and-speed",
+        "Data and speed",
+        "Settings › Data and speed (or Collection › Storage › Data and speed): it should show your copies, \"Card data saved for offline\" (how many of your printings the Offline Search database has — download it under Settings › Offline Search if it says 0), \"Opening All cards\" (open the Collection's All cards first; under a second shows green) and when it last synced (\"2 min ago\", or Not signed in)."
+    ),
+    TesterNote(
+        "backup",
+        "Save a backup, and restore it",
+        "Settings › Data and speed › Save a backup: pick where to keep the file (Downloads or Drive). Change something — rename a deck, move a card to another place, delete a binder — then Restore and pick the file. It should say when the backup was made and what's in it (decks, binders, copies in places, loans, sealed, graded, gear, deck history, photos). Merge: the renamed deck keeps its new name, the deleted binder comes back, nothing you've changed since is lost. Try Replace on another go: the deck goes back to its old name, settings too. Signed in, the restored binder should turn up on manabind.com too. A backup saved on manabind.com should restore here as well."
+    ),
+    TesterNote(
+        "big-collections",
+        "Big collections feel quick",
+        "Behind the scenes, this round tests every screen with a 25,000-card collection and fixes anything slow, so big collections feel as quick as small ones. With a big collection (import a long list), open All cards, search it, use the filters, open Storage, Upkeep and Value by place, and add a card: none should pause or stutter."
+    ),
+    TesterNote(
         "sealed",
         "Sealed product",
         "Collection › Storage › Sealed › + Add sealed product: type a set (\"dusk\") — it should offer Duskmourn Play Booster Box, Collector Box, Bundle…; type a precon (\"Blame Game\") for \"Precon: Blame Game\"; or keep any words as your own product. Set how many, the place, paid each and worth now each, Save. The row should read \"×2 · Cupboard, hall · paid \$210 each\" with the value and +13% (green) or −9% (orange), the total at the top, and \"value you entered\" where there's no price paid. Open a booster box: one should come off and the scanner open as Sorting a new pile, named after the box. Open the precon: one should come off and a deck with its list filled in should open. Value by place should count them, \"2 sealed\". Check the list on your other device and on manabind.com."

@@ -194,4 +194,29 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    /** The settings worth keeping in a backup (Backup.kt), by key, as text. */
+    suspend fun backupValues(): Map<String, String> {
+        val prefs = context.dataStore.data.first()
+        val out = LinkedHashMap<String, String>()
+        for (k in backupStringKeys) prefs[k]?.let { out[k.name] = it }
+        prefs[gridColumnsKey]?.let { out[gridColumnsKey.name] = it.toString() }
+        prefs[statsPanelsKey]?.let { out[statsPanelsKey.name] = it.joinToString("\n") }
+        return out
+    }
+
+    /** Puts back the settings a backup kept ([backupValues]); ones it doesn't have stay as they are. */
+    suspend fun restoreValues(values: Map<String, String>) {
+        context.dataStore.edit { prefs ->
+            for (k in backupStringKeys) values[k.name]?.let { prefs[k] = it }
+            values[gridColumnsKey.name]?.toIntOrNull()?.let { prefs[gridColumnsKey] = it.coerceIn(GRID_COLUMNS_RANGE) }
+            values[statsPanelsKey.name]?.let { v -> prefs[statsPanelsKey] = v.split("\n").filter { it.isNotEmpty() }.toSet() }
+        }
+    }
+
+    /** Appearance, card display, prices, the scanner's mode, the decks' grouping and the saved filters. */
+    private val backupStringKeys
+        get() = listOf(
+            searchViewModeKey, scanModeKey, collectionViewModeKey, deckViewModeKey, deckGroupingKey, allCardsViewModeKey,
+            recViewModeKey, appBrightnessKey, accentThemeKey, currencyKey, savedFiltersKey
+        )
 }

@@ -52,9 +52,10 @@ data class Space(val placeId: String, val used: Int, val size: Int) {
 }
 
 /** How full [place] is, or null when it has no size. */
-fun spaceOf(place: StoragePlace, collections: List<Collection>): Space? {
+fun spaceOf(place: StoragePlace, collections: List<Collection>, cards: List<PlacedCard>? = null): Space? {
     val size = placeSize(place) ?: return null
-    return Space(place.id, spaceUsed(place, cardsIn(collections, place.id)), size)
+    // [cards]: the place's own copies when the caller has them already (cardsByPlace), in any order.
+    return Space(place.id, spaceUsed(place, cards ?: cardsIn(collections, place.id)), size)
 }
 
 /** "96% full · 612 of 640" when nearly full, else "288 of 360 pockets" (a binder) or "312 of 640". */

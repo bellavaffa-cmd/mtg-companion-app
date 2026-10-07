@@ -175,6 +175,8 @@ fun CollectionsScreen(
     onOpenHousehold: () -> Unit = {},
     /** The Storage page's Gear (GearScreen.kt). */
     onOpenGear: () -> Unit = {},
+    /** Settings › Data and speed (the backup). */
+    onOpenDataAndSpeed: () -> Unit = {},
     /** The empty pages' "Scan cards". */
     onOpenScan: () -> Unit = {}
 ) {
@@ -374,7 +376,8 @@ fun CollectionsScreen(
                         onSetUp = onSetUpStorage,
                         onOpenUpkeep = onOpenUpkeep,
                         onOpenHousehold = onOpenHousehold,
-                        onOpenGear = onOpenGear
+                        onOpenGear = onOpenGear,
+                        onOpenDataAndSpeed = onOpenDataAndSpeed
                     )
                 } else {
                     CollectionsTab(

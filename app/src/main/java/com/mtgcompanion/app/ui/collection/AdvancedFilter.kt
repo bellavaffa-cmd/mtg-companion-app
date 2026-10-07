@@ -6,6 +6,7 @@ import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.data.NO_PLACE
+import com.mtgcompanion.app.data.placeChains
 import com.mtgcompanion.app.data.placeFactsOf
 import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.languageName
@@ -274,6 +275,7 @@ fun copyFactsOf(collections: List<Collection>, decks: List<Deck>): Map<String, C
     val out = LinkedHashMap<String, Acc>()
     fun MutableList<String>.addOnce(v: String) { if (v !in this) add(v) }
     val storage = placesOf(collections)
+    val chains = placeChains(storage)
     for (c in collections) {
         if (c.kind != CollectionType.OWNED) continue
         for (e in c.entries) {
@@ -286,7 +288,7 @@ fun copyFactsOf(collections: List<Collection>, decks: List<Deck>): Map<String, C
             e.condition?.takeIf { it.isNotEmpty() }?.let { f.conditions.addOnce(it) }
             f.languages.addOnce(e.language?.takeIf { it.isNotEmpty() } ?: "en")
             f.binders.addOnce(c.id)
-            val (holding, unplaced) = placeFactsOf(e, storage)
+            val (holding, unplaced) = placeFactsOf(e, storage, chains)
             holding.forEach { f.places.addOnce(it) }
             f.unplaced += unplaced
         }

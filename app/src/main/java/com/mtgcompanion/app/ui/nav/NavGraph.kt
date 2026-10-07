@@ -1295,7 +1295,8 @@ fun MtgNavGraph(
                     onSetUpStorage = { navController.navigate(Routes.STORAGE_SETUP) },
                     onOpenUpkeep = { navController.navigate(Routes.UPKEEP) },
                     onOpenHousehold = { navController.navigate(Routes.household()) },
-                    onOpenGear = { navController.navigate(Routes.GEAR) }
+                    onOpenGear = { navController.navigate(Routes.GEAR) },
+                    onOpenDataAndSpeed = { navController.navigate(Routes.settingsSection(SettingsSection.DATA.id)) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(
