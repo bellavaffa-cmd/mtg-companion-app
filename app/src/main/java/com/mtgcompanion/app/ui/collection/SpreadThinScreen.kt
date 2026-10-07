@@ -1,6 +1,8 @@
 package com.mtgcompanion.app.ui.collection
 
 import android.widget.Toast
+import com.mtgcompanion.app.data.picksFromThin
+import com.mtgcompanion.app.ui.decks.ProxyPrintDialog
 import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -90,6 +93,7 @@ fun SpreadThinScreen(
     val ids = remember(cards) { cards.flatMap { it.scryfallIds }.distinct().sorted() }
     // scryfallId → non-foil price in US dollars; null until they've loaded.
     var prices by remember { mutableStateOf<Map<String, Double?>?>(null) }
+    var printing by remember { mutableStateOf(false) }
     LaunchedEffect(ids) {
         if (ids.isEmpty()) { prices = emptyMap(); return@LaunchedEffect }
         prices = runCatching { CardRepository().getCardsByIds(ids).associate { it.id to it.prices?.usd?.toDoubleOrNull() } }.getOrDefault(emptyMap())
@@ -172,6 +176,13 @@ fun SpreadThinScreen(
                     }
                 }
             }
+            item {
+                OutlinedButton(onClick = { printing = true }) {
+                    Icon(Icons.Filled.Print, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Print proxies", color = colors.accent)
+                }
+            }
             items(cards, key = { it.name }) { card ->
                 ThinRow(card, cost = if (p == null) null else shortCost(card, p), loaded = p != null, money = money, onOpenDeck = onOpenDeck)
             }
@@ -186,6 +197,7 @@ fun SpreadThinScreen(
             }
         }
     }
+    if (printing) ProxyPrintDialog(title = "Spread thin", initial = picksFromThin(cards), onDismiss = { printing = false })
 }
 
 @Composable

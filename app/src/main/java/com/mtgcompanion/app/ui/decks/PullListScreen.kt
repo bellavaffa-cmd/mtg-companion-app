@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.AlertDialog
@@ -66,6 +67,8 @@ import com.mtgcompanion.app.data.PullRow
 import com.mtgcompanion.app.data.PullSource
 import com.mtgcompanion.app.data.holdsCards
 import com.mtgcompanion.app.data.markMissingAsProxies
+import com.mtgcompanion.app.data.markPrintedAsProxies
+import com.mtgcompanion.app.data.picksFromNeeds
 import com.mtgcompanion.app.data.movePulled
 import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.pullBuyList
@@ -123,6 +126,7 @@ fun PullListScreen(
     var moving by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf<MovePulledResult?>(null) }
     var copied by remember { mutableStateOf(false) }
+    var printing by remember { mutableStateOf(false) }
     val notOwned = list?.groups?.filter { it.kind == PullGroupKind.MISSING }?.flatMap { it.rows }.orEmpty()
     // Sharing storage at home: what the people at home keep in the shared places covers some of what
     // isn't owned — "ask Alex" (data/social/Household.kt). Nothing changes without a household.
@@ -331,8 +335,26 @@ fun PullListScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary)
                         ) { Text("Mark as proxies") }
                     }
+                    Button(
+                        onClick = { printing = true },
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.surface2, contentColor = colors.textPrimary)
+                    ) {
+                        Icon(Icons.Filled.Print, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Print proxies", modifier = Modifier.padding(start = 6.dp))
+                    }
                 }
             }
+        }
+
+        if (printing) {
+            ProxyPrintDialog(
+                title = deck.name,
+                initial = picksFromNeeds(deck, missingRows.map { Triple(it.name, it.scryfallId, it.qty) }),
+                markLabel = if (deck.holdsCards) null else "Mark as proxies in ${deck.name}",
+                onMark = { printed -> onApply(collections, decks.map { if (it.id == deck.id) markPrintedAsProxies(it, printed) else it }) },
+                onDismiss = { printing = false }
+            )
         }
 
         asking?.let { row ->

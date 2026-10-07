@@ -263,10 +263,11 @@ private var printing: WebView? = null
 
 /**
  * Prints [html] with Android's print framework — any printer, or "Save as PDF" — by loading it into a
- * WebView off screen and handing its print adapter to the PrintManager. [context] must be the screen's
+ * WebView off screen and handing its print adapter to the PrintManager, with [attributes] (paper size,
+ * margins) as the print dialog's starting point. [context] must be the screen's
  * (an Activity), as printing needs one.
  */
-internal fun printLabels(context: Context, html: String, jobName: String) {
+internal fun printLabels(context: Context, html: String, jobName: String, attributes: PrintAttributes = PrintAttributes.Builder().build()) {
     val view = WebView(context)
     var sent = false
     view.webViewClient = object : WebViewClient() {
@@ -274,7 +275,7 @@ internal fun printLabels(context: Context, html: String, jobName: String) {
             if (sent) return
             sent = true
             val manager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager
-            manager?.print(jobName, page.createPrintDocumentAdapter(jobName), PrintAttributes.Builder().build())
+            manager?.print(jobName, page.createPrintDocumentAdapter(jobName), attributes)
             printing = null
         }
     }

@@ -4,6 +4,8 @@ import com.mtgcompanion.app.ui.common.ViewModeButton
 import com.mtgcompanion.app.ui.common.AddToPick
 import androidx.compose.material3.minimumInteractiveComponentSize
 import com.mtgcompanion.app.ui.common.a11yHeading
+import com.mtgcompanion.app.data.markPrintedAsProxies
+import com.mtgcompanion.app.data.picksForDeck
 import com.mtgcompanion.app.data.AddCandidate
 import com.mtgcompanion.app.ui.common.toAddItem
 import com.mtgcompanion.app.ui.common.checkFor
@@ -143,6 +145,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.IosShare
@@ -352,6 +355,7 @@ fun DeckDetailScreen(
     var importText by remember { mutableStateOf("") }
     var showExport by remember { mutableStateOf(false) }
     var showGoldfish by remember { mutableStateOf(false) }
+    var printingProxies by remember { mutableStateOf(false) }
     // "Compare with…": first the picker (a deck or a saved version), then the comparison itself.
     var comparePicking by remember { mutableStateOf(false) }
     var compareWith by remember { mutableStateOf<CompareTarget?>(null) }
@@ -408,6 +412,7 @@ fun DeckDetailScreen(
                             if (onTakeApart != null && d.holdsCards && d.cards.any { it.quantity - proxyCopies(d, it) > 0 }) {
                                 add(CardMenuAction("Take apart", Icons.Filled.Unarchive, description = "A list to put its cards back where they go") { onTakeApart() })
                             }
+                            add(CardMenuAction("Print proxies…", Icons.Filled.Print, description = "Nine to a page at real size, to cut out") { printingProxies = true })
                             add(CardMenuAction("Cards I don't own", Icons.Filled.Sell, description = "Buy them, wishlist them, or ask friends") { showMissing = true })
                             if (d.mode.limited) {
                                 add(CardMenuAction("Add basic lands", Icons.Filled.Landscape, description = "17 for 40 cards, by the colours you play") { addingBasics = true })
@@ -896,7 +901,16 @@ fun DeckDetailScreen(
         }
         if (showGoldfish) {
             val tokens by viewModel.tokens.collectAsState()
-            GoldfishDialog(deck = currentDeck, tokens = tokens, onDismiss = { showGoldfish = false })
+            GoldfishDialog(deck = currentDeck, tokens = tokens, cardsById = analysis.cardsById, onDismiss = { showGoldfish = false })
+        }
+        if (printingProxies) {
+            ProxyPrintDialog(
+                title = currentDeck.name,
+                initial = remember { picksForDeck(currentDeck, missing) },
+                markLabel = if (currentDeck.holdsCards) null else "Mark as proxies in ${currentDeck.name}",
+                onMark = { printed -> viewModel.changeDeck { markPrintedAsProxies(it, printed) } },
+                onDismiss = { printingProxies = false }
+            )
         }
         if (comparePicking) {
             val others by viewModel.otherDecks.collectAsState()

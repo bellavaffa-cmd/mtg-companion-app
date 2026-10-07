@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.RestartAlt
+import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.graphics.graphicsLayer
@@ -31,6 +33,12 @@ import com.mtgcompanion.app.data.toHand
 import com.mtgcompanion.app.data.toggleTap
 import com.mtgcompanion.app.data.withFreeMulligan
 import com.mtgcompanion.app.data.withOnThePlay
+import com.mtgcompanion.app.data.SIM_KEEP_LANDS
+import com.mtgcompanion.app.data.handStats
+import com.mtgcompanion.app.data.oddsPercent
+import com.mtgcompanion.app.data.simLibrary
+import androidx.compose.ui.text.font.FontWeight
+import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -105,11 +113,18 @@ internal fun shuffledLibrary(deck: Deck, random: kotlin.random.Random = kotlin.r
  * turns — Next turn untaps everything and draws. Tap a hand card to put it onto the battlefield
  * (land or spell alike), tap a permanent to tap or untap it; press and hold a card for more (To
  * graveyard, Back to hand, Look). The deck's [tokens] can be made on the battlefield. Nothing is
- * kept: it starts over every time it's opened, or with Reset.
+ * kept: it starts over every time it's opened, or with Reset. Hand stats (the chart button) shows how
+ * 10,000 shuffled hands go (HandStatsPanel, HandSim.kt).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun GoldfishDialog(deck: Deck, tokens: List<TokenArt> = emptyList(), onDismiss: () -> Unit) {
+fun GoldfishDialog(
+    deck: Deck,
+    tokens: List<TokenArt> = emptyList(),
+    /** The deck's card data, for Hand stats' mana values and land types. */
+    cardsById: Map<String, ScryfallCard> = emptyMap(),
+    onDismiss: () -> Unit
+) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val start = remember(deck.id) { playCards(deck) }
         if (start.first.isEmpty()) {
@@ -123,10 +138,11 @@ fun GoldfishDialog(deck: Deck, tokens: List<TokenArt> = emptyList(), onDismiss: 
 
         var game by remember { mutableStateOf(newGame(start.first, start.second, freeMulligan = deck.mode.usesCommander)) }
         var looking by remember { mutableStateOf<PlayCard?>(null) }
+        var showStats by remember { mutableStateOf(false) }
 
         Scaffold(
             containerColor = Bg,
-            topBar = { PlaytestTopBar(game, onReset = { game = game.reset() }, onDismiss = onDismiss) },
+            topBar = { PlaytestTopBar(game, onReset = { game = game.reset() }, onDismiss = onDismiss, showStats = showStats, onStats = { showStats = !showStats }) },
             bottomBar = {
                 Row(
                     modifier = Modifier.fillMaxWidth().background(Bg).padding(horizontal = 20.dp, vertical = 14.dp),
@@ -163,6 +179,10 @@ fun GoldfishDialog(deck: Deck, tokens: List<TokenArt> = emptyList(), onDismiss: 
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = 20.dp)
             ) {
+                if (showStats) {
+                    ZoneLabel("Hand stats")
+                    HandStatsPanel(deck, cardsById, Modifier.padding(horizontal = 20.dp))
+                }
                 if (game.choosingHand) {
                     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -373,7 +393,13 @@ private fun PlayCardView(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PlaytestTopBar(game: PlaytestState?, onReset: () -> Unit, onDismiss: () -> Unit) {
+private fun PlaytestTopBar(
+    game: PlaytestState?,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit,
+    showStats: Boolean = false,
+    onStats: () -> Unit = {}
+) {
     TopAppBar(
         title = {
             Column {
@@ -398,6 +424,9 @@ private fun PlaytestTopBar(game: PlaytestState?, onReset: () -> Unit, onDismiss:
         },
         actions = {
             if (game != null) {
+                IconButton(onClick = onStats) {
+                    Icon(Icons.Filled.BarChart, contentDescription = if (showStats) "Hide hand stats" else "Hand stats", tint = if (showStats) GoldLight else Gold)
+                }
                 IconButton(onClick = onReset) {
                     Icon(Icons.Filled.RestartAlt, contentDescription = "Reset", tint = Gold)
                 }
@@ -405,4 +434,69 @@ private fun PlaytestTopBar(game: PlaytestState?, onReset: () -> Unit, onDismiss:
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
     )
+}
+
+/**
+ * Hand stats in the playtest: 10,000 shuffles of the deck, counted (HandSim.kt) — lands in the
+ * opener, a land drop each turn on the play and on the draw, a two-drop on turn 2, and how often a
+ * 2–5 land keep rule mulligans. The web app's HandStatsPanel.tsx.
+ */
+@Composable
+private fun HandStatsPanel(deck: Deck, cardsById: Map<String, ScryfallCard>, modifier: Modifier = Modifier) {
+    val stats = remember(deck, cardsById) {
+        handStats(simLibrary(deck, { cardsById[it.scryfallId]?.typeLine }, { cardsById[it.scryfallId]?.cmc }))
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (stats == null) {
+            Text("The deck needs at least 11 cards in its library for hand stats.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+            return@Column
+        }
+        StatRow("2–4 lands in your opening seven", oddsPercent(stats.twoToFourLands))
+        StatRow("Lands in your opening seven, on average", String.format(Locale.US, "%.1f", stats.averageLands))
+        StatRow("Mulligan, keeping ${SIM_KEEP_LANDS.first}–${SIM_KEEP_LANDS.last} lands", oddsPercent(stats.mulliganRate))
+        StatRow("Land drop every turn", "Play", "Draw", header = true)
+        stats.landDrops.forEach { (turn, d) -> StatRow("Turn $turn", oddsPercent(d.onThePlay), oddsPercent(d.onTheDraw)) }
+        if (stats.twoDrops > 0) {
+            StatRow("A two-drop to cast on turn 2", oddsPercent(stats.twoDropOnTurn2.onThePlay), oddsPercent(stats.twoDropOnTurn2.onTheDraw))
+        } else {
+            Text(
+                "No two-drops in the deck" + if (cardsById.isEmpty()) " yet — card data is still loading." else ".",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted
+            )
+        }
+        Text(
+            "From ${String.format(Locale.US, "%,d", stats.hands)} shuffles of the ${stats.library} cards in the library (${stats.lands} lands" +
+                (if (deck.commander != null) "; the commander starts in the command zone" else "") +
+                "), seven-card hands without mulligans. Colours aren't checked: any land counts, and a two-drop is any card with mana value 2, so it's a rough guide.",
+            style = MaterialTheme.typography.labelSmall,
+            color = TextDim,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
+@Composable
+private fun StatRow(label: String, value: String, second: String? = null, header: Boolean = false) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = if (header) TextMuted else TextPrimary, modifier = Modifier.weight(1f))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (header) FontWeight.Normal else FontWeight.Bold,
+            color = if (header) TextMuted else GoldLight,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(52.dp)
+        )
+        if (second != null) {
+            Text(
+                second,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (header) FontWeight.Normal else FontWeight.Bold,
+                color = if (header) TextMuted else GoldLight,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(52.dp)
+            )
+        }
+    }
 }
