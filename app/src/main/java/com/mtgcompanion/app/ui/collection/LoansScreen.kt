@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.social.SocialArea
 import com.mtgcompanion.app.ui.common.EmptyAction
 import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.common.EmptyPrompt
@@ -123,6 +124,12 @@ fun LoansScreen(
     LaunchedEffect(account?.userId) {
         if (account == null) return@LaunchedEffect
         LoanServer.sendAll(social.api, loansOf(collections), System.currentTimeMillis())
+    }
+    // What's borrowed, loaded again when a loan changes elsewhere (a live ping, the poll). Only read
+    // here: sending loans would change them and ping again.
+    val loanChanges = social.changes.collectAsState().value[SocialArea.LOANS] ?: 0
+    LaunchedEffect(account?.userId, loanChanges) {
+        if (account == null) return@LaunchedEffect
         runCatching { social.api.myBorrowedLoans() }
             .onSuccess { borrowed = it; borrowedFailed = false }
             .onFailure { borrowedFailed = true }
@@ -145,7 +152,10 @@ fun LoansScreen(
             out
         }
         val ids = person.loans.map { it.id }.toSet()
-        scope.launch { loansOf(after).filter { it.id in ids }.forEach { LoanServer.send(social.api, it) } }
+        scope.launch {
+            loansOf(after).filter { it.id in ids }.forEach { LoanServer.send(social.api, it) }
+            social.bump(SocialArea.LOANS)
+        }
         some = null
         note = if (counts != null) "Got those back — each card is where it came from." else "Got everything back from ${person.name} — each card is where it came from."
     }

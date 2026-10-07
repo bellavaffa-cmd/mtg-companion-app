@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.social.AppLink
 import com.mtgcompanion.app.data.social.Profile
 import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.data.social.SocialArea
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -127,8 +128,7 @@ class AppLinkHandler internal constructor(
         result = r.copy(busy = true)
         scope.launch {
             result = try {
-                val answer = social.api.requestFriend(r.username)
-                social.refresh()
+                val answer = social.mutate(SocialArea.FRIENDS) { social.api.requestFriend(r.username) }
                 r.copy(busy = false, message = when (answer) {
                     "accepted" -> "You're now friends."
                     "already" -> "Already asked — waiting for their answer (or you're already friends)."

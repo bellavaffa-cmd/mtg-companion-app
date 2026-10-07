@@ -54,6 +54,8 @@ import com.mtgcompanion.app.data.social.ShareKind
 import com.mtgcompanion.app.data.supabase.SupabaseSync
 import com.mtgcompanion.app.data.social.SharedSummary
 import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.data.social.SocialArea
+import com.mtgcompanion.app.data.social.withoutFriend
 import com.mtgcompanion.app.ui.common.SectionHeader
 import com.mtgcompanion.app.ui.common.readableWidth
 import com.mtgcompanion.app.ui.theme.LocalAppColors
@@ -203,8 +205,7 @@ fun FriendScreen(
                                 TextButton(onClick = {
                                     scope.launch {
                                         try {
-                                            social.api.removeFriend(friendId)
-                                            social.refresh()
+                                            social.mutate(SocialArea.FRIENDS, optimistic = { it.withoutFriend(friendId) }) { social.api.removeFriend(friendId) }
                                             confirmRemove = false
                                             onBack()
                                         } catch (e: Exception) {

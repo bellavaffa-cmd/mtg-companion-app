@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.data.social.SocialArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -63,7 +64,8 @@ fun NextGameNightCard(
     val available by social.nights.available.collectAsState()
     val nights by social.nights.nights.collectAsState()
     val me = account?.userId
-    LaunchedEffect(me) {
+    val nightChanges = social.changes.collectAsState().value[SocialArea.NIGHTS] ?: 0
+    LaunchedEffect(me, nightChanges) {
         if (me == null || !social.nights.check()) return@LaunchedEffect
         runCatching { social.nights.nights() }.onSuccess { GameNightReminders.schedule(context, it, me) }
     }

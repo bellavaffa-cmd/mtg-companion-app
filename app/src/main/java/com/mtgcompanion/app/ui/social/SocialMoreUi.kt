@@ -1,5 +1,7 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.data.social.withoutFriend
+import com.mtgcompanion.app.data.social.SocialArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -192,8 +194,7 @@ private fun BlockDialog(social: SocialRepository, userId: String, name: String, 
                 error = null
                 scope.launch {
                     try {
-                        social.more.block(userId)
-                        runCatching { social.refresh() }
+                        social.mutate(SocialArea.FRIENDS, SocialArea.TRADES, optimistic = { it.withoutFriend(userId) }) { social.more.block(userId) }
                         onClose(true)
                     } catch (e: Exception) {
                         error = e.message

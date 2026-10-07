@@ -130,13 +130,16 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         (application as MtgCompanionApplication).supabaseSync.onAppResumed()
-        // Friend requests or trades may have come in meanwhile: the badge checks.
+        // Friend requests or trades may have come in meanwhile: the badge checks, what's showing
+        // reloads, and the live channel (and its fallback poll) runs while the app is in front.
         (application as MtgCompanionApplication).socialRepository.refreshInboxInBackground()
+        (application as MtgCompanionApplication).socialRepository.startLive()
     }
 
     override fun onPause() {
         super.onPause()
         (application as MtgCompanionApplication).supabaseSync.onAppPaused()
+        (application as MtgCompanionApplication).socialRepository.stopLive()
     }
 
     // Dialogs, the keyboard and other apps' windows can bring the bars back while they have focus;

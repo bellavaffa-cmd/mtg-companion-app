@@ -83,6 +83,9 @@ import com.mtgcompanion.app.data.social.Trade
 import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.ui.common.CopyBadge
 import com.mtgcompanion.app.data.social.TradeStatus
+import com.mtgcompanion.app.data.social.SocialArea
+import com.mtgcompanion.app.data.social.withTradeStatus
+import com.mtgcompanion.app.data.social.withTradeApplied
 import com.mtgcompanion.app.data.social.TradeSide
 import com.mtgcompanion.app.data.social.awaitingMyUpdate
 import com.mtgcompanion.app.data.social.cardTotal
@@ -158,8 +161,10 @@ internal fun TradeInboxList(
         runCatching { social.more.myRatings() }.onSuccess { ratings = it }
     }
     val inbox = tradeInbox(overview.trades, me, blocked)
-    // The lines opened into full trades.
-    var opened by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // The lines opened into full trades, by id and status: a trade whose status changes (cancelled,
+    // declined…) goes back to its one line, where it now belongs, rather than staying open in full.
+    var openedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+
     var allDone by remember { mutableStateOf(false) }
     val thisYear = remember { java.time.LocalDate.now().year }
     fun day(t: Trade) = shortDay(t.updatedAt.take(10), thisYear)
@@ -184,12 +189,12 @@ internal fun TradeInboxList(
             inbox.waitingOnThem.forEach { t ->
                 item(key = t.id) {
                     val other = tradeSides(t, me).other
-                    if (t.id in opened) TradeCardView(social, collectionRepository, overview, t, onCounter, TradeMore(withMore, ratings[t.id], { positive -> ratings = ratings + (t.id to positive) }, onMessage))
+                    if (openKey(t) in openedKeys) TradeCardView(social, collectionRepository, overview, t, onCounter, TradeMore(withMore, ratings[t.id], { positive -> ratings = ratings + (t.id to positive) }, onMessage))
                     else TradeLine(
                         title = if (t.status == TradeStatus.OPEN) "To ${nameOf(other)}" else "With ${nameOf(other)}",
                         detail = if (t.status == TradeStatus.OPEN) tradeSummary(t, me) else "Accepted — ${nameOf(other)} is updating their binders",
                         end = if (t.status == TradeStatus.OPEN) "Sent ${day(t)}" else day(t)
-                    ) { opened = opened + t.id }
+                    ) { openedKeys = openedKeys + openKey(t) }
                 }
             }
         }
@@ -206,12 +211,12 @@ internal fun TradeInboxList(
             }
             (if (allDone) inbox.done else inbox.done.take(DONE_SHOWN)).forEach { t ->
                 item(key = t.id) {
-                    if (t.id in opened) TradeCardView(social, collectionRepository, overview, t, onCounter, TradeMore(withMore, ratings[t.id], { positive -> ratings = ratings + (t.id to positive) }, onMessage))
+                    if (openKey(t) in openedKeys) TradeCardView(social, collectionRepository, overview, t, onCounter, TradeMore(withMore, ratings[t.id], { positive -> ratings = ratings + (t.id to positive) }, onMessage))
                     else TradeLine(
                         title = "With ${nameOf(tradeSides(t, me).other)} · ${day(t)}",
                         detail = null,
                         end = doneLabel(t, me, ratings[t.id])
-                    ) { opened = opened + t.id }
+                    ) { openedKeys = openedKeys + openKey(t) }
                 }
             }
         }
@@ -221,6 +226,9 @@ internal fun TradeInboxList(
         footer()
     }
 }
+
+/** A trade line opened into the full trade stays open while the trade's status stays the same. */
+internal fun openKey(t: Trade): String = "${t.id}:${t.status}"
 
 /** Finished trades shown before "All". */
 private const val DONE_SHOWN = 5
@@ -269,11 +277,15 @@ private fun TradeCardView(social: SocialRepository, collectionRepository: Collec
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    fun run(action: suspend () -> Unit) {
+    // Shown at once (the trade moves to where it now belongs), then the server's answer replaces it;
+    // the reload runs in the repository's scope, so it finishes even if this card leaves the screen.
+    fun run(status: TradeStatus, action: suspend () -> Unit) {
         busy = true
         error = null
         scope.launch {
-            try { action(); social.refresh() } catch (e: Exception) { error = e.message } finally { busy = false }
+            try {
+                social.mutate(SocialArea.TRADES, optimistic = { it.withTradeStatus(trade.id, status) }) { action() }
+            } catch (e: Exception) { error = e.message } finally { busy = false }
         }
     }
 
@@ -338,7 +350,7 @@ private fun TradeCardView(social: SocialRepository, collectionRepository: Collec
         }
         if (trade.status == TradeStatus.OPEN && !incoming) {
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = { run { social.api.respondTrade(trade.id, "cancel") } }, enabled = !busy) { Text("Cancel request", color = colors.textMuted) }
+                TextButton(onClick = { run(TradeStatus.CANCELLED) { social.api.respondTrade(trade.id, "cancel") } }, enabled = !busy) { Text("Cancel request", color = colors.textMuted) }
             }
         }
         if (more.on) RateTrade(social, trade, me, more.rating, theirName, more.onRated)
@@ -364,7 +376,7 @@ private fun TradeCardView(social: SocialRepository, collectionRepository: Collec
             confirmButton = {
                 TextButton(onClick = {
                     answering = null
-                    val answer = { run { social.api.respondTrade(trade.id, if (accept) "accept" else "decline", reply.trim()) } }
+                    val answer = { run(if (accept) TradeStatus.ACCEPTED else TradeStatus.DECLINED) { social.api.respondTrade(trade.id, if (accept) "accept" else "decline", reply.trim()) } }
                     // A reply with a message is something they read: the community rules first, once.
                     if (reply.isBlank()) answer() else communityRules.require(answer)
                 }) {
@@ -528,8 +540,9 @@ private fun UpdateBindersDialog(social: SocialRepository, collectionRepository: 
                             }
                             val left = collectionRepository.applyTrade(tradeChanges(trade, me, target ?: "", givenFrom))
                             done = true
-                            // The cards have moved, so the job is done: a failed refresh only leaves the list stale
-                            // and must not offer "Update binders" again.
+                            // The cards have moved, so the job is done: shown at once, and a failed refresh only
+                            // leaves the rest of the list stale — it must not offer "Update binders" again.
+                            social.applyLocal { it.withTradeApplied(trade.id, me) }
                             runCatching { social.refresh() }
                             if (left.isEmpty()) onClose() else short = left
                         } catch (e: Exception) {
@@ -657,10 +670,12 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
                         error = null
                         scope.launch {
                             try {
-                                social.api.proposeTrade(friendId, draft.want, draft.give, draft.message.trim(), replying?.id)
+                                // A counter-offer closes the trade it answers at once.
+                                social.mutate(SocialArea.TRADES, optimistic = replying?.let { r -> { o: Overview -> o.withTradeStatus(r.id, TradeStatus.COUNTERED) } }) {
+                                    social.api.proposeTrade(friendId, draft.want, draft.give, draft.message.trim(), replying?.id)
+                                }
                                 Usage.action(UsageAction.TRADE_PROPOSED)
                                 social.draft = null
-                                social.refresh()
                                 onSent()
                             } catch (e: Exception) {
                                 error = e.message

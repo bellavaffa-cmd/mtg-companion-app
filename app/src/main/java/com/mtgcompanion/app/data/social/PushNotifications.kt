@@ -158,8 +158,6 @@ object PushNotifications {
         } catch (e: SecurityException) {
             // Permission withdrawn between the check and here: nothing to show.
         }
-        // The badge on Home/Friends catches up too.
-        (context.applicationContext as MtgCompanionApplication).socialRepository.refreshInboxInBackground()
     }
 }
 
@@ -173,6 +171,8 @@ private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont 
 class PushService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         PushNotifications.show(applicationContext, message.data)
+        // Whether or not a notification shows, the badge and an open Friends screen catch up.
+        (applicationContext as MtgCompanionApplication).socialRepository.refreshInBackground()
     }
 
     override fun onNewToken(token: String) {

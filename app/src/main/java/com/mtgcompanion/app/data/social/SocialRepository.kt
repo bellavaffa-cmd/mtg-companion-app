@@ -5,12 +5,18 @@ import com.mtgcompanion.app.data.supabase.SupabaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Friends, pods, shares and trades for the signed-in account, fetched when a screen needs them. None
@@ -46,6 +52,20 @@ class SocialRepository(private val auth: SupabaseAuth) {
     /** Friend requests and trades waiting on the user, for the badge. */
     val inbox: StateFlow<Inbox> = _inbox.asStateFlow()
 
+    private val _changes = MutableStateFlow<Map<SocialArea, Int>>(emptyMap())
+    /**
+     * How many times each area has changed on the server since the app started (live pings, the poll,
+     * the user's own changes). Screens that load loans, game nights or households themselves key their
+     * loading on [changesOf] so they reload when it moves.
+     */
+    val changes: StateFlow<Map<SocialArea, Int>> = _changes.asStateFlow()
+    fun changesOf(area: SocialArea): Int = _changes.value[area] ?: 0
+
+    /** Marks [areas] changed, for the screens that watch [changes]. */
+    fun bump(vararg areas: SocialArea) {
+        _changes.update { m -> m.toMutableMap().apply { areas.forEach { put(it, (get(it) ?: 0) + 1) } } }
+    }
+
     private val _unread = MutableStateFlow(0)
     /** Unread direct messages, for the Friends tab's badge (0 without the social_more functions). */
     val unread: StateFlow<Int> = _unread.asStateFlow()
@@ -64,44 +84,119 @@ class SocialRepository(private val auth: SupabaseAuth) {
     val userId: String? get() = auth.account.value?.userId
     val email: String? get() = auth.account.value?.email
 
-    init {
-        // A different account (or none) starts from nothing.
-        scope.launch {
-            auth.account.map { it?.userId }.distinctUntilChanged().collect {
-                _overview.value = null
-                _inbox.value = Inbox()
-                _unread.value = 0
-                _podUnread.value = 0
-                _error.value = null
-                more.reset()
-                activity.reset()
-                household.reset()
-                nights.reset()
-                if (it != null) refreshInbox()
-            }
-        }
-    }
+    // Answers are numbered so a slow reload can't land on top of a newer one (or of the user's own
+    // change, shown at once by [mutate]).
+    private val generation = AtomicLong(0)
+    private val inFlight = AtomicInteger(0)
 
     /** Reloads everything the Friends screens show. */
     suspend fun refresh() {
         val who = userId ?: return
+        val mine = generation.incrementAndGet()
+        inFlight.incrementAndGet()
         _loading.value = true
         try {
             val o = api.overview()
-            if (userId != who) return
+            if (userId != who || generation.get() != mine) return
             _overview.value = o
             _error.value = null
-            if (o.me != null) {
-                _inbox.value = Inbox(
-                    friendRequests = o.friends.count { it.incoming && !it.accepted },
-                    trades = o.trades.count { waitingOnMe(it, who) }
-                )
-            }
+            if (o.me != null) _inbox.value = inboxOf(o, who)
         } catch (e: Exception) {
-            if (userId == who) _error.value = e.message ?: "Something went wrong."
+            if (userId == who && generation.get() == mine) _error.value = e.message ?: "Something went wrong."
         } finally {
-            _loading.value = false
+            _loading.value = inFlight.decrementAndGet() > 0
         }
+    }
+
+    /** Reloads the overview in the background, when one has been loaded (a screen showed it). */
+    fun refreshInBackground() {
+        scope.launch { if (_overview.value != null) refresh() else refreshInbox() }
+    }
+
+    /** Shows [change] on the overview at once (its badge counts too), before the server confirms it. */
+    fun applyLocal(change: (Overview) -> Overview) {
+        val who = userId ?: return
+        val o = _overview.value ?: return
+        generation.incrementAndGet() // a reload already on its way would undo this
+        val next = change(o)
+        _overview.value = next
+        if (next.me != null) _inbox.value = inboxOf(next, who)
+    }
+
+    /**
+     * A change the user makes ([action]: the server call): [optimistic] shows it on screen at once,
+     * then the overview reloads from the server — in the repository's own scope, so leaving the
+     * screen can't stop it. On failure the reload puts back what the server has, and the error is
+     * thrown for the screen to show. [areas] are marked changed for screens that load them themselves.
+     */
+    suspend fun <T> mutate(
+        vararg areas: SocialArea,
+        optimistic: ((Overview) -> Overview)? = null,
+        action: suspend () -> T
+    ): T {
+        optimistic?.let(::applyLocal)
+        try {
+            return action()
+        } finally {
+            if (areas.isNotEmpty()) bump(*areas)
+            val reload = scope.launch { refresh() }
+            // The screen waits for the reload when it can, so what it shows next is the server's.
+            runCatching { reload.join() }
+        }
+    }
+
+    // ---- Live: pings on the dm channel, the app coming to the front, and a slow poll as a fallback ----
+
+    private val debounce = SocialDebounce(DEBOUNCE_MS, { ms, run ->
+        val job = scope.launch { delay(ms); run() }
+        Cancellable { job.cancel() }
+    }) { areas -> scope.launch { reload(areas) } }
+
+    /** Reloads what [areas] need: the overview for trades and friends, the badge, and the others' ticks. */
+    internal suspend fun reload(areas: Set<SocialArea>) {
+        bump(*areas.toTypedArray())
+        if (areas.any { it.inOverview } && _overview.value != null) refresh()
+        refreshInbox()
+    }
+
+    /** A live event from the dm channel ("social", "game_night"…). */
+    fun onLiveEvent(event: String, payload: org.json.JSONObject?) {
+        socialAreaFor(event, payload)?.let(debounce::add)
+    }
+
+    @Volatile private var foreground = false
+    @Volatile private var live: Job? = null
+
+    /**
+     * The app came to the front (MainActivity.onResume): reload what's showing and listen live until
+     * [stopLive]. The channel reconnects by itself after a drop, and reloads everything when it does.
+     */
+    fun startLive() {
+        foreground = true
+        val uid = userId ?: return
+        if (live?.isActive == true) return
+        // Whatever changed while the app was in the back (or offline): every area reloads once.
+        SocialArea.entries.forEach(debounce::add)
+        live = scope.launch {
+            launch {
+                dmChannel.watch(this, uid,
+                    onMessage = {},
+                    onRejoined = { SocialArea.entries.forEach(debounce::add) },
+                    onOther = { event, payload -> onLiveEvent(event, payload) })
+            }
+            // The fallback: pings can be missed (a server without them, a dropped connection).
+            while (isActive) {
+                delay(POLL_MS)
+                if (_overview.value != null) refresh() else refreshInbox()
+            }
+        }
+    }
+
+    /** The app went to the back (MainActivity.onPause): no channel or poll while nobody looks. */
+    fun stopLive() {
+        foreground = false
+        live?.cancel()
+        live = null
     }
 
     suspend fun refreshInbox() {
@@ -142,4 +237,36 @@ class SocialRepository(private val auth: SupabaseAuth) {
 
     /** The badge checks in whenever the app comes back to the front (MainActivity.onResume). */
     fun refreshInboxInBackground() { scope.launch { refreshInbox() } }
+
+    // Last, so everything it uses is set up before its coroutine can run.
+    init {
+        // A different account (or none) starts from nothing.
+        scope.launch {
+            auth.account.map { it?.userId }.distinctUntilChanged().collect {
+                _overview.value = null
+                _inbox.value = Inbox()
+                _unread.value = 0
+                _podUnread.value = 0
+                _error.value = null
+                debounce.cancel()
+                more.reset()
+                activity.reset()
+                household.reset()
+                nights.reset()
+                if (it != null) refreshInbox()
+                // The live channel belongs to the account: a new one for whoever is signed in now.
+                live?.cancel()
+                live = null
+                if (foreground) startLive()
+            }
+        }
+    }
+
+
+    companion object {
+        /** Pings that arrive together become one reload. */
+        const val DEBOUNCE_MS = 300L
+        /** The fallback poll while the app is in front. */
+        const val POLL_MS = 60_000L
+    }
 }

@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.social
 
+import com.mtgcompanion.app.data.social.SocialArea
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.ActivityNotFoundException
@@ -179,7 +180,9 @@ private fun Invite(
     var borrowed by remember { mutableStateOf<List<BorrowedLoan>>(emptyList()) }
     val bags by remember { EventBagStore.init(context); EventBagStore.bags }.collectAsState()
 
-    LaunchedEffect(nightId, reload) {
+    // Also when a night changes elsewhere: the app-wide live channel and poll (SocialRepository).
+    val nightChanges = social.changes.collectAsState().value[SocialArea.NIGHTS] ?: 0
+    LaunchedEffect(nightId, reload, nightChanges) {
         if (!social.nights.check()) return@LaunchedEffect
         try {
             night = social.nights.night(nightId)
@@ -225,6 +228,7 @@ private fun Invite(
             try {
                 social.nights.rsvp(n.id, a, if (a == RsvpAnswer.CANT) null else deck)?.let {
                     night = it
+                    social.bump(SocialArea.NIGHTS)
                     GameNightReminders.schedule(context, listOf(it), me)
                 }
             } catch (e: CancellationException) {

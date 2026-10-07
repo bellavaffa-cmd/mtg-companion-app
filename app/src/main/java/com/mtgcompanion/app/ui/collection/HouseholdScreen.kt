@@ -1,5 +1,6 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.social.SocialArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -101,7 +102,10 @@ sealed interface HouseholdsState {
 fun rememberHouseholds(social: SocialRepository, reload: Int = 0): HouseholdsState {
     val account by social.accountFlow.collectAsState()
     var state by remember { mutableStateOf<HouseholdsState>(HouseholdsState.Loading) }
-    LaunchedEffect(account?.userId, reload) {
+    // A household or its loans changed elsewhere (a live ping, the poll): load again.
+    val changes by social.changes.collectAsState()
+    val live = (changes[SocialArea.HOUSEHOLD] ?: 0) + (changes[SocialArea.LOANS] ?: 0)
+    LaunchedEffect(account?.userId, reload, live) {
         if (account == null) { state = HouseholdsState.SignedOut; return@LaunchedEffect }
         state = try {
             if (!social.household.check()) HouseholdsState.Unavailable else HouseholdsState.Ready(social.household.mine())
@@ -223,6 +227,7 @@ fun HouseholdInvitesList(invites: List<HouseholdInvite>, social: SocialRepositor
             error = null
             try {
                 social.household.respond(inv.id, yes)
+                social.bump(SocialArea.HOUSEHOLD)
                 onDone(if (yes) inv.id else null)
             } catch (e: Exception) {
                 error = householdError(e)
@@ -304,7 +309,7 @@ private fun HouseholdView(
     fun act(run: suspend () -> Unit) {
         scope.launch {
             error = null
-            try { run(); onChanged(); loadCards++ } catch (e: Exception) { error = householdError(e) }
+            try { run(); social.bump(SocialArea.HOUSEHOLD); onChanged(); loadCards++ } catch (e: Exception) { error = householdError(e) }
         }
     }
     // "Keep my cards here too": the place goes in the user's own storage (same id), then the household is told.

@@ -89,6 +89,9 @@ import com.mtgcompanion.app.data.social.ShareKind
 import com.mtgcompanion.app.data.social.SharedSummary
 import com.mtgcompanion.app.data.social.SocialApi
 import com.mtgcompanion.app.data.social.SocialRepository
+import com.mtgcompanion.app.data.social.SocialArea
+import com.mtgcompanion.app.data.social.withFriendAccepted
+import com.mtgcompanion.app.data.social.withoutFriend
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.SectionHeader
 import com.mtgcompanion.app.ui.collection.HouseholdInvitesList
@@ -285,10 +288,11 @@ private fun PeopleTab(
     val podChat = social.nights.available.collectAsState().value == true
     LaunchedEffect(Unit) { social.nights.check() }
 
-    fun run(action: suspend () -> Unit) {
+    // Answers to requests show at once; the server's overview replaces them (SocialRepository.mutate).
+    fun run(optimistic: (Overview) -> Overview, action: suspend () -> Unit) {
         scope.launch {
             error = null
-            try { action(); social.refresh() } catch (e: Exception) { error = e.message }
+            try { social.mutate(SocialArea.FRIENDS, optimistic = optimistic) { action() } } catch (e: Exception) { error = e.message }
         }
     }
 
@@ -302,8 +306,8 @@ private fun PeopleTab(
             incoming.forEach { f ->
                 item(key = "in-${f.userId}") {
                     PersonRow(overview.person(f.userId)) {
-                        TextButton(onClick = { run { social.api.respondFriend(f.userId, false) } }) { Text("Decline", color = colors.textMuted) }
-                        GoldButton("Accept", { run { social.api.respondFriend(f.userId, true) } })
+                        TextButton(onClick = { run({ it.withoutFriend(f.userId) }) { social.api.respondFriend(f.userId, false) } }) { Text("Decline", color = colors.textMuted) }
+                        GoldButton("Accept", { run({ it.withFriendAccepted(f.userId) }) { social.api.respondFriend(f.userId, true) } })
                     }
                 }
             }
@@ -370,7 +374,7 @@ private fun PeopleTab(
             outgoing.forEach { f ->
                 item(key = "out-${f.userId}") {
                     PersonRow(overview.person(f.userId)) {
-                        TextButton(onClick = { run { social.api.removeFriend(f.userId) } }) { Text("Cancel", color = colors.textMuted) }
+                        TextButton(onClick = { run({ it.withoutFriend(f.userId) }) { social.api.removeFriend(f.userId) } }) { Text("Cancel", color = colors.textMuted) }
                     }
                 }
             }
@@ -565,9 +569,8 @@ private fun AddFriend(social: SocialRepository, onShowQr: () -> Unit) {
         message = null
         scope.launch {
             message = try {
-                val result = social.api.requestFriend(name)
+                val result = social.mutate(SocialArea.FRIENDS) { social.api.requestFriend(name) }
                 username = ""
-                social.refresh()
                 true to when (result) {
                     "accepted" -> "You and @$name are now friends."
                     "already" -> "You've already asked @$name."
