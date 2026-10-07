@@ -162,6 +162,7 @@ begin
     if coalesce(p ->> 'userId', '') ~ '^[0-9a-f-]{36}$' then
       puser := (p ->> 'userId')::uuid;
       if not social_private.is_pod_member(p_pod, puser) then puser := null; end if;
+      if puser is not null and puser <> auth.uid() and social_private.blocked_either(auth.uid(), puser) then puser := null; end if;
     end if;
     seat := jsonb_build_object(
       'userId', puser,
