@@ -268,6 +268,26 @@ class SupabaseSync(
     }
 
     /**
+     * Until this time (ms) no pass runs: a Reset collection is waiting out its Undo (CollectionReset),
+     * and its deletions only leave once Undo has gone. A time rather than a flag, so it can't hold the
+     * sync up for good; the app being killed meanwhile forgets it, and the next pass sends the reset.
+     */
+    @Volatile private var heldUntil = 0L
+
+    /** Holds every pass back until [untilMs] — see [heldUntil]. */
+    fun holdUntil(untilMs: Long) {
+        heldUntil = untilMs
+    }
+
+    /** Ends a hold: with [send], a pass runs straight away to send what was held back. */
+    fun release(send: Boolean) {
+        heldUntil = 0L
+        if (send && auth.account.value != null) syncNow()
+    }
+
+    private fun held() = System.currentTimeMillis() < heldUntil
+
+    /**
      * A sync the user asked for (pull to refresh): waits for it to finish and returns the outcome, or
      * null when there's no account to sync with.
      */
@@ -459,8 +479,12 @@ class SupabaseSync(
     /** A [quiet] pass (the periodic check) is skipped if one is already running and doesn't show as syncing. */
     /** Returns the status this pass ended with, or null if it was skipped. */
     private suspend fun runSync(quiet: Boolean = false): CloudSyncStatus? {
+        if (held()) return null
         if (quiet && mutex.isLocked) return null
-        return mutex.withLock { syncPass(quiet) }
+        return mutex.withLock {
+            // A reset began while this pass waited its turn: nothing goes or comes until it's committed.
+            if (held()) null else syncPass(quiet)
+        }
     }
 
     private suspend fun syncPass(quiet: Boolean): CloudSyncStatus {

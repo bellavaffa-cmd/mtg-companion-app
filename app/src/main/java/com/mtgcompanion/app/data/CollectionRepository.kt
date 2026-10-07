@@ -274,6 +274,34 @@ class CollectionRepository(private val context: Context) {
         update(undeleting = restored, transform = transform)
     }
 
+    /**
+     * Reset collection (ResetCollection.kt): [transform] gets the binders as they are and answers them
+     * reset; [deleting] are the binders that went, noted as deleted so the sync sends their deletion.
+     * Answers the stored text from before, for Undo to put back exactly ([putBack]).
+     */
+    suspend fun reset(deleting: Set<String>, transform: (List<Collection>) -> List<Collection>): String? {
+        var before: String? = null
+        context.collectionDataStore.edit { prefs ->
+            before = prefs[key]
+            val current = readCollections(prefs)
+            val store = storeOf(prefs[key])
+            val now = System.currentTimeMillis()
+            prefs[key] = adapter.toJson(
+                CollectionStore(
+                    collections = transform(current),
+                    deleted = noteDeleted(store?.deleted, null, now) + deleting.associateWith { now },
+                    userTags = store?.userTags.orEmpty()
+                )
+            )
+        }
+        return before
+    }
+
+    /** Undo of a reset: the binders exactly as [text] (from [reset]) had them, what was deleted included. */
+    suspend fun putBack(text: String?) {
+        context.collectionDataStore.edit { prefs -> if (text == null) prefs.remove(key) else prefs[key] = text }
+    }
+
     /** Writes what a sync pulled, as a change to the binders as they are at that moment. */
     suspend fun applySync(transform: (List<Collection>) -> List<Collection>) {
         update(transform = transform)

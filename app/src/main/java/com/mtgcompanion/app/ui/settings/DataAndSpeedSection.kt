@@ -68,7 +68,8 @@ private val WHEN = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.UK)
  * Settings › Data and speed: the collection's size, its card data kept for offline (the offline card
  * database, by name), how long All cards took to work out its list when it last opened, when it last
  * synced, and the backup — Save a backup and Restore, through the system's file picker. The words are
- * in DataAndSpeed.kt and the backup's rules in Backup.kt. The web app's DataAndSpeedSection.tsx.
+ * in DataAndSpeed.kt and the backup's rules in Backup.kt. Below them, the Danger zone's Reset
+ * collection (ResetCollectionPanel.kt). The web app's DataAndSpeedSection.tsx.
  */
 @Composable
 fun DataAndSpeedSection() {
@@ -169,6 +170,8 @@ fun DataAndSpeedSection() {
         }
         (busy ?: notice)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = if (busy != null) colors.textMuted else colors.success) }
     }
+    // Below the backup: the Danger zone's Reset collection (ResetCollectionPanel.kt).
+    ResetCollectionPanel()
 
     problem?.let { message ->
         AlertDialog(

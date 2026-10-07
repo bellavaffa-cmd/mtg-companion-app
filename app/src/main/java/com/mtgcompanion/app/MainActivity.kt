@@ -138,6 +138,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        // Leaving the app ends a reset's Undo: the reset is sent rather than left half done.
+        (application as MtgCompanionApplication).collectionReset.commitNow()
         (application as MtgCompanionApplication).supabaseSync.onAppPaused()
         (application as MtgCompanionApplication).socialRepository.stopLive()
     }

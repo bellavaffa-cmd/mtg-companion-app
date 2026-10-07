@@ -63,6 +63,12 @@ object ValueHistory {
         }.getOrDefault(emptyList())
     }
 
+    /** Forgets the value history (Reset collection): it was the value of a collection that's gone. */
+    fun clear() {
+        _points.value = emptyList()
+        runCatching { dir?.let { File(it, FILE).delete() } }
+    }
+
     /** Notes today's value of the owned binders. */
     suspend fun record(usd: Double, cards: Int) = withContext(Dispatchers.IO) {
         val next = withPoint(_points.value, ValuePoint(LocalDate.now().toString(), Math.round(usd * 100) / 100.0, cards))

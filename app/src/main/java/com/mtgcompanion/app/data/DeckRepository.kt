@@ -401,6 +401,30 @@ class DeckRepository(private val context: Context) {
         update(recordVersions = false, undeleting = restored, transform = transform)
     }
 
+    /**
+     * Reset collection (ResetCollection.kt): [transform] gets the decks as they are and answers them
+     * reset; [deleting] are the decks that went, noted as deleted so the sync sends their deletion. Not
+     * an edit of a list, so no version or history entry. Answers the stored text from before, for Undo
+     * to put back exactly ([putBack]).
+     */
+    suspend fun reset(deleting: Set<String>, transform: (List<Deck>) -> List<Deck>): String? {
+        var before: String? = null
+        context.decksDataStore.edit { prefs ->
+            before = prefs[key]
+            val store = storeOf(prefs[key])
+            val now = System.currentTimeMillis()
+            prefs[key] = adapter.toJson(
+                DeckStore(transform(store?.decks ?: emptyList()), noteDeleted(store?.deleted, null, now) + deleting.associateWith { now }, store?.userTags.orEmpty())
+            )
+        }
+        return before
+    }
+
+    /** Undo of a reset: the decks exactly as [text] (from [reset]) had them, what was deleted included. */
+    suspend fun putBack(text: String?) {
+        context.decksDataStore.edit { prefs -> if (text == null) prefs.remove(key) else prefs[key] = text }
+    }
+
     private suspend fun update(
         recordVersions: Boolean = true,
         deleting: String? = null,

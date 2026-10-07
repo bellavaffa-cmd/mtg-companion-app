@@ -2087,6 +2087,13 @@ fun MtgNavGraph(
             .align(Alignment.BottomCenter)
             .padding(bottom = if (layoutSize == LayoutSize.PHONE && currentRoute in bottomNavRoutes) 76.dp else 8.dp)
     )
+    // Undo for Reset collection (Settings › Data and speed), on every screen while it's offered.
+    com.mtgcompanion.app.ui.settings.ResetUndoHost(
+        (LocalContext.current.applicationContext as com.mtgcompanion.app.MtgCompanionApplication).collectionReset,
+        Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = if (layoutSize == LayoutSize.PHONE && currentRoute in bottomNavRoutes) 76.dp else 8.dp)
+    )
     }
     }
 

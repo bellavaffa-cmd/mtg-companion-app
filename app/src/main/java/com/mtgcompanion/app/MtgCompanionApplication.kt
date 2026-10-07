@@ -60,6 +60,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
     }
     /** Account + per-deck cloud sync (Supabase). Inert when this build has no Supabase project configured. */
     val supabaseSync by lazy { SupabaseSync(this, SupabaseAuth(this), deckRepository, collectionRepository) }
+    /** Settings › Data and speed › Reset collection, with its Undo and the sync held meanwhile. */
+    val collectionReset by lazy { com.mtgcompanion.app.data.CollectionReset(deckRepository, collectionRepository, supabaseSync) }
     val updateManager by lazy { UpdateManager(this) }
     val offlineCardRepository by lazy { OfflineCardRepository(this) }
     val playerProfileRepository by lazy { PlayerProfileRepository(this) }
