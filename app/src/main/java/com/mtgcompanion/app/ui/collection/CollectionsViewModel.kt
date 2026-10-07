@@ -155,6 +155,19 @@ class CollectionsViewModel(
         computeDashboard(cardRepository, entries.map { it.scryfallId to (it.total - it.proxies) }.filter { it.second > 0 })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    /**
+     * What the owned binders are worth (not the Wishlist, not samples), for the Collection's home —
+     * the same total as Home's "Collection value" and the web app's. Null while loading.
+     */
+    val ownedValue: StateFlow<Double?> = repository.collectionsFlow.mapLatest { all ->
+        val quantities = com.mtgcompanion.app.data.withoutSampleCollections(all).filter { it.kind == CollectionType.OWNED }
+            .flatMap { it.entries }
+            .groupBy { it.scryfallId }
+            .map { (id, entries) -> id to entries.sumOf { it.quantity + it.foilQuantity } }
+            .filter { it.second > 0 }
+        if (quantities.isEmpty()) null else computeDashboard(cardRepository, quantities)?.totalUsd
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     /** scryfallId -> USD price across all owned cards, for the enlarged-card value/total display. */
     val prices: StateFlow<Map<String, Double>> = allCards.mapLatest { entries ->
         fetchPrices(cardRepository, entries.map { it.scryfallId })

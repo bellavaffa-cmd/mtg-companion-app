@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.mtgcompanion.app.data.Currencies
@@ -162,6 +163,8 @@ fun SettingsScreen(
     onOpenTesterTools: (() -> Unit)? = null,
     /** Getting started: the welcome flow again (ui/onboarding/WelcomeScreen.kt). */
     onOpenGettingStarted: (() -> Unit)? = null,
+    /** The What's new tour over the Collection's home again (ui/collection/WhatsNewTour.kt). */
+    onOpenWhatsNew: (() -> Unit)? = null,
     /** Given while the sample deck and binder are in the library: takes them out. */
     onRemoveSamples: (() -> Unit)? = null
 ) {
@@ -238,6 +241,9 @@ fun SettingsScreen(
             }
             if (onOpenGettingStarted != null) {
                 SettingsSectionRow(Icons.Filled.Flag, "Getting started", "Bring in your cards, make a first deck, sign in", onOpenGettingStarted)
+            }
+            if (onOpenWhatsNew != null) {
+                SettingsSectionRow(Icons.Filled.Explore, "What's new tour", "The Collection's home, Storage and Find anything", onOpenWhatsNew)
             }
             if (onRemoveSamples != null) {
                 SettingsSectionRow(Icons.Filled.Science, "Remove samples", "The sample deck and binder go; nothing else changes", onRemoveSamples)

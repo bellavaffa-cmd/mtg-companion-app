@@ -47,6 +47,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
+import com.mtgcompanion.app.data.TourAction
+import com.mtgcompanion.app.data.TourTarget
+import com.mtgcompanion.app.data.shouldShowTour
+import com.mtgcompanion.app.data.tourSteps
+import com.mtgcompanion.app.ui.common.BackButton
+import com.mtgcompanion.app.ui.theme.NumberStyle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -176,7 +185,12 @@ fun CollectionsScreen(
     /** The Storage page's Gear (GearScreen.kt). */
     onOpenGear: () -> Unit = {},
     /** The empty pages' "Scan cards". */
-    onOpenScan: () -> Unit = {}
+    onOpenScan: () -> Unit = {},
+    /** The home's "Find a card, a place or a deck" (FindAnythingScreen.kt). */
+    onFind: () -> Unit = {},
+    /** The home's To do: the scanner checking a place, and a deck's pull list (as on Upkeep). */
+    onCheck: (String) -> Unit = {},
+    onOpenPullList: (String) -> Unit = {}
 ) {
     val tagBinders by viewModel.tagBinders.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
@@ -188,6 +202,7 @@ fun CollectionsScreen(
     // Spares only: binder cards no deck of yours plays.
     var sparesOnly by remember { mutableStateOf(false) }
     val dashboard by viewModel.dashboard.collectAsState()
+    val ownedValue by viewModel.ownedValue.collectAsState()
     val breakdown by viewModel.breakdown.collectAsState()
     val prices by viewModel.prices.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
@@ -201,12 +216,34 @@ fun CollectionsScreen(
     val decks by viewModel.decks.collectAsState()
     val pagerState = rememberPagerState(pageCount = { pageCount })
     val scope = rememberCoroutineScope()
+    // The Collection opens on its home (CollectionHome.kt); its tiles open the pages below, and Back
+    // (or the arrow, or the Collection tab again) comes back to it.
+    var showHome by rememberSaveable { mutableStateOf(true) }
+    val homeRequests by CollectionHomeRequest.requests.collectAsState()
+    var homeRequestsSeen by rememberSaveable { mutableStateOf(homeRequests) }
+    LaunchedEffect(homeRequests) {
+        if (homeRequests != homeRequestsSeen) {
+            homeRequestsSeen = homeRequests
+            showHome = true
+        }
+    }
     LaunchedEffect(openShared) {
         if (openShared && sharedPage != null) {
+            showHome = false
             pagerState.scrollToPage(4)
             onSharedOpened()
         }
     }
+    fun openPage(page: Int) {
+        showHome = false
+        scope.launch { pagerState.scrollToPage(page) }
+    }
+    // The What's new tour (WhatsNew.kt): once on this phone, or again from Settings.
+    val context = LocalContext.current
+    val homeScroll = rememberScrollState()
+    val tourTargets = remember { TourTargets() }
+    var touring by remember { mutableStateOf(false) }
+    val replayTour by WhatsNewStore.replay.collectAsState()
     val binderTargets by viewModel.binderTargets.collectAsState()
     val deckTargets by viewModel.deckTargets.collectAsState()
     val addTo = LocalAddToFeedback.current
@@ -251,7 +288,19 @@ fun CollectionsScreen(
     fun toggle(id: String) {
         selected = if (id in pickedIds) pickedIds - id else pickedIds + id
     }
+    LaunchedEffect(showHome, replayTour, allCards.size, decks.size) {
+        if (!showHome && !replayTour) return@LaunchedEffect
+        if (replayTour || shouldShowTour(WhatsNewStore.seen(context), cards = allCards.size, decks = decks.size)) {
+            WhatsNewStore.replay.value = false
+            WhatsNewStore.markSeen(context)
+            showHome = true
+            touring = true
+        }
+    }
+    BackHandler(enabled = !showHome) { showHome = true }
     BackHandler(enabled = selecting) { selected = emptySet() }
+
+    Box(Modifier.fillMaxSize()) {
 
     Scaffold(
         containerColor = Bg,
@@ -270,8 +319,18 @@ fun CollectionsScreen(
                 total = allCards.size,
                 onSelectAll = { selected = pickedIds + filtered.map { it.scryfallId } },
                 onClear = { selected = emptySet() }
+            ) else if (showHome) TopAppBar(
+                title = { Text("Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
+                actions = {
+                    ownedValue?.let { usd ->
+                        Text(money.format(usd, whole = true), style = NumberStyle(26), color = Gold, modifier = Modifier.padding(end = 4.dp))
+                    }
+                    SyncIconButton()
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             ) else TopAppBar(
                 title = { Text("Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
+                navigationIcon = { BackButton(onClick = { showHome = true }) },
                 actions = {
                     SyncIconButton()
                     if (onShareCollection != null) {
@@ -301,10 +360,36 @@ fun CollectionsScreen(
                 onDismiss = { showImport = false; viewModel.resetImport() },
                 places = placesOf(collections),
                 // From All cards, the whole collection comes in unsorted; from Binders, as a binder.
-                startInNewBinder = pagerState.currentPage == 1
+                startInNewBinder = !showHome && pagerState.currentPage == 1
             )
         }
-        Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
+        if (showHome) {
+            Box(Modifier.fillMaxSize().background(Bg).padding(padding)) {
+                CollectionHomePage(
+                    collections = collections,
+                    decks = decks,
+                    money = money,
+                    actions = CollectionHomeActions(
+                        onOpenPage = { page -> openPage(page) },
+                        onFind = onFind,
+                        onOpenSealed = onOpenSealed,
+                        onOpenLoans = onOpenLoans,
+                        onOpenSell = onOpenSell,
+                        onOpenUpkeep = onOpenUpkeep,
+                        onPutAway = onPutAway,
+                        onSetUpStorage = onSetUpStorage,
+                        onCheck = onCheck,
+                        onOpenSpace = onOpenSpace,
+                        onOpenPullList = onOpenPullList,
+                        onScan = onOpenScan,
+                        onSortPile = onSortPile,
+                        onImport = { viewModel.resetImport(); showImport = true }
+                    ),
+                    tour = tourTargets,
+                    scroll = homeScroll
+                )
+            }
+        } else Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
             SegmentedTabs(
                 labels = if (sharedPage != null) listOf("All cards", "Binders", "Storage", "Sets", "Shared") else listOf("All cards", "Binders", "Storage", "Sets"),
                 selected = pagerState.currentPage,
@@ -393,6 +478,26 @@ fun CollectionsScreen(
                 }
             }
         }
+    }
+
+    if (touring && showHome) {
+        WhatsNewTour(
+            steps = remember(collections) { tourSteps(placesOf(collections).isNotEmpty()) },
+            targets = tourTargets,
+            onAction = { action -> if (action == TourAction.FIND) onFind() else onSetUpStorage() },
+            onClose = { touring = false },
+            onStep = { target ->
+                // The lit part in view: the To do sits low on a small phone.
+                val bounds = tourTargets.bounds[target]
+                val screen = context.resources.displayMetrics.heightPixels
+                if (bounds != null && target == TourTarget.HOME_TODO && bounds.bottom > screen * 0.6f) {
+                    scope.launch { homeScroll.animateScrollTo(homeScroll.maxValue) }
+                } else if (target == TourTarget.HOME_FIND || target == TourTarget.HOME_TILES) {
+                    scope.launch { homeScroll.animateScrollTo(0) }
+                }
+            }
+        )
+    }
     }
 
     if (advancedOpen) {

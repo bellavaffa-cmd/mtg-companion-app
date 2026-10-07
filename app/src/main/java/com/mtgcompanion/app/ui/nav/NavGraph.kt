@@ -183,6 +183,9 @@ import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
 import com.mtgcompanion.app.ui.collection.CollectionDetailViewModel
 import com.mtgcompanion.app.ui.collection.CollectionsScreen
+import com.mtgcompanion.app.ui.collection.CollectionHomeRequest
+import com.mtgcompanion.app.ui.collection.FindAnythingScreen
+import com.mtgcompanion.app.ui.collection.WhatsNewStore
 import com.mtgcompanion.app.ui.collection.CollectionsViewModel
 import com.mtgcompanion.app.ui.decks.DeckDetailScreen
 import com.mtgcompanion.app.ui.decks.DeckDetailViewModel
@@ -234,6 +237,7 @@ import com.mtgcompanion.app.data.social.wantedAsDeckCards
 import com.mtgcompanion.app.ui.scan.ScanViewModel
 import com.mtgcompanion.app.ui.search.SearchResultsScreen
 import com.mtgcompanion.app.ui.search.SearchScreen
+import com.mtgcompanion.app.ui.search.SearchMode
 import com.mtgcompanion.app.ui.search.SearchViewModel
 import com.mtgcompanion.app.ui.settings.SettingsScreen
 import com.mtgcompanion.app.ui.settings.SettingsSection
@@ -254,6 +258,11 @@ import com.mtgcompanion.app.ui.badge.BadgeViewModel
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+
+/** Find anything's "Search all cards for …": the query for the Search tab to run. */
+private object SearchRequest {
+    val query = MutableStateFlow<String?>(null)
+}
 
 private object Routes {
     const val HOME = "home"
@@ -365,6 +374,8 @@ private object Routes {
     const val STORAGE_SETUP = "storage_setup"
     /** Upkeep: what's worth doing this week (Upkeep.kt). */
     const val UPKEEP = "upkeep"
+    /** Find anything: the user's cards, places and decks in one search (FindAnything.kt). */
+    const val FIND = "find_anything"
     /** Gear: sleeves, deck boxes, tokens, dice and playmats (Gear.kt). */
     const val GEAR = "gear"
     /** Pack your bag (EventBag.kt): the bags on this phone, and one bag's checklist. */
@@ -521,7 +532,7 @@ fun MtgNavGraph(
                 Routes.HOME, Routes.VALUE_HISTORY -> NavDestination.HOME
                 Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
-                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN -> NavDestination.COLLECTION
+                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN, Routes.FIND -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.PLAY, Routes.GAME_NIGHT, Routes.PLAYGROUP, Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT, Routes.PACK_LIST, Routes.PACK -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
@@ -1068,6 +1079,23 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(Routes.FIND) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                FindAnythingScreen(
+                    collections = collections,
+                    decks = decks,
+                    onBack = { navController.popBackStack() },
+                    onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
+                    onSearchAll = { query ->
+                        SearchRequest.query.value = query
+                        navController.navigateToTab(Routes.SEARCH)
+                    }
+                )
+            }
+
             destination(Routes.UPKEEP) {
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
@@ -1208,6 +1236,16 @@ fun MtgNavGraph(
                 val viewModel: SearchViewModel = viewModel(
                     factory = SearchViewModel.Factory(offlineCardRepository, settingsRepository, collectionRepository, deckRepository)
                 )
+                // Find anything's "Search all cards for …": that search, run.
+                val searchRequest by SearchRequest.query.collectAsState()
+                LaunchedEffect(searchRequest) {
+                    val asked = searchRequest ?: return@LaunchedEffect
+                    SearchRequest.query.value = null
+                    viewModel.setMode(SearchMode.CARDS)
+                    viewModel.onQueryChange(asked)
+                    viewModel.search()
+                    navController.navigate(Routes.SEARCH_RESULTS) { launchSingleTop = true }
+                }
                 SearchScreen(
                     viewModel = viewModel,
                     onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
@@ -1295,7 +1333,10 @@ fun MtgNavGraph(
                     onSetUpStorage = { navController.navigate(Routes.STORAGE_SETUP) },
                     onOpenUpkeep = { navController.navigate(Routes.UPKEEP) },
                     onOpenHousehold = { navController.navigate(Routes.household()) },
-                    onOpenGear = { navController.navigate(Routes.GEAR) }
+                    onOpenGear = { navController.navigate(Routes.GEAR) },
+                    onFind = { navController.navigate(Routes.FIND) { launchSingleTop = true } },
+                    onCheck = { id -> navController.navigate(Routes.check(id)) },
+                    onOpenPullList = { id -> navController.navigate(Routes.pullList(id)) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(
@@ -1613,6 +1654,10 @@ fun MtgNavGraph(
                 val settingsScope = rememberCoroutineScope()
                 SettingsScreen(
                     onOpenGettingStarted = { navController.navigate(Routes.welcome()) { launchSingleTop = true } },
+                    onOpenWhatsNew = {
+                        WhatsNewStore.replay.value = true
+                        navController.navigateToTab(Routes.COLLECTION)
+                    },
                     onRemoveSamples = if (hasSamples) ({ settingsScope.launch { removeAllSamples(deckRepository, collectionRepository) }; Unit }) else null,
                     supabaseSync = supabaseSync,
                     updateManager = updateManager,
@@ -2120,6 +2165,8 @@ private fun NavHostController.navigateToTab(route: String) {
     val currentTab = currentBackStack.value.lastOrNull { it.destination.route in tabRoutes }?.destination?.route
     if (route == currentTab) {
         popBackStack(route, inclusive = false) // nothing to pop when already there
+        // The Collection goes back to its home (CollectionHome.kt) from one of its pages.
+        if (route == Routes.COLLECTION) CollectionHomeRequest.ask()
         return
     }
     navigate(route) {

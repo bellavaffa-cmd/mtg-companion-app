@@ -9,23 +9,18 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "sealed",
-        "Sealed product",
-        "Collection › Storage › Sealed › + Add sealed product: type a set (\"dusk\") — it should offer Duskmourn Play Booster Box, Collector Box, Bundle…; type a precon (\"Blame Game\") for \"Precon: Blame Game\"; or keep any words as your own product. Set how many, the place, paid each and worth now each, Save. The row should read \"×2 · Cupboard, hall · paid \$210 each\" with the value and +13% (green) or −9% (orange), the total at the top, and \"value you entered\" where there's no price paid. Open a booster box: one should come off and the scanner open as Sorting a new pile, named after the box. Open the precon: one should come off and a deck with its list filled in should open. Value by place should count them, \"2 sealed\". Check the list on your other device and on manabind.com."
+        "collection-home",
+        "Collection home",
+        "Tap Collection: it should open on a home, with the collection's value at the top right, \"Find a card, a place or a deck\", six tiles — All cards (\"1,402 · filters\"), Storage (\"8 places · 92% placed\"), Binders (\"5 · wishlist\"), Sets, Sealed and graded (\"4 items · \$1,240\") and Loans and selling (\"7 out · 3 to sell\") — a To do from Upkeep (\"118 copies have no place · Put away\", \"Krenko pull list: 30 of 60 · Carry on\") and Scan / Sort a pile / Import. Each tile should open its page (All cards, Binders, Storage, Sets; Sealed; Loans or To sell); Back, the arrow at the top or tapping Collection again should bring the home back. Open a place from Storage and come back: you should still be on Storage. Friends › See what friends share should still open Shared."
     ),
     TesterNote(
-        "event-bag",
-        "Pack your bag for a game night or an event",
-        "Play › Pack your bag (or Game night › Pack your bag): pick Tonight's game night, an event, or Pack for… with a name like \"Game night at Priya's\", a day and who's coming (\"Priya, Sam\"), and choose two decks. The checklist should show Decks (each with its deck box from Gear, or \"Sol Ring lent to Sam\" in orange when a card is lent from the deck), Tokens and extras (\"Goblin tokens ×20 · for Krenko\", \"Poison and +1/+1 counters · for Atraxa\", \"Dice, playmat · Gear\") and For trades (\"3 cards Priya wants · Trade binder p4, p7\" for a friend coming whose wishlist matches your cards, and \"Sam's borrowed cards · to give back\"). Tick a few, close the app and reopen: the ticks should still be there (this phone only). All packed ticks the rest. Coming home should list only what went out, with \"Still to come back: …\" until everything's ticked."
+        "find-anything",
+        "Find anything",
+        "Collection › Find a card, a place or a deck: type \"sol ri\". Your cards should show Sol Ring with its copies and every place they are — \"Red box › Colourless ×1\", \"Atraxa deck ×1\", \"Lent to Sam ×1\" (orange), \"Graded PSA 9 ×1\", For trade or To sell — then Places (\"Shelf, study · 3 places inside\"), Decks using it (\"Commander · proxy\" for a proxy copy) and Not yours: Search all cards for \"sol ri\", which should open Search with those results. Typing should feel instant even with a big collection. Tap a card, a place or a deck: it should open, and Back should return to your search."
     ),
     TesterNote(
-        "gear",
-        "Gear: sleeves, deck boxes and tokens",
-        "Collection › Storage › Gear › + Add gear: add sleeves (38 left, on two 100-card decks) — the row should say \"On Krenko and Atraxa · a deck needs 100 · running low\" with the count in orange. Add inner sleeves on a binder and a deck (\"Double-sleeving: …\"), four deck boxes holding three decks (\"4 · 1 empty\"), and Goblin, Treasure and Soldier tokens kept in a place (\"Goblin ×24, Treasure ×18, Soldier ×12 · Token box\"). This deck needs should say \"Krenko goblins: 100 sleeves, a deck box and Goblin tokens. You have them all.\" or what's missing; a deck's Stats should say the same under This deck needs. Check the gear shows on your other device and on manabind.com."
-    ),
-    TesterNote(
-        "graded",
-        "Graded cards",
-        "On a card you own, Where it is › Mark a copy as graded: pick PSA, BGS, CGC or Other, a grade, the cert number and your value, which copy and where it's kept, then Mark as graded. Where it is should show \"PSA 10\" with a Graded label, its place and cert, and your value. The copy should leave its binder: a deck that needs the card should now list it as missing, it shouldn't count as a spare or turn up on a pull list. Value by place should count it at your value in its place. Tap it: Out of its slab should make it a raw copy again, back where it was; Remove takes it out of the collection."
+        "whats-new-tour",
+        "What's new tour",
+        "After this update, open Collection: a short tour should light up the home, Storage (\"Know where every card is\", with Set it up when you have no places yet), Find anything, Sealed and graded and To do — \"New · 2 of 5\", Skip tour, Next. It should show once on this phone: close and reopen the app and it shouldn't come back. Settings › What's new tour should show it again. Set it up should open Getting started with storage; Try it should open Find anything."
     )
 )
