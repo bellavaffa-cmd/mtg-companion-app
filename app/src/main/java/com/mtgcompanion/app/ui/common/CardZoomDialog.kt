@@ -56,6 +56,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -354,11 +356,16 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                 val backImageUrl = card.backImageUrl ?: lookedUpBack
                 val model = previewed?.displayImageUrl ?: (if (flipped) backImageUrl else card.imageUrl)
                 shownModels[page] = model
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                // Every card the same size and at the same height whatever is under it: the card gets a
+                // fixed share of the page and what's below scrolls. Sized by the info under each card,
+                // swiping made the cards jump up and down (tester report, build 27).
+                val cardArea = minOf(maxHeight * 0.66f, (maxWidth * 0.92f - 48.dp) / CARD_ASPECT + 32.dp)
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
+                            .height(cardArea)
                             .clickable(
                                 indication = null,
                                 interactionSource = remember { MutableInteractionSource() }
@@ -413,6 +420,7 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                             }
                         }
                     }
+                    Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                     val cardName = card.cardName
                     val onSelectPrinting = card.onSelectPrinting
                     if (cardName != null && onSelectPrinting != null) {
@@ -456,6 +464,8 @@ internal fun ZoomOverlay(host: CardZoomHostState, entry: ZoomEntry, onTop: Boole
                             ) { Text(action.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }
+                    }
+                }
                 }
             }
         }

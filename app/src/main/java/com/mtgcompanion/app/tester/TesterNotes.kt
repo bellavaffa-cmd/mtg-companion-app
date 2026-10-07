@@ -9,6 +9,11 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "zoom-level",
+        "Zoomed cards stay level",
+        "Search for something, tap a card and swipe through the results: every card should sit at the same height and size, whatever is under it (prices, printings, tags). Long info scrolls under the card instead of pushing it up."
+    ),
+    TesterNote(
         "collection-home",
         "Collection home",
         "Tap Collection: it should open on a home, with the collection's value at the top right, \"Find a card, a place or a deck\", six tiles — All cards (\"1,402 · filters\"), Storage (\"8 places · 92% placed\"), Binders (\"5 · wishlist\"), Sets, Sealed and graded (\"4 items · \$1,240\") and Loans and selling (\"7 out · 3 to sell\") — a To do from Upkeep (\"118 copies have no place · Put away\", \"Krenko pull list: 30 of 60 · Carry on\") and Scan / Sort a pile / Import. Each tile should open its page (All cards, Binders, Storage, Sets; Sealed; Loans or To sell); Back, the arrow at the top or tapping Collection again should bring the home back. Open a place from Storage and come back: you should still be on Storage. Friends › See what friends share should still open Shared."
