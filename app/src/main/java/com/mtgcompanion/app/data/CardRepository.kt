@@ -101,7 +101,7 @@ class CardRepository {
         setsCache?.let { return it }
         val sets = api.getSets().data.mapNotNull { s ->
             val code = s.code?.lowercase() ?: return@mapNotNull null
-            code to SetInfo(code, s.name ?: code.uppercase(), s.cardCount ?: 0, s.releasedAt, s.iconSvgUri)
+            code to SetInfo(code, s.name ?: code.uppercase(), s.cardCount ?: 0, s.releasedAt, s.iconSvgUri, s.setType, s.digital == true)
         }.toMap()
         if (sets.isNotEmpty()) setsCache = sets
         return sets

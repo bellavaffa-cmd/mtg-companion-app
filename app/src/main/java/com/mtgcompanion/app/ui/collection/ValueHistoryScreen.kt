@@ -1,13 +1,8 @@
 package com.mtgcompanion.app.ui.collection
 
-import com.mtgcompanion.app.ui.common.EmptyAction
-import com.mtgcompanion.app.ui.common.a11yHeading
-import com.mtgcompanion.app.ui.common.EmptyPrompt
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import com.mtgcompanion.app.ui.common.BackButton
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -18,13 +13,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -39,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -47,25 +44,33 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.unit.dp
-import com.mtgcompanion.app.data.Money
-import com.mtgcompanion.app.data.Mover
-import com.mtgcompanion.app.data.MoverRange
-import com.mtgcompanion.app.data.PriceMovers
-import com.mtgcompanion.app.data.moversOf
-import com.mtgcompanion.app.network.scryfall.toArtCropUrl
-import coil.compose.AsyncImage
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.mtgcompanion.app.data.BinderValue
+import com.mtgcompanion.app.data.CardPriceHistory
+import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.Money
 import com.mtgcompanion.app.data.Prices
-import com.mtgcompanion.app.data.ValueHistory
-import com.mtgcompanion.app.data.ValuePoint
-import com.mtgcompanion.app.data.ValueRange
-import com.mtgcompanion.app.data.changeOf
-import com.mtgcompanion.app.data.pointsIn
+import com.mtgcompanion.app.data.SeriesPoint
+import com.mtgcompanion.app.data.SeriesRange
+import com.mtgcompanion.app.data.ValueMover
+import com.mtgcompanion.app.data.binderValues
+import com.mtgcompanion.app.data.holdingsOf
+import com.mtgcompanion.app.data.likeForLike
+import com.mtgcompanion.app.data.trendSummary
+import com.mtgcompanion.app.data.valueMovers
+import com.mtgcompanion.app.data.valueSeries
+import com.mtgcompanion.app.network.scryfall.toArtCropUrl
+import com.mtgcompanion.app.ui.common.BackButton
+import com.mtgcompanion.app.ui.common.EmptyAction
+import com.mtgcompanion.app.ui.common.EmptyPrompt
+import com.mtgcompanion.app.ui.common.a11yHeading
 import com.mtgcompanion.app.ui.decks.FilterPill
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.theme.NumberStyle
@@ -75,7 +80,9 @@ import java.util.Locale
 import kotlin.math.abs
 
 private val DAY = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())
-private fun day(date: String) = runCatching { LocalDate.parse(date).format(DAY) }.getOrDefault(date)
+private val SHORT_DAY = DateTimeFormatter.ofPattern("d MMM", Locale.getDefault())
+/** An epoch day as "12 Sep 2026" (or "12 Sep" with [short]). */
+private fun day(epochDay: Long, short: Boolean = false) = LocalDate.ofEpochDay(epochDay).format(if (short) SHORT_DAY else DAY)
 
 /** "+₱1,234 (+5.2%)" / "−$3 (−0.4%)". */
 private fun signed(money: Money, usd: Double, percent: Double?): String {
@@ -85,25 +92,51 @@ private fun signed(money: Money, usd: Double, percent: Double?): String {
 }
 
 /**
- * The collection's value over time: a line of the daily values Home has noted, over the last month,
- * three months, year or all of it — and how much it moved. Touch the line for a day's value.
+ * The collection's value over time, worked out from each card's own price history (ValueSeries.kt):
+ * the cards owned now at the prices this phone saved, by day, week or month over the last month, six
+ * months, year or all of it — where the history starts, never before. Touch the line for a point's
+ * value. Below it, the cards that rose and fell most over the same stretch, and each binder's value.
+ * The web app's ValueHistoryPage.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ValueHistoryScreen(
     onBack: () -> Unit,
-    /** False while the binders hold no cards: there's no value to note yet. */
+    /** The binders; null while they're read. */
+    collections: List<Collection>? = null,
+    /** False while the binders hold no cards: there's no value to show yet. */
     hasCards: Boolean = true,
     /** The empty page's "Bring in your cards" (the welcome flow's collection step). */
-    onBringCards: (() -> Unit)? = null
+    onBringCards: (() -> Unit)? = null,
+    /** A riser's or faller's page, by name. */
+    onOpenCard: (String) -> Unit = {},
+    /** A binder, by id. */
+    onOpenBinder: (String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val money by Prices.money.collectAsState()
-    val all by ValueHistory.points.collectAsState()
-    var range by remember { mutableStateOf(ValueRange.QUARTER) }
-    var picked by remember { mutableStateOf<ValuePoint?>(null) }
-    val points = remember(all, range) { pointsIn(all, range) }
-    val change = changeOf(points)
+    val tracks by CardPriceHistory.tracks.collectAsState()
+    LaunchedEffect(Unit) { runCatching { CardPriceHistory.load() } }
+    var range by remember { mutableStateOf(SeriesRange.HALF_YEAR) }
+    var picked by remember { mutableStateOf<SeriesPoint?>(null) }
+    val holdings = remember(collections) { holdingsOf(collections.orEmpty()) }
+    val series = remember(tracks, holdings, range) { tracks?.let { valueSeries(it, holdings, range, LocalDate.now().toEpochDay()) } }
+    val points = series?.points.orEmpty()
+    val first = points.firstOrNull()
+    val last = points.lastOrNull()
+    val change = remember(tracks, holdings, first, last) {
+        val t = tracks
+        if (t != null && first != null && last != null && first.day != last.day) likeForLike(t, holdings, first.day, last.day) else null
+    }
+    val movers = remember(tracks, holdings, first, last) {
+        val t = tracks
+        if (t != null && first != null && last != null) valueMovers(t, holdings, first.day, last.day) else null
+    }
+    val binders = remember(tracks, holdings, first, last) {
+        val t = tracks
+        if (t != null && first != null && last != null) binderValues(t, holdings, first.day, last.day) else emptyList()
+    }
+    val summary = if (points.isEmpty()) "" else trendSummary(points, { money.format(it) }, { day(it) })
 
     Scaffold(
         containerColor = colors.bg,
@@ -116,19 +149,20 @@ fun ValueHistoryScreen(
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
-            val shown = picked ?: all.lastOrNull()
-            if (shown == null && !hasCards) {
+            val shown = picked ?: last
+            if (series == null && !hasCards) {
                 EmptyPrompt(
                     Icons.Filled.BarChart,
-                    "No value yet. Once your binders have cards, their value is noted here once a day.",
+                    "No value yet. Once your binders have cards, their prices are saved here once a day.",
                     actions = listOfNotNull(onBringCards?.let { EmptyAction("Bring in your cards", Icons.AutoMirrored.Filled.PlaylistAdd, it) })
                 )
                 return@Column
             }
-            if (shown == null) {
+            if (series == null || shown == null || first == null || last == null) {
                 Text("—", style = NumberStyle(44), color = colors.textDim)
                 Text(
-                    "Your binders' value is noted once a day, when Home works it out. The first one appears once their prices have loaded.",
+                    if (tracks == null || collections == null) "Reading the prices saved on this phone…"
+                    else "Your cards' prices are saved once a day, when Home works out their value. The chart starts once the first day's prices are saved.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.textMuted,
                     modifier = Modifier.padding(top = 8.dp)
@@ -137,47 +171,78 @@ fun ValueHistoryScreen(
             }
             Text(money.format(shown.usd), style = NumberStyle(44), color = colors.textPrimary)
             Text(
-                if (picked != null) "${day(shown.date)} · ${shown.cards} cards"
-                else change?.let { "${signed(money, it.usd, it.percent)} since ${day(it.from.date)}" } ?: "${shown.cards} cards · noted ${day(shown.date)}",
+                when {
+                    picked != null -> "${day(shown.day)} · ${shown.priced} of ${shown.copies} cards priced"
+                    change != null -> "${signed(money, change.change, change.percent)} since ${day(first.day)}"
+                    else -> "${shown.priced} cards · saved ${day(shown.day)}"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = when {
                     picked != null || change == null -> colors.textMuted
-                    change.usd > 0 -> colors.accent
-                    change.usd < 0 -> colors.error
+                    change.change > 0 -> colors.accent
+                    change.change < 0 -> colors.error
                     else -> colors.textMuted
                 },
                 modifier = Modifier.padding(top = 2.dp)
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 18.dp)) {
-                ValueRange.entries.forEach { r -> FilterPill(r.label, range == r) { range = r; picked = null } }
+                SeriesRange.entries.forEach { r -> FilterPill(r.label, range == r) { range = r; picked = null } }
             }
 
             if (points.size < 2) {
                 Text(
-                    "A value is noted once a day. Come back tomorrow to see it change.",
+                    "Prices are saved once a day. Come back tomorrow to see the value change.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.textMuted,
                     modifier = Modifier.padding(top = 24.dp)
                 )
             } else {
-                ValueChart(points, colors.accent, colors.surface3, onPick = { picked = it }, modifier = Modifier.padding(top = 18.dp).fillMaxWidth().height(220.dp))
+                ValueChart(
+                    points, colors.accent, colors.surface3, onPick = { picked = it },
+                    modifier = Modifier.padding(top = 18.dp).fillMaxWidth().height(220.dp).semantics { contentDescription = summary }
+                )
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                    Text(day(points.first().date), style = MaterialTheme.typography.labelSmall, color = colors.textDim, modifier = Modifier.weight(1f))
-                    Text(day(points.last().date), style = MaterialTheme.typography.labelSmall, color = colors.textDim)
+                    Text(day(first.day), style = MaterialTheme.typography.labelSmall, color = colors.textDim, modifier = Modifier.weight(1f))
+                    Text(series.bucket.label, style = MaterialTheme.typography.labelSmall, color = colors.textDim, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Text(day(last.day), style = MaterialTheme.typography.labelSmall, color = colors.textDim, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
                 }
                 val low = points.minBy { it.usd }
                 val high = points.maxBy { it.usd }
                 Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Figure("Low", money.format(low.usd), day(low.date), Modifier.weight(1f))
-                    Figure("High", money.format(high.usd), day(high.date), Modifier.weight(1f))
+                    Figure("Low", money.format(low.usd), day(low.day), Modifier.weight(1f))
+                    Figure("High", money.format(high.usd), day(high.day), Modifier.weight(1f))
                 }
             }
-            MoversSection(money)
             Text(
-                "The value of your binders (not wishlists) at TCGplayer's market prices" +
+                buildString {
+                    append("Value history starts ${day(series.historyStart, short = true)}, when this device began saving prices.")
+                    if (series.lateCards > 0) append(" ${series.lateCards} ${if (series.lateCards == 1) "card counts" else "cards count"} from the day ${if (series.lateCards == 1) "its" else "their"} price was first saved.")
+                    if (series.unpriced > 0) append(" ${series.unpriced} ${if (series.unpriced == 1) "copy has" else "copies have"} no saved price yet and ${if (series.unpriced == 1) "isn't" else "aren't"} counted.")
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textDim,
+                modifier = Modifier.padding(top = 14.dp)
+            )
+            movers?.let { m ->
+                Text("Risers and fallers", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, modifier = Modifier.padding(top = 28.dp).a11yHeading())
+                Text("Since ${day(first.day)}", style = MaterialTheme.typography.labelMedium, color = colors.textDim, modifier = Modifier.padding(top = 4.dp))
+                if (m.risers.isEmpty() && m.fallers.isEmpty()) {
+                    Text("None of your cards changed price.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(top = 8.dp))
+                }
+                if (m.risers.isNotEmpty()) MoverList("Up", m.risers, money, colors.accent, onOpenCard)
+                if (m.fallers.isNotEmpty()) MoverList("Down", m.fallers, money, colors.error, onOpenCard)
+            }
+            if (binders.size > 1) {
+                Text("By binder", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, modifier = Modifier.padding(top = 28.dp, bottom = 8.dp).a11yHeading())
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    binders.forEach { b -> BinderRow(b, money, first.day) { onOpenBinder(b.id) } }
+                }
+            }
+            Text(
+                "The cards in your binders now (not wishlists) at TCGplayer's market prices on each day" +
                     (if (money.isUsd) "" else ", in ${money.currency.code} at today's exchange rate") +
-                    ". It's noted on this device, once a day.",
+                    ". Prices are saved on this device, once a day; nothing is filled in for days before that.",
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.textDim,
                 modifier = Modifier.padding(top = 20.dp, bottom = 24.dp)
@@ -186,39 +251,8 @@ fun ValueHistoryScreen(
     }
 }
 
-/** Which cards moved the value most, up and down, over the last day, week or month. */
 @Composable
-private fun MoversSection(money: Money) {
-    val colors = LocalAppColors.current
-    val store by PriceMovers.store.collectAsState()
-    var range by remember { mutableStateOf(MoverRange.WEEK) }
-    val movers = remember(store, range) { moversOf(store, range) }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 28.dp)) {
-        Text("Movers", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MoverRange.entries.forEach { r -> FilterPill(r.label, range == r) { range = r } }
-        }
-    }
-    if (movers == null) {
-        Text(
-            "Each card's price is noted once a day, with the value. Come back tomorrow to see which moved.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.textMuted,
-            modifier = Modifier.padding(top = 8.dp)
-        )
-        return
-    }
-    Text("Since ${day(movers.since)}", style = MaterialTheme.typography.labelMedium, color = colors.textDim, modifier = Modifier.padding(top = 4.dp))
-    if (movers.up.isEmpty() && movers.down.isEmpty()) {
-        Text("None of your cards changed price.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(top = 8.dp))
-        return
-    }
-    if (movers.up.isNotEmpty()) MoverList("Up", movers.up, money, colors.accent)
-    if (movers.down.isNotEmpty()) MoverList("Down", movers.down, money, colors.error)
-}
-
-@Composable
-private fun MoverList(title: String, movers: List<Mover>, money: Money, tint: Color) {
+private fun MoverList(title: String, movers: List<ValueMover>, money: Money, tint: Color, onOpen: (String) -> Unit) {
     val colors = LocalAppColors.current
     Text(title, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -226,19 +260,21 @@ private fun MoverList(title: String, movers: List<Mover>, money: Money, tint: Co
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().background(colors.surface, androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).padding(8.dp)
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface)
+                    .clickable(role = Role.Button) { onOpen(m.name) }.padding(8.dp)
             ) {
                 AsyncImage(
-                    model = m.card.imageUrl.toArtCropUrl(),
+                    model = m.imageUrl.toArtCropUrl(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(width = 52.dp, height = 38.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).background(colors.surface3)
+                    modifier = Modifier.size(width = 52.dp, height = 38.dp).clip(RoundedCornerShape(8.dp)).background(colors.surface3)
                 )
                 Column(Modifier.weight(1f)) {
-                    Text(m.card.name, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(m.name, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "${money.format(m.from)} → ${money.format(m.to)} (${if (m.percent >= 0) "+" else "−"}${String.format(Locale.US, "%.0f", abs(m.percent))}%)" +
-                            if (m.card.copies > 1) " · ×${m.card.copies}" else "",
+                        "${money.format(m.from)} → ${money.format(m.to)}" +
+                            (m.percent?.let { " (${if (it >= 0) "+" else "−"}${String.format(Locale.US, "%.0f", abs(it))}%)" } ?: "") +
+                            if (m.copies > 1) " · ×${m.copies}" else "",
                         style = MaterialTheme.typography.labelSmall,
                         color = colors.textMuted,
                         maxLines = 1
@@ -251,22 +287,41 @@ private fun MoverList(title: String, movers: List<Mover>, money: Money, tint: Co
 }
 
 @Composable
+private fun BinderRow(b: BinderValue, money: Money, since: Long, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface)
+            .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(b.name, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (b.change == 0.0) "No change" else "${signed(money, b.change, null)} since ${day(since, short = true)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textMuted
+            )
+        }
+        Text(money.format(b.usd, whole = b.usd >= 100), style = NumberStyle(17), color = colors.textPrimary)
+    }
+}
+
+@Composable
 private fun Figure(label: String, value: String, detail: String, modifier: Modifier) {
     val colors = LocalAppColors.current
-    Column(modifier.background(colors.surface, androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).padding(14.dp)) {
+    Column(modifier.background(colors.surface, RoundedCornerShape(16.dp)).padding(14.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
         Text(value, style = NumberStyle(22), color = colors.textPrimary)
         Text(detail, style = MaterialTheme.typography.labelSmall, color = colors.textDim)
     }
 }
 
-/** The values as a line over a soft fill, spaced by date. Touching or dragging picks the nearest day. */
+/** The values as a line over a soft fill, spaced by date. Touching or dragging picks the nearest point. */
 @Composable
-private fun ValueChart(points: List<ValuePoint>, line: Color, grid: Color, onPick: (ValuePoint?) -> Unit, modifier: Modifier) {
-    val days = remember(points) { points.map { LocalDate.parse(it.date).toEpochDay() } }
-    val firstDay = days.first()
-    val daySpan = (days.last() - firstDay).coerceAtLeast(1)
-    fun xAt(i: Int, width: Float) = (days[i] - firstDay).toFloat() / daySpan * width
+private fun ValueChart(points: List<SeriesPoint>, line: Color, grid: Color, onPick: (SeriesPoint?) -> Unit, modifier: Modifier) {
+    val firstDay = points.first().day
+    val daySpan = (points.last().day - firstDay).coerceAtLeast(1)
+    fun xAt(i: Int, width: Float) = (points[i].day - firstDay).toFloat() / daySpan * width
     var touchX by remember(points) { mutableStateOf<Float?>(null) }
     var width by remember { mutableStateOf(1f) }
     val pickedIndex = touchX?.let { tx -> points.indices.minBy { abs(xAt(it, width) - tx) } }

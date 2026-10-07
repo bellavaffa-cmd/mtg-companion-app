@@ -9,6 +9,16 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "value-over-time",
+        "Collection value over time",
+        "Tap the value at the top of Collection (or Home's Collection value): the chart should now be worked out from each card's saved prices, with 1M (daily), 6M and 1Y (weekly) and All. Under it: \"Value history starts 12 Sep, when this device began saving prices\" with your own date — nothing before that. Touch the line for a day's value and how many cards were priced. Below: Risers and fallers over the range (card, change and %; tap one for its page) and, with more than one binder, By binder. With TalkBack on, the chart should read the trend out (\"up \$76 (6.2%), from … to …, lowest … highest …\")."
+    ),
+    TesterNote(
+        "new-sets",
+        "New sets",
+        "Collection home › New sets (\"2 coming soon · 1 just out\"): Just out and Coming soon, with release date and how many cards Scryfall has shown. Open one with cards: Cards for your decks lists, per Commander deck, cards in the commander's colours that share a creature type or theme with at least four of its cards (\"Elf, like 14 cards in the deck\"), and On your Wishlist shows new printings of Wishlist cards. Tap the bell to follow a set coming soon (allow notifications): on its release day you should get \"<set> is out today\", once; tapping it opens the set."
+    ),
+    TesterNote(
         "zoom-level",
         "Zoomed cards stay level",
         "Search for something, tap a card and swipe through the results: every card should sit at the same height and size, whatever is under it (prices, printings, tags). Long info scrolls under the card instead of pushing it up."

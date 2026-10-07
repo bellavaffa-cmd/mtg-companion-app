@@ -97,6 +97,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -192,7 +194,11 @@ fun CollectionsScreen(
     onFind: () -> Unit = {},
     /** The home's To do: the scanner checking a place, and a deck's pull list (as on Upkeep). */
     onCheck: (String) -> Unit = {},
-    onOpenPullList: (String) -> Unit = {}
+    onOpenPullList: (String) -> Unit = {},
+    /** The home's value in the top bar: the collection's value over time (ValueHistoryScreen.kt). */
+    onOpenValueHistory: () -> Unit = {},
+    /** The home's New sets (NewSetsScreen.kt). */
+    onOpenNewSets: () -> Unit = {}
 ) {
     val tagBinders by viewModel.tagBinders.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
@@ -325,7 +331,9 @@ fun CollectionsScreen(
                 title = { Text("Collection", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.a11yHeading()) },
                 actions = {
                     ownedValue?.let { usd ->
-                        Text(money.format(usd, whole = true), style = NumberStyle(26), color = Gold, modifier = Modifier.padding(end = 4.dp))
+                        TextButton(onClick = onOpenValueHistory, modifier = Modifier.semantics { contentDescription = "Collection value ${money.format(usd, whole = true)}: see it over time" }) {
+                            Text(money.format(usd, whole = true), style = NumberStyle(26), color = Gold)
+                        }
                     }
                     SyncIconButton()
                 },
@@ -385,7 +393,8 @@ fun CollectionsScreen(
                         onOpenPullList = onOpenPullList,
                         onScan = onOpenScan,
                         onSortPile = onSortPile,
-                        onImport = { viewModel.resetImport(); showImport = true }
+                        onImport = { viewModel.resetImport(); showImport = true },
+                        onOpenNewSets = onOpenNewSets
                     ),
                     tour = tourTargets,
                     scroll = homeScroll

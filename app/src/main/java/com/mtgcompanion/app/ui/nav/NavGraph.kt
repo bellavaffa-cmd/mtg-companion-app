@@ -10,6 +10,8 @@ import com.mtgcompanion.app.ui.social.OfferSparesDialog
 import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.ui.collection.TagBinderScreen
 import com.mtgcompanion.app.ui.collection.ValueHistoryScreen
+import com.mtgcompanion.app.ui.collection.NewSetScreen
+import com.mtgcompanion.app.ui.collection.NewSetsScreen
 import com.mtgcompanion.app.ui.collection.SpreadThinScreen
 import com.mtgcompanion.app.ui.collection.PlaceScreen
 import com.mtgcompanion.app.ui.collection.BinderFitScreen
@@ -409,6 +411,10 @@ private object Routes {
     const val TAG_BINDER = "tag_binder/{tagId}"
     fun tagBinder(tagId: String) = "tag_binder/$tagId"
     /** One set's cards, owned and missing — from the Collection's Sets page. */
+    /** New sets: coming soon and just out (NewSetsScreen.kt), and one of them. */
+    const val NEW_SETS = "new_sets"
+    const val NEW_SET = "new_set/{code}"
+    fun newSet(code: String) = "new_set/" + URLEncoder.encode(code, StandardCharsets.UTF_8.name())
     const val SET_CARDS = "set_cards/{code}"
     fun setCards(code: String) = "set_cards/" + URLEncoder.encode(code, StandardCharsets.UTF_8.name())
     fun detail(cardName: String) = "detail/" + URLEncoder.encode(cardName, StandardCharsets.UTF_8.name())
@@ -461,6 +467,9 @@ fun MtgNavGraph(
             open == "life" -> { navController.navigate(Routes.LIFE_COUNTER) { launchSingleTop = true }; return@LaunchedEffect }
             open == "scan" -> { navController.navigateToTab(Routes.SCAN); return@LaunchedEffect }
             open == "value" -> { navController.navigate(Routes.VALUE_HISTORY) { launchSingleTop = true }; return@LaunchedEffect }
+            // A followed set out (NewSetsStore.kt's SetReleaseCheck).
+            open == "newsets" -> { navController.navigate(Routes.NEW_SETS) { launchSingleTop = true }; return@LaunchedEffect }
+            open.startsWith("newset:") -> { navController.navigate(Routes.newSet(open.removePrefix("newset:"))) { launchSingleTop = true }; return@LaunchedEffect }
             // The weekly Upkeep reminder (UpkeepReminder.kt).
             open == "upkeep" -> { navController.navigate(Routes.UPKEEP) { launchSingleTop = true }; return@LaunchedEffect }
             open.startsWith("card:") -> { navController.navigate(Routes.detail(open.removePrefix("card:"))) { launchSingleTop = true }; return@LaunchedEffect }
@@ -532,7 +541,7 @@ fun MtgNavGraph(
                 Routes.HOME, Routes.VALUE_HISTORY -> NavDestination.HOME
                 Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
-                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN, Routes.FIND -> NavDestination.COLLECTION
+                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN, Routes.FIND, Routes.NEW_SETS, Routes.NEW_SET -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.PLAY, Routes.GAME_NIGHT, Routes.PLAYGROUP, Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT, Routes.PACK_LIST, Routes.PACK -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
@@ -703,8 +712,33 @@ fun MtgNavGraph(
                 val valueBinders by collectionRepository.collectionsFlow.collectAsState(initial = null)
                 ValueHistoryScreen(
                     onBack = { navController.popBackStack() },
+                    collections = valueBinders,
                     hasCards = valueBinders?.let { libraryFacts(emptyList(), it).cards > 0 } ?: true,
-                    onBringCards = { navController.navigate(Routes.welcome(WelcomeStep.COLLECTION)) { launchSingleTop = true } }
+                    onBringCards = { navController.navigate(Routes.welcome(WelcomeStep.COLLECTION)) { launchSingleTop = true } },
+                    onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenBinder = { id -> navController.navigate(Routes.collectionDetail(id)) }
+                )
+            }
+
+            destination(Routes.NEW_SETS) {
+                NewSetsScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenSet = { code -> navController.navigate(Routes.newSet(code)) }
+                )
+            }
+
+            destination(Routes.NEW_SET, arguments = listOf(navArgument("code") { type = NavType.StringType })) { entry ->
+                val code = entry.arguments?.getString("code")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val setBinders by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val setDecks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                NewSetScreen(
+                    code = code,
+                    collections = setBinders,
+                    decks = setDecks,
+                    onBack = { navController.popBackStack() },
+                    onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
+                    onOpenNewSets = { navController.navigate(Routes.NEW_SETS) { launchSingleTop = true } }
                 )
             }
 
@@ -1337,7 +1371,9 @@ fun MtgNavGraph(
                     onFind = { navController.navigate(Routes.FIND) { launchSingleTop = true } },
                     onCheck = { id -> navController.navigate(Routes.check(id)) },
                     onOpenPullList = { id -> navController.navigate(Routes.pullList(id)) },
-                    onOpenDataAndSpeed = { navController.navigate(Routes.settingsSection(SettingsSection.DATA.id)) }
+                    onOpenDataAndSpeed = { navController.navigate(Routes.settingsSection(SettingsSection.DATA.id)) },
+                    onOpenValueHistory = { navController.navigate(Routes.VALUE_HISTORY) },
+                    onOpenNewSets = { navController.navigate(Routes.NEW_SETS) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(
