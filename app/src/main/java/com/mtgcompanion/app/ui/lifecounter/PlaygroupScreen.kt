@@ -90,7 +90,11 @@ fun PlaygroupScreen(
     onAddGameResult: (String, GameResult) -> Unit,
     /** The empty page's buttons: the life counter, and the Decks tab. */
     onStartGame: () -> Unit = {},
-    onOpenDecks: () -> Unit = {}
+    onOpenDecks: () -> Unit = {},
+    /** A pod's chat, planning a game night in it, and its next night (PodNightAndChat in PodGames.kt). */
+    onOpenPodChat: ((String) -> Unit)? = null,
+    onPlanGameNight: ((String) -> Unit)? = null,
+    onOpenGameNight: ((String) -> Unit)? = null
 ) {
     val colors = LocalAppColors.current
     val account by social.accountFlow.collectAsState()
@@ -127,7 +131,7 @@ fun PlaygroupScreen(
             val current = overview
             when {
                 pod != null && me != null && current != null ->
-                    PodView(social, current, pod, me, decks, onAddGameResult)
+                    PodView(social, current, pod, me, decks, onAddGameResult, onOpenPodChat, onPlanGameNight, onOpenGameNight)
                 chosen == null -> JustMe(decks, onOpenDeck, onStartGame, onOpenDecks)
                 !social.configured -> PodsState(Icons.Filled.CloudOff, "Accounts aren't set up in this build.")
                 account == null -> PodsState(Icons.Filled.Groups, "Sign in to see your pods' games.") { GoldButton("Sign in", onSignIn) }

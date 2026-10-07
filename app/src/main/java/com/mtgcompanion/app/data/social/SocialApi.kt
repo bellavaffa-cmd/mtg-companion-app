@@ -505,7 +505,17 @@ class SocialApi(private val auth: SupabaseAuth) {
             "dm_too_long" to "Keep messages under 2,000 characters.",
             "cant_message" to "You can only message friends.",
             "slow_down" to "You're sending messages very fast — wait a minute.",
-            "cant_rate" to "You can rate a trade once you've updated your binders for it."
+            "cant_rate" to "You can rate a trade once you've updated your binders for it.",
+            // supabase/migrations/20261006070000_game_nights_chat.sql (GameNightsApi.kt)
+            "bad_night" to "Check the night: a day and time within a year, and where (up to 80 characters).",
+            "too_many_guests" to "Ask up to 20 friends from outside the pod.",
+            "too_many_nights" to "This pod has a lot of game nights planned already.",
+            "no_such_night" to "That game night isn't there any more.",
+            "not_organiser" to "Only whoever planned the night, or the pod's owner, can change it.",
+            "night_cancelled" to "That game night was called off.",
+            "night_over" to "That game night is over.",
+            "bad_answer" to "Pick Going, Maybe or Can't.",
+            "bad_share" to "That can't be shared here."
         )
     }
 }
