@@ -21,6 +21,9 @@ import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Style
@@ -33,6 +36,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,7 +60,11 @@ import com.mtgcompanion.app.data.PlaceKind
 import com.mtgcompanion.app.data.TourTarget
 import com.mtgcompanion.app.data.UpkeepItem
 import com.mtgcompanion.app.data.UpkeepKind
+import com.mtgcompanion.app.data.NewSetsStore
+import com.mtgcompanion.app.data.SetInfo
 import com.mtgcompanion.app.data.homeNumbers
+import com.mtgcompanion.app.data.releaseSets
+import com.mtgcompanion.app.data.setsToAnnounce
 import com.mtgcompanion.app.data.homeTiles
 import com.mtgcompanion.app.data.homeTodo
 import com.mtgcompanion.app.data.placesOf
@@ -89,7 +101,9 @@ class CollectionHomeActions(
     val onOpenPullList: (String) -> Unit,
     val onScan: () -> Unit,
     val onSortPile: () -> Unit,
-    val onImport: () -> Unit
+    val onImport: () -> Unit,
+    /** New sets (NewSetsScreen.kt). */
+    val onOpenNewSets: () -> Unit = {}
 )
 
 private fun tileIcon(key: HomeTileKey): ImageVector = when (key) {
@@ -188,6 +202,8 @@ fun CollectionHomePage(
             }
         }
 
+        NewSetsRow(actions.onOpenNewSets)
+
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.tourTarget(tour, TourTarget.HOME_TODO)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                 Text("To do", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = colors.textPrimary, modifier = Modifier.weight(1f).a11yHeading())
@@ -260,5 +276,47 @@ private fun QuickButton(label: String, icon: ImageVector, modifier: Modifier, on
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 0.dp))
         Text(label, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
+    }
+}
+
+/** New sets: "2 coming soon · 1 just out", with how many followed sets are out. Mirrors the web's useNewSetsLine. */
+@Composable
+private fun NewSetsRow(onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    val context = LocalContext.current
+    val followed by NewSetsStore.followed.collectAsState()
+    val told by NewSetsStore.told.collectAsState()
+    val sets by produceState<List<SetInfo>?>(null) { value = runCatching { NewSetsStore.releaseSets(context) }.getOrNull() }
+    val today = NewSetsStore.today()
+    val all = sets
+    val line = if (all == null) "What's coming, and cards for your decks" else {
+        val lists = releaseSets(all, today)
+        listOfNotNull(
+            lists.upcoming.size.takeIf { it > 0 }?.let { "$it coming soon" },
+            lists.recent.size.takeIf { it > 0 }?.let { "$it just out" }
+        ).joinToString(" · ").ifEmpty { "No new sets right now" }
+    }
+    val out = all?.let { setsToAnnounce(followed, it, today, told).size } ?: 0
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface)
+            .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Icon(Icons.Filled.NewReleases, contentDescription = null, tint = colors.accent, modifier = Modifier.size(22.dp))
+        Column(Modifier.weight(1f)) {
+            Text("New sets", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = colors.textPrimary)
+            Text(line, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (out > 0) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.clip(RoundedCornerShape(11.dp)).background(colors.accent).padding(horizontal = 7.dp, vertical = 2.dp)
+                    .semantics { contentDescription = "$out followed ${if (out == 1) "set is" else "sets are"} out" }
+            ) {
+                Text("$out", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = colors.onAccent)
+            }
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = colors.textDim)
     }
 }

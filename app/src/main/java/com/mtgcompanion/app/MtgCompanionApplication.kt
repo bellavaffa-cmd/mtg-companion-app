@@ -89,6 +89,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         // Storage upkeep: the last import, and the weekly reminder when it's on (UpkeepReminder.kt).
         com.mtgcompanion.app.data.UpkeepStore.init(this)
         if (com.mtgcompanion.app.data.UpkeepStore.weeklyOn(this)) com.mtgcompanion.app.data.UpkeepReminder.schedule(this)
+        // New sets: the sets followed, and their release-day check while any is (NewSetsStore.kt).
+        com.mtgcompanion.app.data.NewSetsStore.init(this)
         // What each card does (mana ramp, removal…), remembered from earlier lookups.
         RoleTags.init(this)
         // Prices in the chosen currency, at the day's exchange rate; and the collection's value over time.
