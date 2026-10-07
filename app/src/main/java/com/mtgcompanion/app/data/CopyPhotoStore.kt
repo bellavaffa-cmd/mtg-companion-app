@@ -90,6 +90,24 @@ object CopyPhotoStore {
         return true
     }
 
+    /**
+     * A restored backup's photos (Backup.kt): [photos] in place of the details kept, [pictures] written
+     * as files by name, the files [dropped] (replaced copies' old pictures) deleted. The setting comes
+     * back too when [askOver] is given. False when a picture couldn't be written.
+     */
+    @Synchronized
+    fun restore(photos: List<CopyPhoto>, pictures: Map<String, ByteArray>, dropped: List<String>, askOver: Double?): Boolean {
+        val d = dir ?: return false
+        val wrote = runCatching {
+            d.mkdirs()
+            pictures.forEach { (name, bytes) -> File(d, name).writeBytes(bytes) }
+            true
+        }.getOrDefault(false)
+        dropped.forEach { runCatching { File(d, it).delete() } }
+        write(_saved.value.copy(photos = photos, askOver = askOver ?: _saved.value.askOver))
+        return wrote
+    }
+
     /** A photo as a data: URL for the printed report, or null when it's gone. */
     fun dataUrl(name: String?): String? {
         val f = name?.let { file(it) } ?: return null

@@ -1336,7 +1336,8 @@ fun MtgNavGraph(
                     onOpenGear = { navController.navigate(Routes.GEAR) },
                     onFind = { navController.navigate(Routes.FIND) { launchSingleTop = true } },
                     onCheck = { id -> navController.navigate(Routes.check(id)) },
-                    onOpenPullList = { id -> navController.navigate(Routes.pullList(id)) }
+                    onOpenPullList = { id -> navController.navigate(Routes.pullList(id)) },
+                    onOpenDataAndSpeed = { navController.navigate(Routes.settingsSection(SettingsSection.DATA.id)) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(

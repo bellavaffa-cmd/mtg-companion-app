@@ -168,6 +168,8 @@ fun upkeep(
 ): UpkeepReport {
     val summary = storageSummary(collections, decks)
     val places = placesOf(collections)
+    // Each place's own copies, found in one pass rather than a pass per place.
+    val byPlace = cardsByPlace(collections)
     val items = mutableListOf<UpkeepItem>()
 
     if (summary.unplaced > 0) {
@@ -184,7 +186,7 @@ fun upkeep(
         val days = ((now - since) / DAY_MS).toInt()
         if (days < CHECK_AFTER_DAYS) return@mapNotNull null
         // Only the place's own copies: a shelf's boxes are checked one by one.
-        val value = cardsIn(collections, p.id).sumOf { (price(it.entry.scryfallId, it.line.isFoil) ?: 0.0) * it.line.qty }
+        val value = byPlace[p.id].orEmpty().sumOf { (price(it.entry.scryfallId, it.line.isFoil) ?: 0.0) * it.line.qty }
         if (value <= 0.0) null else Triple(p, days, value)
     }.sortedByDescending { it.third }.take(MAX_CHECKS)
     for ((p, days, value) in stale) {
@@ -213,7 +215,7 @@ fun upkeep(
     for (n in placeTree(places)) {
         val p = n.place
         if (p.placeKind == PlaceKind.BINDER) continue
-        val space = spaceOf(p, collections) ?: continue
+        val space = spaceOf(p, collections, byPlace[p.id].orEmpty()) ?: continue
         if (!space.nearlyFull) continue
         items += UpkeepItem(UpkeepKind.SPLIT, "${p.name} is ${space.percent}% full", roomLine(space).removeSuffix("."), "Split", placeId = p.id)
     }

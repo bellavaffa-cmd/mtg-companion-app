@@ -79,8 +79,10 @@ private fun inLoop(byId: Map<String, StoragePlace>, id: String): Boolean {
 }
 
 /** The place [id] sits in, or null at the top — also for a parent that's gone, or a loop. */
-fun parentOf(places: List<StoragePlace>, id: String): String? {
-    val byId = places.associateBy { it.id }
+fun parentOf(places: List<StoragePlace>, id: String): String? = parentIn(places.associateBy { it.id }, id)
+
+/** [parentOf] with the places by id made once, for callers asking about many places. */
+private fun parentIn(byId: Map<String, StoragePlace>, id: String): String? {
     val parent = byId[id]?.parentId
     return if (parent != null && byId.containsKey(parent) && !inLoop(byId, id)) parent else null
 }
@@ -91,7 +93,8 @@ data class PlaceNode(val place: StoragePlace, val depth: Int)
 
 /** Every place, each followed by the places inside it, oldest first at each level. */
 fun placeTree(places: List<StoragePlace>): List<PlaceNode> {
-    val kids = places.groupBy { parentOf(places, it.id) }
+    val byId = places.associateBy { it.id }
+    val kids = places.groupBy { parentIn(byId, it.id) }
     val out = mutableListOf<PlaceNode>()
     fun walk(parent: String?, depth: Int) {
         kids[parent].orEmpty().sortedWith(byAge).forEach {
@@ -104,17 +107,20 @@ fun placeTree(places: List<StoragePlace>): List<PlaceNode> {
 }
 
 /** The places directly inside [id] (null: the top level), oldest first. */
-fun childrenOf(places: List<StoragePlace>, id: String?): List<StoragePlace> =
-    places.filter { parentOf(places, it.id) == id }.sortedWith(byAge)
+fun childrenOf(places: List<StoragePlace>, id: String?): List<StoragePlace> {
+    val byId = places.associateBy { it.id }
+    return places.filter { parentIn(byId, it.id) == id }.sortedWith(byAge)
+}
 
 /** [id] and every place inside it, however deep. */
 fun placeAndInside(places: List<StoragePlace>, id: String): Set<String> {
     val out = linkedSetOf(id)
+    val byId = places.associateBy { it.id }
     var grew = true
     while (grew) {
         grew = false
         for (p in places) {
-            val parent = parentOf(places, p.id)
+            val parent = parentIn(byId, p.id)
             if (parent != null && parent in out && p.id !in out) { out += p.id; grew = true }
         }
     }
@@ -124,15 +130,23 @@ fun placeAndInside(places: List<StoragePlace>, id: String): Set<String> {
 /** The places [id] sits in, outermost first. */
 fun parentsOf(places: List<StoragePlace>, id: String): List<StoragePlace> {
     val out = mutableListOf<StoragePlace>()
-    var p = parentOf(places, id)
+    val byId = places.associateBy { it.id }
+    var p = parentIn(byId, id)
     while (p != null) {
-        val place = places.firstOrNull { it.id == p } ?: break
+        val place = byId[p] ?: break
         if (place in out) break
         out.add(0, place)
-        p = parentOf(places, p)
+        p = parentIn(byId, p)
     }
     return out
 }
+
+/**
+ * For each place, its id after the ids of the places it sits in, outermost first — what [parentsOf]
+ * answers, for every place at once (the Advanced filters ask about each copy's places).
+ */
+fun placeChains(places: List<StoragePlace>): Map<String, List<String>> =
+    places.associate { p -> p.id to parentsOf(places, p.id).map { it.id } + p.id }
 
 /** "Shelf, study › Red box". */
 fun placePath(places: List<StoragePlace>, id: String): String =
@@ -198,6 +212,9 @@ fun copyPlace(spot: Spot, qty: Int, foil: Boolean): CopyPlace = CopyPlace(
  * plain and foil apart, the first lines keeping theirs.
  */
 fun tidyPlaces(quantity: Int, foilQuantity: Int, places: List<CopyPlace>): List<CopyPlace> {
+    // Nearly always already tidy: then it's the same list, rather than a copy of every line each time
+    // a screen asks (thousands of entries, many times over).
+    if (isTidy(quantity, foilQuantity, places)) return places
     val merged = mutableListOf<CopyPlace>()
     for (p in places) {
         if (p.qty <= 0) continue
@@ -217,6 +234,25 @@ fun tidyPlaces(quantity: Int, foilQuantity: Int, places: List<CopyPlace>): List<
     return out
 }
 
+/** A line as copyPlace writes it: optional fields null rather than false, empty or 0. */
+private fun isWritten(p: CopyPlace): Boolean =
+    (p.foil == null || p.foil == true) && (p.section == null || p.section.isNotEmpty()) &&
+        (p.page == null || p.page > 0) && (p.slot == null || p.slot > 0)
+
+/** Whether [places] is already as tidyPlaces leaves it. */
+private fun isTidy(quantity: Int, foilQuantity: Int, places: List<CopyPlace>): Boolean {
+    var plain = quantity.coerceAtLeast(0)
+    var foil = foilQuantity.coerceAtLeast(0)
+    for (i in places.indices) {
+        val p = places[i]
+        if (p.qty <= 0 || !isWritten(p)) return false
+        for (j in 0 until i) if (sameLine(places[j], p)) return false
+        if (p.isFoil) foil -= p.qty else plain -= p.qty
+        if (plain < 0 || foil < 0) return false
+    }
+    return true
+}
+
 /** The entry's copies that have a place, as they stand (see tidyPlaces). */
 fun placedCopies(entry: CollectionEntry): List<CopyPlace> = tidyPlaces(entry.quantity, entry.foilQuantity, entry.places.orEmpty())
 
@@ -233,6 +269,7 @@ fun unplacedCopies(entry: CollectionEntry): Pair<Int, Int> {
 fun withPlaces(entry: CollectionEntry, places: List<CopyPlace>): CollectionEntry {
     val tidy = tidyPlaces(entry.quantity, entry.foilQuantity, places)
     if (tidy.isEmpty() && entry.places == null) return entry
+    if (tidy === entry.places) return entry
     return entry.copy(places = tidy)
 }
 
@@ -431,6 +468,18 @@ fun copiesWithin(summary: StorageSummary, places: List<StoragePlace>, id: String
 
 /** Copies of one entry at one spot of a place. */
 data class PlacedCard(val collectionId: String, val entry: CollectionEntry, val line: CopyPlace)
+
+/**
+ * Every line of copies kept in each place itself, by place id, in no particular order — [cardsIn] for
+ * every place in one pass over the collection, for screens that ask about all of them (Upkeep).
+ */
+fun cardsByPlace(collections: List<Collection>): Map<String, List<PlacedCard>> {
+    val out = HashMap<String, MutableList<PlacedCard>>()
+    for (c in owned(collections)) for (e in c.entries) for (line in placedCopies(e)) {
+        out.getOrPut(line.placeId) { mutableListOf() } += PlacedCard(c.id, e, line)
+    }
+    return out
+}
 
 /** Every line of copies kept in [placeId] itself, by card name. */
 fun cardsIn(collections: List<Collection>, placeId: String): List<PlacedCard> {
@@ -994,14 +1043,17 @@ fun keepPlaceSizes(source: Collection, theirs: Collection): Collection {
 const val NO_PLACE = "none"
 
 /** The places holding copies of an entry — each with the places it sits in — and how many have none. */
-fun placeFactsOf(entry: CollectionEntry, places: List<StoragePlace>): Pair<List<String>, Int> {
-    val known = places.map { it.id }.toSet()
+fun placeFactsOf(
+    entry: CollectionEntry,
+    places: List<StoragePlace>,
+    chains: Map<String, List<String>> = placeChains(places)
+): Pair<List<String>, Int> {
     val out = mutableListOf<String>()
     var here = 0
     for (line in placedCopies(entry)) {
-        if (line.placeId !in known) continue
+        val chain = chains[line.placeId] ?: continue
         here += line.qty
-        for (id in parentsOf(places, line.placeId).map { it.id } + line.placeId) if (id !in out) out += id
+        for (id in chain) if (id !in out) out += id
     }
     val copies = entry.quantity + entry.foilQuantity
     return out to if (lentTag(entry) != null) 0 else (copies - here).coerceAtLeast(0)

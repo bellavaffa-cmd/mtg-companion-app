@@ -21,7 +21,7 @@ class DeckRepository(private val context: Context) {
     private val adapter = localMoshi.adapter(DeckStore::class.java)
 
     val decksFlow: Flow<List<Deck>> = context.decksDataStore.data.map { prefs ->
-        prefs[key]?.let { json -> runCatching { adapter.fromJson(json)?.decks }.getOrNull() } ?: emptyList()
+        storeOf(prefs[key])?.decks ?: emptyList()
     }
 
     fun deckFlow(deckId: String): Flow<Deck?> = decksFlow.map { decks -> decks.find { it.id == deckId } }
@@ -375,25 +375,52 @@ class DeckRepository(private val context: Context) {
 
     /** Which decks the user has deleted here, for the sync to tell a deletion from a lost library. */
     val deletedFlow: Flow<Map<String, Long>> = context.decksDataStore.data.map { prefs ->
-        prefs[key]?.let { json -> runCatching { adapter.fromJson(json)?.deleted }.getOrNull() } ?: emptyMap()
+        storeOf(prefs[key])?.deleted ?: emptyMap()
+    }
+
+    /**
+     * The stored JSON read once per change, not once for each screen and flow watching it (see
+     * CollectionRepository.storeOf). Everyone gets the same (immutable) decks.
+     */
+    @Volatile private var parsed: Pair<String, DeckStore?>? = null
+
+    private fun storeOf(json: String?): DeckStore? {
+        if (json == null) return null
+        parsed?.let { (was, store) -> if (was === json || was == json) return store }
+        val store = runCatching { adapter.fromJson(json) }.getOrNull()
+        parsed = json to store
+        return store
+    }
+
+    /**
+     * A restored backup's decks (Backup.kt): [transform] gets the decks as they are and answers them
+     * restored. Not an edit of their lists, so no version or history entry of its own — the backup's
+     * history comes with it. Ones that come back are no longer counted as deleted, so they sync again.
+     */
+    suspend fun restoreBackup(restored: Set<String>, transform: (List<Deck>) -> List<Deck>) {
+        update(recordVersions = false, undeleting = restored, transform = transform)
     }
 
     private suspend fun update(
         recordVersions: Boolean = true,
         deleting: String? = null,
+        undeleting: Set<String> = emptySet(),
         tagging: Pair<String, List<String>>? = null,
         transform: (List<Deck>) -> List<Deck>
     ) {
         context.decksDataStore.edit { prefs ->
-            val store = prefs[key]?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
+            val store = storeOf(prefs[key])
             val current = store?.decks ?: emptyList()
             val next = transform(current)
             // ...and the change in its history (DeckHistory.kt). Samples are never synced, so they keep none.
             val recorded = if (recordVersions) {
                 val history = HistoryDevice.context(context)
+                val was = current.associateBy { it.id }
                 next.map { after ->
-                    val before = current.find { it.id == after.id }
-                    withVersion(before, if (after.sample == true) after else withHistory(before, after, history))
+                    val before = was[after.id]
+                    // Untouched by this change: nothing to record.
+                    if (before === after) after
+                    else withVersion(before, if (after.sample == true) after else withHistory(before, after, history))
                 }
             } else next
             // Every write comes through here, so this is where a copy gets back the tags it already
@@ -401,7 +428,7 @@ class DeckRepository(private val context: Context) {
             val was = store?.userTags.orEmpty().let { if (tagging == null) it else it.ledgerWith(tagging.first, tagging.second) }
             val ledger = rememberedUserTags(was, decks = recorded)
             prefs[key] = adapter.toJson(
-                DeckStore(recorded.withRememberedUserTags(ledger), noteDeleted(store?.deleted, deleting), ledger)
+                DeckStore(recorded.withRememberedUserTags(ledger), noteDeleted(store?.deleted, deleting) - undeleting, ledger)
             )
         }
     }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.RowScope
 import com.mtgcompanion.app.ui.common.a11yHeading
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Block
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.ui.social.BlockedPeopleSection
@@ -134,6 +135,7 @@ enum class SettingsSection(val id: String, val title: String, val icon: ImageVec
     APPEARANCE("appearance", "Appearance", Icons.Filled.DarkMode),
     CARD_DISPLAY("card-display", "Card Display", Icons.Filled.GridView),
     PRICES("prices", "Prices", Icons.Filled.Sell),
+    DATA("data", "Data and speed", Icons.Filled.Speed),
     OFFLINE_SEARCH("offline-search", "Offline Search", Icons.Filled.CloudOff),
     CARD_RECOGNITION("card-recognition", "Card Recognition", Icons.Filled.CameraAlt),
     APP_UPDATES("app-updates", "App Updates", Icons.Filled.Autorenew),
@@ -207,6 +209,7 @@ fun SettingsScreen(
             }
         }
         SettingsSection.PRICES -> Currencies.of(chosenCurrency).let { "${it.name} (${it.code})" }
+        SettingsSection.DATA -> "Backup and restore, and how quick the app is"
         SettingsSection.OFFLINE_SEARCH -> if (offline.hasData) "${offline.cardCount} cards downloaded" else "Not downloaded"
         SettingsSection.CARD_RECOGNITION -> if (recognition.ready) "${recognition.cardCount} card pictures" else "Downloads the first time you scan"
         SettingsSection.APP_UPDATES -> update.available?.let { "${it.headline} is available" } ?: "Version ${BuildConfig.VERSION_NAME}"
@@ -333,6 +336,7 @@ fun SettingsSectionScreen(
                 SettingsSection.APPEARANCE -> AppearanceSection(settingsRepository)
                 SettingsSection.CARD_DISPLAY -> CardDisplaySection(settingsRepository)
                 SettingsSection.PRICES -> PricesSection(settingsRepository)
+                SettingsSection.DATA -> DataAndSpeedSection()
                 SettingsSection.OFFLINE_SEARCH -> OfflineSearchSection(offlineCardRepository)
                 SettingsSection.CARD_RECOGNITION -> CardRecognitionSection(cardIndexRepository)
                 SettingsSection.APP_UPDATES -> AppUpdatesSection(updateManager)

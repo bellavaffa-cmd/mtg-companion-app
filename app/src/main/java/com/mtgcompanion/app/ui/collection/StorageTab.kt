@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Backpack
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MenuBook
@@ -133,7 +134,9 @@ fun StorageTab(
     /** Sealed product (SealedScreen.kt). */
     onOpenSealed: () -> Unit = {},
     /** Gear: sleeves, deck boxes, tokens (GearScreen.kt). */
-    onOpenGear: () -> Unit = {}
+    onOpenGear: () -> Unit = {},
+    /** Settings › Data and speed: the backup (DataAndSpeedSection.kt). */
+    onOpenDataAndSpeed: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -265,6 +268,11 @@ fun StorageTab(
         item {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
                 PlaceRow(Icons.Filled.Backpack, "Gear", gearSummary(gearOf(collections), decks), "›", gold = false, onClick = onOpenGear)
+            }
+        }
+        item {
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                PlaceRow(Icons.Filled.Speed, "Data and speed", "Save a backup of everything, or restore one", "›", gold = false, onClick = onOpenDataAndSpeed)
             }
         }
         item {

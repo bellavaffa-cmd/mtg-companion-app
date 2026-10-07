@@ -56,6 +56,9 @@ fun unitPrice(p: PrintingFacts?, foil: Boolean): Double? = when {
 fun valueRows(collections: List<Collection>, decks: List<Deck>, facts: (String) -> PrintingFacts?): List<ValueRow> {
     val places = placesOf(collections)
     val known = places.map { it.id }.toSet()
+    // Each place's path worked out once, not once per copy.
+    val paths = places.associate { it.id to placePath(places, it.id) }
+    fun pathOf(id: String) = paths[id] ?: placePath(places, id)
     val lent = lentCopies(collections, decks)
     val byEntry = lentByEntry(lent)
     val rows = mutableListOf<ValueRow>()
@@ -72,7 +75,7 @@ fun valueRows(collections: List<Collection>, decks: List<Deck>, facts: (String) 
             for (line in placedCopies(e)) {
                 if (line.placeId !in known) continue
                 val spot = line.section ?: if (line.page != null && line.slot != null) pocketLabel(line.page, line.slot) else ""
-                row(e.name, e.scryfallId, condition, language, line.isFoil, line.qty, ValueKind.PLACE, line.placeId, placePath(places, line.placeId), spot)
+                row(e.name, e.scryfallId, condition, language, line.isFoil, line.qty, ValueKind.PLACE, line.placeId, pathOf(line.placeId), spot)
             }
             val clean = if (placedCopies(e).all { it.placeId in known }) e else withPlaces(e, placedCopies(e).filter { it.placeId in known })
             val (free, freeFoil) = unplacedCopies(clean)
@@ -114,7 +117,7 @@ fun valueRows(collections: List<Collection>, decks: List<Deck>, facts: (String) 
         val here = inPlace(g.placeId)
         rows += ValueRow(
             g.name, g.scryfallId, p?.set?.uppercase() ?: "", p?.number ?: "", g.isFoil, "", "", 1,
-            if (here) ValueKind.PLACE else ValueKind.NONE, if (here) g.placeId!! else "none", if (here) placePath(places, g.placeId!!) else "No place yet",
+            if (here) ValueKind.PLACE else ValueKind.NONE, if (here) g.placeId!! else "none", if (here) pathOf(g.placeId!!) else "No place yet",
             if (here) g.section.orEmpty() else "", g.valueUsd, label = "Graded", grade = gradeLabel(g)
         )
     }
@@ -123,7 +126,7 @@ fun valueRows(collections: List<Collection>, decks: List<Deck>, facts: (String) 
         val here = inPlace(s.placeId)
         rows += ValueRow(
             s.name, "", s.setCode?.uppercase().orEmpty(), "", false, "", "", s.count,
-            if (here) ValueKind.PLACE else ValueKind.NONE, if (here) s.placeId!! else "none", if (here) placePath(places, s.placeId!!) else "No place yet",
+            if (here) ValueKind.PLACE else ValueKind.NONE, if (here) s.placeId!! else "none", if (here) pathOf(s.placeId!!) else "No place yet",
             "", s.valueUsd, label = "Sealed"
         )
     }

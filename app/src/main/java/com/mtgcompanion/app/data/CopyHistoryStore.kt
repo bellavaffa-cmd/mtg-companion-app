@@ -33,6 +33,13 @@ object CopyHistoryStore {
         _moves.value = pruneMoves(saved?.moves.orEmpty(), System.currentTimeMillis())
     }
 
+    /** Puts [moves] in place of the log — a restored backup's, put together with this phone's (Backup.kt). */
+    @Synchronized
+    fun replace(moves: List<CopyMove>) {
+        _moves.value = moves
+        runCatching { file?.writeText(adapter.toJson(Saved(moves))) }
+    }
+
     /** Adds [moves] to the log. */
     @Synchronized
     fun record(moves: List<CopyMove>) {

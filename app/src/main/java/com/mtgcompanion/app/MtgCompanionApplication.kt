@@ -100,6 +100,8 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         CardPriceHistory.init(this)
         // Where each copy has been, on this phone (CopyHistory.kt).
         CopyHistoryStore.init(this)
+        // How long All cards took to open, for Settings › Data and speed.
+        com.mtgcompanion.app.data.DataAndSpeed.init(this)
         ComboCache.init(this)
         ScanPile.init(this)
         // The Wishlist, always there, holding what decks are considering that isn't owned; and the

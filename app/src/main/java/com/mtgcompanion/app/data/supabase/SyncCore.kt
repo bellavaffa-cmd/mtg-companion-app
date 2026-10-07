@@ -86,10 +86,22 @@ internal class SyncCore(
      */
     fun localJson(decks: List<Deck>, collections: List<Collection>): LinkedHashMap<String, String> {
         val local = LinkedHashMap<String, String>()
-        decks.filterNot { isSample(it) }.forEach { local["deck:${it.id}"] = deckAdapter.toJson(it) }
-        collections.filterNot { isSample(it) }.forEach { local["collection:${it.id}"] = collectionAdapter.toJson(it) }
+        val seen = java.util.IdentityHashMap<Any, String>()
+        decks.filterNot { isSample(it) }.forEach { local["deck:${it.id}"] = jsonOf(it, seen) { d -> deckAdapter.toJson(d) } }
+        collections.filterNot { isSample(it) }.forEach { local["collection:${it.id}"] = jsonOf(it, seen) { c -> collectionAdapter.toJson(c) } }
+        lastJson = seen
         return local
     }
+
+    /**
+     * Each deck's and binder's JSON from the last pass, by the very object: the repositories hand out
+     * the same objects until something changes, so a pass with nothing new (the regular check for
+     * other devices' edits) doesn't write a big library out again.
+     */
+    private var lastJson = java.util.IdentityHashMap<Any, String>()
+
+    private inline fun <T : Any> jsonOf(item: T, seen: java.util.IdentityHashMap<Any, String>, write: (T) -> String): String =
+        (lastJson[item] ?: write(item)).also { seen[item] = it }
 
     /**
      * Notes what changed locally since the last agreement with the server, each change stamped with
