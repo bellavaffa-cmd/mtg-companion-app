@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.social.ShareKind
 import com.mtgcompanion.app.data.social.SharedSummary
+import com.mtgcompanion.app.data.social.TonightPlayer
 import com.mtgcompanion.app.ui.common.BackButton
 import com.mtgcompanion.app.ui.common.PillChip
 import com.mtgcompanion.app.ui.common.SectionHeader
@@ -69,7 +70,14 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun GameNightScreen(viewModel: GameNightViewModel, onBack: () -> Unit, onOpenLifeCounter: () -> Unit, onOpenPack: (() -> Unit)? = null) {
+fun GameNightScreen(
+    viewModel: GameNightViewModel,
+    onBack: () -> Unit,
+    onOpenLifeCounter: () -> Unit,
+    onOpenPack: (() -> Unit)? = null,
+    /** "Trade matches tonight" for the players other than the user (ui/social/TradeMatchesTonight.kt). */
+    tonight: (@Composable (players: List<TonightPlayer>) -> Unit)? = null
+) {
     val colors = LocalAppColors.current
     val saved by viewModel.nights.collectAsState()
     val decks by viewModel.decks.collectAsState()
@@ -87,6 +95,7 @@ fun GameNightScreen(viewModel: GameNightViewModel, onBack: () -> Unit, onOpenLif
             .sortedBy { it.displayName.lowercase() }
     }.orEmpty()
     val waiting = unseated(night)
+    val atTable = remember(night.players) { night.players.filter { it.kind != NightPlayerKind.ME }.map { TonightPlayer(it.name, it.userId) } }
 
     Scaffold(
         containerColor = colors.bg,
@@ -206,6 +215,7 @@ fun GameNightScreen(viewModel: GameNightViewModel, onBack: () -> Unit, onOpenLif
                     }
                 }
             }
+            if (tonight != null) item(key = "tonight") { tonight(atTable) }
             item { Box(Modifier.height(24.dp)) }
         }
     }

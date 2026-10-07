@@ -234,6 +234,9 @@ import com.mtgcompanion.app.ui.scan.ScanScreen
 import com.mtgcompanion.app.ui.scan.PageScanScreen
 import com.mtgcompanion.app.data.social.bringToGameNight
 import com.mtgcompanion.app.data.social.wantedAsDeckCards
+import com.mtgcompanion.app.data.social.TonightPlayer
+import com.mtgcompanion.app.data.social.tonightAsDeckCards
+import com.mtgcompanion.app.ui.social.TradeMatchesTonight
 import com.mtgcompanion.app.ui.scan.ScanViewModel
 import com.mtgcompanion.app.ui.search.SearchResultsScreen
 import com.mtgcompanion.app.ui.search.SearchScreen
@@ -499,6 +502,33 @@ fun MtgNavGraph(
     val addToHost = remember { SnackbarHostState() }
     val addToScope = rememberCoroutineScope()
     val addTo = remember { addToFeedback(addToHost, addToScope, deckRepository, collectionRepository) }
+    // "Trade matches tonight" on Game night and in Pack your bag: Propose a trade opens the composer
+    // with both sides, Bring them puts the cards on the "Bring to game night" pull list (as Friends
+    // want these does), and the pull list opens from there.
+    val tonightMatches: @Composable (List<TonightPlayer>, List<com.mtgcompanion.app.data.Collection>, List<com.mtgcompanion.app.data.Deck>) -> Unit = { players, collections, decks ->
+        TradeMatchesTonight(
+            social = socialRepository,
+            players = players,
+            collections = collections,
+            decks = decks,
+            onPropose = { friend, want, give ->
+                socialRepository.draft = SocialRepository.TradeDraft(to = friend, want = want, give = give)
+                navController.navigate(Routes.tradeNew(friend))
+            },
+            onBring = { cards, done ->
+                addToScope.launch {
+                    var deckId: String? = null
+                    deckRepository.change { all ->
+                        val (next, id) = bringToGameNight(all, tonightAsDeckCards(cards), java.util.UUID.randomUUID().toString())
+                        deckId = id
+                        next
+                    }
+                    deckId?.let(done)
+                }
+            },
+            onOpenPullList = { id -> navController.navigate(Routes.pullList(id)) }
+        )
+    }
     CompositionLocalProvider(LocalAddToFeedback provides addTo) {
     Box(Modifier.fillMaxSize()) {
     // Enlarged cards draw above everything here, bars included, so they can grow out of their thumbnails.
@@ -1599,7 +1629,8 @@ fun MtgNavGraph(
                     collections = collections,
                     decks = decks,
                     social = socialRepository,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    tonight = { players -> tonightMatches(players, collections, decks) }
                 )
             }
 
@@ -1607,11 +1638,14 @@ fun MtgNavGraph(
                 val viewModel: GameNightViewModel = viewModel(
                     factory = GameNightViewModel.Factory(LocalContext.current, deckRepository, socialRepository, lifeCounterSettingsRepository)
                 )
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
                 GameNightScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
                     onOpenLifeCounter = { navController.navigate(Routes.LIFE_COUNTER) },
-                    onOpenPack = { navController.navigate(Routes.PACK_LIST) { launchSingleTop = true } }
+                    onOpenPack = { navController.navigate(Routes.PACK_LIST) { launchSingleTop = true } },
+                    tonight = { players -> tonightMatches(players, collections, decks) }
                 )
             }
 
