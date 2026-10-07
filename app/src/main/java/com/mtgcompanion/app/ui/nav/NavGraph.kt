@@ -148,6 +148,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Group
+import com.mtgcompanion.app.data.social.friendsBadge
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -166,6 +169,7 @@ import com.mtgcompanion.app.data.social.SharedSummary
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.ui.social.FriendScreen
 import com.mtgcompanion.app.ui.social.FriendsScreen
+import com.mtgcompanion.app.ui.social.NextGameNightCard
 import com.mtgcompanion.app.ui.social.ConversationScreen
 import com.mtgcompanion.app.ui.social.ForTradeScreen
 import com.mtgcompanion.app.ui.social.FriendsMoreActions
@@ -459,6 +463,11 @@ fun MtgNavGraph(
     // Scan's camera and the life counter's table run edge to edge, without the rail or sidebar.
     val showWideNav = layoutSize.isWide && currentRoute != Routes.SCAN && currentRoute != Routes.LIFE_COUNTER && currentRoute != Routes.REMOTE
 
+    // The Friends tab's badge: friend requests, trades waiting on the user and unread messages.
+    val socialInbox by socialRepository.inbox.collectAsState()
+    val socialUnread by socialRepository.unread.collectAsState()
+    val barBadge = friendsBadge(socialInbox.friendRequests, socialUnread, socialInbox.trades)
+
     // A tapped notification: open Friends on the tab it's about.
     val openRequest by pendingOpen.collectAsState()
     LaunchedEffect(openRequest) {
@@ -553,7 +562,7 @@ fun MtgNavGraph(
         contentWindowInsets = if (currentRoute == Routes.LIFE_COUNTER || currentRoute == Routes.REMOTE) WindowInsets(0) else WindowInsets.systemBars.union(WindowInsets.displayCutout),
         bottomBar = {
             if (layoutSize == LayoutSize.PHONE && currentRoute in bottomNavRoutes) {
-                MtgBottomBar(currentRoute = currentRoute, navController = navController)
+                MtgBottomBar(currentRoute = currentRoute, navController = navController, friendsBadge = barBadge)
             }
         }
     ) { padding ->
@@ -575,7 +584,8 @@ fun MtgNavGraph(
                 Routes.RULES -> NavDestination.RULES
                 Routes.PLAY, Routes.GAME_NIGHT, Routes.PLAYGROUP, Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT, Routes.PACK_LIST, Routes.PACK -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
-                Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION -> NavDestination.FRIENDS
+                Routes.FRIENDS, Routes.FRIEND, Routes.TRADES, Routes.TRADE_NEW, Routes.SHARED, Routes.SHARED_COLLECTION,
+                Routes.MESSAGES, Routes.CONVERSATION, Routes.FOR_TRADE -> NavDestination.FRIENDS
                 else -> null
             }
             val onNavigate: (NavDestination) -> Unit = { target ->
@@ -604,10 +614,11 @@ fun MtgNavGraph(
                     accountsAvailable = supabaseSync.auth.configured,
                     syncStatus = syncStatus,
                     onNavigate = onNavigate,
-                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) { launchSingleTop = true } }
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) { launchSingleTop = true } },
+                    friendsBadge = barBadge
                 )
             } else {
-                NavRail(selected = destination, onNavigate = onNavigate)
+                NavRail(selected = destination, onNavigate = onNavigate, friendsBadge = barBadge)
             }
         }
         // The sync button in screen headers asks the pull-to-sync indicator to run.
@@ -704,7 +715,7 @@ fun MtgNavGraph(
                     onOpenDeck = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
                     onViewCard = { name -> navController.navigate(Routes.detail(name)) },
                     onOpenFriends = if (supabaseSync.auth.configured) ({ navController.navigateToTab(Routes.FRIENDS) }) else null,
-                    friendsWaiting = socialRepository.inbox.collectAsState().value.total
+                    friendsWaiting = barBadge
                 )
             }
 
@@ -1636,7 +1647,9 @@ fun MtgNavGraph(
                     onOpenPlaygroup = { navController.navigate(Routes.PLAYGROUP) },
                     onOpenEvents = { navController.navigate(Routes.EVENTS) { launchSingleTop = true } },
                     onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } },
-                    onOpenPack = { navController.navigate(Routes.PACK_LIST) { launchSingleTop = true } }
+                    onOpenPack = { navController.navigate(Routes.PACK_LIST) { launchSingleTop = true } },
+                    // The next game night (FriendsSlots.kt), as at the top of Friends › People.
+                    nextGameNight = { NextGameNightCard(socialRepository, onOpen = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } }) }
                 )
             }
 
@@ -1792,6 +1805,8 @@ fun MtgNavGraph(
                     onCounterTrade = { id -> navController.navigate(Routes.tradeNew(id)) },
                     more = FriendsMoreActions(
                         onOpenHousehold = { id -> navController.navigate(Routes.household(id)) },
+                        onOpenLent = { navController.navigate(Routes.loans()) },
+                        onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } },
                         onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) },
                         onOpenForTrade = { navController.navigate(Routes.FOR_TRADE) },
                         onOpenActivity = { item ->
@@ -2126,23 +2141,25 @@ private fun NavGraphBuilder.destination(
 }
 
 /**
- * Floating bottom bar: five destinations around a raised Scan button that stays in the middle —
- * Home, Search and Play on its left, Decks and Collection on its right — with a highlight pill
- * that springs to the selected tab. Six equal slots would push Scan off centre, so each side
- * shares its half of the bar instead. Rules moved out of the bar (it's on Home, Play and in
- * Search's toolbar).
+ * Floating bottom bar: six destinations around a raised Scan button that stays in the middle —
+ * Home, Search and Play on its left, Decks, Collection and Friends on its right — with a highlight
+ * pill that springs to the selected tab. Friends carries [friendsBadge] (friend requests, unread
+ * messages and trades waiting on the user). Each side shares its half of the bar; at 360dp wide the
+ * slots are still 48dp, and long labels (or a large font) shrink to one ellipsized line. Rules moved
+ * out of the bar (it's on Home, Play and in Search's toolbar).
  */
 @Composable
-private fun MtgBottomBar(currentRoute: String?, navController: NavHostController) {
+private fun MtgBottomBar(currentRoute: String?, navController: NavHostController, friendsBadge: Int = 0) {
     val colors = LocalAppColors.current
     val haptic = LocalHapticFeedback.current
-    // Slots, left to right: 0 Home, 1 Search, 2 Play, (Scan), 3 Decks, 4 Collection.
+    // Slots, left to right: 0 Home, 1 Search, 2 Play, (Scan), 3 Decks, 4 Collection, 5 Friends.
     val selected = when (currentRoute) {
         Routes.HOME -> 0
         Routes.SEARCH -> 1
         Routes.PLAY -> 2
         Routes.DECKS, Routes.DECK_DETAIL -> 3
         Routes.COLLECTION -> 4
+        Routes.FRIENDS -> 5
         else -> -1
     }
     fun go(route: String) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); navController.navigateToTab(route) }
@@ -2150,7 +2167,7 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
         Modifier
             .fillMaxWidth()
             .background(Bg)
-            .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp)
+            .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 10.dp)
     ) {
         BoxWithConstraints(
             Modifier
@@ -2159,15 +2176,14 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
                 .clip(RoundedCornerShape(26.dp))
                 .background(colors.surface)
         ) {
-            val scanSlot = 64.dp
+            val scanSlot = 58.dp
             val half = (maxWidth - scanSlot) / 2
-            val left = half / 3
-            val right = half / 2
-            val pillWidth = 44.dp
+            val slot = half / 3
+            val pillWidth = minOf(44.dp, slot - 4.dp)
             val pillTarget = when {
                 selected < 0 -> 0.dp
-                selected < 3 -> left * selected + (left - pillWidth) / 2
-                else -> half + scanSlot + right * (selected - 3) + (right - pillWidth) / 2
+                selected < 3 -> slot * selected + (slot - pillWidth) / 2
+                else -> half + scanSlot + slot * (selected - 3) + (slot - pillWidth) / 2
             }
             val pillX by animateDpAsState(pillTarget, popSpring(), label = "barPill")
             if (selected >= 0) {
@@ -2184,7 +2200,7 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
                     Box(
                         Modifier
                             .pressScale(interaction)
-                            .size(54.dp)
+                            .size(52.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .background(colors.accent)
                             .clickable(interactionSource = interaction, indication = null) { go(Routes.SCAN) },
@@ -2196,6 +2212,7 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
                 Row(Modifier.width(half).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
                     BarItem(Icons.Filled.Style, "Decks", selected == 3) { go(Routes.DECKS) }
                     BarItem(Icons.Filled.Collections, "Collection", selected == 4) { go(Routes.COLLECTION) }
+                    BarItem(Icons.Filled.Group, "Friends", selected == 5, badge = friendsBadge) { go(Routes.FRIENDS) }
                 }
             }
         }
@@ -2203,7 +2220,7 @@ private fun MtgBottomBar(currentRoute: String?, navController: NavHostController
 }
 
 @Composable
-private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean, badge: Int = 0, onClick: () -> Unit) {
     val colors = LocalAppColors.current
     val tint by animateColorAsState(if (selected) colors.accent else colors.textDim, label = "barTint")
     val labelColor by animateColorAsState(if (selected) colors.textPrimary else colors.textDim, label = "barLabel")
@@ -2215,9 +2232,21 @@ private fun RowScope.BarItem(icon: ImageVector, label: String, selected: Boolean
             .fillMaxHeight()
             .selectable(selected = selected, interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Tab, onClick = onClick)
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(23.dp))
+        Box {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(23.dp))
+            if (badge > 0) NavBadge(badge, Modifier.align(Alignment.TopEnd).offset(x = 9.dp, y = (-5).dp))
+        }
         Spacer(Modifier.height(4.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = labelColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // Seven slots share the bar: the label keeps to one line, a little smaller, and ellipsizes if it must.
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, letterSpacing = 0.sp),
+            color = labelColor,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 1.dp)
+        )
     }
 }
 

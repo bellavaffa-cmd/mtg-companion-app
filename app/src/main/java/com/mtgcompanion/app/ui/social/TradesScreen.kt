@@ -94,11 +94,13 @@ import com.mtgcompanion.app.ui.common.PillChip
 import com.mtgcompanion.app.ui.common.SectionHeader
 import com.mtgcompanion.app.ui.common.readableWidth
 import com.mtgcompanion.app.ui.theme.LocalAppColors
+import com.mtgcompanion.app.data.shortDay
+import com.mtgcompanion.app.data.social.doneLabel
+import com.mtgcompanion.app.data.social.tradeInbox
+import com.mtgcompanion.app.data.social.tradeSummary
 import kotlinx.coroutines.launch
 
-private enum class TradeFilter { WAITING, SENT, DONE }
-
-/** Trades with friends: the ones waiting on the user, the ones they sent, and finished ones. */
+/** Trades with friends: the trade inbox (TradeInboxList), as on Friends' Trades tab. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TradesScreen(
@@ -122,23 +124,29 @@ fun TradesScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.readableWidth(760.dp)) {
-                SocialGate(social, onSignIn) { overview -> TradeList(social, collectionRepository, overview, onCounter, onMessage) }
+                SocialGate(social, onSignIn) { overview -> TradeInboxList(social, collectionRepository, overview, onCounter, onMessage) }
             }
         }
     }
 }
 
-/** The trades themselves, filtered — on this screen and on Friends' Trades tab, with [header] and [footer] around them. */
+/**
+ * The trade inbox — on this screen and on Friends' Trades tab (FriendsHub.kt's tradeInbox): Your
+ * turn, each trade in full with its fairness bar and Counter / Accept; Waiting on them, a line each;
+ * [wants] (What friends want from you); and Done, a line each with the user's rating. A line opens
+ * into the full trade. [footer] goes last.
+ */
 @Composable
-internal fun TradeList(
+internal fun TradeInboxList(
     social: SocialRepository,
     collectionRepository: CollectionRepository,
     overview: Overview,
     onCounter: (String) -> Unit,
     onMessage: (String) -> Unit,
-    header: LazyListScope.() -> Unit = {},
+    wants: LazyListScope.() -> Unit = {},
     footer: LazyListScope.() -> Unit = {}
 ) {
+    val colors = LocalAppColors.current
     val me = overview.me!!.userId
     val withMore = rememberSocialMore(social) == true
     // People the user blocked are left out, and the user's thumbs up/down on finished trades shown.
@@ -149,41 +157,89 @@ internal fun TradeList(
         runCatching { social.more.blocked() }.onSuccess { list -> blocked = list.map { it.profile.userId }.toSet() }
         runCatching { social.more.myRatings() }.onSuccess { ratings = it }
     }
-    val trades = overview.trades.filter { (if (it.fromUser == me) it.toUser else it.fromUser) !in blocked }
-    val waiting = trades.filter { waitingOnMe(it, me) }
-    val sent = trades.filter { it.status == TradeStatus.OPEN && it.fromUser == me }
-    val done = trades.filter { it !in waiting && it !in sent }
-    var filter by remember { mutableStateOf(if (waiting.isNotEmpty() || sent.isEmpty()) TradeFilter.WAITING else TradeFilter.SENT) }
-    val shown = when (filter) { TradeFilter.WAITING -> waiting; TradeFilter.SENT -> sent; TradeFilter.DONE -> done }
+    val inbox = tradeInbox(overview.trades, me, blocked)
+    // The lines opened into full trades.
+    var opened by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var allDone by remember { mutableStateOf(false) }
+    val thisYear = remember { java.time.LocalDate.now().year }
+    fun day(t: Trade) = shortDay(t.updatedAt.take(10), thisYear)
+    fun nameOf(id: String) = overview.person(id)?.displayName ?: "Someone"
 
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        header()
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                PillChip("Waiting on you", filter == TradeFilter.WAITING, { filter = TradeFilter.WAITING }, count = waiting.size)
-                PillChip("Sent", filter == TradeFilter.SENT, { filter = TradeFilter.SENT }, count = sent.size)
-                PillChip("Done", filter == TradeFilter.DONE, { filter = TradeFilter.DONE }, count = done.size)
-            }
-        }
-        if (shown.isEmpty()) item {
-            EmptyState(
-                Icons.Filled.SwapHoriz,
-                when (filter) {
-                    TradeFilter.WAITING -> "Nothing needs your answer."
-                    TradeFilter.SENT -> "No trade requests waiting for an answer."
-                    TradeFilter.DONE -> "No finished trades yet."
-                } + if (filter != TradeFilter.DONE && overview.acceptedFriends.isNotEmpty()) " To start one, open a friend's shared binder." else ""
+    LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item(key = "turn-h") { SectionHeader(if (inbox.yourTurn.isEmpty()) "Your turn" else "Your turn · ${inbox.yourTurn.size}") }
+        if (inbox.yourTurn.isEmpty()) item(key = "turn-none") {
+            Text(
+                "Nothing needs your answer." + if (overview.acceptedFriends.isNotEmpty()) " To start a trade, open a friend's shared binder." else "",
+                style = MaterialTheme.typography.bodySmall, color = colors.textMuted
             )
         }
-        shown.forEach { t ->
+        inbox.yourTurn.forEach { t ->
             item(key = t.id) {
-                TradeCardView(
-                    social, collectionRepository, overview, t, onCounter,
-                    TradeMore(withMore, ratings[t.id], { positive -> ratings = ratings + (t.id to positive) }, onMessage)
-                )
+                TradeCardView(social, collectionRepository, overview, t, onCounter, TradeMore(withMore, ratings[t.id], { positive -> ratings = ratings + (t.id to positive) }, onMessage))
             }
         }
+
+        if (inbox.waitingOnThem.isNotEmpty()) {
+            item(key = "wait-h") { SectionHeader("Waiting on them · ${inbox.waitingOnThem.size}") }
+            inbox.waitingOnThem.forEach { t ->
+                item(key = t.id) {
+                    val other = tradeSides(t, me).other
+                    if (t.id in opened) TradeCardView(social, collectionRepository, overview, t, onCounter, TradeMore(withMore, ratings[t.id], { positive -> ratings = ratings + (t.id to positive) }, onMessage))
+                    else TradeLine(
+                        title = if (t.status == TradeStatus.OPEN) "To ${nameOf(other)}" else "With ${nameOf(other)}",
+                        detail = if (t.status == TradeStatus.OPEN) tradeSummary(t, me) else "Accepted — ${nameOf(other)} is updating their binders",
+                        end = if (t.status == TradeStatus.OPEN) "Sent ${day(t)}" else day(t)
+                    ) { opened = opened + t.id }
+                }
+            }
+        }
+
+        wants()
+
+        if (inbox.done.isNotEmpty()) {
+            item(key = "done-h") {
+                SectionHeader(
+                    "Done",
+                    action = if (inbox.done.size > DONE_SHOWN) (if (allDone) "Fewer" else "All ${inbox.done.size}") else null,
+                    onAction = { allDone = !allDone }
+                )
+            }
+            (if (allDone) inbox.done else inbox.done.take(DONE_SHOWN)).forEach { t ->
+                item(key = t.id) {
+                    if (t.id in opened) TradeCardView(social, collectionRepository, overview, t, onCounter, TradeMore(withMore, ratings[t.id], { positive -> ratings = ratings + (t.id to positive) }, onMessage))
+                    else TradeLine(
+                        title = "With ${nameOf(tradeSides(t, me).other)} · ${day(t)}",
+                        detail = null,
+                        end = doneLabel(t, me, ratings[t.id])
+                    ) { opened = opened + t.id }
+                }
+            }
+        }
+        if (inbox.yourTurn.isEmpty() && inbox.waitingOnThem.isEmpty() && inbox.done.isEmpty()) item(key = "empty") {
+            EmptyState(Icons.Filled.SwapHoriz, "No trades yet.")
+        }
         footer()
+    }
+}
+
+/** Finished trades shown before "All". */
+private const val DONE_SHOWN = 5
+
+/** A trade in one line: who, what, and when or how it ended; tapping opens it in full. */
+@Composable
+private fun TradeLine(title: String, detail: String?, end: String, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface)
+            .clickable(onClickLabel = "Open the trade", onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        }
+        Text(end, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
     }
 }
 

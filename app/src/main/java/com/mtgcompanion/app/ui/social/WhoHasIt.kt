@@ -153,7 +153,7 @@ fun WhoHasItDialog(social: SocialRepository, names: List<String>, onAsk: (owner:
 
 
 /** The trade matches, asked once a minute at most: every trade on the Trades screen shares one answer. */
-private object TradeMatchCache {
+internal object TradeMatchCache {
     private var at = 0L
     private var list: List<TradeMatch>? = null
 

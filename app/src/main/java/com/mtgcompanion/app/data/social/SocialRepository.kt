@@ -42,6 +42,13 @@ class SocialRepository(private val auth: SupabaseAuth) {
     /** Friend requests and trades waiting on the user, for the badge. */
     val inbox: StateFlow<Inbox> = _inbox.asStateFlow()
 
+    private val _unread = MutableStateFlow(0)
+    /** Unread direct messages, for the Friends tab's badge (0 without the social_more functions). */
+    val unread: StateFlow<Int> = _unread.asStateFlow()
+
+    /** The Friends screen tells the badge what it just read. */
+    fun setUnread(n: Int) { _unread.value = maxOf(0, n) }
+
     val configured: Boolean get() = auth.configured
     val accountFlow = auth.account
     val userId: String? get() = auth.account.value?.userId
@@ -53,6 +60,7 @@ class SocialRepository(private val auth: SupabaseAuth) {
             auth.account.map { it?.userId }.distinctUntilChanged().collect {
                 _overview.value = null
                 _inbox.value = Inbox()
+                _unread.value = 0
                 _error.value = null
                 more.reset()
                 household.reset()
@@ -86,6 +94,7 @@ class SocialRepository(private val auth: SupabaseAuth) {
     suspend fun refreshInbox() {
         val who = userId ?: return
         runCatching { api.inbox() }.onSuccess { if (userId == who) _inbox.value = it }
+        runCatching { if (more.check()) more.unread() else 0 }.onSuccess { if (userId == who) _unread.value = maxOf(0, it) }
     }
 
     /** A trade being put together, kept here so it survives the screen turning. */

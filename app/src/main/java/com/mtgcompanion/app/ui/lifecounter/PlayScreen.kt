@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.SeatMemory
+import com.mtgcompanion.app.data.social.MOVED_TO_FRIENDS
 import com.mtgcompanion.app.data.playgroupStats
 import com.mtgcompanion.app.data.tournament.Tournament
 import com.mtgcompanion.app.data.tournament.playoffChampion
@@ -71,9 +72,11 @@ fun playGroupStatus(night: GameNight, decks: List<Deck>, events: List<Tournament
 }
 
 /**
- * The Play tab, in three parts. Play now: start a game on this phone (the table it starts with, and
- * who played last), join someone else's table with your phone as the remote for your seat, or go
- * back to the seat you're in. Your group: Game night, Playgroup and Events, each with a line on where
+ * The Play tab — just the table now (people, chats and trades live on the Friends tab, and a small
+ * note says so). Start a game on this phone (the table it starts with, and who played last), the
+ * next game night ([nextGameNight], FriendsSlots.kt's NextGameNightCard — nothing when there's none),
+ * join someone else's table with your phone as the remote for your seat, or go back to the seat
+ * you're in. At the table: Game night, Playgroup, Events and Pack your bag, each with a line on where
  * it stands. Recent games, each opening its life chart. Rules sits in the header (it has its own
  * place in the wide layouts' rail too). The web app's twin is src/lifecounter/PlayPage.tsx; the
  * status lines are PlayHub.kt (playHub.ts).
@@ -93,7 +96,9 @@ fun PlayScreen(
     /** Pack your bag for a game night or an event (PackScreen.kt). */
     onOpenPack: (() -> Unit)? = null,
     settings: LifeCounterSettings = LifeCounterSettings(),
-    status: PlayGroupStatus? = null
+    status: PlayGroupStatus? = null,
+    /** The next game night card, under Start a game; draws nothing when there's none. */
+    nextGameNight: @Composable () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     var allGames by rememberSaveable { mutableStateOf(false) }
@@ -110,8 +115,8 @@ fun PlayScreen(
                 IconButton(onClick = onOpenRules) { Icon(Icons.Filled.MenuBook, contentDescription = "Rules", tint = colors.textPrimary) }
             }
         }
-        item { SectionHeader("Play now") }
         item { StartGameCard(startLine, onStartGame) }
+        item(key = "next-night") { nextGameNight() }
         remoteSeat?.let { seat ->
             item {
                 PlayRow(Icons.Filled.EventSeat, "Back to seat ${seat.seat}", "You're still at a table — open your remote", highlight = true) {
@@ -121,16 +126,19 @@ fun PlayScreen(
         }
         item { PlayRow(Icons.Filled.QrCodeScanner, "Join a table", "Scan a seat's QR code: your phone becomes your remote") { onJoinTable() } }
 
-        item { SectionHeader("Your group", modifier = Modifier.padding(top = 10.dp)) }
+        item { SectionHeader("At the table", modifier = Modifier.padding(top = 10.dp)) }
+        // Two by two: Game night and Playgroup, then Events and Pack your bag.
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                PlayTile(Icons.Filled.Groups, "Game night", status?.gameNight ?: "Fair pods by power", onOpenGameNight)
-                PlayTile(Icons.Filled.Leaderboard, "Playgroup", status?.playgroup ?: "Your record", onOpenPlaygroup)
-                onOpenEvents?.let { open -> PlayTile(Icons.Filled.EmojiEvents, "Events", status?.events ?: "Swiss or Commander pods", open) }
+                PlayTile(Icons.Filled.Groups, "Game night", status?.gameNight ?: "Pods by power", onOpenGameNight)
+                PlayTile(Icons.Filled.Leaderboard, "Playgroup", status?.playgroup ?: "Record and league", onOpenPlaygroup)
             }
         }
-        onOpenPack?.let { open ->
-            item { PlayRow(Icons.Filled.Backpack, "Pack your bag", "For a game night or an event: decks, tokens, trades and what to give back") { open() } }
+        if (onOpenEvents != null || onOpenPack != null) item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                onOpenEvents?.let { open -> PlayTile(Icons.Filled.EmojiEvents, "Events", status?.events ?: "Swiss and top 8", open) }
+                onOpenPack?.let { open -> PlayTile(Icons.Filled.Backpack, "Pack your bag", "Decks, tokens, trades", open) }
+            }
         }
 
         item {
@@ -145,6 +153,9 @@ fun PlayScreen(
             item { Text("Games played on this phone's life counter show up here.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted) }
         }
         items(if (allGames) games else games.take(RECENT_SHOWN), key = { it.id }) { game -> RecentGameRow(game) }
+        item {
+            Text(MOVED_TO_FRIENDS, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(top = 6.dp))
+        }
         item { Box(Modifier.height(24.dp)) }
     }
 }
@@ -193,7 +204,7 @@ private fun PlayRow(icon: ImageVector, title: String, subtitle: String, highligh
     }
 }
 
-/** One of Your group's three: an icon, its name and a line on where it stands. */
+/** One of At the table's four: an icon, its name and a line on where it stands. */
 @Composable
 private fun RowScope.PlayTile(icon: ImageVector, title: String, status: String, onClick: () -> Unit) {
     val colors = LocalAppColors.current

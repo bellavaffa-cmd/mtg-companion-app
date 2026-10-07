@@ -50,7 +50,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.social.badgeText
 import com.mtgcompanion.app.data.supabase.CloudSyncStatus
 import com.mtgcompanion.app.data.supabase.SupabaseAccount
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
@@ -78,11 +82,12 @@ private fun AppMark(onClick: () -> Unit) {
 }
 
 /**
- * Tablet navigation: a slim rail down the left edge with the same destinations as the phone's
- * bottom bar (Scan keeps its raised gold button), and Rules, Life counter and Settings at the foot.
+ * Tablet navigation: a slim rail down the left edge with the phone's bottom bar in its order — Home,
+ * Search, Play, Scan (its raised gold button), Decks, Collection, Friends (with [friendsBadge]) —
+ * and Rules and Settings at the foot.
  */
 @Composable
-fun NavRail(selected: NavDestination?, onNavigate: (NavDestination) -> Unit) {
+fun NavRail(selected: NavDestination?, onNavigate: (NavDestination) -> Unit, friendsBadge: Int = 0) {
     val app = LocalAppColors.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -98,6 +103,7 @@ fun NavRail(selected: NavDestination?, onNavigate: (NavDestination) -> Unit) {
         Spacer(Modifier.height(18.dp))
         RailItem(Icons.Filled.Home, "Home", selected == NavDestination.HOME) { onNavigate(NavDestination.HOME) }
         RailItem(Icons.Filled.Search, "Search", selected == NavDestination.SEARCH) { onNavigate(NavDestination.SEARCH) }
+        RailItem(Icons.Filled.Favorite, "Play", selected == NavDestination.LIFE_COUNTER) { onNavigate(NavDestination.LIFE_COUNTER) }
         Box(Modifier.padding(vertical = 6.dp)) {
             val interaction = remember { MutableInteractionSource() }
             Box(
@@ -114,16 +120,15 @@ fun NavRail(selected: NavDestination?, onNavigate: (NavDestination) -> Unit) {
         }
         RailItem(Icons.Filled.Style, "Decks", selected == NavDestination.DECKS) { onNavigate(NavDestination.DECKS) }
         RailItem(Icons.Filled.Collections, "Collection", selected == NavDestination.COLLECTION) { onNavigate(NavDestination.COLLECTION) }
+        RailItem(Icons.Filled.Group, "Friends", selected == NavDestination.FRIENDS, badge = friendsBadge) { onNavigate(NavDestination.FRIENDS) }
         Spacer(Modifier.height(20.dp))
-        RailItem(Icons.Filled.Favorite, "Play", selected == NavDestination.LIFE_COUNTER) { onNavigate(NavDestination.LIFE_COUNTER) }
         RailItem(Icons.Filled.MenuBook, "Rules", selected == NavDestination.RULES) { onNavigate(NavDestination.RULES) }
-        RailItem(Icons.Filled.Group, "Friends", selected == NavDestination.FRIENDS) { onNavigate(NavDestination.FRIENDS) }
         RailItem(Icons.Filled.Settings, "Settings", selected == NavDestination.SETTINGS) { onNavigate(NavDestination.SETTINGS) }
     }
 }
 
 @Composable
-private fun RailItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+private fun RailItem(icon: ImageVector, label: String, selected: Boolean, badge: Int = 0, onClick: () -> Unit) {
     val app = LocalAppColors.current
     val tint by animateColorAsState(if (selected) app.accent else app.textDim, label = "railTint")
     Column(
@@ -140,6 +145,7 @@ private fun RailItem(icon: ImageVector, label: String, selected: Boolean, onClic
             contentAlignment = Alignment.Center
         ) {
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+            if (badge > 0) NavBadge(badge, Modifier.align(Alignment.TopEnd))
         }
         Text(label, style = MaterialTheme.typography.labelSmall, color = if (selected) app.textPrimary else app.textDim, maxLines = 1)
     }
@@ -158,7 +164,8 @@ fun NavSidebar(
     accountsAvailable: Boolean,
     syncStatus: CloudSyncStatus,
     onNavigate: (NavDestination) -> Unit,
-    onOpenDeck: (String) -> Unit
+    onOpenDeck: (String) -> Unit,
+    friendsBadge: Int = 0
 ) {
     val app = LocalAppColors.current
     Column(
@@ -180,13 +187,14 @@ fun NavSidebar(
 
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             SideItem(Icons.Filled.Home, "Home", selected == NavDestination.HOME) { onNavigate(NavDestination.HOME) }
+            // The bottom bar's order: Home, Search, Play, Scan, Decks, Collection, Friends — then Rules.
             SideItem(Icons.Filled.Search, "Search", selected == NavDestination.SEARCH) { onNavigate(NavDestination.SEARCH) }
+            SideItem(Icons.Filled.Favorite, "Play", selected == NavDestination.LIFE_COUNTER) { onNavigate(NavDestination.LIFE_COUNTER) }
             SideItem(Icons.Filled.CameraAlt, "Scan a card", false, accent = true) { onNavigate(NavDestination.SCAN) }
             SideItem(Icons.Filled.Style, "Decks", selected == NavDestination.DECKS && selectedDeckId == null) { onNavigate(NavDestination.DECKS) }
             SideItem(Icons.Filled.Collections, "Collection", selected == NavDestination.COLLECTION) { onNavigate(NavDestination.COLLECTION) }
-            SideItem(Icons.Filled.Favorite, "Play", selected == NavDestination.LIFE_COUNTER) { onNavigate(NavDestination.LIFE_COUNTER) }
+            SideItem(Icons.Filled.Group, "Friends", selected == NavDestination.FRIENDS, badge = friendsBadge) { onNavigate(NavDestination.FRIENDS) }
             SideItem(Icons.Filled.MenuBook, "Rules", selected == NavDestination.RULES) { onNavigate(NavDestination.RULES) }
-            SideItem(Icons.Filled.Group, "Friends", selected == NavDestination.FRIENDS) { onNavigate(NavDestination.FRIENDS) }
 
             if (recentDecks.isNotEmpty()) {
                 Text(
@@ -263,7 +271,7 @@ fun NavSidebar(
 }
 
 @Composable
-private fun SideItem(icon: ImageVector, label: String, selected: Boolean, accent: Boolean = false, onClick: () -> Unit) {
+private fun SideItem(icon: ImageVector, label: String, selected: Boolean, accent: Boolean = false, badge: Int = 0, onClick: () -> Unit) {
     val app = LocalAppColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -278,6 +286,24 @@ private fun SideItem(icon: ImageVector, label: String, selected: Boolean, accent
             .padding(horizontal = 12.dp)
     ) {
         Icon(icon, contentDescription = null, tint = if (selected || accent) app.accent else app.textMuted, modifier = Modifier.size(21.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) app.textPrimary else app.textMuted)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) app.textPrimary else app.textMuted, modifier = Modifier.weight(1f))
+        if (badge > 0) NavBadge(badge)
+    }
+}
+
+/** The gold count on Friends — on the bottom bar, the rail and the sidebar: requests, unread messages and trades waiting. */
+@Composable
+fun NavBadge(count: Int, modifier: Modifier = Modifier) {
+    val app = LocalAppColors.current
+    Box(
+        modifier
+            .clearAndSetSemantics { contentDescription = "$count waiting" }
+            .defaultMinSize(minWidth = 17.dp, minHeight = 17.dp)
+            .clip(CircleShape)
+            .background(app.accent)
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(badgeText(count), color = app.onAccent, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1)
     }
 }

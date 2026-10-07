@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -118,9 +119,18 @@ fun MessagesScreen(
     }
 }
 
-/** Every conversation — on this screen and on Friends' Messages tab. */
+/**
+ * Every conversation — on this screen and on Friends' Chats tab, where [header] puts the pod chats
+ * (FriendsSlots.kt) above them.
+ */
 @Composable
-internal fun ConversationList(social: SocialRepository, overview: Overview, onOpen: (String) -> Unit, onOpenFriends: (() -> Unit)? = null) {
+internal fun ConversationList(
+    social: SocialRepository,
+    overview: Overview,
+    onOpen: (String) -> Unit,
+    onOpenFriends: (() -> Unit)? = null,
+    header: LazyListScope.() -> Unit = {}
+) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val available = rememberSocialMore(social)
@@ -130,7 +140,14 @@ internal fun ConversationList(social: SocialRepository, overview: Overview, onOp
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     fun load() {
         scope.launch {
-            try { list = social.more.conversations(); error = null; now = System.currentTimeMillis() } catch (e: Exception) { error = e.message }
+            try {
+                val loaded = social.more.conversations()
+                list = loaded
+                error = null
+                now = System.currentTimeMillis()
+                // The Friends tab's badge follows what's unread here.
+                social.setUnread(loaded.sumOf { it.unread })
+            } catch (e: Exception) { error = e.message }
         }
     }
     LaunchedEffect(available) { if (available == true) load() }
@@ -144,6 +161,7 @@ internal fun ConversationList(social: SocialRepository, overview: Overview, onOp
         else -> {
             val others = overview.acceptedFriends.filter { f -> current.none { it.other.userId == f.userId } }
             LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                header()
                 if (current.isEmpty()) item {
                     if (others.isNotEmpty()) EmptyPrompt(Icons.Filled.ChatBubble, "No messages yet. Pick a friend below to start a conversation.")
                     else EmptyPrompt(

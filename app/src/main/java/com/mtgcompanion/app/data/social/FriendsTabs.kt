@@ -1,13 +1,14 @@
 package com.mtgcompanion.app.data.social
 
-// The Friends screen's tabs: People, Messages, Trades and Activity — Messages and Activity only when
-// the server has the social_more functions. Which tab a tapped notification ("friends" / "trades" /
+// The Friends tab's tabs: People, Chats, Trades and Activity — Chats and Activity only when the
+// server has the social_more functions. Chats keeps the key "messages", which notifications and links
+// already use; "chats" opens it too. Which tab a tapped notification ("friends" / "trades" /
 // "messages") or a link opens, and the counts on each. Pure, so it's tested. The web app's twin is
 // src/social/friendsTabs.ts (tests: FriendsTabsTest.kt / tests/social/friendsTabs.test.ts).
 
 enum class FriendsTab(val key: String, val label: String) {
     PEOPLE("people", "People"),
-    MESSAGES("messages", "Messages"),
+    MESSAGES("messages", "Chats"),
     TRADES("trades", "Trades"),
     ACTIVITY("activity", "Activity")
 }
@@ -24,7 +25,7 @@ fun friendsTabs(more: Boolean?): List<FriendsTab> =
 fun friendsTabFor(asked: String?, more: Boolean?): FriendsTab {
     val tab = when (asked) {
         "trades" -> FriendsTab.TRADES
-        "messages" -> FriendsTab.MESSAGES
+        "messages", "chats" -> FriendsTab.MESSAGES
         "activity" -> FriendsTab.ACTIVITY
         else -> FriendsTab.PEOPLE
     }
@@ -45,3 +46,6 @@ fun friendsTabCounts(tabs: List<FriendsTab>, waiting: FriendsWaiting): Map<Int, 
         }
         if (n > 0) i to n else null
     }.toMap()
+
+/** A tab's label with what waits on it: "Chats · 3", or plain "Activity". */
+fun friendsTabLabel(tab: FriendsTab, count: Int): String = if (count > 0) "${tab.label} · $count" else tab.label

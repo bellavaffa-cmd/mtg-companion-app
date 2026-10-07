@@ -96,23 +96,41 @@ import com.mtgcompanion.app.ui.collection.HouseholdsState
 import com.mtgcompanion.app.ui.collection.rememberHouseholds
 import com.mtgcompanion.app.ui.common.readableWidth
 import com.mtgcompanion.app.ui.theme.LocalAppColors
+import androidx.compose.material.icons.filled.PersonAdd
+import com.mtgcompanion.app.data.loanPeople
+import com.mtgcompanion.app.data.loansOf
+import com.mtgcompanion.app.data.social.FriendAction
+import com.mtgcompanion.app.data.social.friendContext
+import com.mtgcompanion.app.data.social.friendsTabLabel
+import com.mtgcompanion.app.data.social.lentTo
+import com.mtgcompanion.app.ui.common.rememberMoney
 import kotlinx.coroutines.launch
 
-/** Where the Friends screen's conversations, activity, cards for trade and trade matches lead. */
+/** Where the Friends tab's conversations, activity, cards for trade, trade matches and quick actions lead. */
 data class FriendsMoreActions(
     val onOpenConversation: (friendId: String) -> Unit = {},
     val onOpenForTrade: () -> Unit = {},
     val onOpenActivity: (ActivityItem) -> Unit = {},
     val onOpenMatch: (TradeMatch) -> Unit = {},
     /** Sharing storage at home: a household, by id, once an invitation is accepted (HouseholdScreen.kt). */
-    val onOpenHousehold: (householdId: String) -> Unit = {}
+    val onOpenHousehold: (householdId: String) -> Unit = {},
+    /** What the user lent: the Loans screen on Lent (a friend's "Loan" quick action). */
+    val onOpenLent: () -> Unit = {},
+    /** Game night, from the next game night card (FriendsSlots.kt). */
+    val onOpenGameNight: () -> Unit = {},
+    /** A pod's chat (FriendsSlots.kt's podChats), by pod id. */
+    val onOpenPodChat: (podId: String) -> Unit = {},
+    /** A pod tapped on People; null opens the pod's members to edit, as before. */
+    val onOpenPod: ((Pod) -> Unit)? = null
 )
 
 /**
- * Friends, in four tabs (FriendsTabs.kt): People — adding friends, requests, friends, pods and
- * what's shared with you; Messages; Trades — trades, cards for trade, trade matches and loans; and
- * Activity. Messages and Activity need the server's social_more functions. The user's own profile and
- * QR code open from the top bar. A tapped notification picks the tab (SocialRepository.openFriendsTab).
+ * Friends, a tab of the bottom bar, in four tabs (FriendsTabs.kt): People — the next game night,
+ * your pods with their league, friends each with a line of context and a quick action, requests and
+ * the way to what's shared; Chats (direct messages, pod chats above them); Trades — the trade inbox:
+ * Your turn, Waiting on them, What friends want from you and Done; and Activity. Chats and Activity
+ * need the server's social_more functions. Adding a friend, scanning a QR code and the user's own
+ * profile open from the top bar. A tapped notification picks the tab (SocialRepository.openFriendsTab).
  * The web app's twin is src/pages/FriendsPage.tsx.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -134,16 +152,20 @@ fun FriendsScreen(
     more: FriendsMoreActions = FriendsMoreActions()
 ) {
     val colors = LocalAppColors.current
-    // The user's own profile, over the tabs; Back closes it.
+    // The user's own profile, over the tabs; Back closes it. Friends is a tab of the bar, so it has
+    // no back button of its own (Back goes Home, as from the other tabs).
     var profile by rememberSaveable { mutableStateOf(false) }
+    var adding by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = profile) { profile = false }
+    val signedIn = social.accountFlow.collectAsState().value != null
     Scaffold(
         containerColor = colors.bg,
         topBar = {
             TopAppBar(
                 title = { Text(if (profile) "Your profile" else "Friends", style = MaterialTheme.typography.titleLarge, modifier = Modifier.a11yHeading()) },
-                navigationIcon = { BackButton(onClick = { if (profile) profile = false else onBack() }) },
+                navigationIcon = { if (profile) BackButton(onClick = { profile = false }) },
                 actions = {
+                    if (!profile && signedIn) IconButton(onClick = { adding = true }) { Icon(Icons.Filled.PersonAdd, contentDescription = "Add a friend", tint = colors.accent) }
                     IconButton(onClick = onScanQr) { Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan a QR code", tint = colors.textPrimary) }
                     if (!profile) IconButton(onClick = { profile = true }) { Icon(Icons.Filled.AccountCircle, contentDescription = "Your profile and QR code", tint = colors.textPrimary) }
                 },
@@ -155,13 +177,18 @@ fun FriendsScreen(
             Box(Modifier.readableWidth(680.dp)) {
                 SocialGate(social, onSignIn) { overview ->
                     if (profile) ProfileTab(social, overview.me!!)
-                    else FriendsContent(
-                        social, collectionRepository, overview, onOpenFriend, onOpenSharedTab, onOpenLoans, onCounterTrade, more,
-                        onShowQr = { profile = true }
-                    )
+                    else FriendsContent(social, collectionRepository, overview, onOpenFriend, onOpenSharedTab, onOpenLoans, onCounterTrade, more)
                 }
             }
         }
+    }
+    if (adding) {
+        AlertDialog(
+            onDismissRequest = { adding = false },
+            containerColor = colors.surface,
+            text = { AddFriend(social, onShowQr = { adding = false; profile = true }) },
+            confirmButton = { TextButton(onClick = { adding = false }) { Text("Close", color = colors.accent) } }
+        )
     }
 }
 
@@ -174,8 +201,7 @@ private fun FriendsContent(
     onOpenSharedTab: () -> Unit,
     onOpenLoans: () -> Unit,
     onCounterTrade: (String) -> Unit,
-    more: FriendsMoreActions,
-    onShowQr: () -> Unit
+    more: FriendsMoreActions
 ) {
     val me = overview.me!!
     val withMore = rememberSocialMore(social)
@@ -188,39 +214,44 @@ private fun FriendsContent(
     val tabs = friendsTabs(withMore)
     val tab = friendsTabFor(asked, withMore)
 
-    var unread by remember { mutableIntStateOf(0) }
-    LaunchedEffect(withMore, overview, tab) { if (withMore == true) unread = runCatching { social.more.unread() }.getOrDefault(0) }
+    val unread by social.unread.collectAsState()
+    LaunchedEffect(withMore, overview, tab) { if (withMore == true) runCatching { social.more.unread() }.onSuccess { social.setUnread(it) } }
     val requests = overview.friends.count { !it.accepted && it.incoming }
     val inbox = overview.trades.count { com.mtgcompanion.app.data.social.waitingOnMe(it, me.userId) }
+    // The counts go in the labels: "Chats · 3", "Trades · 2".
+    val counts = friendsTabCounts(tabs, FriendsWaiting(requests = requests, unread = unread, trades = inbox))
 
     Column(Modifier.fillMaxSize()) {
         SegmentedTabs(
-            labels = tabs.map { it.label },
+            labels = tabs.mapIndexed { i, t -> friendsTabLabel(t, counts[i] ?: 0) },
             selected = tabs.indexOf(tab).coerceAtLeast(0),
             onSelect = { asked = tabs[it].key },
-            counts = friendsTabCounts(tabs, FriendsWaiting(requests = requests, unread = unread, trades = inbox)),
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 6.dp)
         )
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (tab) {
-                FriendsTab.PEOPLE -> PeopleTab(social, overview, onOpenFriend, onOpenSharedTab, onShowQr, more.onOpenHousehold)
-                FriendsTab.MESSAGES -> ConversationList(social, overview, more.onOpenConversation)
+                FriendsTab.PEOPLE -> PeopleTab(social, collectionRepository, overview, onOpenFriend, onOpenSharedTab, more)
+                FriendsTab.MESSAGES -> ConversationList(social, overview, more.onOpenConversation, header = { podChats(social, overview, more.onOpenPodChat) })
                 FriendsTab.TRADES -> TradesTab(social, collectionRepository, overview, withMore == true, onOpenLoans, onCounterTrade, more)
-                FriendsTab.ACTIVITY -> ActivityList(social, header = {}, onOpen = more.onOpenActivity)
+                // New kinds of activity go in ActivityExtras (FriendsSlots.kt), above friends' feed.
+                FriendsTab.ACTIVITY -> ActivityList(social, header = { ActivityExtras(social, overview) }, onOpen = more.onOpenActivity)
             }
         }
     }
 }
 
-/** People: adding a friend, requests, friends, requests the user sent, pods, and the way to what's shared. */
+/**
+ * People: the next game night, Your pods, friend requests, friends — each with one line of context
+ * and a quick action (FriendsHub.kt's friendContext) — requests the user sent, and what's shared.
+ */
 @Composable
 private fun PeopleTab(
     social: SocialRepository,
+    collectionRepository: CollectionRepository,
     overview: Overview,
     onOpenFriend: (String) -> Unit,
     onOpenSharedTab: () -> Unit,
-    onShowQr: () -> Unit,
-    onOpenHousehold: (String) -> Unit = {}
+    more: FriendsMoreActions
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
@@ -235,6 +266,16 @@ private fun PeopleTab(
     val outgoing = overview.friends.filter { !it.accepted && !it.incoming }
     val friends = overview.acceptedFriends.sortedBy { overview.person(it.userId)?.displayName?.lowercase() }
 
+    // Each friend's line: what they want of the user's, what they have on loan, a shelf shared at home.
+    val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+    val wants = rememberWantsFromYou(social, overview, collections)
+    val loans = remember(collections) { loansOf(collections) }
+    val today = remember { java.time.LocalDate.now().toString() }
+    val dues = remember(loans, today) { loanPeople(loans, today, emptyList()) }
+    val households = (homes as? HouseholdsState.Ready)?.data?.households.orEmpty()
+    val leagues = rememberPodLeagues(social, overview.pods, me.userId)
+    val money = rememberMoney()
+
     fun run(action: suspend () -> Unit) {
         scope.launch {
             error = null
@@ -243,7 +284,8 @@ private fun PeopleTab(
     }
 
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { AddFriend(social, onShowQr) }
+        // The next game night (FriendsSlots.kt): nothing until there's one to show.
+        item(key = "next-night") { NextGameNightCard(social, more.onOpenGameNight) }
         error?.let { item { Notice(it, warn = true) } }
 
         if (incoming.isNotEmpty()) {
@@ -262,7 +304,17 @@ private fun PeopleTab(
         val homeInvites = (homes as? HouseholdsState.Ready)?.data?.invites.orEmpty()
         if (homeInvites.isNotEmpty()) {
             item { SectionHeader("Sharing storage at home") }
-            item(key = "home-invites") { HouseholdInvitesList(homeInvites, social, onDone = { accepted -> homesReload++; if (accepted != null) onOpenHousehold(accepted) }) }
+            item(key = "home-invites") { HouseholdInvitesList(homeInvites, social, onDone = { accepted -> homesReload++; if (accepted != null) more.onOpenHousehold(accepted) }) }
+        }
+
+        item { SectionHeader("Your pods", action = "New pod", onAction = { newPod = true }) }
+        if (overview.pods.isEmpty()) {
+            item { Notice("A pod is a group of friends — your playgroup. Share a deck with a whole pod at once.") }
+        } else {
+            item(key = "pods") { PodsRow(overview.pods, leagues) { pod ->
+                    val open = more.onOpenPod
+                    if (open != null) { open(pod) } else { podDialog = pod }
+                } }
         }
 
         item { SectionHeader(if (friends.isEmpty()) "Friends" else "Friends · ${friends.size}") }
@@ -271,9 +323,29 @@ private fun PeopleTab(
         }
         friends.forEach { f ->
             item(key = "f-${f.userId}") {
+                val want = wants.firstOrNull { it.friend == f.userId }
+                val home = households.firstOrNull { h -> h.members.any { it.isMember && it.profile.userId == f.userId } }
+                val context = friendContext(
+                    wants = want?.cards ?: 0,
+                    wantsValue = want?.value?.let { money.format(it, whole = true) },
+                    lent = lentTo(loans, f.userId),
+                    lentDue = dues.firstOrNull { it.friendId == f.userId }?.label,
+                    sharesHome = home != null
+                )
                 val shares = overview.sharedWithMe.count { it.owner == f.userId }
-                PersonRow(overview.person(f.userId), detail = if (shares > 0) "shares $shares" else null, onClick = { onOpenFriend(f.userId) }) {
-                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
+                PersonRow(
+                    overview.person(f.userId),
+                    detail = context?.line ?: if (shares > 0) "Shares $shares with you" else overview.person(f.userId)?.handle,
+                    onClick = { onOpenFriend(f.userId) }
+                ) {
+                    if (context == null) Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
+                    else TextButton(onClick = {
+                        when (context.action) {
+                            FriendAction.TRADE -> want?.let { more.onOpenMatch(it.match) }
+                            FriendAction.LOAN -> more.onOpenLent()
+                            FriendAction.HOME -> home?.let { more.onOpenHousehold(it.id) }
+                        }
+                    }) { Text(context.action.label, color = if (context.action == FriendAction.TRADE) colors.accent else colors.textMuted) }
                 }
             }
         }
@@ -285,30 +357,6 @@ private fun PeopleTab(
                     PersonRow(overview.person(f.userId)) {
                         TextButton(onClick = { run { social.api.removeFriend(f.userId) } }) { Text("Cancel", color = colors.textMuted) }
                     }
-                }
-            }
-        }
-
-        item { SectionHeader("Pods", action = "New pod", onAction = { newPod = true }) }
-        if (overview.pods.isEmpty()) {
-            item { Notice("A pod is a group of friends — your playgroup. Share a deck with a whole pod at once.") }
-        }
-        overview.pods.forEach { pod ->
-            item(key = "pod-${pod.id}") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surface).clickable { podDialog = pod }.padding(horizontal = 12.dp, vertical = 10.dp)
-                ) {
-                    Box(Modifier.size(width = 62.dp, height = 34.dp)) {
-                        pod.members.take(3).forEachIndexed { i, m -> Avatar(overview.person(m), 32.dp, Modifier.offset(x = (i * 15).dp)) }
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(pod.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val owner = if (pod.owner == me.userId) "" else " · ${overview.person(pod.owner)?.displayName ?: ""}'s pod"
-                        Text("${pod.members.size} ${if (pod.members.size == 1) "person" else "people"}$owner", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-                    }
-                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = colors.textDim)
                 }
             }
         }
@@ -345,7 +393,10 @@ private fun PeopleTab(
     }
 }
 
-/** Trades: the way to the user's cards for trade and to loans, the trades themselves, and trade matches. */
+/**
+ * Trades: the trade inbox (TradesScreen.kt's TradeInboxList) — Your turn, Waiting on them, What
+ * friends want from you and Done — then the way to the user's cards for trade and to loans.
+ */
 @Composable
 private fun TradesTab(
     social: SocialRepository,
@@ -359,9 +410,18 @@ private fun TradesTab(
     // What friends have lent the user (supabase/migrations/20261006010000_loans.sql) — nothing if the server can't say.
     var borrowed by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { runCatching { social.api.myBorrowedLoans() }.onSuccess { l -> borrowed = l.sumOf { b -> b.cards.sumOf { it.qty } } } }
-    TradeList(
+    val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+    val wants = rememberWantsFromYou(social, overview, collections)
+    TradeInboxList(
         social, collectionRepository, overview, onCounterTrade, more.onOpenConversation,
-        header = {
+        wants = {
+            if (wants.isNotEmpty()) {
+                item(key = "wants-h") { SectionHeader("What friends want from you") }
+                item(key = "wants") { WantsFromYouCard(overview, wants, more.onOpenMatch) }
+            }
+        },
+        footer = {
+            item(key = "links-h") { Spacer(Modifier.height(4.dp)) }
             if (withMore) item(key = "for-trade") { LinkRow(Icons.Filled.Sell, "Your cards for trade", more.onOpenForTrade) }
             item(key = "loans") {
                 LinkRow(
@@ -370,9 +430,6 @@ private fun TradesTab(
                     onOpenLoans
                 )
             }
-        },
-        footer = {
-            if (withMore) item(key = "matches") { TradeMatchesBlock(social, overview, more.onOpenMatch) }
         }
     )
 }
