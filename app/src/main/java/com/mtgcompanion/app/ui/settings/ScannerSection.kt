@@ -55,6 +55,16 @@ import com.mtgcompanion.app.data.parseThreshold
 import com.mtgcompanion.app.data.thresholdText
 import com.mtgcompanion.app.ui.scan.ScanFeedback
 import com.mtgcompanion.app.ui.theme.LocalAppColors
+import com.mtgcompanion.app.MtgCompanionApplication
+import com.mtgcompanion.app.data.correctedLine
+import com.mtgcompanion.app.data.correctionReadLine
+import com.mtgcompanion.app.data.correctionUsedLine
+import com.mtgcompanion.app.data.correctionsOf
+import com.mtgcompanion.app.data.forgetCorrection
+import com.mtgcompanion.app.data.withCorrections
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -172,6 +182,8 @@ internal fun ScannerSection(settingsRepository: SettingsRepository) {
         autoCamera
     ) { AutoCameraSetting.set(context, it) }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+    LearnedCorrections()
+    Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
     SwitchRow("Vibrate", "A buzz for each card, stronger for rarer ones.", s.vibrate) { change(s.copy(vibrate = it)) }
     SwitchRow("Play in silent mode", "Off: the sounds stay quiet while the phone is on silent or vibrate.", s.silent) { change(s.copy(silent = it)) }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
@@ -197,6 +209,59 @@ internal fun ScannerSection(settingsRepository: SettingsRepository) {
                 colors = FilterChipDefaults.filterChipColors(labelColor = colors.textPrimary, containerColor = colors.surface)
             )
         }
+    }
+}
+
+/**
+ * Learned corrections (ScanCorrections.kt): what the scanner read and what it puts in instead, how
+ * often, with Forget for each and Forget all. Synced with the collection. The web app's ScannerSection.tsx.
+ */
+@Composable
+private fun LearnedCorrections() {
+    val colors = LocalAppColors.current
+    val app = LocalContext.current.applicationContext as MtgCompanionApplication
+    val scope = rememberCoroutineScope()
+    val collections by app.collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+    val list = correctionsOf(collections)
+    var open by remember { mutableStateOf(false) }
+    var sure by remember { mutableStateOf(false) }
+    fun change(next: (List<com.mtgcompanion.app.data.ScanCorrection>) -> List<com.mtgcompanion.app.data.ScanCorrection>) = scope.launch {
+        app.collectionRepository.changeStorage { withCorrections(it, next(correctionsOf(it))) }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClickLabel = if (open) "Hide" else "Show") { open = !open }.padding(vertical = 8.dp)
+    ) {
+        Text("Learned corrections (${list.size})", style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary, modifier = Modifier.weight(1f))
+        Text(if (open) "▴" else "▾", color = colors.textMuted)
+    }
+    if (!open) return
+    Text(
+        "When you change a scanned card to another printing, the scanner remembers what it read and puts in your pick next time. A printing picked for a card whose set can't be read is used once you've picked it twice.",
+        style = MaterialTheme.typography.bodySmall,
+        color = colors.textMuted
+    )
+    if (list.isEmpty()) Text("Nothing learned yet.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+    list.forEach { c ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(correctionReadLine(c), style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                Text("→ ${correctedLine(c)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                Text(correctionUsedLine(c), style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+            }
+            TextButton(
+                onClick = { change { l -> forgetCorrection(l, c.key) } },
+                modifier = Modifier.semantics { contentDescription = "Forget: ${correctionReadLine(c)}" }
+            ) { Text("Forget", color = colors.accent) }
+        }
+    }
+    if (list.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(if (sure) "Forget all ${list.size}?" else "", style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+        if (sure) TextButton(onClick = { sure = false }) { Text("Keep", color = colors.textMuted) }
+        OutlinedButton(onClick = {
+            if (!sure) sure = true
+            else { change { emptyList() }; sure = false }
+        }) { Text("Forget all", color = colors.accent) }
     }
 }
 
