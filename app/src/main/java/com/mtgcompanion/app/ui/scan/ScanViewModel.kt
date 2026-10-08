@@ -70,6 +70,33 @@ import com.mtgcompanion.app.data.CopyHistoryStore
 import com.mtgcompanion.app.data.MoveCard
 import com.mtgcompanion.app.data.MoveSpot
 import com.mtgcompanion.app.data.SortScan
+import com.mtgcompanion.app.data.HandsFreeCapture
+import com.mtgcompanion.app.data.PileChecking
+import com.mtgcompanion.app.data.FlaggedCard
+import com.mtgcompanion.app.data.RecipeChoice
+import com.mtgcompanion.app.data.RecipeCard
+import com.mtgcompanion.app.data.RecipeMiss
+import com.mtgcompanion.app.data.RecipeScan
+import com.mtgcompanion.app.data.RecipeSessionState
+import com.mtgcompanion.app.data.RecipeSessionStore
+import com.mtgcompanion.app.data.RecipeVoice
+import com.mtgcompanion.app.data.SmartContext
+import com.mtgcompanion.app.data.DerivedPiles
+import com.mtgcompanion.app.data.Prices
+import com.mtgcompanion.app.data.apartOf
+import com.mtgcompanion.app.data.checkPileCard
+import com.mtgcompanion.app.data.deckNeedsOf
+import com.mtgcompanion.app.data.derivePiles
+import com.mtgcompanion.app.data.fileRecipe
+import com.mtgcompanion.app.data.friendWantsOf
+import com.mtgcompanion.app.data.onlyFoilFinish
+import com.mtgcompanion.app.data.orderedBinders
+import com.mtgcompanion.app.data.ownedOf
+import com.mtgcompanion.app.data.pileFor
+import com.mtgcompanion.app.data.reasonsFor
+import com.mtgcompanion.app.data.spokenPile
+import com.mtgcompanion.app.data.sortCard as sortRecipeCard
+import com.mtgcompanion.app.data.social.TradeMatch
 import com.mtgcompanion.app.data.SortSession
 import com.mtgcompanion.app.data.SortSessionStore
 import com.mtgcompanion.app.data.addedMove
@@ -228,7 +255,9 @@ class ScanViewModel(
     /** Check mode: each card scanned is matched against what's listed in this storage place (PlaceCheck.kt). */
     checkPlaceId: String? = null,
     /** Sort mode: each card scanned goes in the first pile whose rule fits it (SortPiles.kt). */
-    sortPile: Boolean = false
+    sortPile: Boolean = false,
+    /** Recipe mode: each card scanned goes in its pile by the sort's recipe (SortRecipes.kt). */
+    private val recipeSort: Boolean = false
 ) : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -439,6 +468,7 @@ class ScanViewModel(
      * frames — see blankFrameStreak's doc comment above.
      */
     private fun noTitle(onProcessed: () -> Unit) {
+        if (recipeGate() != null) handsFree.onRead(null)
         if (++blankFrameStreak >= BLANK_FRAMES_TO_RESET) {
             steadyReads = 0
             lastCandidate = null
@@ -494,7 +524,18 @@ class ScanViewModel(
         // confirmation, and re-scanning the same card on purpose is how you bump its count.
         // The card still waiting on its lookup counts too: the camera no longer waits for it, so
         // it's still in view while its lookup is out.
-        if (!forced) {
+        // Sorting with a recipe: a card is taken when it's held still and isn't the card just taken
+        // (HandsFreeCapture) — or, with "Capture without tapping" off, only with Scan now.
+        val gate = recipeGate()
+        val taken = gate == true && !forced && _labelPlace.value == null && handsFree.onRead(candidate)
+        if (gate != null && !forced && !taken) {
+            lastCandidate = candidate.lowercase()
+            busy.set(false)
+            onProcessed()
+            return
+        }
+        val skipGuards = forced || taken
+        if (!skipGuards) {
             val added = lastAddedCard?.let { looksLikeSameCard(candidate, it.name) } == true
             if (added || inFlight.isOnItsWay(candidate, ::looksLikeSameCard)) {
                 lastCandidate = candidate.lowercase()
@@ -509,9 +550,9 @@ class ScanViewModel(
         // and don't re-look-up a title still in frame. A forced scan accepts whatever's in frame
         // right now instead of waiting.
         steadyReads = if (normalized == lastCandidate) steadyReads + 1 else 1
-        val stable = forced || steadyReads >= _uiState.value.scanMode.steadyReads
+        val stable = skipGuards || steadyReads >= _uiState.value.scanMode.steadyReads
         lastCandidate = normalized
-        if (!stable || (!forced && normalized == lastLookedUp)) {
+        if (!stable || (!skipGuards && normalized == lastLookedUp)) {
             busy.set(false)
             onProcessed()
             return
@@ -671,6 +712,10 @@ class ScanViewModel(
                 if (recognizer == null) matchArt(row, card, look, setCode)
             }
         } catch (e: Exception) {
+            if (recipeGate() != null) {
+                handsFree.missed()
+                recipeMiss(scan.candidate)
+            }
             _uiState.value = _uiState.value.copy(status = "Didn't recognize \"${scan.candidate}\" — keep scanning…")
         } finally {
             val card = added
@@ -901,6 +946,10 @@ class ScanViewModel(
         // into the frame reads differently, and that is looked up.
         steadyReads = 0
         rejectedRead = candidate
+        if (recipeGate() != null) {
+            handsFree.missed()
+            if (confirmation == Confirmation.DIFFERENT) recipeMiss(candidate)
+        }
         _uiState.value = _uiState.value.copy(
             status = if (confirmation == Confirmation.PARTIAL) {
                 "Only read \"$candidate\" — hold the whole card in the frame, its name in the gold strip."
@@ -1060,6 +1109,218 @@ class ScanViewModel(
         _uiState.update { it.copy(status = "Filed $n ${if (n == 1) "card" else "cards"}" + now.source.trim().let { s -> if (s.isNotEmpty()) " from $s" else "" }) }
     }
 
+    // ---- Recipe mode ----
+
+    private val recipeStore = RecipeSessionStore(appContext)
+    private val _recipe = MutableStateFlow(if (recipeSort) recipeStore.session() else null)
+    /**
+     * Sorting with a recipe (SortRecipes.kt): the recipe, each card sorted so far in its pile, the cards
+     * that couldn't be read, a pile being checked; kept in RecipeSessionStore too, so leaving the scanner
+     * or restarting the phone doesn't lose it. The web app's ScanPage.tsx ?recipe mode.
+     */
+    val recipe: StateFlow<RecipeSessionState?> = _recipe.asStateFlow()
+    private val _recipeVoice = MutableStateFlow(recipeStore.voice())
+    /** How the sort is heard: said out loud, and taken without a tap. */
+    val recipeVoice: StateFlow<RecipeVoice> = _recipeVoice.asStateFlow()
+    private val handsFree = HandsFreeCapture()
+    private val pileVoice = PileVoice(appContext)
+    /** The cards of this sort as Scryfall has them, by scan, for Wrong card? and Put in deck now. */
+    private val recipeCards = HashMap<Long, ScryfallCard>()
+    private val _matches = MutableStateFlow<List<TradeMatch>>(emptyList())
+    private val binderData = MutableStateFlow<Map<String, ScryfallCard>>(emptyMap())
+
+    init {
+        // The binders kept in order: their cards' sets and numbers, for the gaps a card would fill.
+        if (recipeSort) viewModelScope.launch {
+            val cols = collectionRepository.collectionsFlow.first()
+            val ids = placesOf(cols).filter { it.placeKind == com.mtgcompanion.app.data.PlaceKind.BINDER && !it.sortRule.isNullOrEmpty() }
+                .flatMap { com.mtgcompanion.app.data.cardsIn(cols, it.id).map { c -> c.entry.scryfallId } }.distinct()
+            if (ids.isNotEmpty()) binderData.value = runCatching { cardRepository.getCardsByIds(ids).associateBy { it.id } }.getOrDefault(emptyMap())
+        }
+    }
+
+    /** Null when not sorting with a recipe; else whether cards are taken without a tap. */
+    private fun recipeGate(): Boolean? = if (recipeSort && _recipe.value != null) _recipeVoice.value.auto else null
+
+    /** Friends' names by user id, for their wants. */
+    private var friendNames: (String) -> String? = { null }
+
+    /** The friends' wants, from the trade matches, and their names (the screen asks for them; signed out: none). */
+    fun setTradeMatches(matches: List<TradeMatch>, nameOf: (String) -> String?) {
+        friendNames = nameOf
+        _matches.value = matches
+    }
+
+    /** What the smart piles go by now. */
+    fun smartContext(): SmartContext {
+        val cols = collections.value
+        val ds = decks.value
+        val data = binderData.value
+        return SmartContext(deckNeedsOf(cols, ds), friendWantsOf(_matches.value, friendNames), orderedBinders(cols) { id -> data[id]?.let { cardFactsOf(it) } }, ownedOf(cols, ds))
+    }
+
+    /** The piles of the sort's recipe, amounts in the user's currency. */
+    fun recipePiles(session: RecipeSessionState): DerivedPiles {
+        val money = Prices.money.value
+        return derivePiles(session.recipe) { money.formatLocal(it, whole = it == Math.floor(it)) }
+    }
+
+    private fun setRecipe(next: RecipeSessionState?) {
+        _recipe.value = next
+        recipeStore.saveSession(next)
+    }
+
+    fun setRecipeVoice(voice: RecipeVoice) {
+        _recipeVoice.value = voice
+        recipeStore.saveVoice(voice)
+    }
+
+    private fun recipeCardOf(card: ScryfallCard, was: RecipeCard? = null) = RecipeCard(
+        name = card.name,
+        colors = card.colors ?: card.cardFaces?.firstOrNull()?.colors ?: emptyList(),
+        colorIdentity = card.colorIdentity ?: emptyList(),
+        typeLine = card.typeLine ?: card.cardFaces?.firstOrNull()?.typeLine,
+        set = card.set,
+        collectorNumber = card.collectorNumber,
+        cmc = card.cmc,
+        rarity = card.rarity,
+        usd = card.prices?.usd?.toDoubleOrNull(),
+        usdFoil = card.prices?.usdFoil?.toDoubleOrNull(),
+        // The camera can't see foil; a printing that's only foil is. The rest the card's own switches say.
+        foil = was?.foil ?: onlyFoilFinish(card.finishes),
+        lang = was?.lang ?: "en",
+        played = was?.played ?: false
+    )
+
+    /** The pile in words, said out loud and buzzed, and on the status line for TalkBack. */
+    private fun announce(session: RecipeSessionState, scan: RecipeScan) {
+        val pile = recipePiles(session).piles.firstOrNull { it.number == scan.pile } ?: return
+        if (_recipeVoice.value.speak) pileVoice.say(spokenPile(pile, scan.reason))
+        pileVoice.buzz(scan.reason != null)
+        _uiState.update { it.copy(status = "Pile ${pile.number}, ${pile.name} — ${scan.name}", statusRarity = null, successToken = it.successToken + 1) }
+    }
+
+    /** Puts [card] in its pile by the recipe — or, checking a pile, says whether it belongs there. */
+    private fun recipeCard(card: ScryfallCard, session: RecipeSessionState): Long {
+        val id = nextScanId++
+        handsFree.captured(card.name)
+        ScanFeedback.cardRecognised(card)
+        val derived = recipePiles(session)
+        session.checking?.let { c ->
+            val verdict = checkPileCard(derived, session.scans, c.pile, c.checked, card.name)
+            setRecipe(session.copy(checking = c.copy(
+                checked = if (verdict.belongs) c.checked + card.name else c.checked,
+                flagged = if (verdict.belongs) c.flagged else c.flagged + FlaggedCard(card.name, verdict.line)
+            )))
+            if (_recipeVoice.value.speak) pileVoice.say(if (verdict.belongs) "Belongs" else verdict.goes?.let { "No — pile $it" } ?: "No — not sorted")
+            pileVoice.buzz(!verdict.belongs)
+            _uiState.update { it.copy(status = "${card.name} — ${verdict.line}", statusRarity = null, successToken = it.successToken + 1) }
+            return id
+        }
+        val rc = recipeCardOf(card)
+        // A card already put with its deck is in the collection now, so the collection counts it, not the sort.
+        val choice = sortRecipeCard(session.recipe, derived, smartContext(), rc, session.scans.filter { it.filed != true }, Prices.money.value.rate)
+        recipeCards[id] = card
+        val scan = RecipeScan(
+            id, card.id, card.name, card.setName, rc, cardFactsOf(card), newEntryOf(card), choice.pile, choice.key,
+            choice.reason, choice.also, at = System.currentTimeMillis()
+        )
+        val next = session.copy(scans = session.scans + scan)
+        setRecipe(next)
+        announce(next, scan)
+        return id
+    }
+
+    /** The newest scan of the sort, replaced (re-sorted, sent elsewhere…) — or taken off ([change] answers null). */
+    private fun changeLast(change: (RecipeScan, List<RecipeScan>) -> RecipeScan?) {
+        val now = _recipe.value ?: return
+        val last = now.scans.lastOrNull() ?: return
+        val rest = now.scans.dropLast(1)
+        val next = change(last, rest)
+        val session = now.copy(scans = if (next != null) rest + next else rest)
+        setRecipe(session)
+        if (next != null && (next.pile != last.pile || next.reason != last.reason)) announce(session, next)
+    }
+
+    /** The newest card sorted again as [rc] (another printing, or now foil…). */
+    private fun resort(last: RecipeScan, rest: List<RecipeScan>, rc: RecipeCard, card: ScryfallCard? = null): RecipeScan {
+        val now = _recipe.value!!
+        val choice = pileFor(now.recipe, recipePiles(now), rc, reasonsFor(smartContext(), rc, rest.filter { it.filed != true }), Prices.money.value.rate)
+        val base = if (card == null) last else last.copy(scryfallId = card.id, name = card.name, setName = card.setName, facts = cardFactsOf(card), entry = newEntryOf(card))
+        return base.copy(card = rc, pile = choice.pile, key = choice.key, reason = choice.reason, also = choice.also)
+    }
+
+    /** The newest card's Foil / Not English / Played switch ([kind], an APART_KINDS name). */
+    fun toggleRecipeApart(kind: String) = changeLast { last, rest ->
+        val c = last.card
+        val on = kind in apartOf(c)
+        resort(last, rest, when (kind) {
+            "FOIL" -> c.copy(foil = !on)
+            "FOREIGN" -> c.copy(lang = if (on) "en" else "xx")
+            else -> c.copy(played = !on)
+        })
+    }
+
+    /** "Send to pile N instead". */
+    fun sendRecipeTo(choice: RecipeChoice) = changeLast { last, _ -> last.copy(pile = choice.pile, key = choice.key, reason = choice.reason, also = choice.also) }
+
+    /** Undo: the newest card off its pile; it can be scanned again straight away. */
+    fun undoRecipe() {
+        changeLast { _, _ -> null }
+        handsFree.rescan()
+        _uiState.update { it.copy(status = "Last card taken back") }
+    }
+
+    /** Wrong card? Rescan it: off its pile, and the card in view is taken again. */
+    fun rescanRecipe() {
+        changeLast { _, _ -> null }
+        handsFree.rescan()
+        _uiState.update { it.copy(status = "Show the card again") }
+    }
+
+    /** The newest card, as Scryfall has it, for picking its printing. */
+    fun lastRecipeCard(): ScryfallCard? = _recipe.value?.scans?.lastOrNull()?.let { recipeCards[it.id] }
+
+    /** Wrong card? Pick the printing: the newest card is [card], sorted again. */
+    fun setRecipePrinting(card: ScryfallCard) = changeLast { last, rest ->
+        recipeCards[last.id] = card
+        resort(last, rest, recipeCardOf(card, last.card), card)
+    }
+
+    /**
+     * Put in deck now: the newest card goes with the deck that needs it straight away — into the list of
+     * a deck that holds its own copies, otherwise into the collection for the deck's pull list — and
+     * filing leaves it.
+     */
+    fun putRecipeCardInDeck() {
+        val now = _recipe.value ?: return
+        val last = now.scans.lastOrNull() ?: return
+        val reason = last.reason?.takeIf { it.kind == "DECKS" } ?: return
+        val deck = decks.value.firstOrNull { it.id == reason.deckId }
+        val card = recipeCards[last.id]
+        val derived = recipePiles(now)
+        viewModelScope.launch {
+            if (deck != null && card != null && deck.ownershipType == com.mtgcompanion.app.data.DeckOwnership.PHYSICAL) deckRepository.addCardToDeck(deck.id, card)
+            else collectionRepository.changeStorage { fileRecipe(it, now.recipe, derived, listOf(last)).collections }
+        }
+        setRecipe(now.copy(scans = now.scans.dropLast(1) + last.copy(filed = true)))
+        _uiState.update { it.copy(status = "${last.name} — put with ${deck?.name ?: "its deck"}") }
+    }
+
+    /** Checking a pile is over: back to sorting (the summary shows what was found). */
+    fun finishRecipeCheck() {
+        _recipe.value?.let { setRecipe(it.copy(checking = null)) }
+    }
+
+    /** A card seen but not read: remembered for "Check them" — once, not on every frame. */
+    private fun recipeMiss(seen: String) {
+        val now = _recipe.value ?: return
+        if (now.checking != null) return
+        val before = now.misses.lastOrNull()
+        if (before != null && before.seen == seen && System.currentTimeMillis() - before.at < 10_000) return
+        setRecipe(now.copy(misses = now.misses + RecipeMiss(System.currentTimeMillis(), seen)))
+    }
+
     // ---- Scan-to-tick mode ----
 
     private val pullProgress = PullProgress(appContext)
@@ -1204,6 +1465,7 @@ class ScanViewModel(
         // While a box label's sheet is up, cards wait.
         if (_labelPlace.value != null) return nextScanId++
         Usage.action(UsageAction.CARD_SCANNED)
+        if (recipeSort) _recipe.value?.let { return recipeCard(card, it) }
         _sort.value?.let { return sortCard(card, it) }
         _tickList.value?.let { return tickCard(card, it) }
         _putAwayTarget.value?.let { return putAwayCard(card, it) }
@@ -1331,6 +1593,7 @@ class ScanViewModel(
     }
 
     override fun onCleared() {
+        pileVoice.shutdown()
         recognizer.close()
         stripReader.close()
         stripThread.shutdown()
@@ -1457,7 +1720,8 @@ class ScanViewModel(
         private val putAwayPlaceId: String? = null,
         private val tickList: TickList? = null,
         private val checkPlaceId: String? = null,
-        private val sortPile: Boolean = false
+        private val sortPile: Boolean = false,
+        private val recipeSort: Boolean = false
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1471,7 +1735,8 @@ class ScanViewModel(
                 putAwayPlaceId = putAwayPlaceId,
                 tickList = tickList,
                 checkPlaceId = checkPlaceId,
-                sortPile = sortPile
+                sortPile = sortPile,
+                recipeSort = recipeSort
             ) as T
         }
     }

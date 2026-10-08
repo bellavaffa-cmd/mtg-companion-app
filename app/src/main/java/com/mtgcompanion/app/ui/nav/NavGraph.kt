@@ -15,6 +15,7 @@ import com.mtgcompanion.app.ui.collection.NewSetsScreen
 import com.mtgcompanion.app.ui.collection.SpreadThinScreen
 import com.mtgcompanion.app.ui.collection.PlaceScreen
 import com.mtgcompanion.app.ui.collection.BinderFitScreen
+import com.mtgcompanion.app.ui.collection.SortRecipesScreen
 import com.mtgcompanion.app.ui.collection.CheckResultsScreen
 import com.mtgcompanion.app.ui.collection.PlaceLabelScreen
 import com.mtgcompanion.app.ui.collection.LoansScreen
@@ -412,8 +413,13 @@ private object Routes {
     /** Photos of a copy of a card (CopyPhotos.kt). */
     const val COPY_PHOTOS = "copy_photos/{cardName}"
     fun copyPhotos(name: String) = "copy_photos/" + URLEncoder.encode(name, StandardCharsets.UTF_8.name())
-    /** The scanner sorting a new pile into piles (SortPiles.kt). */
+    /** The scanner sorting a new pile into piles (SortPiles.kt): "Keep, spares, decks, bulk". */
     const val SORT_PILE = "sort_pile"
+    /** Sort a pile with a recipe (SortRecipes.kt): pick, build, lay out — or, with [summary], what went where. */
+    const val SORT_RECIPES = "sort_recipes?summary={summary}"
+    fun sortRecipes(summary: Boolean = false) = "sort_recipes?summary=$summary"
+    /** The scanner sorting with a recipe. */
+    const val SORT_RECIPE_SCAN = "sort_recipe_scan"
     /** A storage place's label to print (and "All labels" from there). */
     const val PLACE_LABEL = "place_label/{placeId}"
     fun placeLabel(placeId: String) = "place_label/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
@@ -1303,6 +1309,54 @@ fun MtgNavGraph(
                 )
             }
 
+            destination(Routes.SORT_RECIPES, arguments = listOf(navArgument("summary") { type = NavType.BoolType; defaultValue = false })) { entry ->
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                SortRecipesScreen(
+                    collections = collections,
+                    startOnSummary = entry.arguments?.getBoolean("summary") ?: false,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onScan = { navController.navigate(Routes.SORT_RECIPE_SCAN) { launchSingleTop = true } },
+                    onClassic = { navController.navigate(Routes.SORT_PILE) },
+                    // The trade opens with the friend's pile already on the user's side.
+                    onOffer = { friendId, cards ->
+                        socialRepository.draft = SocialRepository.TradeDraft(to = friendId, give = cards)
+                        navController.navigate(Routes.tradeNew(friendId))
+                    },
+                    onFit = { id -> navController.navigate(Routes.placeFit(id)) }
+                )
+            }
+
+            destination(Routes.SORT_RECIPE_SCAN) {
+                val viewModel: ScanViewModel = viewModel(
+                    key = "sort-recipe",
+                    factory = ScanViewModel.Factory(
+                        LocalContext.current.applicationContext,
+                        collectionRepository,
+                        deckRepository,
+                        cardIndexRepository,
+                        settingsRepository,
+                        recipeSort = true
+                    )
+                )
+                ScanScreen(
+                    viewModel = viewModel,
+                    social = socialRepository,
+                    onBack = { navController.popBackStack() },
+                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
+                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) },
+                    // What went where: the summary, in place of the screens that led here.
+                    onRecipeDone = {
+                        navController.navigate(Routes.sortRecipes(summary = true)) {
+                            popUpTo(Routes.SORT_RECIPES) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
             destination(Routes.SPREAD_THIN) {
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
@@ -1428,7 +1482,7 @@ fun MtgNavGraph(
                     onPutAway = { id -> navController.navigate(Routes.putAway(id)) },
                     onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
                     onOpenLoans = { navController.navigate(Routes.loans()) },
-                    onSortPile = { navController.navigate(Routes.SORT_PILE) },
+                    onSortPile = { navController.navigate(Routes.sortRecipes()) },
                     onOpenValue = { navController.navigate(Routes.VALUE_BY_PLACE) },
                     onOpenSpace = { navController.navigate(Routes.SPACE) },
                     onOpenSell = { navController.navigate(Routes.SELL) },

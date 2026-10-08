@@ -185,7 +185,9 @@ fun ScanScreen(
     /** Check mode's Finish check: the results (CheckResultsScreen). */
     onFinishCheck: (String) -> Unit = {},
     /** Put-away into a binder in order: Add cards in order (BinderFitScreen). */
-    onFit: (String) -> Unit = {}
+    onFit: (String) -> Unit = {},
+    /** Sorting with a recipe: Done, or Finish check — what went where (SortRecipesScreen's summary). */
+    onRecipeDone: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -207,6 +209,20 @@ fun ScanScreen(
     val check by viewModel.check.collectAsState()
     // Sort mode: each card goes in a pile by the piles' rules (SortPanel.kt).
     val sort by viewModel.sort.collectAsState()
+    // Recipe mode: each card goes in its pile by the sort's recipe (RecipeScanPanel.kt).
+    val recipe by viewModel.recipe.collectAsState()
+    val recipeVoice by viewModel.recipeVoice.collectAsState()
+    val money by com.mtgcompanion.app.data.Prices.money.collectAsState()
+    val recipeOn = recipe != null
+    LaunchedEffect(recipeOn) {
+        if (!recipeOn) return@LaunchedEffect
+        if (social.overview.value == null) runCatching { social.refresh() }
+        runCatching { social.more.tradeMatches() }.onSuccess { matches ->
+            viewModel.setTradeMatches(matches) { id -> social.overview.value?.person(id)?.let { it.displayName.ifEmpty { it.username } } }
+        }
+    }
+    var recipeWrong by remember { mutableStateOf(false) }
+    var recipePrinting by remember { mutableStateOf<ScryfallCard?>(null) }
     val checkPlace = check?.let { c -> placesOf(collections).firstOrNull { it.id == c.placeId } }
     val checkResult = remember(check, collections, decks) {
         check?.let { c -> reconcile(collections, decks, CheckScope(c.placeId, c.section), c.scans) }
@@ -241,9 +257,9 @@ fun ScanScreen(
     // Cards scanned but not put away yet: leaving would throw them away, so it asks first.
     var confirmLeave by remember { mutableStateOf(false) }
     val leave = {
-        if (putAwayTarget != null || tickList != null || check != null || sort != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
+        if (putAwayTarget != null || tickList != null || check != null || sort != null || recipe != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
     }
-    BackHandler(enabled = putAwayTarget == null && tickList == null && check == null && sort == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
+    BackHandler(enabled = putAwayTarget == null && tickList == null && check == null && sort == null && recipe == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
     var showManualAdd by remember { mutableStateOf(false) }
 
     // Bound once the camera provider resolves, so the torch button has something to control.
@@ -645,8 +661,30 @@ fun ScanScreen(
             )
         }
 
+        // Recipe mode: the card's pile, big, said out loud — the Scan and Smart mockups.
+        recipe?.let { sorting ->
+            val derived = remember(sorting.recipe, money) { viewModel.recipePiles(sorting) }
+            val ctx = remember(sorting.scans.size, collections, decks) { viewModel.smartContext() }
+            RecipeScanPanel(
+                session = sorting,
+                derived = derived,
+                ctx = ctx,
+                voice = recipeVoice,
+                money = money,
+                onUndo = viewModel::undoRecipe,
+                onWrong = { recipeWrong = true },
+                onSend = viewModel::sendRecipeTo,
+                onPutInDeck = viewModel::putRecipeCardInDeck,
+                onApart = viewModel::toggleRecipeApart,
+                onDone = onRecipeDone,
+                onFinishCheck = { viewModel.finishRecipeCheck(); onRecipeDone() },
+                onScanNow = viewModel::captureNow,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
         // Bottom overlay: view-list button.
-        if (putAwayTarget == null && tickList == null && check == null && sort == null) Button(
+        if (putAwayTarget == null && tickList == null && check == null && sort == null && recipe == null) Button(
             onClick = { showList = true },
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
@@ -734,6 +772,28 @@ fun ScanScreen(
         )
     }
 
+    if (recipeWrong) recipe?.scans?.lastOrNull()?.let { last ->
+        AlertDialog(
+            onDismissRequest = { recipeWrong = false },
+            containerColor = Surface,
+            title = { Text("Not ${last.name}?", color = GoldLight) },
+            text = { Text("Right card, wrong printing: pick the one you're holding. A different card: rescan it — it's taken off its pile first.", color = TextMuted) },
+            confirmButton = {
+                TextButton(onClick = { recipeWrong = false; viewModel.rescanRecipe() }) { Text("Rescan it", color = Gold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { recipeWrong = false; recipePrinting = viewModel.lastRecipeCard() }) { Text("Pick the printing", color = Gold) }
+            }
+        )
+    }
+    recipePrinting?.let { card ->
+        ArtPickerDialog(
+            row = ScanRow(-1, card, System.currentTimeMillis()),
+            load = { viewModel.printingsOf(card) },
+            onPick = { viewModel.setRecipePrinting(it); recipePrinting = null },
+            onDismiss = { recipePrinting = null }
+        )
+    }
     artPickerRow?.let { row ->
         ArtPickerDialog(
             row = row,

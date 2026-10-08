@@ -333,6 +333,13 @@ data class Collection(
      * the first item; then kept, as an empty list once none are left.
      */
     val gear: List<GearItem>? = null,
+    /**
+     * The Unsorted pile only: the user's own sorting recipes (see SortRecipes.kt). Rides along like
+     * [gear] and merges recipe by recipe. Null (left out) until the first is saved; then kept, as an
+     * empty list once none are left — so a pile with no "sortRecipes" key was saved by an app that
+     * doesn't know about them.
+     */
+    val sortRecipes: List<SortRecipe>? = null,
     /** A sample binder from the welcome flow — see Deck.sample. Null (left out) on everything else. */
     val sample: Boolean? = null
 ) {

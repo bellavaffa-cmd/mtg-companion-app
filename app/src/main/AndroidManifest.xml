@@ -15,6 +15,13 @@
          which still reaches a phone face down on the table with touch feedback turned off. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
+    <!-- Sorting with a recipe says each card's pile out loud (ui/scan/PileVoice.kt): the phone's
+         text-to-speech engine has to be visible to the app from Android 11. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
