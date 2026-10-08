@@ -157,11 +157,11 @@ val SortRecipe.isTemplate: Boolean get() = id.startsWith("tpl-")
 /** One bucket of a level: its key in a pile's key, its words, and a colour for its band (null: none of its own). */
 data class RecipeBucket(val key: String, val label: String, val band: String?)
 
-private val COLOUR_BUCKETS = listOf(
+private val RECIPE_COLOUR_BUCKETS = listOf(
     Triple("W", "White", "#f3efe0"), Triple("U", "Blue", "#4d8fe0"), Triple("B", "Black", "#6f6a78"), Triple("R", "Red", "#e0674d"),
     Triple("G", "Green", "#5fbf7a"), Triple("M", "Multicolour", "#d8b56a"), Triple("C", "Colourless", "#a7a8b3"), Triple("L", "Lands", "#b08b5a")
 )
-private val RARITY_BUCKETS = listOf(
+private val RECIPE_RARITY_BUCKETS = listOf(
     Triple("mythic", "Mythic", "#e2694a"), Triple("rare", "Rare", "#e6b45e"), Triple("uncommon", "Uncommon", "#c0c6d0"), Triple("common", "Common", "#6f6a78")
 )
 private const val VALUE_BAND = "#b98cf0"
@@ -183,9 +183,9 @@ fun levelBuckets(level: SplitLevel, fmt: (Double) -> String): List<RecipeBucket>
             fun top(i: Int) = if (i == 0) (if (l.restOn == true) "${fmt(cuts[0])} and up" else "${fmt(cuts[0])}+") else "${fmt(cuts[i])}–${fmt(cuts[i - 1])}"
             cuts.indices.map { RecipeBucket("v$it", top(it), VALUE_BAND) } + RecipeBucket("v${cuts.size}", "under ${fmt(cuts.last())}", VALUE_BAND)
         }
-        "COLOUR" -> COLOUR_BUCKETS.filter { it.first != "L" || l.lands == true }
+        "COLOUR" -> RECIPE_COLOUR_BUCKETS.filter { it.first != "L" || l.lands == true }
             .map { (key, label, band) -> RecipeBucket(key, if (key == "C" && l.lands != true) "Colourless and lands" else label, band) }
-        "IDENTITY" -> COLOUR_BUCKETS.filter { it.first != "L" }.map { (key, label, band) -> RecipeBucket(key, label, band) }
+        "IDENTITY" -> RECIPE_COLOUR_BUCKETS.filter { it.first != "L" }.map { (key, label, band) -> RecipeBucket(key, label, band) }
         "SET" -> l.sets!!.map { RecipeBucket(it, it.uppercase(), null) } + RecipeBucket("other", "Other sets", null)
         "MANA_VALUE", "NUMBER" -> {
             val cuts = l.cuts!!
@@ -201,7 +201,7 @@ fun levelBuckets(level: SplitLevel, fmt: (Double) -> String): List<RecipeBucket>
                 RecipeBucket("$k$i", label, null)
             }
         }
-        "RARITY" -> RARITY_BUCKETS.map { (key, label, band) -> RecipeBucket(key, label, band) }
+        "RARITY" -> RECIPE_RARITY_BUCKETS.map { (key, label, band) -> RecipeBucket(key, label, band) }
         "TYPE" -> TYPE_SECTIONS.map { RecipeBucket(it.lowercase(), it, null) }
         else -> {
             val letters = l.letters!!
@@ -337,7 +337,7 @@ fun bucketOf(level: SplitLevel, card: RecipeCard, rate: Double): String {
         }
         "COLOUR" -> {
             val s = colourSection(recipeFacts(card))
-            val k = COLOUR_BUCKETS.firstOrNull { it.second == s }?.first ?: "C"
+            val k = RECIPE_COLOUR_BUCKETS.firstOrNull { it.second == s }?.first ?: "C"
             if (k == "L" && l.lands != true) "C" else k
         }
         "IDENTITY" -> {
@@ -638,14 +638,14 @@ fun cardLine(card: RecipeCard, setName: String?, reason: SortReason?, price: (Do
     return listOf(RARITY_WORDS[card.rarity ?: ""] ?: "", usd?.let(price) ?: "No price", where).filter { it.isNotEmpty() }.joinToString(" · ")
 }
 
-private val NUMBER_WORDS = listOf(
+private val SPOKEN_NUMBERS = listOf(
     "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
     "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "twenty-one", "twenty-two", "twenty-three", "twenty-four"
 )
 
 /** What the phone says for a card: "Seven, blue", "One, Krenko needs it". */
 fun spokenPile(pile: RecipePile, reason: SortReason?): String {
-    val n = NUMBER_WORDS.getOrNull(pile.number) ?: pile.number.toString()
+    val n = SPOKEN_NUMBERS.getOrNull(pile.number) ?: pile.number.toString()
     val what = when (reason?.kind) {
         null -> pile.name.split(" · ").joinToString(", ") { lowerWord(it) }
         "DECKS" -> "${firstWord(reason.deck ?: "")} needs it"
