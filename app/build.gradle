@@ -60,8 +60,8 @@ android {
         minSdk 26
         targetSdk 36
         // versionCode scheme: major*10000 + minor*100 + patch (e.g. 1.8.0 -> 10800). Bump both per release.
-        versionCode 30802
-        versionName '3.8.2'
+        versionCode 30803
+        versionName '3.8.3'
         // Which tester build this is (see the beta build type): `gradlew assembleBeta -PtesterBuild=3`.
         // The tester app updates itself to any tester-N pre-release with a higher number.
         buildConfigField 'int', 'TESTER_BUILD', "${testerBuild}"
