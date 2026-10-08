@@ -124,24 +124,6 @@ class SmallPrintStreak {
 }
 
 /**
- * Whether the small print read in view now is a *different* printing from the card just taken, so a
- * new card of the same name (a pile of basic lands) has come into view — not the same one lingering.
- * Only when [read] was read the same on the frame before as well ([previousRead]), and there's a
- * printing to compare with: the one read when the last card was looked up ([lookedUp]), or else
- * the printing it was added as ([added]).
- */
-fun newPrintingInView(
-    read: Pair<String, String>?,
-    previousRead: Pair<String, String>?,
-    lookedUp: Pair<String, String>?,
-    added: Pair<String, String>?
-): Boolean {
-    if (read == null || previousRead == null || !samePrinting(read, previousRead)) return false
-    val last = lookedUp ?: added ?: return false
-    return !samePrinting(read, last)
-}
-
-/**
  * The printing read off a whole camera frame — the guide and the margin around it. Only when one
  * card's small print is in it: with two set lines (the card underneath peeking out of a pile), which
  * line is whose can't be told from the text, and the close read off the card's own edges decides.

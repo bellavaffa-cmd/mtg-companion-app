@@ -58,7 +58,12 @@ import com.mtgcompanion.app.data.scanCacheKey
 import com.mtgcompanion.app.data.STEADY_READS
 import com.mtgcompanion.app.data.parseSetAndNumber
 import com.mtgcompanion.app.data.frameSetAndNumber
-import com.mtgcompanion.app.data.newPrintingInView
+import com.mtgcompanion.app.data.CardHeld
+import com.mtgcompanion.app.data.SeenBox
+import com.mtgcompanion.app.data.cardBox
+import com.mtgcompanion.app.data.printingOf
+import com.mtgcompanion.app.data.samePrinting
+import com.mtgcompanion.app.data.titleBox
 import com.mtgcompanion.app.data.plainNumber
 import com.mtgcompanion.app.data.smallPrintStands
 import com.mtgcompanion.app.data.SmallPrintStreak
@@ -341,11 +346,20 @@ class ScanViewModel(
     //                   real run of blank frames (BLANK_FRAMES_TO_RESET) is treated as "card gone".
     private var lastCandidate: String? = null
     private var lastLookedUp: String? = null
+    // Cleared, the card held goes with it (CardHeld): whatever comes next is a new card.
     private var lastAddedCard: ScryfallCard? = null
-    // The small print read in the previous frame, and the one the card last looked up was read with:
-    // a pile of one name (basic lands) is told apart by its printing — see newPrintingInView.
-    private var lastFramePrinting: Pair<String, String>? = null
-    private var lastLookedUpPrinting: Pair<String, String>? = null
+        set(value) {
+            field = value
+            if (value == null) {
+                lastAddedRow = null
+                held.reset()
+            }
+        }
+    // The card just taken while it stays under the camera: counted once however its printing reads,
+    // and a pile of one name (basic lands) told apart only when the card was swapped — see CardHeld.
+    private val held = CardHeld(same = { read, name -> looksLikeSameCard(read, name) })
+    // The row the card just taken went in as, for putting its printing right while it's still in view.
+    private var lastAddedRow: Long? = null
     // The small print read with the title unread, which has to read the same twice running.
     private val smallPrintStreak = SmallPrintStreak()
     private var blankFrameStreak = 0
@@ -497,6 +511,7 @@ class ScanViewModel(
      * so it stays held and isn't taken twice.
      */
     fun zoomMoved() {
+        held.zoomed()
         steadyReads = 0
         lastCandidate = null
         handsFree.moved()
@@ -635,13 +650,14 @@ class ScanViewModel(
      */
     private fun noTitle(onProcessed: () -> Unit) {
         if (recipeGate() != null) handsFree.onRead(null)
+        held.blank()
         if (++blankFrameStreak >= BLANK_FRAMES_TO_RESET) {
             steadyReads = 0
             lastCandidate = null
             lastLookedUp = null
             lastAddedCard = null
-            lastFramePrinting = null
-            lastLookedUpPrinting = null
+            lastAddedRow = null
+            held.reset()
             smallPrintStreak.reset()
             inFlight.cardLeft()
         }
@@ -657,9 +673,10 @@ class ScanViewModel(
     private fun lookBySight(recognizer: CardRecognizer, image: InputImage, onProcessed: () -> Unit, cut: GuideCut) {
         viewModelScope.launch {
             val started = SystemClock.elapsedRealtime()
-            val flat = withContext(Dispatchers.Default) {
-                runCatching { uprightFrame(cut.picture, image.rotationDegrees)?.let { FlatCard.find(it, cut.guide) } }.getOrNull()
-            }
+            val upright = withContext(Dispatchers.Default) { runCatching { uprightFrame(cut.picture, image.rotationDegrees) }.getOrNull() }
+            val flat = upright?.let { withContext(Dispatchers.Default) { runCatching { FlatCard.find(it, cut.guide) }.getOrNull() } }
+            // No card's edges in the guide: nothing is under the camera, whatever was there has gone.
+            if (upright != null && flat == null) held.noCard()
             val seen = flat?.let { withContext(Dispatchers.Default) { runCatching { recognizer.recognize(it) }.getOrNull() } }
             var sight = seen?.let { cardBySight(it.anywhere) }
             // The small print says which printing it is as plainly as the title says which card: set
@@ -685,7 +702,8 @@ class ScanViewModel(
             }
             timing("title unread; ${if (printed != null) "by its small print" else "by sight"}: ${sight.name} ${sight.set} #${sight.number}", started)
             blankFrameStreak = 0
-            proceed(sight.name, emptyList(), image, onProcessed, cut, forced = false, seenBySight = true, printingHint = printed)
+            val box = upright?.let { u -> flat?.quads?.firstOrNull()?.let { q -> cardBox(q.corners.map { it.x }, q.corners.map { it.y }, u.width, u.height) } }
+            proceed(sight.name, emptyList(), image, onProcessed, cut, forced = false, seenBySight = true, printingHint = printed, box = box)
         }
     }
 
@@ -701,7 +719,8 @@ class ScanViewModel(
         cut: GuideCut?,
         forced: Boolean,
         seenBySight: Boolean,
-        printingHint: Pair<String, String>? = null
+        printingHint: Pair<String, String>? = null,
+        box: SeenBox? = null
     ) {
         // A frame read before the pinch began, or while auto zoom or a refocus settles: the picture
         // is moving, so it's not a steady read.
@@ -711,6 +730,15 @@ class ScanViewModel(
             onProcessed()
             return
         }
+
+        // The exact printing, when the small print was read in this frame (or with the title unread),
+        // and where the card sat: told to the card held on every frame, whatever is done with it.
+        val fromFrame = printingHint ?: extractSetAndNumber(lines)
+        val input = cut?.input ?: image
+        val where = box ?: titleLine(lines)?.boundingBox?.let { r ->
+            titleBox(r.left, r.top, r.right, r.bottom, input.width, input.height)
+        }
+        val verdict = held.frame(candidate, fromFrame, where, seenBySight)
 
         // Still the same physical card sitting in frame, even if this frame's OCR came out
         // slightly different from the exact string we last looked up — don't re-add it. A forced
@@ -729,21 +757,17 @@ class ScanViewModel(
             return
         }
         val skipGuards = forced || taken
-        // The exact printing, when the small print was read in this frame (or with the title unread).
-        val fromFrame = printingHint ?: extractSetAndNumber(lines)
-        val previousFramePrinting = lastFramePrinting
-        lastFramePrinting = fromFrame
-        if (!skipGuards && newPrintingInView(
-                fromFrame, previousFramePrinting, lastLookedUpPrinting,
-                lastAddedCard?.let { c -> c.set?.let { s -> c.collectorNumber?.let { n -> s to n } } }
-            ) && lastAddedCard?.let { looksLikeSameCard(candidate, it.name) } == true
-        ) {
-            // The same name, but its small print names another printing, read twice running: not the
-            // card just taken still in view, but the next of a pile of them laid on top (basic lands).
-            Log.d("ScanTiming", "same name, new printing in view: ${fromFrame?.first} #${fromFrame?.second}")
+        if (!skipGuards && verdict == CardHeld.Verdict.NEW_CARD) {
+            // The same name, another printing read steadily off its small print, and the card was
+            // swapped (it moved, or a hand went over it): the next of a pile of one name (basic lands).
+            Log.d("ScanTiming", "same name, new card in view: ${fromFrame?.first} #${fromFrame?.second}")
             lastAddedCard = null
             lastLookedUp = null
             inFlight.cardLeft()
+        } else if (!skipGuards && verdict == CardHeld.Verdict.UPDATE_PRINTING) {
+            // The same card, never moved, its small print read steadily as another printing: the scan
+            // is put right, not counted again.
+            held.printing?.let { p -> lastAddedRow?.let { row -> repoint(row, candidate, p) } }
         }
         if (!skipGuards) {
             val added = lastAddedCard?.let { looksLikeSameCard(candidate, it.name) } == true
@@ -768,7 +792,7 @@ class ScanViewModel(
             return
         }
         lastLookedUp = normalized
-        lastLookedUpPrinting = fromFrame
+        held.confirmed()
 
         // The set code + collector number name the exact printing. The camera's own pass sometimes
         // reads them; when it doesn't, a copy of the picture goes with the card, for a closer look
@@ -901,6 +925,9 @@ class ScanViewModel(
         if (look != null) timing("art signature", started)
 
         var added: ScryfallCard? = null
+        var addedRow: Long? = null
+        // Every printing this card was read or taken as: the card held is known by all of them.
+        val seenAs = mutableListOf(scan.fromFrame, printing)
         try {
             // Belt and braces: a cached card that doesn't answer to what was read is not the card,
             // whatever the key said. A forced scan skips this check in accept(), so the cache cannot
@@ -929,11 +956,13 @@ class ScanViewModel(
             val exact = applied != null || (if (sight != null) sight.certain else printed)
             sightWasCertain = exact
             if (applied != null) Log.d("ScanTiming", "learned (${applied.kind}): ${card.name} ${card.set} #${card.collectorNumber} is ${shown.name} ${shown.set} #${shown.collectorNumber}")
+            for (c in listOf(named, card, shown)) seenAs += printingOf(c)
             // A card known by sight needs no reading to account for it: its look already did. A learned
             // correction is held to the read as the card the scanner came up with was.
             accept(scan.candidate, shown, scan.forced || scan.seenBySight, exact = exact, confirmAs = card)?.let { row ->
                 nameCache[cacheKey] = named
                 added = shown
+                addedRow = row
                 readings[row] = reading
                 if (applied != null) learnedApplied(row, applied)
                 else if (recognizer == null) matchArt(row, card, look, setCode)
@@ -968,7 +997,11 @@ class ScanViewModel(
             )
             // Remembered as the card in view only if it hasn't left since it was confirmed; if it
             // has, the next card in is a new one — even another copy of this card.
-            if (inFlight.finished(scan.token, scan.normalized)) added?.let { lastAddedCard = it }
+            if (inFlight.finished(scan.token, scan.normalized)) added?.let {
+                lastAddedCard = it
+                lastAddedRow = addedRow
+                held.taken(it.name, seenAs, scan.seenBySight)
+            }
         }
     }
 
@@ -1795,8 +1828,10 @@ class ScanViewModel(
         viewModelScope.launch {
             try {
                 val card = cardRepository.getByFuzzyName(trimmed)
-                addScannedCard(card)
+                val row = addScannedCard(card)
                 lastAddedCard = card
+                lastAddedRow = row
+                held.taken(card.name, listOf(printingOf(card)))
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(status = "No match for \"$trimmed\"")
             }
@@ -1844,8 +1879,10 @@ class ScanViewModel(
                 return@launch
             }
             // The picture says which art; only when no other printing shares it is it certain.
-            addScannedCard(card, exact = seen.anywhere.drop(1).none { it.entry.group == sight.group })
+            val row = addScannedCard(card, exact = seen.anywhere.drop(1).none { it.entry.group == sight.group })
             lastAddedCard = card
+            lastAddedRow = row
+            held.taken(card.name, listOf(printingOf(card)), seenBySight = true)
         }
     }
 
@@ -1865,6 +1902,35 @@ class ScanViewModel(
             .ifEmpty { listOfNotNull(runCatching { cardRepository.getByFuzzyName(name) }.getOrNull()) }
         if (printings.isEmpty()) _uiState.update { it.copy(status = "Couldn't load $name — check the connection.") }
         return printings
+    }
+
+    /**
+     * The card held (CardHeld) is still under the camera, never moved, and its small print has read
+     * steadily as [printing]: row [rowId] is put right to that printing instead of the card being
+     * counted again. Only a row that went in as a guess — a certain one (read and borne out, or put
+     * right by hand or by a learned correction) stays as it is. Not learned from: it's the scanner's
+     * own second look, not the user's correction.
+     */
+    private fun repoint(rowId: Long, read: String, printing: Pair<String, String>) {
+        viewModelScope.launch {
+            val row = _uiState.value.scannedCards.firstOrNull { it.id == rowId } ?: return@launch
+            if (row.exact || samePrinting(printingOf(row.card) ?: ("" to ""), printing)) return@launch
+            var card: ScryfallCard? = null
+            for (number in listOf(printing.second, plainNumber(printing.second)).distinct()) {
+                card = runCatching { cardRepository.getBySetAndNumber(printing.first, number) }.getOrNull()
+                    ?.takeIf { looksLikeSameCard(read, it.name) && looksLikeSameCard(row.card.name, it.name) }
+                if (card != null) break
+            }
+            val found = card ?: return@launch
+            val rows = _uiState.value.scannedCards
+            if (rows.none { it.id == rowId && it.card.id == row.card.id }) return@launch
+            Log.d("ScanTiming", "same card, printing read as ${printing.first} #${printing.second}: row $rowId put right")
+            setScanned(
+                rows.map { if (it.id == rowId) it.copy(card = found, foil = it.foil && found.canBeFoil) else it },
+                "${found.name} — printing read as ${found.set?.uppercase()} #${found.collectorNumber}"
+            )
+            if (lastAddedRow == rowId) lastAddedCard = found
+        }
     }
 
     /** The printing on a row, swapped for the art the user picked. */
@@ -2053,15 +2119,19 @@ internal fun linesInGuide(visionText: Text, image: InputImage, previewWidth: Int
     }
 }
 
+/** The line [extractCardName] reads the title from: the top-most with three letters or more. */
+internal fun titleLine(lines: List<Text.Line>): Text.Line? =
+    lines
+        .filter { line -> line.text.count { c -> c.isLetter() } >= 3 }
+        .minByOrNull { it.boundingBox?.top ?: Int.MAX_VALUE }
+
 /**
  * A card's title is printed as the top-most line of text on its frame, above the type line and
  * rules text. Scryfall's fuzzy search then tolerates the remaining OCR noise (mana symbols read
  * as stray characters, minor misreads, etc).
  */
 internal fun extractCardName(lines: List<Text.Line>): String? {
-    return lines
-        .filter { line -> line.text.count { c -> c.isLetter() } >= 3 }
-        .minByOrNull { it.boundingBox?.top ?: Int.MAX_VALUE }
+    return titleLine(lines)
         ?.text
         ?.substringBefore("{")
         ?.trim()

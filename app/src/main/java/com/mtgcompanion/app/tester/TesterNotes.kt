@@ -9,6 +9,16 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "scan-once",
+        "Scanner: one card under the camera is counted once",
+        "Your report: \"scanning the same card multiple times\" (Mountain again — copy 4). Scan on Accurate (Settings › Scanner). " +
+            "1) Hold one card still under the camera for 10 seconds — a basic land is the best test (a Mountain or Forest), then a non-basic. It's counted once: the list has one row and no \"again — copy 2\". If the row went in as a Best guess and the small print then reads clearly, the same row changes to that printing (the status says \"printing read as …\") instead of a second copy being added. " +
+            "2) Pile of different Forests (the Final Fantasy full-art ones, FIN #306, #307…): lay each on top of the last. Each is counted, as its own printing — try once dropping them a little off each other and once squarely on top. " +
+            "3) Take a card away (show the camera the empty table for a moment) and show the same card again: it's counted again, \"… again — copy 2\". " +
+            "4) Also try with auto zoom on and while pinching the zoom with a card held still: still counted once. " +
+            "If it counts a card twice, send a scan report from the extra row."
+    ),
+    TesterNote(
         "scan-smallprint",
         "Scanner: the small print names the printing",
         "Scan on Accurate (Settings › Scanner), with the card index downloaded. " +

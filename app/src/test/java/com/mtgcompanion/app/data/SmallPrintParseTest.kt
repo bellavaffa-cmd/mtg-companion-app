@@ -129,23 +129,4 @@ class SmallPrintParseTest {
         assertNull(streak.see(null))
         assertNull(streak.see("FIN" to "308"))
     }
-
-    @Test
-    fun theNextBasicLandOfAPileIsToldApartByItsSmallPrint() {
-        val fin306 = "FIN" to "306"
-        val fin307 = "FIN" to "307"
-        // The Forest just taken was FIN 306; FIN 307 now reads twice running: a new card.
-        assertTrue(newPrintingInView(fin307, fin307, fin306, null))
-        assertTrue(newPrintingInView(fin307, fin307, null, fin306))
-        // Read once only, or the same printing as before: the card just taken, still in view.
-        assertFalse(newPrintingInView(fin307, null, fin306, null))
-        assertFalse(newPrintingInView(fin307, fin306, fin306, null))
-        assertFalse(newPrintingInView(fin306, fin306, fin306, null))
-        // Nothing read now, or nothing to compare with: as before, by name.
-        assertFalse(newPrintingInView(null, null, fin306, null))
-        assertFalse(newPrintingInView(fin307, fin307, null, null))
-        // What was read at the lookup counts over what it went in as, so a printing the look chose
-        // differently isn't taken for a new card frame after frame.
-        assertFalse(newPrintingInView(fin307, fin307, fin307, fin306))
-    }
 }
