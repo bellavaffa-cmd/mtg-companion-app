@@ -16,7 +16,9 @@ data class SetInfo(
     /** Scryfall's set_type: "expansion", "commander", "token"… (NewSets.kt leaves some out). */
     val setType: String? = null,
     /** Only on MTG Arena or Magic Online. */
-    val digital: Boolean = false
+    val digital: Boolean = false,
+    /** Scryfall's printed_size: how many cards the set has, numbered — known before they're all revealed. */
+    val printedSize: Int? = null
 )
 
 /** How much of [set] the user has: [owned] of its printings. */

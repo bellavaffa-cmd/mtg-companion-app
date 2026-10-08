@@ -10,6 +10,7 @@ import com.mtgcompanion.app.data.mergeHistory
 import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepAlertOptionsFromOlderApp
+import com.mtgcompanion.app.data.keepPreReleaseFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
 import com.mtgcompanion.app.data.keepGearFromOlderApp
 import com.mtgcompanion.app.data.keepLoansFromOlderApp
@@ -238,8 +239,8 @@ object ItemMerge {
             // ...and one that doesn't know about sorting recipes left those as they were.
             // ...and one that doesn't know about what the scanner learned left that as it was.
             // ...and one that doesn't know about collection goals left those as they were.
-            keepGoalsFromOlderApp(base, keepCorrectionsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine))))))))))),
-            keepGoalsFromOlderApp(base, keepCorrectionsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs))))))))))),
+            keepGoalsFromOlderApp(base, keepCorrectionsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepPreReleaseFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine)))))))))))),
+            keepGoalsFromOlderApp(base, keepCorrectionsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepPreReleaseFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs)))))))))))),
             minePreferred
         )
 
@@ -279,7 +280,8 @@ object ItemMerge {
                     language = pick(b.language, m.language, t.language, minePreferred),
                     forTrade = pick(b.forTrade, m.forTrade, t.forTrade, minePreferred),
                     forSale = pick(b.forSale, m.forSale, t.forSale, minePreferred),
-                    auto = pick(b.auto, m.auto, t.auto, minePreferred)
+                    auto = pick(b.auto, m.auto, t.auto, minePreferred),
+                    preRelease = pick(b.preRelease, m.preRelease, t.preRelease, minePreferred)
                 )
             }
         )

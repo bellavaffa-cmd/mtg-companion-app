@@ -282,5 +282,6 @@ data class ScryfallSet(
     @Json(name = "released_at") val releasedAt: String? = null,
     @Json(name = "icon_svg_uri") val iconSvgUri: String? = null,
     @Json(name = "set_type") val setType: String? = null,
-    val digital: Boolean? = null
+    val digital: Boolean? = null,
+    @Json(name = "printed_size") val printedSize: Int? = null
 )

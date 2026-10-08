@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -45,6 +46,8 @@ object NewSetsStore {
     private const val FOLLOWED = "followed"
     private const val TOLD = "told"
     private const val FILE = "release_sets.json"
+    private const val REVEALS_SEEN = "reveals_seen_"
+    private const val REVEALS_TOLD_AT = "reveals_told_at"
     private const val FRESH_MS = 12 * 60 * 60 * 1000L
     /** Pages of a set's cards to read at most: 175 a page, so a big set and its extras. */
     private const val MAX_PAGES = 6
@@ -86,6 +89,20 @@ object NewSetsStore {
         if (next.isEmpty()) SetReleaseCheck.cancel(context) else SetReleaseCheck.schedule(context)
     }
 
+    /** The revealed cards (ids) already seen that fit a deck, by set: what's new is told (revealNews). */
+    fun revealsSeen(context: Context, code: String): Set<String>? =
+        prefs(context).getStringSet("$REVEALS_SEEN$code", null)?.toSet()
+
+    /** [ids] seen for [code] — on its page, or told in a notification. */
+    fun markRevealsSeen(context: Context, code: String, ids: Iterable<String>) {
+        val had = revealsSeen(context, code)
+        if (had != null && ids.all { it in had }) return
+        prefs(context).edit().putStringSet("$REVEALS_SEEN$code", had.orEmpty() + ids).apply()
+    }
+
+    fun revealsToldAt(context: Context): Long? = prefs(context).getLong(REVEALS_TOLD_AT, 0L).takeIf { it > 0 }
+    fun markRevealsTold(context: Context, at: Long) { prefs(context).edit().putLong(REVEALS_TOLD_AT, at).apply() }
+
     /** [codes] announced: they're not announced again. */
     fun markTold(context: Context, codes: List<String>) {
         if (codes.isEmpty()) return
@@ -95,14 +112,15 @@ object NewSetsStore {
 
     private fun setToJson(s: SetInfo) = JSONObject().put("code", s.code).put("name", s.name).put("cardCount", s.cardCount)
         .put("releasedAt", s.releasedAt ?: JSONObject.NULL).put("iconSvgUri", s.iconSvgUri ?: JSONObject.NULL)
-        .put("setType", s.setType ?: JSONObject.NULL).put("digital", s.digital)
+        .put("setType", s.setType ?: JSONObject.NULL).put("digital", s.digital).put("printedSize", s.printedSize ?: JSONObject.NULL)
 
     private fun setFromJson(o: JSONObject) = SetInfo(
         o.getString("code"), o.optString("name", o.getString("code").uppercase()), o.optInt("cardCount"),
         if (o.isNull("releasedAt")) null else o.optString("releasedAt"),
         if (o.isNull("iconSvgUri")) null else o.optString("iconSvgUri"),
         if (o.isNull("setType")) null else o.optString("setType"),
-        o.optBoolean("digital")
+        o.optBoolean("digital"),
+        if (o.isNull("printedSize") || !o.has("printedSize")) null else o.optInt("printedSize")
     )
 
     /**
@@ -133,17 +151,24 @@ object NewSetsStore {
         return sets
     }
 
-    /** [card] as the matching keeps it. */
+    /** [card] as the matching keeps it — with the role tags its rules text shows (Tagger hasn't tagged a new card yet). */
     fun setCardOf(card: ScryfallCard) = SetCard(
-        card.id, card.name, card.typeLine.orEmpty(), card.colorIdentity.orEmpty(), card.tags, card.displayImageUrl, card.rarity
+        card.id, card.name, card.typeLine.orEmpty(), card.colorIdentity.orEmpty(), card.tags, card.displayImageUrl, card.rarity,
+        roles = RoleTags.tagsFor(null, card.displayOracleText, emptyMap()).map { RoleTags.label(it) },
+        releasedAt = card.releasedAt,
+        usd = card.prices?.usd,
+        commanderLegality = card.legalities?.get("commander")
     )
 
-    /** The cards Scryfall has for [code] so far, one of each (no basic lands), in the set's order. */
+    /**
+     * The cards Scryfall has for [code] so far — every printing (showcase frames and all), no basic
+     * lands — the most recently revealed first.
+     */
     suspend fun setCards(code: String, cardRepository: CardRepository = CardRepository()): List<SetCard> {
         synchronized(cards) { cards[code] }?.let { (at, list) -> if (System.currentTimeMillis() - at < FRESH_MS) return list }
         val out = mutableListOf<SetCard>()
         for (page in 1..MAX_PAGES) {
-            val result = cardRepository.search("e:${code.lowercase()} -t:basic", order = "set", dir = "asc", page = page)
+            val result = cardRepository.search("e:${code.lowercase()} -t:basic", order = "spoiled", dir = "desc", page = page, unique = "prints")
             out += result.cards.map { setCardOf(it) }
             if (!result.hasMore) break
         }
@@ -166,11 +191,13 @@ object NewSetsStore {
 
 /**
  * The release-day check: twice a day while a set is followed, a notification for each followed set
- * that's out (once). Opt-in — it runs only once a set is followed (the bell on New sets).
+ * that's out (once) — and, once a day at most, one for cards newly revealed for a followed set that
+ * fit the user's decks (Spoilers.kt). Opt-in — it runs only once a set is followed (the bell on New sets).
  */
 object SetReleaseCheck {
     private const val WORK = "set_release"
     private const val CHANNEL = "set_release"
+    private const val REVEALS_CHANNEL = "set_reveals"
 
     fun schedule(context: Context) {
         val network = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
@@ -217,6 +244,67 @@ object SetReleaseCheck {
         }
     }
 
+    /** "3 new cards revealed for Bloomburrow that fit your decks" (Spoilers.kt's revealNews). */
+    fun notifyReveals(context: Context, news: List<Pair<SetInfo, Int>>) {
+        if (news.isEmpty()) return
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel(REVEALS_CHANNEL, "Spoilers", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "New cards revealed for a set you follow that fit your decks (once a day at most)"
+        })
+        val first = news.first().first
+        val title = revealNewsTitle(news)
+        val body = if (news.size == 1) "See which decks they'd go in" else news.joinToString(", ") { "${it.first.name} (${it.second})" }
+        val intent = Intent(context, MainActivity::class.java)
+            .putExtra(PushNotifications.EXTRA_OPEN, if (news.size == 1) "newset:${first.code}" else "newsets")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val tap = PendingIntent.getActivity(context, REVEALS_CHANNEL.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val notification = NotificationCompat.Builder(context, REVEALS_CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(0xFFE6B45E.toInt())
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setAutoCancel(true)
+            .setContentIntent(tap)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(REVEALS_CHANNEL, 0, notification)
+        } catch (e: SecurityException) {
+            // Permission withdrawn between the check and here: nothing to show.
+        }
+    }
+
+    /**
+     * Followed sets not out yet (or just out) with cards revealed since last time that fit one of the
+     * user's Commander decks — once a day at most. A set looked at for the first time only notes
+     * what's there.
+     */
+    private suspend fun checkReveals(context: Context, followed: Set<String>, sets: List<SetInfo>) {
+        val now = System.currentTimeMillis()
+        if (!mayTellReveals(NewSetsStore.revealsToldAt(context), now)) return
+        val today = NewSetsStore.today()
+        val lists = releaseSets(sets, today)
+        val watched = (lists.upcoming + lists.recent).filter { it.code in followed && it.cardCount > 0 }
+        if (watched.isEmpty()) return
+        val decks = commanderDecks(DeckRepository(context).decksFlow.first())
+        if (decks.isEmpty()) return
+        val identities = NewSetsStore.commanderIdentities(decks)
+        val profiles = decks.mapNotNull { d ->
+            identities[d.id]?.let { deckProfile(d, it) { name -> RoleTags.tagsOf(name)?.map { id -> RoleTags.label(id) } } }
+        }
+        val news = mutableListOf<Pair<SetInfo, Int>>()
+        for (set in watched) {
+            val fitting = fitsByCard(NewSetsStore.setCards(set.code), profiles, today).keys.toList()
+            val fresh = revealNews(NewSetsStore.revealsSeen(context, set.code), fitting)
+            NewSetsStore.markRevealsSeen(context, set.code, fitting)
+            if (fresh.isNotEmpty()) news += set to fresh.size
+        }
+        if (news.isEmpty()) return
+        notifyReveals(context, news)
+        NewSetsStore.markRevealsTold(context, now)
+    }
+
     class Worker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result = try {
             NewSetsStore.init(applicationContext)
@@ -226,6 +314,8 @@ object SetReleaseCheck {
                 val out = setsToAnnounce(followed, sets, NewSetsStore.today(), NewSetsStore.told.value)
                 notify(applicationContext, out)
                 NewSetsStore.markTold(applicationContext, out.map { it.code })
+                // The spoilers' news: a failure here doesn't hold up the release-day news above.
+                runCatching { checkReveals(applicationContext, followed, sets) }
             }
             Result.success()
         } catch (e: Exception) {

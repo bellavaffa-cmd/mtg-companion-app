@@ -53,13 +53,27 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.DeckProfile
+import com.mtgcompanion.app.data.RoleTags
+import com.mtgcompanion.app.data.cardNameKeys
+import com.mtgcompanion.app.data.fitsByCard
+import com.mtgcompanion.app.data.galleryCards
+import com.mtgcompanion.app.data.openingPacks
+import com.mtgcompanion.app.data.releaseCountdown
+import com.mtgcompanion.app.data.revealedLabel
+import com.mtgcompanion.app.data.wantedCount
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckFits
 import com.mtgcompanion.app.data.NewSetsStore
 import com.mtgcompanion.app.data.SetCard
 import com.mtgcompanion.app.data.SetInfo
-import com.mtgcompanion.app.data.cardsLabel
 import com.mtgcompanion.app.data.commanderDecks
 import com.mtgcompanion.app.data.deckFits
 import com.mtgcompanion.app.data.deckProfile
@@ -80,8 +94,10 @@ import java.util.Locale
 
 // New sets: Scryfall's sets coming out soon and just out (data/NewSets.kt), each to follow — a
 // followed set gets a notification the day it comes out (NewSetsStore.kt's SetReleaseCheck) — and
-// one set's page: the cards Scryfall has shown so far that suit the user's Commander decks, and the
-// ones on their Wishlist. Reached from the Collection home. The web app's pages/NewSetsPage.tsx.
+// one set's page: its spoilers — the cards revealed so far, newest first, each to want before release
+// and with the decks it fits (SpoilersUi.kt, data/Spoilers.kt) — the cards that suit each of the
+// user's Commander decks best, and the ones on their Wishlist. Reached from the Collection home. The
+// web app's pages/NewSetsPage.tsx.
 
 private val LONG_DAY = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())
 private fun longDay(date: String) = runCatching { LocalDate.parse(date).format(LONG_DAY) }.getOrDefault(date)
@@ -158,7 +174,7 @@ fun NewSetsScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 lists.upcoming.isEmpty() && lists.recent.isEmpty() -> EmptyPrompt(Icons.Filled.NewReleases, "No sets coming out or just out right now.")
                 else -> {
                     Text(
-                        "Open a set for the cards that suit your Commander decks and the ones on your Wishlist. Follow one with the bell to hear the day it's out.",
+                        "Open a set for its spoilers: the cards revealed so far, which of your decks each would fit, and Want to put one on your Wishlist before it's out. Follow a set with the bell to hear the day it's out and when cards for your decks are revealed.",
                         style = MaterialTheme.typography.bodyMedium, color = colors.textMuted
                     )
                     if (lists.recent.isNotEmpty()) {
@@ -202,12 +218,15 @@ private fun SetRow(set: SetInfo, today: String, onClick: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(set.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${releaseLabel(set.releasedAt.orEmpty(), today)} · ${longDay(set.releasedAt.orEmpty())}", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
-                Text(cardsLabel(set, today), style = MaterialTheme.typography.labelMedium, color = colors.textDim)
+                Text(revealedLabel(set, today), style = MaterialTheme.typography.labelMedium, color = colors.textDim)
             }
         }
         FollowButton(set)
     }
 }
+
+/** Revealed cards shown at first, and how many more each "Show more" adds. */
+private const val GALLERY_PAGE = 24
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -218,17 +237,26 @@ fun NewSetScreen(
     onBack: () -> Unit,
     onOpenCard: (String) -> Unit,
     onOpenDeck: (String) -> Unit,
-    onOpenNewSets: () -> Unit
+    onOpenNewSets: () -> Unit,
+    /** Spoilers: want [Int] of a revealed card (0: not any more), with the set's release date. */
+    onSetWant: (SetCard, Int, String?) -> Unit = { _, _, _ -> },
+    /** Spoilers: put a revealed card on a deck's Considering list. */
+    onConsider: (String, SetCard) -> Unit = { _, _ -> },
+    /** Spoilers: the set's Opening packs list. */
+    onOpenPacks: (String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val followed by NewSetsStore.followed.collectAsState()
+    val roleVersion by RoleTags.version.collectAsState()
     var loaded by remember { mutableStateOf(false) }
     var set by remember { mutableStateOf<SetInfo?>(null) }
     var cards by remember { mutableStateOf<List<SetCard>?>(null) }
     var identities by remember { mutableStateOf<Map<String, List<String>>?>(null) }
     var failed by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
+    var onlyMine by rememberSaveable { mutableStateOf(false) }
+    var shown by rememberSaveable { mutableIntStateOf(GALLERY_PAGE) }
     val commander = remember(decks) { commanderDecks(decks) }
     val commanderKey = commander.joinToString(",") { "${it.id}:${it.commander?.scryfallId}:${it.partnerCommander?.scryfallId}" }
     val today = NewSetsStore.today()
@@ -246,20 +274,33 @@ fun NewSetScreen(
     }
     LaunchedEffect(commanderKey) {
         identities = if (commander.isEmpty()) emptyMap() else runCatching { NewSetsStore.commanderIdentities(commander) }.getOrDefault(emptyMap())
+        // The decks' role tags (Mana ramp, Card draw…), for matching: looked up once a month at most.
+        runCatching { RoleTags.ensure(commander.flatMap { d -> d.cards.map { it.name } }, CardRepository()) }
     }
-    val fits: List<DeckFits> = remember(cards, identities, commander) {
-        val c = cards
-        val ids = identities
-        if (c == null || ids == null) emptyList()
-        else commander.mapNotNull { d ->
-            val identity = ids[d.id] ?: return@mapNotNull null
-            val found = deckFits(deckProfile(d, identity), c)
-            if (found.isEmpty()) null else DeckFits(d.id, d.name, found)
+    val profiles: List<DeckProfile> = remember(identities, commander, roleVersion) {
+        val ids = identities ?: return@remember emptyList()
+        commander.mapNotNull { d -> ids[d.id]?.let { deckProfile(d, it) { name -> RoleTags.tagsOf(name)?.map { id -> RoleTags.label(id) } } } }
+    }
+    val fits: List<DeckFits> = remember(cards, profiles) {
+        val c = cards ?: return@remember emptyList()
+        profiles.mapNotNull { p ->
+            val found = deckFits(p, c)
+            if (found.isEmpty()) null else DeckFits(p.deckId, p.deckName, found)
         }
     }
+    val fitMap = remember(cards, profiles, today) { cards?.let { fitsByCard(it, profiles, today) }.orEmpty() }
+    val gallery = remember(cards, fitMap, onlyMine) { cards?.let { galleryCards(it, fitMap, onlyMine) }.orEmpty() }
+    val considering = remember(decks) {
+        decks.associate { d -> d.id to d.considering.flatMap { cardNameKeys(it.name) }.toSet() }
+    }
+    val packs = remember(collections, cards) { cards?.let { openingPacks(collections, it) }.orEmpty() }
     val wanted = remember(cards, collections) {
         val names = collections.firstOrNull { it.isWishlist }?.entries.orEmpty().map { it.name.trim().lowercase() }.toSet()
         cards?.let { wishlistReprints(names, it) }.orEmpty()
+    }
+    // What fits now has been seen: the daily news only tells of cards revealed after this.
+    LaunchedEffect(fitMap, followed) {
+        if (code.lowercase() in followed && cards != null && identities != null) NewSetsStore.markRevealsSeen(context, code.lowercase(), fitMap.keys)
     }
 
     Scaffold(
@@ -290,22 +331,68 @@ fun NewSetScreen(
                 )
                 else -> {
                     Text(
-                        "${releaseLabel(s.releasedAt.orEmpty(), today)} · ${longDay(s.releasedAt.orEmpty())} · ${cardsLabel(s, today)}",
+                        "${releaseCountdown(s.releasedAt, today) ?: releaseLabel(s.releasedAt.orEmpty(), today)} · ${longDay(s.releasedAt.orEmpty())} · ${revealedLabel(s, today)}",
                         style = MaterialTheme.typography.bodyMedium, color = colors.textMuted
                     )
                     Text(
-                        if (s.code in followed) "You're following it: you'll get a notification the day it's out." else "Follow it with the bell to hear the day it's out.",
+                        if (s.code in followed) "You're following it: you'll hear the day it's out, and (once a day at most) when cards that fit your decks are revealed."
+                        else "Follow it with the bell to hear the day it's out, and when cards that fit your decks are revealed.",
                         style = MaterialTheme.typography.labelMedium, color = colors.textDim
                     )
                     val c = cards
                     when {
                         s.cardCount <= 0 -> Text(
-                            "No cards shown yet. Scryfall adds them as they're previewed — come back closer to the release.",
+                            "No cards revealed yet. Scryfall adds them as they're previewed — come back closer to the release.",
                             style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(top = 12.dp)
                         )
                         c == null || identities == null -> Text("Looking through the set's cards…", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(top = 12.dp))
                         else -> {
-                            SectionTitle("Cards for your decks")
+                            if (packs.isNotEmpty()) {
+                                OutlinedButton(onClick = { onOpenPacks(s.code) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                    Icon(Icons.Filled.Inventory2, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Text("  Opening packs · ${packs.size} wanted ${if (packs.size == 1) "card" else "cards"}")
+                                }
+                            }
+                            SectionTitle("Revealed so far")
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = onlyMine,
+                                    onClick = { onlyMine = !onlyMine; shown = GALLERY_PAGE },
+                                    enabled = profiles.isNotEmpty(),
+                                    label = { Text("Only cards for my decks") }
+                                )
+                                Text("${gallery.size} ${if (gallery.size == 1) "card" else "cards"}", style = MaterialTheme.typography.labelMedium, color = colors.textDim)
+                            }
+                            if (commander.isEmpty()) Muted("No Commander decks yet: once you have one, each card says which decks it would fit.")
+                            if (gallery.isEmpty()) Muted(if (onlyMine) "None of the cards revealed so far fit your Commander decks." else "No cards revealed yet.")
+                            gallery.take(shown).chunked(2).forEach { pair ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    pair.forEach { card ->
+                                        SpoilerTile(
+                                            card = card, set = s, today = today,
+                                            want = wantedCount(collections, card.id),
+                                            fits = fitMap[card.id].orEmpty(),
+                                            considering = fitMap[card.id].orEmpty().map { it.deckId }
+                                                .filter { id -> cardNameKeys(card.name).any { it in considering[id].orEmpty() } }.toSet(),
+                                            onOpen = { onOpenCard(card.name) },
+                                            onWant = { n -> onSetWant(card, n, s.releasedAt) },
+                                            onConsider = { m -> onConsider(m.deckId, card) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                }
+                            }
+                            if (gallery.size > shown) {
+                                TextButton(onClick = { shown += GALLERY_PAGE }, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Show more (${gallery.size - shown} left)")
+                                }
+                            }
+                            Text(
+                                "Newest revealed first. A card fits a deck when it's in the commander's colours, legal in Commander once it's out, and shares a theme, role (Mana ramp, Removal…), category or creature type with at least four of the deck's cards. Tap a deck to put the card on its Considering list. Wanted cards go on your Wishlist and show \"Releases in …\" until the set is out; then their price fills in and your Wishlist price targets apply.",
+                                style = MaterialTheme.typography.labelMedium, color = colors.textDim, modifier = Modifier.padding(top = 6.dp)
+                            )
+                            SectionTitle("Best for each deck")
                             when {
                                 commander.isEmpty() -> Muted("No Commander decks yet: once you have one, the cards that suit it show here.")
                                 fits.isEmpty() -> Muted("None of the cards shown so far suit your Commander decks.")
@@ -316,10 +403,6 @@ fun NewSetScreen(
                                     f.fits.forEach { fit -> CardRow(fit.card, fitReason(fit)) { onOpenCard(fit.card.name) } }
                                 }
                             }
-                            Text(
-                                "A card suits a deck when it's in the commander's colours and shares a theme, category or creature type with at least four of the deck's cards.",
-                                style = MaterialTheme.typography.labelMedium, color = colors.textDim, modifier = Modifier.padding(top = 6.dp)
-                            )
                             SectionTitle("On your Wishlist")
                             if (wanted.isEmpty()) Muted("None of the cards shown so far are on your Wishlist.")
                             else wanted.forEach { card -> CardRow(card, "A new printing of a card on your Wishlist") { onOpenCard(card.name) } }
