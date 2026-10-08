@@ -201,7 +201,7 @@ internal fun tradeCardsJson(cards: List<TradeCard>): JSONArray = JSONArray().app
     }
 }
 
-private fun parseTrade(o: JSONObject) = Trade(
+internal fun parseTrade(o: JSONObject) = Trade(
     id = o.getString("id"),
     fromUser = o.getString("from_user"),
     toUser = o.getString("to_user"),

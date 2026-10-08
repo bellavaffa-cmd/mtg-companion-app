@@ -130,7 +130,9 @@ fun GameNightInviteScreen(
     onOpenGameNight: () -> Unit,
     onOpenLoans: () -> Unit,
     /** Trade matches tonight (TradeMatchesTonight), for the players coming. */
-    tonight: @Composable (List<TonightPlayer>) -> Unit
+    tonight: @Composable (List<TonightPlayer>) -> Unit,
+    /** Trades at the night (TradeNightSection): the night, and whether the user is going. */
+    trades: @Composable (nightId: String, going: Boolean) -> Unit = { _, _ -> }
 ) {
     val colors = LocalAppColors.current
     Scaffold(
@@ -145,7 +147,7 @@ fun GameNightInviteScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.readableWidth(680.dp)) {
-                SocialGate(social, onSignIn) { o -> Invite(social, o, nightId, decks, onEdit, onOpenBag, onOpenGameNight, onOpenLoans, tonight) }
+                SocialGate(social, onSignIn) { o -> Invite(social, o, nightId, decks, onEdit, onOpenBag, onOpenGameNight, onOpenLoans, tonight, trades) }
             }
         }
     }
@@ -161,7 +163,8 @@ private fun Invite(
     onOpenBag: (String) -> Unit,
     onOpenGameNight: () -> Unit,
     onOpenLoans: () -> Unit,
-    tonight: @Composable (List<TonightPlayer>) -> Unit
+    tonight: @Composable (List<TonightPlayer>) -> Unit,
+    trades: @Composable (nightId: String, going: Boolean) -> Unit
 ) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
@@ -373,6 +376,7 @@ private fun Invite(
                 }
             }
             if (showTrades && !n.cancelled) item(key = "tonight") { tonight(coming.map { TonightPlayer(it.name, it.userId) }) }
+            if (!n.cancelled) item(key = "trades") { trades(n.id, mine?.answer == RsvpAnswer.GOING) }
         }
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),

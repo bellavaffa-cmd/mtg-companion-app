@@ -525,7 +525,12 @@ class SocialApi(private val auth: SupabaseAuth) {
             "bad_parent" to "That comment isn't there any more.",
             "comment_slow_down" to "You're commenting very fast — wait a minute.",
             "too_many_comments" to "This deck has 1,000 comments already.",
-            "not_your_comment" to "Only its author or the deck’s owner can do that."
+            "not_your_comment" to "Only its author or the deck’s owner can do that.",
+            // supabase/migrations/20261008100000_trade_nights.sql (TradeNightsApi.kt)
+            "not_going" to "Answer Going first — trades are for the people going.",
+            "cant_trade_here" to "You can trade here with people going who've put up their cards, or with friends.",
+            "too_many_night_cards" to "A list for the night holds up to 500 lines.",
+            "bad_sources" to "Those binders couldn't be used."
         )
     }
 }
