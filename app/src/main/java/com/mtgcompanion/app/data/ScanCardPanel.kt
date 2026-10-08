@@ -138,7 +138,7 @@ fun printingMismatch(shown: Pair<String, String>?, cameraReads: Pair<String, Str
 fun cameraReadsLine(read: Pair<String, String>): String = "Camera reads ${setAndNumber(read.first, read.second)}"
 
 /** "Use FIN 307". */
-fun useCameraLabel(read: Pair<String, String>): String = "Use ${read.first.uppercase()} ${read.second}"
+fun cameraButtonLabel(read: Pair<String, String>): String = "Use ${read.first.uppercase()} ${read.second}"
 
 // ---- You own N ----
 

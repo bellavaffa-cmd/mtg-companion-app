@@ -85,7 +85,7 @@ class ScanCardPanelTest {
         assertEquals("FIC" to "306", printingMismatch("fin" to "306", "FIC" to "306"))
         assertEquals("FIN" to "307", printingMismatch(null, "FIN" to "307"))
         assertEquals("Camera reads FIN · 307", cameraReadsLine("FIN" to "307"))
-        assertEquals("Use FIN 307", useCameraLabel("fin" to "307"))
+        assertEquals("Use FIN 307", cameraButtonLabel("fin" to "307"))
     }
 
     private val red = StoragePlace("red", "Red box", PlaceKind.BOX.name)

@@ -70,7 +70,7 @@ import com.mtgcompanion.app.data.scanDetailsLine
 import com.mtgcompanion.app.data.scanHowLabel
 import com.mtgcompanion.app.data.scanIsGuess
 import com.mtgcompanion.app.data.scanPanelSpoken
-import com.mtgcompanion.app.data.useCameraLabel
+import com.mtgcompanion.app.data.cameraButtonLabel
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.network.scryfall.canBeFoil
 import com.mtgcompanion.app.ui.common.rememberReduceMotion
@@ -310,7 +310,7 @@ private fun LastScannedPanel(
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    useCameraLabel(mismatch),
+                    cameraButtonLabel(mismatch),
                     style = MaterialTheme.typography.labelLarge,
                     color = Bg,
                     modifier = Modifier
