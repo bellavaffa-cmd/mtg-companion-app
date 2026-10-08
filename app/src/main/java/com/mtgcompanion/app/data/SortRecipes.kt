@@ -4,20 +4,21 @@ import com.mtgcompanion.app.data.social.TradeMatch
 
 /*
  * Sorting recipes: how a pile of cards splits, saved and reused. A recipe is a name, the smart piles
- * to "first, pull out" (cards a deck needs, cards a friend wants, cards new for a binder, copies past
- * a playset to trade), up to three levels that split the rest (value bands, colour, colour identity,
+ * to "first, pull out" (cards a deck needs, cards a collection goal is missing, cards a friend wants,
+ * cards new for a binder, copies past a playset to trade), up to three levels that split the rest (value bands, colour, colour identity,
  * set, mana value, rarity, card type, A–Z ranges, collector number) and what to "also keep apart"
  * (foils, not English, played). The piles follow from the recipe, always the same way: the smart
  * piles first, then the keep-apart piles, then every combination of the levels — at most
  * MAX_RECIPE_PILES, the rest sharing an "Everything else" pile. Each card scanned goes in one pile:
- * a smart pile when one applies (decks before friends before binders before trade), else a
- * keep-apart pile, else the levels' pile.
+ * a smart pile when one applies (decks before goals before friends before binders before trade), else
+ * a keep-apart pile, else the levels' pile.
  *
  * Where recipes are kept: the Unsorted pile's "sortRecipes" (Collection.sortRecipes), so they sync
  * like the storage places and gear. Two devices' recipes merge recipe by recipe (mergeRecipes): one
  * added on either is kept, one deleted on either stays deleted, each field goes to whoever changed it.
  * A pile saved by an app from before recipes comes without the key and keeps this device's
- * (keepRecipesFromOlderApp).
+ * (keepRecipesFromOlderApp); so does a recipe saved by an app from before the Goals need pile, which
+ * drops that pile and the recipe's "goals" key (see SortRecipe.goals).
  *
  * Pure, so it can be tested. Mirrors the web app's src/collection/sortRecipes.ts rule for rule; both
  * run the same test vectors (app/src/test/resources/sortRecipeVectors.json ↔ tests/collection/sortRecipeVectors.json).
@@ -25,19 +26,25 @@ import com.mtgcompanion.app.data.social.TradeMatch
 
 // ---- What a recipe is ----
 
-/** The smart piles, in priority order. */
-val SMART_KINDS = listOf("DECKS", "FRIENDS", "BINDER", "TRADE")
+/**
+ * The smart piles, in priority order. A deck's need comes first (a deck is played; its pull list waits
+ * for the card), then a goal's (the user's own target, which a copy for a deck still counts towards
+ * once it's in the collection), then a friend's want (one copy, for a trade that may not happen), then
+ * a binder's gap and a copy past a playset (both just tidying).
+ */
+val SMART_KINDS = listOf("DECKS", "GOALS", "FRIENDS", "BINDER", "TRADE")
 
 /** The switches under "First, pull out". */
 val SMART_LABELS = mapOf(
     "DECKS" to "Cards my decks need",
+    "GOALS" to "Cards my goals need",
     "FRIENDS" to "Cards friends want",
     "BINDER" to "New for a binder (fills a gap)",
     "TRADE" to "More than a playset · to trade"
 )
 
 /** The smart piles' names on the table. */
-val SMART_PILE_NAMES = mapOf("DECKS" to "Decks need", "FRIENDS" to "Friends want", "BINDER" to "Binder gaps", "TRADE" to "To trade")
+val SMART_PILE_NAMES = mapOf("DECKS" to "Decks need", "GOALS" to "Goals need", "FRIENDS" to "Friends want", "BINDER" to "Binder gaps", "TRADE" to "To trade")
 
 val APART_KINDS = listOf("FOIL", "FOREIGN", "PLAYED")
 val APART_LABELS = mapOf("FOIL" to "Foils", "FOREIGN" to "Not English", "PLAYED" to "Played")
@@ -68,7 +75,13 @@ data class SplitLevel(
 /** Where one pile is filed: a place's id, BY_RULE ("the box whose rule fits"), or "" — no place (Unsorted). */
 data class PileGoTo(val pile: String, val to: String = "")
 
-/** A recipe; [pullOut] are SMART_KINDS names, [apart] APART_KINDS names. The web app's SortRecipe, field for field. */
+/**
+ * A recipe; [pullOut] are SMART_KINDS names, [apart] APART_KINDS names. [goals]: whether [pullOut] has
+ * the Goals need pile ("GOALS"), as an app that knows that pile writes it — always, on or off. An app
+ * from before it drops "GOALS" from [pullOut] and leaves this key out, so a recipe without it was
+ * saved by such an app and keeps this device's Goals need pile (keepRecipesFromOlderApp). The web
+ * app's SortRecipe, field for field.
+ */
 data class SortRecipe(
     val id: String,
     val name: String,
@@ -76,7 +89,8 @@ data class SortRecipe(
     val levels: List<SplitLevel> = emptyList(),
     val apart: List<String> = emptyList(),
     val goTo: List<PileGoTo>? = null,
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    val goals: Boolean? = null
 )
 
 const val MAX_LEVELS = 3
@@ -110,7 +124,7 @@ fun splitLevel(l: SplitLevel): SplitLevel {
     }
 }
 
-/** A recipe as both apps write it: known kinds only, in their fixed order, at most MAX_LEVELS levels. */
+/** A recipe as both apps write it: known kinds only, in their fixed order, at most MAX_LEVELS levels, and [SortRecipe.goals] said. */
 fun sortRecipe(r: SortRecipe): SortRecipe {
     // One line per pile, the last said winning.
     val goTo = mutableListOf<PileGoTo>()
@@ -120,27 +134,34 @@ fun sortRecipe(r: SortRecipe): SortRecipe {
         val at = goTo.indexOfFirst { it.pile == g.pile }
         if (at >= 0) goTo[at] = line else goTo += line
     }
+    val pullOut = SMART_KINDS.filter { it in r.pullOut }
     return SortRecipe(
         id = r.id,
         name = r.name.trim().ifEmpty { "My recipe" },
-        pullOut = SMART_KINDS.filter { it in r.pullOut },
+        pullOut = pullOut,
         levels = r.levels.take(MAX_LEVELS).map { splitLevel(it) },
         apart = APART_KINDS.filter { it in r.apart },
         goTo = goTo.ifEmpty { null },
-        createdAt = r.createdAt
+        createdAt = r.createdAt,
+        goals = "GOALS" in pullOut
     )
 }
 
 // ---- Templates ----
 
-/** "Start from": the ready-made recipes. [sets]: the sets the user's binders sorted by set hold, for Binder by set. */
-fun recipeTemplates(sets: List<String> = emptyList()): List<SortRecipe> {
+/**
+ * "Start from": the ready-made recipes. [sets]: the sets the user's binders sorted by set hold, for
+ * Binder by set. [goals]: the user has a goal under way — then "What my collection needs" pulls out
+ * the cards the goals need too (without one, that pile would only stand empty on the table).
+ */
+fun recipeTemplates(sets: List<String> = emptyList(), goals: Boolean = false): List<SortRecipe> {
     val smart = listOf("DECKS", "FRIENDS", "BINDER")
+    val needs = if (goals) listOf("DECKS", "GOALS", "FRIENDS", "BINDER", "TRADE") else listOf("DECKS", "FRIENDS", "BINDER", "TRADE")
     return listOf(
         SortRecipe("tpl-colour", "Commander by colour", smart, listOf(SplitLevel("COLOUR", lands = true))),
         SortRecipe("tpl-set", "Binder by set", smart, listOf(splitLevel(SplitLevel("SET", sets = sets.take(5))), splitLevel(SplitLevel("NUMBER")))),
         SortRecipe("tpl-value", "Rares by value", smart, listOf(SplitLevel("VALUE", cuts = listOf(20.0, 5.0, 1.0)))),
-        SortRecipe("tpl-needs", "What my collection needs", listOf("DECKS", "FRIENDS", "BINDER", "TRADE"))
+        SortRecipe("tpl-needs", "What my collection needs", needs)
     )
 }
 
@@ -298,6 +319,8 @@ fun lowerWord(s: String): String =
 /** What a recipe needs to know of a scanned card. Prices are in US dollars; [lang] as Scryfall codes it ("en", "ja"…). */
 data class RecipeCard(
     val name: String,
+    /** The printing (what a set goal goes by); null when not known. */
+    val scryfallId: String? = null,
     val colors: List<String>? = null,
     val colorIdentity: List<String>? = null,
     val typeLine: String? = null,
@@ -365,6 +388,8 @@ fun bucketOf(level: SplitLevel, card: RecipeCard, rate: Double): String {
 
 /**
  * Why a card goes in a smart pile ([kind], a SMART_KINDS name): DECKS — [deckId] and [deck] need it;
+ * GOALS — goal [goalId] ([goal]) is missing it, and has [have] of its [need] copies with it (and the
+ * session's) in; it's filed into binder [placeId] when the goal has one (its set's binder);
  * FRIENDS — [friend] (user [friendId]) wants it; BINDER — it's new for binder [placeId] ([binder]), at [page] and [slot];
  * TRADE — it's [copy] copies owned. The web app's SortReason, field for field.
  */
@@ -378,7 +403,11 @@ data class SortReason(
     val binder: String? = null,
     val page: Int? = null,
     val slot: Int? = null,
-    val copy: Int? = null
+    val copy: Int? = null,
+    val goalId: String? = null,
+    val goal: String? = null,
+    val have: Int? = null,
+    val need: Int? = null
 )
 
 /** The pile a card goes in, why (a smart pile's reason), and the other smart reasons that applied. */
@@ -449,12 +478,34 @@ data class OrderedBinder(
     val sets: List<String>
 )
 
-/** What the smart piles go by: deck needs and friends' wants by card name (recipeNameKey), the binders in order, copies owned by name. */
+/**
+ * A collection goal under way, as the Goals need pile goes by it: [have] of its [need] copies there,
+ * and the copies still [missing] of each card, by its card key (goalCardKey: a set goal's by printing,
+ * the others' by name). [foil]: only foil copies count. [placeId]: where its cards are filed — a set
+ * goal's set binder (a binder kept in order that holds that set's cards; one holding only that set
+ * first), null for the Unsorted pile.
+ */
+data class GoalNeed(
+    val goalId: String,
+    val name: String,
+    val kind: String,
+    val foil: Boolean,
+    val have: Int,
+    val need: Int,
+    val missing: Map<String, Int>,
+    val placeId: String? = null
+)
+
+/**
+ * What the smart piles go by: deck needs and friends' wants by card name (recipeNameKey), the binders
+ * in order, copies owned by name, and the goals under way (most nearly done first).
+ */
 data class SmartContext(
     val deckNeeds: Map<String, List<DeckNeed>> = emptyMap(),
     val friendWants: Map<String, List<FriendWant>> = emptyMap(),
     val binders: List<OrderedBinder> = emptyList(),
-    val owned: Map<String, Int> = emptyMap()
+    val owned: Map<String, Int> = emptyMap(),
+    val goals: List<GoalNeed> = emptyList()
 )
 
 /** A card's name as the lookups key it: lowercase, its front face. */
@@ -515,6 +566,28 @@ fun orderedBinders(collections: List<Collection>, factsOf: (String) -> CardFacts
     return out
 }
 
+/**
+ * The goals under way that are missing something, most nearly done first (as the Goals screen lists
+ * them), each with what it's missing and where its cards are filed ([binders]: orderedBinders).
+ */
+fun goalNeedsOf(goals: List<CollectionGoal>, collections: List<Collection>, decks: List<Deck>, binders: List<OrderedBinder> = emptyList()): List<GoalNeed> {
+    val open = goals.filter { it.completedAt == null }
+    val progress = open.associate { it.id to goalProgress(it, collections, decks) }
+    return sortedGoals(open) { progress.getValue(it.id) }.first.mapNotNull { g ->
+        val p = progress.getValue(g.id)
+        val missing = LinkedHashMap<String, Int>()
+        for (l in missingLines(p)) missing[l.key] = l.missing
+        if (missing.isEmpty()) return@mapNotNull null
+        GoalNeed(g.id, g.name, g.kind, g.isFoil, p.have, p.need, missing, goalBinder(g, binders))
+    }
+}
+
+/** A set goal's set binder: a binder kept in order holding only that set's cards, else one holding some; null for other goals. */
+fun goalBinder(goal: CollectionGoal, binders: List<OrderedBinder>): String? {
+    val set = goal.setCode?.lowercase()?.takeIf { goal.kind == "SET" && it.isNotEmpty() } ?: return null
+    return (binders.firstOrNull { it.sets == listOf(set) } ?: binders.firstOrNull { set in it.sets })?.placeId
+}
+
 /** Copies owned of each card, by name (SortPiles.kt's ownedCounts). */
 fun ownedOf(collections: List<Collection>, decks: List<Deck>): Map<String, Int> = ownedCounts(collections, decks)
 
@@ -537,11 +610,22 @@ data class RecipeScan(
     val at: Long? = null
 )
 
+/** The card key [goal] knows [card] by, when the card is a copy it counts (a foil goal counts foil copies only); else null. */
+private fun goalKeyOf(goal: GoalNeed, card: RecipeCard, scryfallId: String?): String? =
+    if (goal.foil && !card.foil) null else goalCardKey(goal.kind, card.name, scryfallId)
+
+/** Whether a card sorted this session goes into binder [placeId]: a gap it fills, or a goal's card filed there. */
+private fun intoBinder(s: RecipeScan, placeId: String): Boolean {
+    val r = s.reason ?: return false
+    return (r.kind == "BINDER" || r.kind == "GOALS") && r.placeId == placeId
+}
+
 /**
- * The smart reasons that apply to one more [card], in priority order — a deck needs it, a friend
- * wants it, it's new for a binder, it's past a playset — given what this session has already pulled
- * out ([scans]): a deck's need goes down with each copy pulled for it, a friend wants one copy, a
- * binder's gap is filled once, and every copy scanned counts as owned.
+ * The smart reasons that apply to one more [card], in priority order — a deck needs it, a goal is
+ * missing it, a friend wants it, it's new for a binder, it's past a playset — given what this session
+ * has already pulled out ([scans]): a deck's need goes down with each copy pulled for it, a goal's
+ * with each copy of the card sorted (whatever its pile: they all go into the collection), a friend
+ * wants one copy, a binder's gap is filled once, and every copy scanned counts as owned.
  */
 fun reasonsFor(ctx: SmartContext, card: RecipeCard, scans: List<RecipeScan>): List<SortReason> {
     val k = recipeNameKey(card.name)
@@ -551,14 +635,27 @@ fun reasonsFor(ctx: SmartContext, card: RecipeCard, scans: List<RecipeScan>): Li
         val taken = same.count { it.reason?.kind == "DECKS" && it.reason.deckId == need.deckId }
         if (need.qty > taken) out += SortReason("DECKS", deckId = need.deckId, deck = need.deck)
     }
+    for (g in ctx.goals) {
+        val key = goalKeyOf(g, card, card.scryfallId) ?: continue
+        val missing = g.missing[key] ?: continue
+        // The session's copies of each card the goal is missing, as many as it's missing.
+        val coming = HashMap<String, Int>()
+        for (s in scans) {
+            val sk = goalKeyOf(g, s.card, s.card.scryfallId ?: s.scryfallId) ?: continue
+            if (sk in g.missing) coming.merge(sk, 1, Int::plus)
+        }
+        if ((coming[key] ?: 0) >= missing) continue
+        val have = g.have + g.missing.entries.sumOf { (mk, n) -> minOf(n, coming[mk] ?: 0) }
+        out += SortReason("GOALS", goalId = g.goalId, goal = g.name, have = have + 1, need = g.need, placeId = g.placeId)
+    }
     for (f in ctx.friendWants[k].orEmpty()) {
         if (same.none { it.reason?.kind == "FRIENDS" && it.reason.friendId == f.id }) out += SortReason("FRIENDS", friend = f.name, friendId = f.id)
     }
     val set = (card.set ?: "").lowercase()
     for (b in ctx.binders) {
         if (set.isEmpty() || set !in b.sets || k in b.names) continue
-        if (same.any { it.reason?.kind == "BINDER" && it.reason.placeId == b.placeId }) continue
-        val adds = scans.filter { it.reason?.kind == "BINDER" && it.reason.placeId == b.placeId }.map { it.facts }
+        if (same.any { intoBinder(it, b.placeId) }) continue
+        val adds = scans.filter { intoBinder(it, b.placeId) }.map { it.facts }
         val plan = planFit(SortRule.fromName(b.rule), b.occupied, adds + recipeFacts(card), FitMode.KEEP)
         val put = plan.puts.firstOrNull { it.item == adds.size } ?: continue
         val (page, slot) = pocketAt(put.to, b.pockets)
@@ -607,17 +704,19 @@ fun ordinal(n: Int): String {
     return "$n" + when (n % 10) { 1 -> "st"; 2 -> "nd"; 3 -> "rd"; else -> "th" }
 }
 
-/** The big line on a smart pile's card: "KRENKO NEEDS IT", "PRIYA WANTS IT", "NEW FOR DUSKMOURN BINDER · p12 s3", "5th COPY · TRADE". */
+/** The big line on a smart pile's card: "KRENKO NEEDS IT", "GOAL · DUSKMOURN UNCOMMONS", "PRIYA WANTS IT", "NEW FOR DUSKMOURN BINDER · p12 s3", "5th COPY · TRADE". */
 fun reasonLine(r: SortReason): String = when (r.kind) {
     "DECKS" -> "${firstWord(r.deck ?: "").uppercase()} NEEDS IT"
+    "GOALS" -> "GOAL · ${(r.goal ?: "").trim().uppercase()}"
     "FRIENDS" -> "${firstWord(r.friend ?: "").uppercase()} WANTS IT"
     "BINDER" -> "NEW FOR ${binderName(r.binder ?: "").uppercase()} · p${r.page} s${r.slot}"
     else -> "${ordinal(r.copy ?: 0)} COPY · TRADE"
 }
 
-/** A line under "Also wanted:": "Priya wants one", "Krenko goblins needs it", "New for Duskmourn binder · p12 s3", "5th copy · trade". */
+/** A line under "Also wanted:": "Priya wants one", "Krenko goblins needs it", "Goal: Duskmourn uncommons 42/92", "New for Duskmourn binder · p12 s3", "5th copy · trade". */
 fun alsoLine(r: SortReason): String = when (r.kind) {
     "DECKS" -> "${r.deck} needs it"
+    "GOALS" -> "Goal: ${r.goal} ${r.have}/${r.need}"
     "FRIENDS" -> "${r.friend} wants one"
     "BINDER" -> "New for ${binderName(r.binder ?: "")} · p${r.page} s${r.slot}"
     else -> "${ordinal(r.copy ?: 0)} copy · trade"
@@ -631,10 +730,20 @@ fun ownedLine(ctx: SmartContext, name: String, scans: List<RecipeScan>): String?
 
 private val RARITY_WORDS = mapOf("common" to "Common", "uncommon" to "Uncommon", "rare" to "Rare", "mythic" to "Mythic", "special" to "Special", "bonus" to "Bonus")
 
-/** The card's line under its name: "Uncommon · $1.20 · Dominaria Remastered", or "… · missing from Krenko goblins" for a deck. */
+/** A goal's progress with the card in: "41/92 → 42/92". */
+fun goalStep(r: SortReason): String = "${(r.have ?: 1) - 1}/${r.need} → ${r.have}/${r.need}"
+
+/**
+ * The card's line under its name: "Uncommon · $1.20 · Dominaria Remastered", or "… · missing from
+ * Krenko goblins" for a deck, or "… · 41/92 → 42/92" for a goal.
+ */
 fun cardLine(card: RecipeCard, setName: String?, reason: SortReason?, price: (Double) -> String): String {
     val usd = cardPrice(card)
-    val where = if (reason?.kind == "DECKS") "missing from ${reason.deck}" else setName?.takeIf { it.isNotEmpty() } ?: (card.set ?: "").uppercase()
+    val where = when (reason?.kind) {
+        "DECKS" -> "missing from ${reason.deck}"
+        "GOALS" -> goalStep(reason)
+        else -> setName?.takeIf { it.isNotEmpty() } ?: (card.set ?: "").uppercase()
+    }
     return listOf(RARITY_WORDS[card.rarity ?: ""] ?: "", usd?.let(price) ?: "No price", where).filter { it.isNotEmpty() }.joinToString(" · ")
 }
 
@@ -649,6 +758,7 @@ fun spokenPile(pile: RecipePile, reason: SortReason?): String {
     val what = when (reason?.kind) {
         null -> pile.name.split(" · ").joinToString(", ") { lowerWord(it) }
         "DECKS" -> "${firstWord(reason.deck ?: "")} needs it"
+        "GOALS" -> "goal ${reason.goal}"
         "FRIENDS" -> "${firstWord(reason.friend ?: "")} wants it"
         "BINDER" -> "new for ${binderName(reason.binder ?: "")}"
         else -> "trade"
@@ -756,7 +866,7 @@ private fun counted(names: List<String>): String =
 
 /**
  * "Sorted 212 cards": each smart and keep-apart pile with cards, with who it's for ("Krenko 4,
- * Atraxa 2", "Priya 3, Jo 2", the binders); the levels' piles one by one — or, when there are more
+ * Atraxa 2", "Duskmourn uncommons 3, Shock lands 1", "Priya 3, Jo 2", the binders); the levels' piles one by one — or, when there are more
  * than six, as one line ("6–11 · Bulk by colour").
  */
 fun summarize(recipe: SortRecipe, derived: DerivedPiles, scans: List<RecipeScan>): RecipeSummary {
@@ -774,6 +884,7 @@ fun summarize(recipe: SortRecipe, derived: DerivedPiles, scans: List<RecipeScan>
         if (here.isEmpty()) continue
         val detail = when (p.key) {
             "S:DECKS" -> counted(here.mapNotNull { if (it.reason?.kind == "DECKS") firstWord(it.reason.deck ?: "") else null }.filter { it.isNotEmpty() })
+            "S:GOALS" -> counted(here.mapNotNull { s -> s.reason?.takeIf { it.kind == "GOALS" }?.goal?.trim() }.filter { it.isNotEmpty() })
             "S:FRIENDS" -> counted(here.mapNotNull { if (it.reason?.kind == "FRIENDS") firstWord(it.reason.friend ?: "") else null }.filter { it.isNotEmpty() })
             "S:BINDER" -> here.mapNotNull { if (it.reason?.kind == "BINDER") it.reason.binder else null }.filter { it.isNotEmpty() }.distinct().joinToString(", ")
             else -> null
@@ -806,10 +917,13 @@ fun checkPileCard(derived: DerivedPiles, scans: List<RecipeScan>, pile: Int, che
     return PileCheck(false, "Doesn't belong — pile ${other.pile}" + (p?.let { " · ${it.name}" } ?: ""), other.pile)
 }
 
-/** Where a pile is filed: what the recipe says for it, else the box whose rule fits — or no place for decks, friends and trades. */
+/**
+ * Where a pile is filed: what the recipe says for it, else the box whose rule fits — or no place for
+ * decks, goals, friends and trades (a goal's card with a set binder goes there: fileRecipe).
+ */
 fun pileGoesTo(recipe: SortRecipe, pile: RecipePile): String {
     recipe.goTo.orEmpty().firstOrNull { it.pile == pile.key }?.let { return it.to }
-    return if (pile.key == "S:DECKS" || pile.key == "S:FRIENDS" || pile.key == "S:TRADE") "" else BY_RULE
+    return if (pile.key == "S:DECKS" || pile.key == "S:GOALS" || pile.key == "S:FRIENDS" || pile.key == "S:TRADE") "" else BY_RULE
 }
 
 /** [recipe] with pile [key] filed at [to] (a place's id, BY_RULE or "": no place). */
@@ -817,10 +931,26 @@ fun withGoTo(recipe: SortRecipe, key: String, to: String): SortRecipe =
     sortRecipe(recipe.copy(goTo = recipe.goTo.orEmpty().filter { it.pile != key } + PileGoTo(key, to)))
 
 /**
+ * The binder kept in order a card sorted this session is filed into, to be fitted in: a binder gap's
+ * binder, or a goal's set binder (unless the recipe says where the Goals need pile goes); null for
+ * the rest.
+ */
+fun binderFiledInto(recipe: SortRecipe, s: RecipeScan): String? {
+    val r = s.reason ?: return null
+    return when {
+        r.kind == "BINDER" -> r.placeId
+        r.kind == "GOALS" && s.key == "S:GOALS" && recipe.goTo.orEmpty().none { it.pile == "S:GOALS" } -> r.placeId
+        else -> null
+    }
+}
+
+/**
  * "File everything": every card not filed yet goes into the collection at its pile's place, as the
  * old sorter files (fileEveryPile): a binder gap into its binder (waiting beside it to be fitted in
- * order), the deck-need cards with no place, for their decks' pull lists to find, the rest where the
- * recipe files their pile.
+ * order), a goal's card into its set binder the same way (or, with none, where the recipe files the
+ * Goals need pile — the Unsorted pile unless the user said otherwise), the deck-need cards with no
+ * place, for their decks' pull lists to find, the rest where the recipe files their pile. The goals
+ * count them from then on, and the goal watcher celebrates one that's now complete.
  */
 fun fileRecipe(collections: List<Collection>, recipe: SortRecipe, derived: DerivedPiles, scans: List<RecipeScan>): FiledPiles {
     val rules = derived.piles.map { p -> PileRule(PileKind.BULK.name, to = pileGoesTo(recipe, p).ifEmpty { null }) }.toMutableList()
@@ -829,8 +959,8 @@ fun fileRecipe(collections: List<Collection>, recipe: SortRecipe, derived: Deriv
     for (s in scans) {
         if (s.filed == true) continue
         var pile = s.pile - 1
-        val binder = s.reason?.placeId
-        if (s.reason?.kind == "BINDER" && binder != null) {
+        val binder = binderFiledInto(recipe, s)
+        if (binder != null) {
             val id: String = binder
             pile = binderRule.getOrPut(id) { rules += PileRule(PileKind.BULK.name, to = id); rules.size - 1 }
         }
@@ -899,11 +1029,17 @@ fun mergeRecipes(base: List<SortRecipe>?, mine: List<SortRecipe>?, theirs: List<
 
 /**
  * [theirs] with [source]'s recipes, when [theirs] was saved by an app that doesn't know about recipes
- * (no "sortRecipes" key) — the same object otherwise.
+ * (no "sortRecipes" key); and each of its recipes saved by an app that doesn't know about the Goals
+ * need pile (no "goals" key) with that pile back where [source]'s same recipe pulls it out — the same
+ * object otherwise.
  */
 fun keepRecipesFromOlderApp(source: Collection, theirs: Collection): Collection {
-    if (theirs.sortRecipes != null || source.sortRecipes == null || !theirs.isUnsorted) return theirs
-    return theirs.copy(sortRecipes = source.sortRecipes)
+    if (!theirs.isUnsorted || source.sortRecipes == null) return theirs
+    val list = theirs.sortRecipes ?: return theirs.copy(sortRecipes = source.sortRecipes)
+    val withGoals = source.sortRecipes.filter { "GOALS" in it.pullOut }.map { it.id }.toSet()
+    fun lost(r: SortRecipe) = r.goals == null && r.id in withGoals && "GOALS" !in r.pullOut
+    if (list.none(::lost)) return theirs
+    return theirs.copy(sortRecipes = list.map { if (lost(it)) sortRecipe(it.copy(pullOut = it.pullOut + "GOALS")) else it })
 }
 
 // ---- Pile signs ----

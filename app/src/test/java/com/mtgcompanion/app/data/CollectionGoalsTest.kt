@@ -280,4 +280,25 @@ class CollectionGoalsTest {
         // Left out when null, so an older app's pile reads as "doesn't know about goals".
         assertTrue(!adapter.toJson(pile(null)).contains("collectionGoals"))
     }
+
+    @Test
+    fun aCompletedGoalForFriendsActivityItsCardsAndItsMostValuableCard() {
+        val goal = newListGoal(
+            "g", "CUSTOM", "Shock lands",
+            listOf(GoalCard("Steam Vents", "sv", 2, usd = 9.0), GoalCard("Sacred Foundry", "sf", 1, usd = 12.0), GoalCard("Opt", null, 1)), null, 1
+        )
+        val cols = listOf(
+            Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME, createdAt = 0, type = CollectionType.OWNED.name, entries = listOf(
+                CollectionEntry("sv", "Steam Vents", null, quantity = 2), CollectionEntry("sf", "Sacred Foundry", null, quantity = 1), CollectionEntry("o", "Opt", null, quantity = 1)
+            ))
+        )
+        val p = goalProgress(goal, cols, emptyList())
+        assertTrue(p.complete)
+        assertEquals(GoalActivity("g", "Shock lands", "CUSTOM", 4, "sf"), goalActivityOf(goal, p))
+        // No prices: the first card with a printing; none at all: no card.
+        val plain = newListGoal("h", "PLAYSET", "Opts", listOf(GoalCard("Opt"), GoalCard("Ponder", "po")), 4, 1)
+        assertEquals("po", goalActivityOf(plain, goalProgress(plain, cols, emptyList())).cover)
+        val bare = newListGoal("i", "CUSTOM", "Opt", listOf(GoalCard("Opt")), null, 1)
+        assertNull(goalActivityOf(bare, goalProgress(bare, cols, emptyList())).cover)
+    }
 }

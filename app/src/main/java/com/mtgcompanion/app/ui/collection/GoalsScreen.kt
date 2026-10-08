@@ -107,6 +107,8 @@ import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.deckGoalName
 import com.mtgcompanion.app.data.goalNameKey
 import com.mtgcompanion.app.data.goalProgress
+import com.mtgcompanion.app.data.GoalActivity
+import com.mtgcompanion.app.data.goalActivityOf
 import com.mtgcompanion.app.data.goalWishlistAdds
 import com.mtgcompanion.app.data.goalsOf
 import com.mtgcompanion.app.data.missingLine
@@ -736,13 +738,21 @@ fun NewGoalScreen(
 private val CONFETTI = listOf(Color(0xFFE6B45E), Color(0xFF5FBF7A), Color(0xFF4D8FE0), Color(0xFFE0674D), Color(0xFFB98CF0), Color(0xFFF3EFE0))
 
 /**
- * Notices goals completing, wherever the cards came from (a scan, an import, a trade): marks them
- * complete — once, on whichever device sees it first — and celebrates: confetti and a buzz, or just
- * the note when the system's "Remove animations" is on. [onChange] changes the binders (the goals
- * ride on the Unsorted pile); [paused]: while a Reset collection waits out its Undo.
+ * Notices goals completing, wherever the cards came from (a scan, a sort filed, an import, a trade):
+ * marks them complete — once, on whichever device sees it first — and celebrates: confetti and a
+ * buzz, or just the note when the system's "Remove animations" is on. [onChange] changes the binders
+ * (the goals ride on the Unsorted pile); [paused]: while a Reset collection waits out its Undo;
+ * [onCompleted]: the goals just completed, for friends' Activity.
  */
 @Composable
-fun GoalWatcher(collections: List<Collection>, decks: List<Deck>, paused: Boolean, onChange: ((List<Collection>) -> List<Collection>) -> Unit, onOpenGoals: () -> Unit) {
+fun GoalWatcher(
+    collections: List<Collection>,
+    decks: List<Deck>,
+    paused: Boolean,
+    onChange: ((List<Collection>) -> List<Collection>) -> Unit,
+    onOpenGoals: () -> Unit,
+    onCompleted: (List<GoalActivity>) -> Unit = {}
+) {
     val colors = LocalAppColors.current
     val view = LocalView.current
     val still = rememberReduceMotion()
@@ -758,7 +768,9 @@ fun GoalWatcher(collections: List<Collection>, decks: List<Deck>, paused: Boolea
             val r = completeGoals(goalsOf(c), c, decks, System.currentTimeMillis())
             if (r.done.isEmpty()) c else withGoals(c, r.goals)
         }
-        party = found.goals.filter { it.id in found.done }.map { it.name }
+        val completed = found.goals.filter { it.id in found.done }
+        party = completed.map { it.name }
+        onCompleted(completed.map { goalActivityOf(it, goalProgress(it, collections, decks)) })
         if (!still) view.performHapticFeedback(if (android.os.Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS)
     }
     val names = party ?: return

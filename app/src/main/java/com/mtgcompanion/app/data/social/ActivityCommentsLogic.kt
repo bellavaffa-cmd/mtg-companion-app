@@ -3,9 +3,10 @@ package com.mtgcompanion.app.data.social
 import com.mtgcompanion.app.data.Collection
 import java.net.URLEncoder
 
-// The rules behind the friends' Activity feed (friends_activity), what it may show of the user
-// (Settings › Privacy) and comments on shared decks — kept apart from the screens so they can be
-// tested. Server side: supabase/migrations/20261006080000_activity_comments.sql. The web app's twin
+// The rules behind the friends' Activity feed (friends_activity, and friends_goal_activity for
+// completed collection goals), what it may show of the user (Settings › Privacy) and comments on
+// shared decks — kept apart from the screens so they can be tested. Server side:
+// supabase/migrations/20261006080000_activity_comments.sql and 20261008110000_goal_activity.sql. The web app's twin
 // is src/social/activityLogic.ts, case for case (ActivityCommentsLogicTest.kt ↔
 // tests/social/activity.test.ts).
 
@@ -13,14 +14,16 @@ import java.net.URLEncoder
 
 /**
  * What friends' Activity may show of the user. On unless turned off — decks, cards for trade, league
- * results — since they only announce what's already shared with friends or a pod. Selling is off
- * unless turned on: a To sell list is about money and isn't shared anywhere else.
+ * results, completed goals — since they only announce what's already shared with friends or a pod,
+ * or something done. Selling is off unless turned on: a To sell list is about money and isn't shared
+ * anywhere else. [goals] is saved apart (set_goal_activity_pref), and only once the server has it.
  */
 data class ActivityPrefs(
     val decks: Boolean = true,
     val forTrade: Boolean = true,
     val selling: Boolean = false,
-    val leagues: Boolean = true
+    val leagues: Boolean = true,
+    val goals: Boolean = true
 )
 
 /** One of Settings › Privacy's switches: its server key, title and line under it. */
@@ -34,6 +37,9 @@ val ACTIVITY_PREF_ROWS = listOf(
     ActivityPrefRow("leagues", "League results", "Your name in pod league news: who leads, who won.")
 )
 
+/** The switch for completed goals, after [ACTIVITY_PREF_ROWS] — once the server has it (goal_activity_version). */
+val GOAL_PREF_ROW = ActivityPrefRow("goals", "Share completed goals", "When you complete a collection goal: its name and how many cards.")
+
 const val ACTIVITY_PRIVACY_NOTE = "Only friends see your activity, never anyone you've blocked. These change only what shows in " +
     "friends' Activity: what you share stays shared."
 
@@ -41,6 +47,7 @@ fun ActivityPrefs.isOn(key: String): Boolean = when (key) {
     "decks" -> decks
     "for_trade" -> forTrade
     "selling" -> selling
+    "goals" -> goals
     else -> leagues
 }
 
@@ -48,6 +55,7 @@ fun ActivityPrefs.withPref(key: String, on: Boolean): ActivityPrefs = when (key)
     "decks" -> copy(decks = on)
     "for_trade" -> copy(forTrade = on)
     "selling" -> copy(selling = on)
+    "goals" -> copy(goals = on)
     else -> copy(leagues = on)
 }
 
@@ -91,8 +99,26 @@ data class FeedItem(
     val body: String? = null,
     val cardName: String? = null,
     val reply: Boolean = false,
-    val onMine: Boolean = false
+    val onMine: Boolean = false,
+    /** goal_completed: the goal's kind (SET, PLAYSET, DECK, CUSTOM); [itemId] is the goal's id, [count] its cards. */
+    val goalKind: String? = null
 )
+
+/**
+ * One page of the feed from friends_activity and friends_goal_activity, read with the same
+ * before/limit: both newest first, together, the newest [limit]. The next page starts before the last
+ * one kept, so what's cut here comes on it.
+ */
+fun mergeFeeds(main: List<FeedItem>, goals: List<FeedItem>, limit: Int): List<FeedItem> =
+    if (goals.isEmpty()) main else (main + goals).sortedByDescending { it.at }.take(limit)
+
+/** "Set goal", "Playset goal"…: a completed goal's kind, under it in the feed. */
+fun goalKindWords(kind: String?): String = when (kind) {
+    "SET" -> "Set goal"
+    "PLAYSET" -> "Playset goal"
+    "DECK" -> "Deck goal"
+    else -> "Card list goal"
+}
 
 /** What a tap on an item's action does. */
 enum class FeedActionKind { COMMENTS, ASK, SELLING }
@@ -199,6 +225,11 @@ fun feedLine(item: FeedItem, table: LeagueSnapshot? = null): FeedLine {
             }
             FeedLine(parts, item.body?.let { "“${cut(it, 80)}”" }, FeedAction("Reply", FeedActionKind.COMMENTS))
         }
+        "goal_completed" -> FeedLine(
+            listOf(who, FeedPart(" completed a goal")) + named(),
+            listOfNotNull(goalKindWords(item.goalKind), item.count?.let { plural(it, "card") }).joinToString(" · "),
+            null
+        )
         else -> FeedLine(listOf(who, FeedPart(" did something new")), null, null)
     }
 }

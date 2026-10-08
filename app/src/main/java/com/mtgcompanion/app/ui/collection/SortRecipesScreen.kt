@@ -93,6 +93,7 @@ import com.mtgcompanion.app.data.cardsIn
 import com.mtgcompanion.app.data.deleteRecipe
 import com.mtgcompanion.app.data.derivePiles
 import com.mtgcompanion.app.data.fileRecipe
+import com.mtgcompanion.app.data.binderFiledInto
 import com.mtgcompanion.app.data.isTemplate
 import com.mtgcompanion.app.data.levelLine
 import com.mtgcompanion.app.data.newRecipe
@@ -103,6 +104,7 @@ import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.putAwayMove
 import com.mtgcompanion.app.data.recipeLine
 import com.mtgcompanion.app.data.recipeTemplates
+import com.mtgcompanion.app.data.goalsOf
 import com.mtgcompanion.app.data.recipesOf
 import com.mtgcompanion.app.data.saveRecipe
 import com.mtgcompanion.app.data.social.TradeCard
@@ -168,7 +170,8 @@ fun SortRecipesScreen(
         if (ids.isNotEmpty()) setData = runCatching { CardRepository().getCardsByIds(ids).associate { it.id to (it.set ?: "") } }.getOrDefault(emptyMap())
     }
     val sets = setIds.mapNotNull { setData[it]?.takeIf { s -> s.isNotEmpty() } }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
-    val templates = recipeTemplates(sets)
+    // With a goal under way, "What my collection needs" pulls out what the goals need too.
+    val templates = recipeTemplates(sets, goals = goalsOf(collections).any { it.completedAt == null })
     when (val s = step) {
         RecipeStep.Pick -> RecipePicker(collections, templates, store, resumes, onBack, onClassic, onScan,
             onSummary = { step = RecipeStep.Summary }, onEdit = { step = RecipeStep.Edit(null) }, onLayout = { step = RecipeStep.Layout(it) })
@@ -619,7 +622,7 @@ private fun RecipeSummaryView(
             else addedMove(at, card, 1, place?.let { MoveSpot(it.id, f.to) }, s.recipe.name)
         })
         onChange { fileRecipe(it, s.recipe, derived, s.scans).collections }
-        val binders = s.scans.filter { it.filed != true && it.reason?.kind == "BINDER" }.mapNotNull { it.reason?.placeId }.distinct()
+        val binders = s.scans.filter { it.filed != true }.mapNotNull { binderFiledInto(s.recipe, it) }.distinct()
             .map { id -> id to (placesOf(collections).firstOrNull { it.id == id }?.name ?: "Binder") }
         update(null)
         filed = s.scans.count { it.filed != true } to binders

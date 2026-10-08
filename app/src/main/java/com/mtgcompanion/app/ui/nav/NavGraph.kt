@@ -2245,7 +2245,9 @@ fun MtgNavGraph(
             decks = watchedDecks,
             paused = resetPending != null,
             onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
-            onOpenGoals = { navController.navigate(Routes.GOALS) { launchSingleTop = true } }
+            onOpenGoals = { navController.navigate(Routes.GOALS) { launchSingleTop = true } },
+            // Friends' Activity hears of it, when the user shares completed goals (and the server has it).
+            onCompleted = { done -> addToScope.launch { done.forEach { socialRepository.activity.postGoalCompleted(it) } } }
         )
     }
     // Undo for Reset collection (Settings › Data and speed), on every screen while it's offered.

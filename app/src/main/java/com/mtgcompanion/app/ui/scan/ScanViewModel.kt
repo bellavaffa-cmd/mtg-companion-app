@@ -113,6 +113,7 @@ import com.mtgcompanion.app.data.orderedBinders
 import com.mtgcompanion.app.data.ownedOf
 import com.mtgcompanion.app.data.pileFor
 import com.mtgcompanion.app.data.reasonsFor
+import com.mtgcompanion.app.data.goalNeedsOf
 import com.mtgcompanion.app.data.spokenPile
 import com.mtgcompanion.app.data.sortCard as sortRecipeCard
 import com.mtgcompanion.app.data.social.TradeMatch
@@ -1462,7 +1463,11 @@ class ScanViewModel(
         val cols = collections.value
         val ds = decks.value
         val data = binderData.value
-        return SmartContext(deckNeedsOf(cols, ds), friendWantsOf(_matches.value, friendNames), orderedBinders(cols) { id -> data[id]?.let { cardFactsOf(it) } }, ownedOf(cols, ds))
+        val binders = orderedBinders(cols) { id -> data[id]?.let { cardFactsOf(it) } }
+        return SmartContext(
+            deckNeedsOf(cols, ds), friendWantsOf(_matches.value, friendNames), binders, ownedOf(cols, ds),
+            goalNeedsOf(goalsOf(cols), cols, ds, binders)
+        )
     }
 
     /** The piles of the sort's recipe, amounts in the user's currency. */
@@ -1483,6 +1488,7 @@ class ScanViewModel(
 
     private fun recipeCardOf(card: ScryfallCard, was: RecipeCard? = null) = RecipeCard(
         name = card.name,
+        scryfallId = card.id,
         colors = card.colors ?: card.cardFaces?.firstOrNull()?.colors ?: emptyList(),
         colorIdentity = card.colorIdentity ?: emptyList(),
         typeLine = card.typeLine ?: card.cardFaces?.firstOrNull()?.typeLine,
