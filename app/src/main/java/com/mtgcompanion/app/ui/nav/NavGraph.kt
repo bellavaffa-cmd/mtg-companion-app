@@ -1602,7 +1602,7 @@ fun MtgNavGraph(
                 val deckId = backStackEntry.arguments?.getString("deckId").orEmpty()
                 val initialTab = backStackEntry.arguments?.getString("tab")
                 val viewModel: DeckDetailViewModel = viewModel(
-                    factory = DeckDetailViewModel.Factory(deckId, deckRepository, collectionRepository, settingsRepository)
+                    factory = DeckDetailViewModel.Factory(deckId, deckRepository, collectionRepository, settingsRepository, offlineCardRepository)
                 )
                 // Remembered for Home's "continue where you left off" tile.
                 LaunchedEffect(deckId) { settingsRepository.setLastOpenedDeckId(deckId) }

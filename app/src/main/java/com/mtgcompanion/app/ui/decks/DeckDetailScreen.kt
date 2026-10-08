@@ -401,6 +401,11 @@ fun DeckDetailScreen(
                     if (d != null) {
                         val deckActions = buildList {
                             if (onShare != null) add(CardMenuAction("Share with friends", Icons.Filled.Group, description = "View only — friends, pods or a link") { onShare() })
+                            if (d.cards.isNotEmpty() && !d.mode.limited) {
+                                add(CardMenuAction("Upgrade with my cards", Icons.Filled.SwapHoriz, description = "Swaps from cards you already own") {
+                                    tabs.indexOf("Suggestions").takeIf { it >= 0 }?.let { page -> scope.launch { pagerState.animateScrollToPage(page) } }
+                                })
+                            }
                             add(CardMenuAction("Playtest", Icons.Filled.Casino, description = "Mulligan, play or draw, then turns") { showGoldfish = true })
                             add(CardMenuAction("Compare with…", Icons.Filled.Layers, description = "Another deck or a saved version") { comparePicking = true })
                             if (onHistory != null) add(CardMenuAction("History", Icons.Filled.History, description = "Every change to the list, and versions saved by name") { onHistory() })
@@ -561,7 +566,9 @@ fun DeckDetailScreen(
                         onConsiderName = { name -> addSuggestion = name to null },
                         onConsiderCard = { card -> addSuggestion = card.name to card },
                         onMarkCut = { entry -> viewModel.setReplaceable(entry.scryfallId, true) },
-                        onViewDetails = onViewDetails
+                        onViewDetails = onViewDetails,
+                        deck = currentDeck,
+                        onMessage = toast
                     )
                     else -> Unit
                 }
@@ -2395,12 +2402,19 @@ private fun AnalysisTab(
     onConsiderName: (String) -> Unit,
     onConsiderCard: (ScryfallCard) -> Unit,
     onMarkCut: (DeckCardEntry) -> Unit,
-    onViewDetails: (String) -> Unit
+    onViewDetails: (String) -> Unit,
+    deck: Deck,
+    onMessage: (String) -> Unit
 ) {
+    // "Not this one" on an upgrade swap is remembered per deck on this phone.
+    val context = LocalContext.current
+    LaunchedEffect(deck.id) { viewModel.setUpgradeDismissed(UpgradeDismissedStore.load(context, deck.id)) }
     if (analysis.loading) {
         LoadingBox()
         return
     }
+    val upgrade by viewModel.upgrade.collectAsState()
+    val upgradeDismissed by viewModel.upgradeDismissed.collectAsState()
     val viewMode by viewModel.recViewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val budgetSwaps by viewModel.budgetSwaps.collectAsState()
@@ -2420,6 +2434,27 @@ private fun AnalysisTab(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (deck.cards.isNotEmpty() && !deck.mode.limited) {
+            item(key = "upgrade") {
+                UpgradePanel(
+                    report = upgrade,
+                    usesCommander = deck.mode.usesCommander,
+                    dismissedCount = upgradeDismissed?.size ?: 0,
+                    onSwap = { swaps -> viewModel.applyUpgradeSwaps(swaps, onMessage) },
+                    onConsider = { swap -> viewModel.considerUpgrade(swap, onMessage) },
+                    onDismiss = { swap ->
+                        val next = upgradeDismissed.orEmpty() + swap.key
+                        viewModel.setUpgradeDismissed(next)
+                        UpgradeDismissedStore.save(context, deck.id, next)
+                    },
+                    onBringBack = {
+                        viewModel.setUpgradeDismissed(emptySet())
+                        UpgradeDismissedStore.save(context, deck.id, emptySet())
+                    },
+                    onOpen = onViewDetails
+                )
+            }
+        }
         item(key = "owned-only") {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

@@ -26,6 +26,17 @@ import com.mtgcompanion.app.data.ProxySwap
 import com.mtgcompanion.app.data.WISHLIST_ID
 import com.mtgcompanion.app.data.BASIC_LAND_FOR
 import com.mtgcompanion.app.data.poolCopies
+import com.mtgcompanion.app.data.KEEP_TAGS
+import com.mtgcompanion.app.data.UpgradeBracket
+import com.mtgcompanion.app.data.UpgradeDeckCard
+import com.mtgcompanion.app.data.UpgradeInput
+import com.mtgcompanion.app.data.UpgradeOwnedCard
+import com.mtgcompanion.app.data.UpgradeSwap
+import com.mtgcompanion.app.data.applyUpgrades
+import com.mtgcompanion.app.data.ownedSources
+import com.mtgcompanion.app.data.upgradeRoleOf
+import com.mtgcompanion.app.data.upgradeSwaps
+import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -100,6 +111,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -172,6 +184,12 @@ data class RoleReport(val counts: List<RoleCount>, val fromTagger: Boolean, val 
 /** A pricey card and cheaper cards that do the same job in the same colors. */
 data class BudgetSwap(val entry: DeckCardEntry, val priceUsd: Double, val role: DeckRole?, val alternatives: List<ScryfallCard>)
 
+/**
+ * "Upgrade with my cards" for the deck (DeckUpgrade.kt). [edhrec]: EDHREC's numbers were used; without
+ * them it's role and EDHREC rank alone — [offline] says EDHREC couldn't be reached.
+ */
+data class UpgradeReport(val swaps: List<UpgradeSwap>, val edhrec: Boolean, val offline: Boolean, val commander: String?)
+
 sealed interface BudgetSwapState {
     data object Idle : BudgetSwapState
     data object Loading : BudgetSwapState
@@ -187,7 +205,9 @@ class DeckDetailViewModel(
     private val settingsRepository: SettingsRepository,
     private val cardRepository: CardRepository = CardRepository(),
     private val comboRepository: ComboRepository = ComboRepository(),
-    private val edhrecRepository: EdhrecRepository = EdhrecRepository()
+    private val edhrecRepository: EdhrecRepository = EdhrecRepository(),
+    /** The downloaded card database, for "Upgrade with my cards" offline; null without one. */
+    private val offlineCards: OfflineCardRepository? = null
 ) : ViewModel() {
 
     val deck: StateFlow<Deck?> = repository.deckFlow(deckId).stateIn(
@@ -590,6 +610,170 @@ class DeckDetailViewModel(
             .distinctBy { it.name }
             .filterNot { view -> cardNameKeys(view.name).any { it in inDeck } }
     }
+
+
+    // ---- Upgrade with my cards (DeckUpgrade.kt) ----
+
+    private val _upgradeDismissed = MutableStateFlow<Set<String>?>(null)
+    /** The swaps "Not this one" was said to, for this deck — loaded by the screen from the phone (null until then). */
+    val upgradeDismissed: StateFlow<Set<String>?> = _upgradeDismissed.asStateFlow()
+    fun setUpgradeDismissed(keys: Set<String>) { _upgradeDismissed.value = keys }
+
+    /** EDHREC's inclusion for this deck's commander by name key (null: no page, or no commander), and whether EDHREC was out of reach. */
+    private val upgradeInclusion: Flow<Pair<Map<String, Int>?, Boolean>> = deck
+        .map { d -> if (d != null && d.mode.usesCommander) d.commander?.name?.let { it to d.partnerCommander?.name } else null }
+        .distinctUntilChanged()
+        .mapLatest { names ->
+            if (names == null) return@mapLatest null to false
+            try {
+                val lists = edhrecRepository.getRecommendationsForCommander(names.first, names.second)
+                    ?: return@mapLatest null to false
+                val out = HashMap<String, Int>()
+                lists.flatMap { it.cardviews }.forEach { view ->
+                    view.inclusionPercent?.let { p -> cardNameKeys(view.name).forEach { k -> out.putIfAbsent(k, p) } }
+                }
+                out to false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null to true
+            }
+        }
+
+    /** Scryfall's data for owned cards looked at, by scryfallId: each fetched once a visit. */
+    private val upgradeCardData = java.util.concurrent.ConcurrentHashMap<String, ScryfallCard>()
+
+    private data class UpgradeInputs(val deck: Deck?, val analysis: DeckAnalysis, val collections: List<Collection>, val decks: List<Deck>)
+
+    /** "Upgrade with my cards": null while it's worked out. */
+    val upgrade: StateFlow<UpgradeReport?> = combine(
+        combine(deck, analysis, collectionRepository.collectionsFlow, repository.decksFlow, RoleTags.version) { d, a, cs, ds, _ -> UpgradeInputs(d, a, cs, ds) },
+        upgradeInclusion,
+        _upgradeDismissed
+    ) { inputs, inclusion, dismissed -> Triple(inputs, inclusion, dismissed) }
+        .mapLatest { (inputs, inclusion, dismissed) -> buildUpgrade(inputs, inclusion.first, inclusion.second, dismissed) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    private suspend fun buildUpgrade(inputs: UpgradeInputs, inclusion: Map<String, Int>?, offline: Boolean, dismissed: Set<String>?): UpgradeReport? {
+        val d = inputs.deck ?: return null
+        val a = inputs.analysis
+        if (a.loading || dismissed == null) return null
+        val mode = d.mode
+        val byId = a.cardsById
+        val commanders = listOfNotNull(d.commander, d.partnerCommander)
+        // The colours a card must be inside: the commanders', or with none, the deck's own spells'.
+        val identity: String? = if (mode.usesCommander) {
+            if (commanders.isEmpty()) null
+            else {
+                val letters = StringBuilder()
+                for (c in commanders) letters.append(byId[c.scryfallId]?.colorIdentity?.joinToString("") ?: RoleTags.identityOf(c.name) ?: return null)
+                letters.toString()
+            }
+        } else {
+            d.cards.filterNot { isLandType(byId[it.scryfallId]?.typeLine ?: it.typeLine) }
+                .flatMap { e -> (byId[e.scryfallId]?.colorIdentity?.joinToString("") ?: RoleTags.identityOf(e.name).orEmpty()).map { it.toString() } }
+                .distinct().joinToString("")
+        }
+        val pct = { name: String -> inclusion?.let { m -> cardNameKeys(name).firstNotNullOfOrNull { m[it] } } }
+        val sources = ownedSources(inputs.collections, inputs.decks, d.id)
+        val inDeck = d.cards.flatMap { cardNameKeys(it.name) }.toSet()
+        // Narrowed by what's known without a lookup — a job, the colours — before asking Scryfall.
+        val allowed = identity?.uppercase()
+        val pre = sources.values.filter { s ->
+            cardNameKeys(s.name).none { it in inDeck } &&
+                RoleTags.tagsOf(s.name)?.let { upgradeRoleOf(it) != null } == true &&
+                (allowed == null || RoleTags.identityOf(s.name)?.all { it.uppercaseChar() in allowed } != false)
+        }
+        val wanted = pre.map { it.scryfallId }.filter { it !in upgradeCardData }
+        if (wanted.isNotEmpty()) cardRepository.getCardsByIds(wanted).forEach { upgradeCardData[it.id] = it }
+        // Offline, the downloaded card database (if there is one) knows them by name.
+        offlineCards?.takeIf { it.status.value.hasData }?.let { db ->
+            pre.filter { it.scryfallId !in upgradeCardData }.forEach { s -> db.getByName(s.name)?.let { upgradeCardData[s.scryfallId] = it } }
+        }
+        val completers = a.comboCompleters
+        val owned = pre.map { s ->
+            val card = upgradeCardData[s.scryfallId]
+            UpgradeOwnedCard(
+                name = s.name, scryfallId = s.scryfallId, typeLine = card?.typeLine, cmc = card?.cmc,
+                roles = RoleTags.tagsOf(s.name).orEmpty(), usd = card?.prices?.usd?.toDoubleOrNull(), gameChanger = card?.gameChanger == true,
+                edhrecRank = card?.edhrecRank, inclusion = pct(s.name),
+                identity = card?.colorIdentity?.joinToString("") ?: RoleTags.identityOf(s.name),
+                // Not known (offline, no card database): taken as legal.
+                legal = mode.limited || (card?.legalities?.get(mode.scryfallFormat)?.let { it == "legal" } ?: true),
+                completesCombo = cardNameKeys(s.name).any { it in completers },
+                spare = s.spare, heldBy = s.heldBy, where = s.where, placeKey = s.placeKey
+            )
+        }
+        val commanderIds = commanders.map { it.scryfallId }.toSet()
+        val deckSide = d.cards.map { e ->
+            val card = byId[e.scryfallId]
+            UpgradeDeckCard(
+                name = e.name, scryfallId = e.scryfallId, typeLine = card?.typeLine ?: e.typeLine, cmc = card?.cmc,
+                roles = RoleTags.tagsOf(e.name).orEmpty(), usd = card?.prices?.usd?.toDoubleOrNull(), gameChanger = card?.gameChanger == true,
+                edhrecRank = card?.edhrecRank, inclusion = pct(e.name),
+                commander = e.scryfallId in commanderIds, replaceable = e.replaceable,
+                keep = e.userTags.any { it.trim().lowercase() in KEEP_TAGS },
+                comboPiece = cardNameKeys(e.name).any { it in a.comboPieces }
+            )
+        }
+        val swaps = upgradeSwaps(
+            UpgradeInput(
+                commander = if (mode.usesCommander) d.commander?.name else null,
+                identity = identity,
+                edhrec = inclusion != null,
+                bracket = if (mode.usesCommander && !mode.limited) UpgradeBracket(a.gameChangers.size, a.combos.size) else null,
+                deck = deckSide,
+                owned = owned,
+                dismissed = dismissed
+            )
+        )
+        return UpgradeReport(swaps, edhrec = inclusion != null, offline = offline, commander = if (mode.usesCommander) d.commander?.name else null)
+    }
+
+    /**
+     * Swap now, or Apply all checked: each cut onto Considering (its real copies back to Unsorted), each
+     * card coming in into the deck and onto its pull list (DeckUpgrade.kt applyUpgrades). Says what
+     * happened through [onDone].
+     */
+    fun applyUpgradeSwaps(swaps: List<UpgradeSwap>, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            val missing = swaps.map { it.add.scryfallId }.filter { it !in upgradeCardData }
+            if (missing.isNotEmpty()) cardRepository.getCardsByIds(missing).forEach { upgradeCardData[it.id] = it }
+            val made = swaps.mapNotNull { s -> upgradeCardData[s.add.scryfallId]?.let { s to upgradeEntryOf(it) } }
+            if (made.isEmpty()) {
+                onDone("Couldn't look up ${swaps.firstOrNull()?.add?.name ?: "the card"} — try again when you're online.")
+                return@launch
+            }
+            val (cols, ds) = applyUpgrades(
+                collectionRepository.collectionsFlow.first(), repository.decksFlow.first(), deckId,
+                made.map { (s, entry) -> s.cut.scryfallId to entry }
+            )
+            collectionRepository.applySync { cols }
+            repository.change { ds }
+            val one = made.first().first
+            onDone(
+                if (made.size == 1) "${one.add.name} in for ${one.cut.name} — on the pull list" + (one.add.where?.takeIf { one.add.spare > 0 }?.let { " ($it)" } ?: "")
+                else "${made.size} swaps made — the new cards are on the pull list"
+            )
+        }
+    }
+
+    /** Consider: the card coming in onto the deck's Considering list. */
+    fun considerUpgrade(swap: UpgradeSwap, onDone: (String) -> Unit) {
+        viewModelScope.launch {
+            val card = upgradeCardData[swap.add.scryfallId] ?: cardRepository.getCardsByIds(listOf(swap.add.scryfallId)).firstOrNull()
+            if (card == null) {
+                onDone("Couldn't look up ${swap.add.name} — try again when you're online.")
+                return@launch
+            }
+            repository.addToConsidering(deckId, card)
+            onDone("${swap.add.name} added to Considering")
+        }
+    }
+
+    private fun upgradeEntryOf(card: ScryfallCard) =
+        DeckCardEntry(card.id, card.name, card.displayImageUrl, 1, card.canBeCommander, card.typeLine, card.partnerAbility, card.backImageUrl, card.tags)
 
     /**
      * The tokens this deck's cards make, each with a picture. Read off the cards themselves
@@ -1232,11 +1416,12 @@ class DeckDetailViewModel(
         private val deckId: String,
         private val repository: DeckRepository,
         private val collectionRepository: CollectionRepository,
-        private val settingsRepository: SettingsRepository
+        private val settingsRepository: SettingsRepository,
+        private val offlineCards: OfflineCardRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DeckDetailViewModel(deckId, repository, collectionRepository, settingsRepository) as T
+            DeckDetailViewModel(deckId, repository, collectionRepository, settingsRepository, offlineCards = offlineCards) as T
     }
 }
 
