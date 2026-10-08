@@ -237,6 +237,13 @@ import com.mtgcompanion.app.ui.lifecounter.GameNightScreen
 import com.mtgcompanion.app.ui.lifecounter.GameNightViewModel
 import com.mtgcompanion.app.ui.lifecounter.RemoteScreen
 import com.mtgcompanion.app.ui.social.WhoHasItDialog
+import com.mtgcompanion.app.ui.collection.GoalScreen
+import com.mtgcompanion.app.ui.collection.GoalsScreen
+import com.mtgcompanion.app.ui.collection.GoalWatcher
+import com.mtgcompanion.app.ui.collection.MakeDeckGoalDialog
+import com.mtgcompanion.app.ui.collection.NewGoalScreen
+import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.saveGoal
 import com.mtgcompanion.app.ui.lifecounter.RemoteViewModel
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterSettingsRepository
 import com.mtgcompanion.app.ui.lifecounter.LifeCounterViewModel
@@ -444,6 +451,13 @@ private object Routes {
     /** One set's cards, owned and missing — from the Collection's Sets page. */
     /** New sets: coming soon and just out (NewSetsScreen.kt), and one of them. */
     const val NEW_SETS = "new_sets"
+    /** Collection goals (CollectionGoals.kt): all of them, one, and New goal ([kind] and [deck] from "Make this a goal"). */
+    const val GOALS = "goals"
+    const val GOAL = "goal/{goalId}"
+    fun goal(id: String) = "goal/" + URLEncoder.encode(id, StandardCharsets.UTF_8.name())
+    const val NEW_GOAL = "new_goal?kind={kind}&deck={deck}"
+    fun newGoal(kind: String? = null, deck: String? = null) =
+        "new_goal" + listOfNotNull(kind?.let { "kind=$it" }, deck?.let { "deck=" + URLEncoder.encode(it, StandardCharsets.UTF_8.name()) }).joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
     const val NEW_SET = "new_set/{code}"
     fun newSet(code: String) = "new_set/" + URLEncoder.encode(code, StandardCharsets.UTF_8.name())
     const val SET_CARDS = "set_cards/{code}"
@@ -610,7 +624,8 @@ fun MtgNavGraph(
                 Routes.HOME, Routes.VALUE_HISTORY -> NavDestination.HOME
                 Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
-                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN, Routes.FIND, Routes.NEW_SETS, Routes.NEW_SET -> NavDestination.COLLECTION
+                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN, Routes.FIND, Routes.NEW_SETS, Routes.NEW_SET,
+                Routes.GOALS, Routes.GOAL, Routes.NEW_GOAL -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.PLAY, Routes.GAME_NIGHT, Routes.PLAYGROUP, Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT, Routes.PACK_LIST, Routes.PACK -> NavDestination.LIFE_COUNTER
                 Routes.SETTINGS, Routes.SETTINGS_SECTION -> NavDestination.SETTINGS
@@ -1443,7 +1458,70 @@ fun MtgNavGraph(
                 SetCardsScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
-                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) }
+                    onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
+                    onOpenGoal = { id -> navController.navigate(Routes.goal(id)) }
+                )
+            }
+
+            destination(Routes.GOALS) {
+                val goalBinders by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val goalDecks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                GoalsScreen(
+                    collections = goalBinders,
+                    decks = goalDecks,
+                    onBack = { navController.popBackStack() },
+                    onOpenGoal = { id -> navController.navigate(Routes.goal(id)) },
+                    onNewGoal = { navController.navigate(Routes.newGoal()) }
+                )
+            }
+
+            destination(Routes.GOAL, arguments = listOf(navArgument("goalId") { type = NavType.StringType })) { entry ->
+                val goalId = entry.arguments?.getString("goalId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val goalBinders by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                val goalDecks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                val goalCards = remember { CardRepository() }
+                var whoHasGoal by remember { mutableStateOf<List<String>?>(null) }
+                GoalScreen(
+                    goalId = goalId,
+                    collections = goalBinders,
+                    decks = goalDecks,
+                    cardRepository = goalCards,
+                    onBack = { navController.popBackStack() },
+                    onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+                    onAddWanted = { cards -> addToScope.launch { collectionRepository.addWanted(cards) } },
+                    // "Offer a trade": friends whose shared binders hold the missing cards (Who has it?).
+                    onWhoHas = if (supabaseSync.auth.configured) ({ names -> whoHasGoal = names }) else null,
+                    onViewCard = { name -> navController.navigate(Routes.detail(name)) }
+                )
+                whoHasGoal?.let { names ->
+                    WhoHasItDialog(
+                        social = socialRepository,
+                        names = names,
+                        onAsk = { owner -> whoHasGoal = null; navController.navigate(Routes.tradeNew(owner)) },
+                        onDismiss = { whoHasGoal = null }
+                    )
+                }
+            }
+
+            destination(
+                Routes.NEW_GOAL,
+                arguments = listOf(
+                    navArgument("kind") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("deck") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { entry ->
+                val goalDecks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                val goalCards = remember { CardRepository() }
+                NewGoalScreen(
+                    decks = goalDecks,
+                    cardRepository = goalCards,
+                    startKind = entry.arguments?.getString("kind"),
+                    startDeck = entry.arguments?.getString("deck")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) },
+                    onBack = { navController.popBackStack() },
+                    onCreate = { goal ->
+                        addToScope.launch { collectionRepository.changeStorage { saveGoal(it, goal) } }
+                        navController.navigate(Routes.goal(goal.id)) { popUpTo(Routes.NEW_GOAL) { inclusive = true } }
+                    }
                 )
             }
 
@@ -1496,7 +1574,10 @@ fun MtgNavGraph(
                     onOpenPullList = { id -> navController.navigate(Routes.pullList(id)) },
                     onOpenDataAndSpeed = { navController.navigate(Routes.settingsSection(SettingsSection.DATA.id)) },
                     onOpenValueHistory = { navController.navigate(Routes.VALUE_HISTORY) },
-                    onOpenNewSets = { navController.navigate(Routes.NEW_SETS) }
+                    onOpenNewSets = { navController.navigate(Routes.NEW_SETS) },
+                    onOpenGoals = { navController.navigate(Routes.GOALS) { launchSingleTop = true } },
+                    onOpenGoal = { id -> navController.navigate(Routes.goal(id)) },
+                    onNewGoal = { navController.navigate(Routes.newGoal()) }
                 )
                 offering?.let { cards ->
                     OfferSparesDialog(
@@ -1608,6 +1689,7 @@ fun MtgNavGraph(
                 LaunchedEffect(deckId) { settingsRepository.setLastOpenedDeckId(deckId) }
                 var sharing by remember { mutableStateOf(false) }
                 var whoHas by remember { mutableStateOf<List<String>?>(null) }
+                var makingGoal by remember { mutableStateOf<com.mtgcompanion.app.data.Deck?>(null) }
                 val sharedDeck by viewModel.deck.collectAsState()
                 DeckDetailScreen(
                     viewModel = viewModel,
@@ -1620,8 +1702,20 @@ fun MtgNavGraph(
                     onPullList = { navController.navigate(Routes.pullList(deckId)) },
                     onTakeApart = { navController.navigate(Routes.putBack(deckId)) },
                     onHistory = { navController.navigate(Routes.deckHistory(deckId)) },
+                    onMakeGoal = { d -> makingGoal = d },
                     initialTab = initialTab
                 )
+                makingGoal?.let { d ->
+                    MakeDeckGoalDialog(
+                        deck = d,
+                        onDismiss = { makingGoal = null },
+                        onCreate = { goal ->
+                            makingGoal = null
+                            addToScope.launch { collectionRepository.changeStorage { saveGoal(it, goal) } }
+                            navController.navigate(Routes.goal(goal.id))
+                        }
+                    )
+                }
                 whoHas?.let { names ->
                     WhoHasItDialog(
                         social = socialRepository,
@@ -2141,6 +2235,19 @@ fun MtgNavGraph(
             .align(Alignment.BottomCenter)
             .padding(bottom = if (layoutSize == LayoutSize.PHONE && currentRoute in bottomNavRoutes) 76.dp else 8.dp)
     )
+    // Notices a collection goal completing, wherever the cards came from, and celebrates (GoalsScreen.kt).
+    run {
+        val watchedBinders by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+        val watchedDecks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+        val resetPending by (LocalContext.current.applicationContext as com.mtgcompanion.app.MtgCompanionApplication).collectionReset.pending.collectAsState()
+        GoalWatcher(
+            collections = watchedBinders,
+            decks = watchedDecks,
+            paused = resetPending != null,
+            onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
+            onOpenGoals = { navController.navigate(Routes.GOALS) { launchSingleTop = true } }
+        )
+    }
     // Undo for Reset collection (Settings › Data and speed), on every screen while it's offered.
     com.mtgcompanion.app.ui.settings.ResetUndoHost(
         (LocalContext.current.applicationContext as com.mtgcompanion.app.MtgCompanionApplication).collectionReset,

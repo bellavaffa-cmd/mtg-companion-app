@@ -273,7 +273,9 @@ fun restoreCollections(current: List<Collection>, backup: BackupFile, mode: Rest
                 sealed = inOrderOrNull(m.sealed, here.sealed, saved.sealed) { it.id },
                 graded = inOrderOrNull(m.graded, here.graded, saved.graded) { it.id },
                 gear = inOrderOrNull(m.gear, here.gear, saved.gear) { it.id },
-                sortRecipes = inOrderOrNull(m.sortRecipes, here.sortRecipes, saved.sortRecipes) { it.id }
+                sortRecipes = inOrderOrNull(m.sortRecipes, here.sortRecipes, saved.sortRecipes) { it.id },
+                scanCorrections = inOrderOrNull(m.scanCorrections, here.scanCorrections, saved.scanCorrections) { it.key },
+                collectionGoals = inOrderOrNull(m.collectionGoals, here.collectionGoals, saved.collectionGoals) { it.id }
             )
         }
     }

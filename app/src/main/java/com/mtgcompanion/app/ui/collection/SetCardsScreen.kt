@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -117,6 +119,11 @@ class SetCardsViewModel(
         return missing.size
     }
 
+    /** "Make this a goal": [goal] saved with the rest (on the Unsorted pile). */
+    suspend fun saveGoal(goal: com.mtgcompanion.app.data.CollectionGoal) {
+        collectionRepository.changeStorage { com.mtgcompanion.app.data.saveGoal(it, goal) }
+    }
+
     class Factory(
         private val code: String,
         private val collectionRepository: CollectionRepository,
@@ -133,7 +140,7 @@ class SetCardsViewModel(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetCardsScreen(viewModel: SetCardsViewModel, onBack: () -> Unit, onViewDetails: (String) -> Unit) {
+fun SetCardsScreen(viewModel: SetCardsViewModel, onBack: () -> Unit, onViewDetails: (String) -> Unit, onOpenGoal: (String) -> Unit = {}) {
     val colors = LocalAppColors.current
     val set by viewModel.set.collectAsState()
     val cards by viewModel.cards.collectAsState()
@@ -143,6 +150,7 @@ fun SetCardsScreen(viewModel: SetCardsViewModel, onBack: () -> Unit, onViewDetai
     // "all", "missing" or "owned".
     var show by rememberSaveable { mutableStateOf("all") }
     var message by rememberSaveable { mutableStateOf<String?>(null) }
+    var makingGoal by remember { mutableStateOf(false) }
     val list = cards.orEmpty()
     val have = list.count { (owned[it.id] ?: 0) > 0 }
     val total = maxOf(set?.cardCount ?: 0, list.size)
@@ -198,6 +206,10 @@ fun SetCardsScreen(viewModel: SetCardsViewModel, onBack: () -> Unit, onViewDetai
                                     PillChip("Missing", show == "missing", { show = "missing" }, count = missing)
                                     PillChip("Owned", show == "owned", { show = "owned" }, count = have)
                                 }
+                                OutlinedButton(onClick = { makingGoal = true }, shape = RoundedCornerShape(8.dp)) {
+                                    Icon(Icons.Filled.Flag, contentDescription = null, tint = colors.accent)
+                                    Text("  Make this a goal", color = colors.accent)
+                                }
                                 if (missing > 0) {
                                     Button(
                                         onClick = { scope.launch { val n = viewModel.addMissingToWishlist(); message = if (n == 1) "1 card put on your Wishlist." else "$n cards put on your Wishlist." } },
@@ -225,6 +237,18 @@ fun SetCardsScreen(viewModel: SetCardsViewModel, onBack: () -> Unit, onViewDetai
                 }
             }
         }
+    }
+    if (makingGoal && cards != null) {
+        MakeSetGoalDialog(
+            setCode = viewModel.code,
+            setName = set?.name ?: viewModel.code.uppercase(),
+            cards = cards.orEmpty(),
+            onDismiss = { makingGoal = false },
+            onCreate = { goal ->
+                makingGoal = false
+                scope.launch { viewModel.saveGoal(goal); onOpenGoal(goal.id) }
+            }
+        )
     }
 }
 

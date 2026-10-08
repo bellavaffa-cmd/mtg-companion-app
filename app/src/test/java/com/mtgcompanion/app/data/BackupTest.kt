@@ -116,6 +116,24 @@ class BackupTest {
         assertEquals(listOf("L1", "L2"), pile.loans!!.map { it.id }.sorted())
     }
 
+    @Test fun `merging keeps what the scanner learned here, and brings back the backup's corrections that are missing`() {
+        fun fix(key: String, lastUsed: Long, to: String = "bolt-m10") = ScanCorrection(
+            key, KIND_MISREAD, read = key, wrongId = "x", wrongName = "X", scryfallId = to, name = "Lightning Bolt",
+            set = "m10", collectorNumber = "146", lastUsed = lastUsed
+        )
+        val then = Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME, emptyList(), createdAt = 1L,
+            scanCorrections = listOf(fix("old", 5L), fix("both", 1L, to = "bolt-then")))
+        val now = Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME, emptyList(), createdAt = 1L,
+            scanCorrections = listOf(fix("new", 9L), fix("both", 7L, to = "bolt-now")))
+        val backup = reread(buildBackup(emptyList(), listOf(then), createdAt = 1L))
+        assertEquals(then.scanCorrections, backup.collections.single().scanCorrections)
+        val pile = restoreCollections(listOf(now), backup, RestoreMode.MERGE).single()
+        // Here's order first, then what only the backup has; the one used last wins where both have it.
+        assertEquals(listOf("new", "both", "old"), pile.scanCorrections!!.map { it.key })
+        assertEquals("bolt-now", pile.scanCorrections!!.first { it.key == "both" }.scryfallId)
+        assertEquals(then.scanCorrections, restoreCollections(listOf(now), backup, RestoreMode.REPLACE).single().scanCorrections)
+    }
+
     @Test fun `replacing puts each deck and binder back as it was in the backup, keeping ones made since`() {
         val backup = reread(buildBackup(listOf(deck("d", listOf(card("sol")), name = "Then")), listOf(binder("b", listOf(entry("a", 1)))), createdAt = 1L))
         val decks = restoreDecks(listOf(deck("d", listOf(card("opt")), name = "Now"), deck("new", emptyList())), backup, RestoreMode.REPLACE)

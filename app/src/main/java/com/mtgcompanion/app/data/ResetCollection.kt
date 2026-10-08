@@ -8,9 +8,9 @@ import java.util.Locale
 //
 //  - Cards only: every binder and the Unsorted pile emptied (their cards' places, prices to watch and
 //    copies to sell go with the cards). Binders, storage places, the Wishlist, decks, sealed product,
-//    graded cards, gear, loans and what the scanner learned (ScanCorrections.kt) stay.
+//    graded cards, gear, loans, collection goals and what the scanner learned (ScanCorrections.kt) stay.
 //  - Collection: every card, every binder but the Unsorted pile and the Wishlist (which stay, empty),
-//    the storage places, sealed product, graded cards, gear, loans and what the scanner learned. Decks stay, and so does card
+//    the storage places, sealed product, graded cards, gear, loans, collection goals and what the scanner learned. Decks stay, and so does card
 //    price history — it's market data, not the collection.
 //  - Everything: the collection and every deck, with the decks' history and games logged. Settings,
 //    friends and the account stay.
@@ -23,11 +23,11 @@ import java.util.Locale
 enum class ResetScope(val title: String, val detail: String) {
     CARDS(
         "Cards only",
-        "Empties every binder and the Unsorted pile. Your binders, storage places, Wishlist, decks, sealed product, graded cards, gear, loans and what the scanner learned stay."
+        "Empties every binder and the Unsorted pile. Your binders, storage places, Wishlist, decks, sealed product, graded cards, gear, loans, goals and what the scanner learned stay."
     ),
     COLLECTION(
         "Collection",
-        "Every card and binder, storage places, sealed product, graded cards, gear, loans, what the scanner learned from your corrections, and your copies’ photos and history. The Unsorted pile and Wishlist stay, empty. Decks and card prices stay."
+        "Every card and binder, storage places, sealed product, graded cards, gear, loans, goals, what the scanner learned from your corrections, and your copies’ photos and history. The Unsorted pile and Wishlist stay, empty. Decks and card prices stay."
     ),
     EVERYTHING(
         "Everything",
@@ -69,6 +69,7 @@ data class ResetCounts(
     val graded: Int = 0,
     val gear: Int = 0,
     val loans: Int = 0,
+    val goals: Int = 0,
     val decks: Int = 0
 )
 
@@ -87,6 +88,7 @@ fun resetCounts(decks: List<Deck>, collections: List<Collection>, scope: ResetSc
         graded = if (whole) pile?.graded?.size ?: 0 else 0,
         gear = if (whole) pile?.gear?.size ?: 0 else 0,
         loans = if (whole) pile?.loans?.size ?: 0 else 0,
+        goals = if (whole) pile?.collectionGoals?.size ?: 0 else 0,
         decks = if (scope == ResetScope.EVERYTHING) decks.size else 0
     )
 }
@@ -110,6 +112,7 @@ fun resetCountsText(c: ResetCounts): String {
         if (c.graded > 0) "${number(c.graded)} graded" else "",
         if (c.gear > 0) count(c.gear, "piece of gear", "pieces of gear") else "",
         if (c.loans > 0) count(c.loans, "loan", "loans") else "",
+        if (c.goals > 0) count(c.goals, "goal", "goals") else "",
         if (c.decks > 0) count(c.decks, "deck", "decks") else ""
     ).filter { it.isNotEmpty() }
     return if (parts.isEmpty()) RESET_NOTHING else parts.joinToString(" · ")
@@ -133,7 +136,8 @@ private fun emptiedPile(c: Collection, whole: Boolean): Collection =
         sealed = c.sealed?.let { emptyList() },
         graded = c.graded?.let { emptyList() },
         gear = c.gear?.let { emptyList() },
-        scanCorrections = c.scanCorrections?.let { emptyList() }
+        scanCorrections = c.scanCorrections?.let { emptyList() },
+        collectionGoals = c.collectionGoals?.let { emptyList() }
     )
 
 /** The library after a reset of [scope]: what goes listed, the rest emptied as the scope says. */

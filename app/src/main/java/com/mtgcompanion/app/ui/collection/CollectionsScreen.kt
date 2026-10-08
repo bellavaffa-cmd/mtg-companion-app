@@ -198,7 +198,11 @@ fun CollectionsScreen(
     /** The home's value in the top bar: the collection's value over time (ValueHistoryScreen.kt). */
     onOpenValueHistory: () -> Unit = {},
     /** The home's New sets (NewSetsScreen.kt). */
-    onOpenNewSets: () -> Unit = {}
+    onOpenNewSets: () -> Unit = {},
+    /** The home's Goals card (GoalsScreen.kt): all goals, one, and New goal. */
+    onOpenGoals: () -> Unit = {},
+    onOpenGoal: (String) -> Unit = {},
+    onNewGoal: () -> Unit = {}
 ) {
     val tagBinders by viewModel.tagBinders.collectAsState()
     val tagging by viewModel.tagging.collectAsState()
@@ -394,7 +398,10 @@ fun CollectionsScreen(
                         onScan = onOpenScan,
                         onSortPile = onSortPile,
                         onImport = { viewModel.resetImport(); showImport = true },
-                        onOpenNewSets = onOpenNewSets
+                        onOpenNewSets = onOpenNewSets,
+                        onOpenGoals = onOpenGoals,
+                        onOpenGoal = onOpenGoal,
+                        onNewGoal = onNewGoal
                     ),
                     tour = tourTargets,
                     scroll = homeScroll

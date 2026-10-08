@@ -24,7 +24,12 @@ class ResetCollectionTest {
         loans = listOf(Loan(id = "l1", to = "Sam", lentAt = 1)),
         sealed = listOf(SealedProduct(id = "s1", name = "Box", kind = "PLAY_BOX", count = 1, createdAt = 1)),
         graded = listOf(GradedCard(id = "g1", scryfallId = "z", name = "z", company = "PSA", grade = "10", createdAt = 1)),
-        gear = listOf(GearItem(id = "k1", kind = "DICE", name = "Dice", count = 6, createdAt = 1))
+        gear = listOf(GearItem(id = "k1", kind = "DICE", name = "Dice", count = 6, createdAt = 1)),
+        scanCorrections = listOf(ScanCorrection(
+            key = "m:lightnin bolt", kind = KIND_MISREAD, read = "Lightnin Bolt", wrongId = "x", wrongName = "X",
+            scryfallId = "bolt", name = "Lightning Bolt", set = "m10", collectorNumber = "146", lastUsed = 1
+        )),
+        collectionGoals = listOf(CollectionGoal(id = "goal1", name = "Shock lands", kind = "CUSTOM", cards = listOf(GoalCard(name = "Steam Vents")), createdAt = 1, updatedAt = 1))
     )
     private val collections = listOf(
         pile,
@@ -50,18 +55,22 @@ class ResetCollectionTest {
         assertEquals(1, p.sealed!!.size)
         assertEquals(1, p.graded!!.size)
         assertEquals(1, p.gear!!.size)
+        // Collection goals and what the scanner learned stay too.
+        assertEquals(1, p.collectionGoals!!.size)
+        assertEquals(1, p.scanCorrections!!.size)
         assertTrue(after.deletedCollections.isEmpty() && after.deletedDecks.isEmpty())
         // Unchanged binders stay the same objects, so the sync has nothing to send for them.
         assertSame(collections[3], after.collections[3])
     }
 
     @Test
-    fun `Collection removes binders, places, sealed, graded, gear and loans, and the pile and Wishlist stay empty`() {
+    fun `Collection removes binders, places, sealed, graded, gear, loans, goals and learned corrections, and the pile and Wishlist stay empty`() {
         val after = resetLibrary(decks, collections, ResetScope.COLLECTION)
         assertEquals(3, after.decks.size)
         assertEquals(listOf("unsorted", "wishlist"), after.collections.map { it.id })
         val (p, wishlist) = after.collections
         assertEquals(listOf(0, 0, 0, 0, 0, 0), listOf(p.entries.size, p.storagePlaces!!.size, p.loans!!.size, p.sealed!!.size, p.graded!!.size, p.gear!!.size))
+        assertEquals(listOf(0, 0), listOf(p.collectionGoals!!.size, p.scanCorrections!!.size))
         assertTrue(wishlist.entries.isEmpty())
         // Noted as deleted, as deleting them by hand does, so the sync sends their deletion.
         assertEquals(setOf("b1", "b2", "w2"), after.deletedCollections)
@@ -73,6 +82,8 @@ class ResetCollectionTest {
         val after = resetLibrary(decks, collections, ResetScope.EVERYTHING)
         assertTrue(after.decks.isEmpty())
         assertEquals(setOf("d1", "d2"), after.deletedDecks)
+        val p = after.collections.first { it.id == UNSORTED_COLLECTION_ID }
+        assertEquals(listOf(0, 0), listOf(p.collectionGoals!!.size, p.scanCorrections!!.size))
         assertEquals(setOf("b1", "b2", "w2"), after.deletedCollections)
     }
 
@@ -86,11 +97,11 @@ class ResetCollectionTest {
     fun `what will go, counted and said`() {
         assertEquals("1,402 copies in 1 binder", resetCountsText(resetCounts(decks, collections, ResetScope.CARDS)))
         assertEquals(
-            "1,402 copies in 3 binders · 2 wishlist cards · 2 places · 1 sealed · 1 graded · 1 piece of gear · 1 loan",
+            "1,402 copies in 3 binders · 2 wishlist cards · 2 places · 1 sealed · 1 graded · 1 piece of gear · 1 loan · 1 goal",
             resetCountsText(resetCounts(decks, collections, ResetScope.COLLECTION))
         )
         assertEquals(
-            "1,402 copies in 3 binders · 2 wishlist cards · 2 places · 1 sealed · 1 graded · 1 piece of gear · 1 loan · 3 decks",
+            "1,402 copies in 3 binders · 2 wishlist cards · 2 places · 1 sealed · 1 graded · 1 piece of gear · 1 loan · 1 goal · 3 decks",
             resetCountsText(resetCounts(decks, collections, ResetScope.EVERYTHING))
         )
         val empty = Collection(id = UNSORTED_COLLECTION_ID, name = "Unsorted", createdAt = 1)
@@ -131,6 +142,7 @@ class ResetCollectionTest {
             assertTrue(merged.entries.isEmpty())
             assertEquals(emptyList<StoragePlace>(), merged.storagePlaces)
             assertEquals(listOf(0, 0, 0, 0), listOf(merged.loans!!.size, merged.sealed!!.size, merged.graded!!.size, merged.gear!!.size))
+            assertEquals(listOf(0, 0), listOf(merged.collectionGoals!!.size, merged.scanCorrections!!.size))
             // And the same seen from the other device.
             assertTrue(ItemMerge.mergeCollections(base, theirs, mine, !minePreferred).entries.isEmpty())
         }
