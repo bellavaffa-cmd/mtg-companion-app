@@ -44,5 +44,15 @@ val TESTER_NOTES: List<TesterNote> = listOf(
             "10) Two devices signed in: a goal made on one shows on the other; rename it on one and delete another on the other — both come through; completing on one shows Completed on both (no second celebration). " +
             "11) Settings › Data and speed › Reset collection: Cards only keeps the goals; Collection and Everything clear them (the count line says \"N goals\"); Undo brings them back. " +
             "Not in this build: an Activity feed entry (the feed is made on the server) and goals in Sort a pile's smart piles."
+    ),
+    TesterNote(
+        "trade-crash",
+        "Friends: Propose a trade no longer crashes",
+        "Your crash report (build 33): \"Placement happened before lookahead\" on Propose a trade. It came from friends' profile pictures swapping in as they loaded. " +
+            "1) Friends › open a friend › New trade: the screen opens, their picture (or initial) at the top. " +
+            "2) Pick cards on both sides, take some off again, add a suggested card under the value. " +
+            "3) Turn the phone while it's open, and back. " +
+            "4) Switch quickly between Friends, Trades and back into New trade a few times, and open it for a friend with a photo and one without. " +
+            "Pictures still show (a GIF still moves); while one loads, or if it can't, the initial shows instead. Nothing crashes."
     )
 )

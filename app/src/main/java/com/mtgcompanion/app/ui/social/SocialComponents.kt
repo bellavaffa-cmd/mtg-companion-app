@@ -32,8 +32,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,7 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -76,14 +79,20 @@ fun Avatar(profile: Profile?, size: Dp = 46.dp, modifier: Modifier = Modifier) {
             )
         }
     }
+    // A plain AsyncImage over the initial, not SubcomposeAsyncImage: that one is a BoxWithConstraints
+    // that swaps its child when the picture arrives, and under the nav host's SharedTransitionLayout
+    // (a lookahead scope) the swapped-in child could be placed before its lookahead pass — "Placement
+    // happened before lookahead" on Propose a trade (tester build 33). The initial shows until the
+    // picture has loaded, and stays if it fails.
+    var loaded by remember(url) { mutableStateOf(false) }
     Box(modifier.size(size).clip(CircleShape).background(colors.surface2)) {
-        if (url == null) initial() else SubcomposeAsyncImage(
+        if (url == null || !loaded) initial()
+        if (url != null) AsyncImage(
             model = url,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
-            loading = { initial() },
-            error = { initial() }
+            onState = { loaded = it is AsyncImagePainter.State.Success }
         )
     }
 }
