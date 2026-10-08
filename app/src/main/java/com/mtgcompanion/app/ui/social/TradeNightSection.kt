@@ -59,7 +59,7 @@ import com.mtgcompanion.app.data.social.nightDecksUse
 import com.mtgcompanion.app.data.social.nightWantsOf
 import com.mtgcompanion.app.data.social.priceIdsNeeded
 import com.mtgcompanion.app.data.social.suggestedTrades
-import com.mtgcompanion.app.data.social.tableLine
+import com.mtgcompanion.app.data.social.nightTableLine
 import com.mtgcompanion.app.data.social.theyWantFromYou
 import com.mtgcompanion.app.data.social.tradeTable
 import com.mtgcompanion.app.data.social.wantedHere
@@ -261,7 +261,7 @@ fun TradeNightSection(
         if (d.going && !d.open) TnNote("Lists are closed — the night is over or called off.")
 
         if (table.isNotEmpty()) {
-            TnLabel("Trade table · ${tableLine(table)}")
+            TnLabel("Trade table · ${nightTableLine(table)}")
             table.forEach { r ->
                 val mineGive = if (r.trade.fromUser == me) r.trade.give else r.trade.want
                 val mineGet = if (r.trade.fromUser == me) r.trade.want else r.trade.give

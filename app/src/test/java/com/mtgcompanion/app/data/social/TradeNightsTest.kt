@@ -106,7 +106,7 @@ class TradeNightsTest {
         }
         assertEquals(here, wantedHere(me.wants, others))
         val they = l.getJSONArray("theyWant").objects().map { r ->
-            TheyWantRow(r.getString("userId"), r.getString("name"), r.getJSONArray("cards").objects().map { c -> WantedCard(card(c.getJSONObject("card")), c.getInt("weight")) })
+            TheyWantRow(r.getString("userId"), r.getString("name"), r.getJSONArray("cards").objects().map { c -> NightWantedCard(card(c.getJSONObject("card")), c.getInt("weight")) })
         }
         assertEquals(they, theyWantFromYou(me.cards, others))
     }
@@ -137,8 +137,8 @@ class TradeNightsTest {
             t.getJSONArray("expect").objects().map { Triple(it.getString("id"), it.getString("other"), it.getString("state")) },
             rows.map { Triple(it.trade.id, it.other, it.state.wire) }
         )
-        assertEquals(t.str("line"), tableLine(rows))
-        assertNull(tableLine(emptyList()))
+        assertEquals(t.str("line"), nightTableLine(rows))
+        assertNull(nightTableLine(emptyList()))
     }
 
     // ---- The user's own library (the web app's test has the same case) ----

@@ -158,26 +158,26 @@ fun wantedHere(myWants: List<NightWant>, others: List<NightList>): List<WantedHe
 }
 
 /** One of the user's cards someone wants, and how much. */
-data class WantedCard(val card: NightCard, val weight: Int)
+data class NightWantedCard(val card: NightCard, val weight: Int)
 
 /** Someone who wants cards the user brings: those cards (each name once). */
-data class TheyWantRow(val userId: String, val name: String, val cards: List<WantedCard>)
+data class TheyWantRow(val userId: String, val name: String, val cards: List<NightWantedCard>)
 
 /** Per person, the cards in the user's list ([myCards]) they want — the most wanted first; the people wanting most first. */
 fun theyWantFromYou(myCards: List<NightCard>, others: List<NightList>): List<TheyWantRow> {
     val out = mutableListOf<TheyWantRow>()
     for (o in others) {
         val seen = mutableSetOf<String>()
-        val cards = mutableListOf<WantedCard>()
+        val cards = mutableListOf<NightWantedCard>()
         for (c in myCards) {
             val k = key(c.name)
             if (k in seen) continue
             val weight = wantWeight(o.wants, c.name)
             if (weight <= 0) continue
             seen += k
-            cards += WantedCard(c, weight)
+            cards += NightWantedCard(c, weight)
         }
-        if (cards.isNotEmpty()) out += TheyWantRow(o.userId, o.name, cards.sortedWith(compareByDescending<WantedCard> { it.weight }.thenBy { key(it.card.name) }))
+        if (cards.isNotEmpty()) out += TheyWantRow(o.userId, o.name, cards.sortedWith(compareByDescending<NightWantedCard> { it.weight }.thenBy { key(it.card.name) }))
     }
     return out.sortedWith(compareByDescending<TheyWantRow> { it.cards.size }.thenBy { key(it.name) }.thenBy { it.userId })
 }
@@ -296,7 +296,7 @@ fun tradeTable(trades: List<Trade>, me: String): List<TableRow> = trades.mapNotN
 }.sortedBy { it.state.ordinal }
 
 /** "2 agreed · 1 waiting · 1 done" — or null when the table is empty. */
-fun tableLine(rows: List<TableRow>): String? {
+fun nightTableLine(rows: List<TableRow>): String? {
     if (rows.isEmpty()) return null
     fun n(s: TableState) = rows.count { it.state == s }
     return listOfNotNull(
