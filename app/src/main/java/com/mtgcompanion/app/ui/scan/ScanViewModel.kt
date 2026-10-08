@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.channels.BufferOverflow
 import com.mtgcompanion.app.data.CardSighting
-import com.mtgcompanion.app.data.cardFill
+import com.mtgcompanion.app.data.cardFit
 import com.mtgcompanion.app.data.findCard
 import com.mtgcompanion.app.data.greyOf
 import com.mtgcompanion.app.data.SettingsRepository
@@ -183,6 +183,9 @@ private const val PROBE_EVERY = 10
 
 /** At most one card look (edges and crispness, for auto zoom and focus) this often. */
 private const val LOOK_EVERY_MS = 150L
+
+/** A title read this recently counts as the card reading (so not too soft to need a refocus). */
+private const val TITLE_READ_FRESH_MS = 400L
 
 /** The width the card's edges are looked for at — FlatCard's own search width. */
 private const val LOOK_SEARCH_W = 240
@@ -380,13 +383,24 @@ class ScanViewModel(
     fun holdStill(ms: Long) {
         settleUntil = maxOf(settleUntil, SystemClock.elapsedRealtime() + ms)
         zoomMoved()
+        // And again once it's settled, so the reads in a row start from a still picture.
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(ms)
+            if (SystemClock.elapsedRealtime() >= settleUntil) zoomMoved()
+        }
     }
 
     /** Whether auto zoom and focus is on: only then are the card looks below worked out. */
     @Volatile var autoCamera = false
 
-    /** One card look (see [lookAtCard]): where the card was in the guide, if found, and how crisp the picture was. */
-    class CardLook(val card: CardSighting?, val sharp: Float)
+    /**
+     * One card look (see [lookAtCard]): where the card was in the guide, if found, how crisp the
+     * picture was, and whether a title read in the last moment (then it isn't too soft to scan).
+     */
+    class CardLook(val card: CardSighting?, val sharp: Float, val titleRead: Boolean = false)
+
+    // When a title last read off a frame, for CardLook.titleRead.
+    @Volatile private var titleReadAt = 0L
 
     private val _cardLooks = MutableSharedFlow<CardLook>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     /** What auto zoom and auto focus go by (ScanScreen); a few a second while a card is in the guide. */
@@ -405,7 +419,8 @@ class ScanViewModel(
         viewModelScope.launch(Dispatchers.Default) {
             try {
                 val look = runCatching { cardLook(cut, rotation) }.getOrNull() ?: return@launch
-                _cardLooks.tryEmit(look)
+                val read = SystemClock.elapsedRealtime() - titleReadAt < TITLE_READ_FRESH_MS
+                _cardLooks.tryEmit(CardLook(look.card, look.sharp, read))
             } finally {
                 looking.set(false)
             }
@@ -445,7 +460,7 @@ class ScanViewModel(
             top = (ys.min() - guide.top) / gh,
             right = (xs.max() - guide.left) / gw,
             bottom = (ys.max() - guide.top) / gh,
-            fill = cardFill(quad.width / scale, quad.height / scale, (shaped.right - shaped.left).toFloat(), (shaped.bottom - shaped.top).toFloat())
+            fill = cardFit(quad.width / scale, quad.height / scale, (shaped.right - shaped.left).toFloat(), (shaped.bottom - shaped.top).toFloat())
         )
         return CardLook(card, sharp)
     }
@@ -575,6 +590,7 @@ class ScanViewModel(
             return
         }
         blankFrameStreak = 0
+        titleReadAt = SystemClock.elapsedRealtime()
         proceed(candidate, lines, image, onProcessed, cut, forced, seenBySight = false)
     }
 

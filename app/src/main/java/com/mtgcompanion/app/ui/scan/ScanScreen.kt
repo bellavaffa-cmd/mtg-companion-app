@@ -124,7 +124,8 @@ import androidx.compose.runtime.SideEffect
 import android.os.SystemClock
 import androidx.compose.ui.geometry.Offset
 import com.mtgcompanion.app.data.AUTO_SETTLE_MS
-import com.mtgcompanion.app.data.AutoRefocus
+import com.mtgcompanion.app.data.Refocus
+import com.mtgcompanion.app.data.movedToRemeter
 import com.mtgcompanion.app.data.AutoZoom
 import com.mtgcompanion.app.data.CardSighting
 import com.mtgcompanion.app.data.PreviewPoint
@@ -295,7 +296,9 @@ fun ScanScreen(
         viewModel.autoCamera = autoOn
     }
     val autoZoom = remember { AutoZoom() }
-    val autoFocus = remember { AutoRefocus() }
+    val autoFocus = remember { Refocus() }
+    // Where focus was last aimed on the card, in guide fractions; re-aimed once the card moves off it.
+    var aimedAt by remember { mutableStateOf<Pair<Float, Float>?>(null) }
     // The card as last seen, for the periodic refocus to aim at; null when it wasn't found.
     var recentCard by remember { mutableStateOf<CardSighting?>(null) }
 
@@ -321,6 +324,7 @@ fun ScanScreen(
      */
     fun focusOnCard(card: CardSighting?) {
         val pv = previewViewRef ?: return
+        aimedAt = card?.let { it.centreX to it.centreY }
         if (card == null) {
             meter(PreviewPoint(pv.width / 2f, pv.height / 2f), null)
         } else {
@@ -346,7 +350,11 @@ fun ScanScreen(
     LaunchedEffect(previewViewRef, camera) {
         if (previewViewRef == null || camera == null) return@LaunchedEffect
         while (true) {
-            if (!autoFocus.paused(SystemClock.elapsedRealtime())) focusOnCard(if (autoLatest) recentCard else null)
+            val now = SystemClock.elapsedRealtime()
+            if (!autoFocus.paused(now)) {
+                focusOnCard(if (autoLatest) recentCard else null)
+                if (autoLatest) autoFocus.focused(now)
+            }
             delay(3_000)
         }
     }
@@ -365,8 +373,16 @@ fun ScanScreen(
             } else {
                 autoZoom.reset()
             }
-            if (autoFocus.onLook(look.sharp, look.card != null, now)) {
-                focusOnCard(look.card)
+            val card = look.card
+            val aimed = aimedAt
+            if (autoFocus.onLook(look.sharp, card != null, now, look.titleRead)) {
+                // Soft for a while, and the title won't read: focus again, on the card.
+                focusOnCard(card)
+                viewModel.holdStill(REFOCUS_SETTLE_MS)
+            } else if (card != null && (aimed == null || movedToRemeter(card, aimed.first, aimed.second)) && autoFocus.mayFocus(now)) {
+                // The card has moved off where focus was aimed: aim at it again.
+                autoFocus.focused(now)
+                focusOnCard(card)
                 viewModel.holdStill(REFOCUS_SETTLE_MS)
             }
         }

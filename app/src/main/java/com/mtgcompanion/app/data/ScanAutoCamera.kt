@@ -9,7 +9,7 @@ import kotlin.math.max
  * how crisp the picture is (ScanViewModel's card look); these decide what the camera does about it:
  *
  *  - AutoZoom: zoom gently until the card fills about [AUTO_ZOOM_TARGET] of the guide.
- *  - AutoRefocus: ask the camera to focus again — on the card, metered on its title bar so a foil's
+ *  - Refocus: ask the camera to focus again — on the card, metered on its title bar so a foil's
  *    glare doesn't darken it — when the card has stayed soft for a while.
  *
  * Pinching or − / + hands the zoom back to the user until the chip is tapped (ScanZoomControl.kt).
@@ -19,7 +19,7 @@ import kotlin.math.max
 /** How much of the guide the card should fill: its height (or width) against the card-shaped guide. */
 const val AUTO_ZOOM_TARGET = 0.875f
 
-/** Nothing is done while the fill is within this share either side of the target (0.79–0.96). */
+/** Nothing is done while the fill is within this much either side of the target (0.775–0.975). */
 const val AUTO_ZOOM_DEADBAND = 0.10f
 
 /** The most one adjustment moves the zoom, either way. */
@@ -34,14 +34,20 @@ const val AUTO_ZOOM_SEEN_FRAMES = 3
 /** Auto zoom stays this far under [LENS_SWITCH_ZOOM], so it never risks the telephoto. */
 const val AUTO_ZOOM_LENS_MARGIN = 0.1f
 
-/** The card's outermost edge is kept this share of the guide inside it when zooming in. */
-const val AUTO_ZOOM_EDGE_MARGIN = 0.02f
+/**
+ * How far toward the guide's edge the card's farthest edge may reach (from the middle): zooming in
+ * stops there, and a card already past it is zoomed out.
+ */
+const val AUTO_ZOOM_EDGE_REACH = 0.98f
 
 /** How long the card has to stay soft before the camera is asked to focus again. */
 const val REFOCUS_SOFT_MS = 700L
 
 /** At most one auto refocus this often, so the lens doesn't hunt. */
 const val REFOCUS_EVERY_MS = 1500L
+
+/** The focus point is sent again only once the card's middle has moved this share of the frame. */
+const val REMETER_MOVE = 0.05f
 
 /** A tap on the preview focuses there, and auto refocus waits this long before taking over again. */
 const val REFOCUS_TAP_PAUSE_MS = 4000L
@@ -75,7 +81,7 @@ data class CardSighting(val left: Float, val top: Float, val right: Float, val b
 }
 
 /** How much of the card-shaped guide ([guideWidth] x [guideHeight]) a card [cardWidth] x [cardHeight] fills. */
-fun cardFill(cardWidth: Float, cardHeight: Float, guideWidth: Float, guideHeight: Float): Float {
+fun cardFit(cardWidth: Float, cardHeight: Float, guideWidth: Float, guideHeight: Float): Float {
     if (guideWidth <= 0f || guideHeight <= 0f) return 0f
     return max(cardWidth / guideWidth, cardHeight / guideHeight)
 }
@@ -84,14 +90,40 @@ fun cardFill(cardWidth: Float, cardHeight: Float, guideWidth: Float, guideHeight
 fun autoZoomCeiling(range: ZoomRange): Float = range.clamp(LENS_SWITCH_ZOOM - AUTO_ZOOM_LENS_MARGIN)
 
 /**
- * How much more the zoom may grow before the card's farthest edge from the middle leaves the guide
- * (less [AUTO_ZOOM_EDGE_MARGIN]). Zooming grows everything about the middle of the frame, which is
- * the middle of the guide.
+ * How much more the zoom may grow before the card's farthest edge from the middle passes
+ * [AUTO_ZOOM_EDGE_REACH] of the way to the guide's edge — under 1 when it's past already. Zooming
+ * grows everything about the middle of the frame, which is the middle of the guide.
  */
 fun roomToZoom(card: CardSighting): Float {
     val farthest = maxOf(abs(card.left - 0.5f), abs(card.right - 0.5f), abs(card.top - 0.5f), abs(card.bottom - 0.5f))
     if (farthest <= 0.001f) return Float.MAX_VALUE
-    return ((0.5f - AUTO_ZOOM_EDGE_MARGIN) / farthest).coerceAtLeast(0f)
+    return (0.5f * AUTO_ZOOM_EDGE_REACH / farthest).coerceAtLeast(0f)
+}
+
+/**
+ * One auto zoom decision, on its own: the zoom to go to from [zoom] for [card], or null to stay.
+ * Toward [AUTO_ZOOM_TARGET] by at most [AUTO_ZOOM_MAX_STEP]; nothing inside the deadband; never past
+ * [autoZoomCeiling] or the camera's minimum, never so far in that the card would run off the guide —
+ * and out, whatever the fill, when it already has. [AutoZoom] adds the timing.
+ */
+fun autoZoomStep(card: CardSighting, zoom: Float, range: ZoomRange): Float? {
+    if (card.fill <= 0f || !card.fill.isFinite()) return null
+    val room = roomToZoom(card)
+    val wanted = when {
+        room < 1f -> zoom * room
+        card.fill in (AUTO_ZOOM_TARGET - AUTO_ZOOM_DEADBAND)..(AUTO_ZOOM_TARGET + AUTO_ZOOM_DEADBAND) -> return null
+        else -> zoom * AUTO_ZOOM_TARGET / card.fill
+    }
+    var target = zoom + (wanted - zoom).coerceIn(-AUTO_ZOOM_MAX_STEP, AUTO_ZOOM_MAX_STEP)
+    if (target > zoom) {
+        target = minOf(target, autoZoomCeiling(range), zoom * room)
+        if (target <= zoom + 0.005f) return null
+    } else {
+        target = target.coerceAtLeast(range.clamp(0f))
+        if (target >= zoom - 0.005f) return null
+    }
+    target = range.clamp(target)
+    return if (abs(target - zoom) < 0.005f) null else target
 }
 
 /** Decides auto zoom's next step from one card look at a time. */
@@ -116,31 +148,18 @@ class AutoZoom {
         seen++
         if (seen < AUTO_ZOOM_SEEN_FRAMES) return null
         if (now - lastStepAt < AUTO_ZOOM_EVERY_MS) return null
-        val low = AUTO_ZOOM_TARGET * (1 - AUTO_ZOOM_DEADBAND)
-        val high = AUTO_ZOOM_TARGET * (1 + AUTO_ZOOM_DEADBAND)
-        if (card.fill in low..high) return null
-        val wanted = zoom * AUTO_ZOOM_TARGET / card.fill
-        var step = (wanted - zoom).coerceIn(-AUTO_ZOOM_MAX_STEP, AUTO_ZOOM_MAX_STEP)
-        var target = zoom + step
-        if (step > 0f) {
-            val ceiling = minOf(autoZoomCeiling(range), zoom * roomToZoom(card))
-            if (target > ceiling) target = ceiling
-            if (target <= zoom + 0.005f) return null
-        } else {
-            target = target.coerceAtLeast(range.clamp(0f))
-            if (target >= zoom - 0.005f) return null
-        }
-        target = range.clamp(target)
-        step = target - zoom
-        if (abs(step) < 0.005f) return null
+        val target = autoZoomStep(card, zoom, range) ?: return null
         lastStepAt = now
         seen = 0
         return target
     }
 }
 
-/** Decides when to ask the camera to focus again, from how crisp each card look was. */
-class AutoRefocus {
+/**
+ * Decides when to ask the camera to focus again: the card found, soft ([sharpness] low) and its title
+ * not reading, for [REFOCUS_SOFT_MS] — at most every [REFOCUS_EVERY_MS], and not for a while after a tap.
+ */
+class Refocus {
     private var peak = 0f
     private var softSince: Long? = null
     private var lastAt = Long.MIN_VALUE / 2
@@ -162,21 +181,32 @@ class AutoRefocus {
         softSince = null
     }
 
-    /** One look: how crisp it was ([sharp], from [sharpness]) and whether the card was found. True: refocus now. */
-    fun onLook(sharp: Float, cardFound: Boolean, now: Long): Boolean {
+    /** Any refocus just went out (the periodic one, or a re-aim at a moved card): counts for the spacing. */
+    fun focused(now: Long) {
+        lastAt = now
+    }
+
+    /** Whether a refocus may go out now at all. */
+    fun mayFocus(now: Long): Boolean = !paused(now) && now - lastAt >= REFOCUS_EVERY_MS
+
+    /**
+     * One look: how crisp it was ([sharp], from [sharpness]), whether the card was found, and whether
+     * its title read just now ([titleRead] — a title that reads is sharp enough). True: refocus now.
+     */
+    fun onLook(sharp: Float, cardFound: Boolean, now: Long, titleRead: Boolean = false): Boolean {
         if (!cardFound || !sharp.isFinite()) {
             reset()
             return false
         }
         peak = max(sharp, peak * SHARP_PEAK_DECAY)
-        val soft = sharp < SOFT_FLOOR || sharp < SOFT_SHARE * peak
+        val soft = !titleRead && (sharp < SOFT_FLOOR || sharp < SOFT_SHARE * peak)
         if (!soft) {
             softSince = null
             return false
         }
         val since = softSince ?: now.also { softSince = it }
         if (now - since < REFOCUS_SOFT_MS) return false
-        if (paused(now) || now - lastAt < REFOCUS_EVERY_MS) return false
+        if (!mayFocus(now)) return false
         lastAt = now
         reset()
         return true
@@ -204,4 +234,14 @@ fun cardMeteringPoints(card: CardSighting): Pair<Pair<Float, Float>, Pair<Float,
     val focus = card.centreX to card.centreY
     val exposure = card.centreX to (card.top + (card.bottom - card.top) * TITLE_BAR_AT)
     return focus to exposure
+}
+
+/**
+ * Whether the card has moved far enough from where focus was last aimed ([lastU], [lastV]) to aim
+ * again: its middle more than [REMETER_MOVE] of the frame away. Points are in guide fractions.
+ */
+fun movedToRemeter(card: CardSighting, lastU: Float, lastV: Float): Boolean {
+    val dx = (card.centreX - lastU) * GUIDE_WIDTH
+    val dy = (card.centreY - lastV) * GUIDE_HEIGHT
+    return kotlin.math.hypot(dx, dy) > REMETER_MOVE
 }
