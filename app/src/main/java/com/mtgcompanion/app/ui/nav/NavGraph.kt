@@ -257,6 +257,7 @@ import com.mtgcompanion.app.data.social.wantedAsDeckCards
 import com.mtgcompanion.app.data.social.TonightPlayer
 import com.mtgcompanion.app.data.social.tonightAsDeckCards
 import com.mtgcompanion.app.ui.social.TradeMatchesTonight
+import com.mtgcompanion.app.ui.social.TradeNightSection
 import com.mtgcompanion.app.ui.scan.ScanViewModel
 import com.mtgcompanion.app.ui.search.SearchResultsScreen
 import com.mtgcompanion.app.ui.search.SearchScreen
@@ -2029,7 +2030,24 @@ fun MtgNavGraph(
                     onOpenBag = { id -> navController.navigate(Routes.pack(id)) },
                     onOpenGameNight = { navController.navigate(Routes.GAME_NIGHT) { launchSingleTop = true } },
                     onOpenLoans = { navController.navigate(Routes.loans(borrowed = true)) },
-                    tonight = { players -> tonightMatches(players, collections, decks) }
+                    tonight = { players -> tonightMatches(players, collections, decks) },
+                    trades = { id, going ->
+                        val me = socialRepository.overview.collectAsState().value?.me?.userId
+                        if (me != null) TradeNightSection(
+                            social = socialRepository,
+                            collectionRepository = collectionRepository,
+                            nightId = id,
+                            me = me,
+                            going = going,
+                            collections = collections,
+                            decks = decks,
+                            onPropose = { to, want, give, name, theirCards ->
+                                socialRepository.draft = SocialRepository.TradeDraft(to = to, want = want, give = give, nightId = id, toName = name, theirCards = theirCards)
+                                navController.navigate(Routes.tradeNew(to))
+                            },
+                            onOpenTrades = { navController.navigate(Routes.TRADES) }
+                        )
+                    }
                 )
             }
 
@@ -2150,8 +2168,10 @@ fun MtgNavGraph(
                     friendId = entry.arguments?.getString("userId").orEmpty(),
                     onBack = { navController.popBackStack() },
                     onSignIn = signIn,
-                    onSent = {
-                        navController.navigate(Routes.TRADES) { popUpTo(Routes.FRIENDS) }
+                    onSent = { night ->
+                        // Proposed at a game night: back to the night, where its Trade table shows it.
+                        if (night != null) navController.popBackStack()
+                        else navController.navigate(Routes.TRADES) { popUpTo(Routes.FRIENDS) }
                     }
                 )
             }

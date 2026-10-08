@@ -74,7 +74,9 @@ import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.localMoshi
 import com.mtgcompanion.app.data.social.CollectionChange
 import com.mtgcompanion.app.data.social.ForTradeCard
+import com.mtgcompanion.app.data.social.NightCard
 import com.mtgcompanion.app.data.social.Overview
+import com.mtgcompanion.app.data.social.Profile
 import com.mtgcompanion.app.data.social.TradeMatch
 import com.mtgcompanion.app.data.social.matchSentence
 import com.mtgcompanion.app.data.social.ShareKind
@@ -446,7 +448,7 @@ private fun TradeMessage(who: String, text: String) {
  * of the binders they were in, the cards they get go into the binder they pick.
  */
 @Composable
-private fun UpdateBindersDialog(social: SocialRepository, collectionRepository: CollectionRepository, trade: Trade, me: String, theirName: String, onClose: () -> Unit) {
+internal fun UpdateBindersDialog(social: SocialRepository, collectionRepository: CollectionRepository, trade: Trade, me: String, theirName: String, onClose: () -> Unit) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
@@ -571,7 +573,8 @@ fun TradeComposerScreen(
     friendId: String,
     onBack: () -> Unit,
     onSignIn: () -> Unit,
-    onSent: () -> Unit
+    /** Sent: [nightId] is the game night it was proposed at, or null. */
+    onSent: (nightId: String?) -> Unit
 ) {
     val colors = LocalAppColors.current
     Scaffold(
@@ -593,17 +596,21 @@ fun TradeComposerScreen(
 }
 
 @Composable
-private fun Composer(social: SocialRepository, collectionRepository: CollectionRepository, overview: Overview, friendId: String, onSent: () -> Unit) {
+private fun Composer(social: SocialRepository, collectionRepository: CollectionRepository, overview: Overview, friendId: String, onSent: (String?) -> Unit) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val communityRules = rememberCommunityRules()
-    val friend = overview.person(friendId)
-    if (friend == null || !overview.isFriend(friendId)) {
+    // The draft lives in the repository, so it survives the screen turning.
+    val started = remember(friendId) { social.draft?.takeIf { it.to == friendId } }
+    // A trade at a game night (TradeNightSection): to someone going, who may not be a friend.
+    val night = started?.nightId
+    val friend = overview.person(friendId) ?: started?.toName?.takeIf { night != null }?.let { Profile(friendId, "", it, null) }
+    if (friend == null || (!overview.isFriend(friendId) && night == null)) {
         EmptyState(Icons.Filled.PersonOff, "You can only trade with friends.")
         return
     }
-    // The draft lives in the repository, so it survives the screen turning.
-    var draft by remember { mutableStateOf(social.draft?.takeIf { it.to == friendId } ?: SocialRepository.TradeDraft(to = friendId)) }
+    val nightBinders = remember(started) { nightCardsAsBinders(started?.theirCards.orEmpty()) }
+    var draft by remember { mutableStateOf(started ?: SocialRepository.TradeDraft(to = friendId)) }
     fun update(next: SocialRepository.TradeDraft) { draft = next; social.draft = next }
     val replying = draft.replyTo?.let { id -> overview.trades.firstOrNull { it.id == id && it.status == TradeStatus.OPEN } }
     var picking by remember { mutableStateOf<Boolean?>(null) } // true: their binders, false: mine
@@ -621,7 +628,7 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
     }
 
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { PersonRow(friend, detail = if (replying != null) "Counter-offer" else null) }
+        item { PersonRow(friend, detail = if (replying != null) "Counter-offer" else if (night != null) "At game night" else null) }
         match?.takeIf { it.theyHave.isNotEmpty() || it.theyWant.isNotEmpty() }?.let { m ->
             item(key = "match") {
                 Row(
@@ -670,13 +677,21 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
                         error = null
                         scope.launch {
                             try {
-                                // A counter-offer closes the trade it answers at once.
-                                social.mutate(SocialArea.TRADES, optimistic = replying?.let { r -> { o: Overview -> o.withTradeStatus(r.id, TradeStatus.COUNTERED) } }) {
-                                    social.api.proposeTrade(friendId, draft.want, draft.give, draft.message.trim(), replying?.id)
+                                val atNight = night?.takeIf { replying == null }
+                                if (atNight != null) {
+                                    social.mutate(SocialArea.TRADES) {
+                                        social.tradeNights.propose(atNight, friendId, draft.want, draft.give, draft.message.trim())
+                                    }
+                                    social.bump(SocialArea.NIGHTS)
+                                } else {
+                                    // A counter-offer closes the trade it answers at once.
+                                    social.mutate(SocialArea.TRADES, optimistic = replying?.let { r -> { o: Overview -> o.withTradeStatus(r.id, TradeStatus.COUNTERED) } }) {
+                                        social.api.proposeTrade(friendId, draft.want, draft.give, draft.message.trim(), replying?.id)
+                                    }
                                 }
                                 Usage.action(UsageAction.TRADE_PROPOSED)
                                 social.draft = null
-                                onSent()
+                                onSent(atNight)
                             } catch (e: Exception) {
                                 error = e.message
                             } finally {
@@ -726,9 +741,9 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
                         CollectionEntry(c.scryfallId, c.name, c.imageUrl, quantity = plain, foilQuantity = c.forTrade - plain, condition = c.condition)
                     })
                 }
-                val list = if (theirs) binders?.let { forTradeBinders + it } else myBinders.filter { it.type != "WISHLIST" }
+                val list = if (theirs) binders?.let { nightBinders + forTradeBinders + it } else myBinders.filter { it.type != "WISHLIST" }
                 when {
-                    theirs && shared.isEmpty() && forTradeBinders.isEmpty() -> Notice("${friend.displayName} hasn't shared a binder with you or marked cards for trade.", Modifier.padding(16.dp))
+                    theirs && shared.isEmpty() && forTradeBinders.isEmpty() && nightBinders.isEmpty() -> Notice("${friend.displayName} hasn't shared a binder with you or marked cards for trade.", Modifier.padding(16.dp))
                     list == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = colors.accent) }
                     list.isEmpty() -> Notice("You have no binders yet.", Modifier.padding(16.dp))
                     else -> LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -745,3 +760,18 @@ private fun Composer(social: SocialRepository, collectionRepository: CollectionR
         }
     }
 }
+
+/** What someone brings to a game night, as binders to pick from (a binder per collection the cards came out of). */
+private fun nightCardsAsBinders(cards: List<NightCard>): List<Collection> =
+    cards.groupBy { it.collectionId ?: "night" }.map { (id, lines) ->
+        val entries = lines.groupBy { it.scryfallId }.map { (_, same) ->
+            val first = same.first()
+            CollectionEntry(
+                first.scryfallId, first.name, first.imageUrl,
+                quantity = same.filter { !it.foil }.sumOf { it.quantity },
+                foilQuantity = same.filter { it.foil }.sumOf { it.quantity },
+                condition = first.condition
+            )
+        }.sortedBy { it.name.lowercase() }
+        Collection(id, "Bringing tonight", entries)
+    }

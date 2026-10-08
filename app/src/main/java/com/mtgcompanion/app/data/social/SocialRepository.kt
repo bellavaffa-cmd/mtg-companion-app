@@ -34,6 +34,8 @@ class SocialRepository(private val auth: SupabaseAuth) {
     val household = HouseholdApi(api)
     /** Game night invites and pod chat (GameNightsApi.kt), once the server has them. */
     val nights = GameNightsApi(api)
+    /** Trading at a game night (TradeNightsApi.kt), once the server has it. */
+    val tradeNights = TradeNightsApi(api)
     /** New direct messages, live (DmChannel.kt). */
     val dmChannel = DmChannel(auth)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -211,7 +213,13 @@ class SocialRepository(private val auth: SupabaseAuth) {
         val replyTo: String? = null,
         val want: List<TradeCard> = emptyList(),
         val give: List<TradeCard> = emptyList(),
-        val message: String = ""
+        val message: String = "",
+        /** A trade at this game night (TradeNightSection): to anyone going, tied to the night. */
+        val nightId: String? = null,
+        /** Their name, for someone going who isn't a friend (not in the overview's people). */
+        val toName: String? = null,
+        /** What they bring to the night, to pick from. */
+        val theirCards: List<NightCard> = emptyList()
     )
 
     /** The trade the composer is working on, if any (the binder screen starts one with its picks). */
@@ -253,6 +261,7 @@ class SocialRepository(private val auth: SupabaseAuth) {
                 activity.reset()
                 household.reset()
                 nights.reset()
+                tradeNights.reset()
                 if (it != null) refreshInbox()
                 // The live channel belongs to the account: a new one for whoever is signed in now.
                 live?.cancel()
