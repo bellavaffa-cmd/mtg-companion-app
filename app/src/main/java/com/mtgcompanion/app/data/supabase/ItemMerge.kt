@@ -6,6 +6,8 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckVersion
 import com.mtgcompanion.app.data.keepHistoryFromOlderApp
+import com.mtgcompanion.app.data.keepCubeFromOlderApp
+import com.mtgcompanion.app.data.mergeCubeSettings
 import com.mtgcompanion.app.data.mergeHistory
 import com.mtgcompanion.app.data.GameResult
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
@@ -76,6 +78,9 @@ import com.mtgcompanion.app.data.tidied
  *    doesn't know them leaves them as they were (DeckExtras.kt).
  *  - A deck's history (DeckHistory.kt) is every entry from both sides, once by id, the newer copy of
  *    one both have; a deck saved by an app that doesn't know it leaves it as it was.
+ *  - A cube's settings (Cube.kt, the deck's "cube") merge field by field like a deck's name; a cube
+ *    saved by an app that doesn't know about cubes leaves them as they were. Its cards merge card by
+ *    card like any deck's.
  * The web app merges the same way — see MtgCompanionWeb/src/sync/mergeItems.ts.
  */
 object ItemMerge {
@@ -203,11 +208,11 @@ object ItemMerge {
     fun mergeDecks(base: Deck, mine: Deck, theirs: Deck, minePreferred: Boolean): Deck =
         // A side saved by an app that doesn't know where the deck's copies came from left that as it was.
         // ...and the same for its primer, folder, archive flag, companion and categories.
-        // ...and its history (DeckHistory.kt).
+        // ...and its history (DeckHistory.kt), and a cube's settings (Cube.kt).
         mergeDecksKnowingCameFrom(
             base,
-            keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, mine))),
-            keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, theirs))),
+            keepCubeFromOlderApp(base, keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, mine)))),
+            keepCubeFromOlderApp(base, keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, theirs)))),
             minePreferred
         )
 
@@ -225,7 +230,8 @@ object ItemMerge {
         tags = mergeStringSet(base.tags, mine.tags, theirs.tags),
         gameResults = mergeGameResults(base.gameResults, mine.gameResults, theirs.gameResults),
         versions = mergeVersions(mine.versions, theirs.versions),
-        history = mergeHistory(mine.history, theirs.history)
+        history = mergeHistory(mine.history, theirs.history),
+        cube = mergeCubeSettings(base.cube, mine.cube, theirs.cube, minePreferred)
     ), base, mine, theirs, minePreferred)
 
     fun mergeCollections(base: Collection, mine: Collection, theirs: Collection, minePreferred: Boolean): Collection =

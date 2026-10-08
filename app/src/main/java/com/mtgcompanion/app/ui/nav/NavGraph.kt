@@ -33,6 +33,11 @@ import com.mtgcompanion.app.ui.collection.GearScreen
 import com.mtgcompanion.app.ui.collection.PackListScreen
 import com.mtgcompanion.app.ui.collection.PackScreen
 import com.mtgcompanion.app.ui.collection.CopyPhotoScreen
+import com.mtgcompanion.app.ui.decks.CubeScreen
+import com.mtgcompanion.app.ui.decks.CubeViewModel
+import com.mtgcompanion.app.ui.decks.CubesScreen
+import com.mtgcompanion.app.data.isCube
+import kotlinx.coroutines.flow.map
 import com.mtgcompanion.app.ui.decks.PullListScreen
 import com.mtgcompanion.app.ui.decks.PutBackScreen
 import com.mtgcompanion.app.ui.decks.DeckHistoryScreen
@@ -294,6 +299,10 @@ private object Routes {
     const val COLLECTION = "collection"
     const val DECKS = "decks"
     const val PRECONS = "precons"
+    /** The cubes (ui/decks/CubeScreens.kt), and one of them. */
+    const val CUBES = "cubes"
+    const val CUBE = "cube/{cubeId}"
+    fun cube(cubeId: String) = "cube/$cubeId"
     /** A deck from scratch: format, commander, name. */
     const val NEW_DECK = "new_deck"
     const val SETTINGS = "settings"
@@ -1643,8 +1652,44 @@ fun MtgNavGraph(
                     onDeckClick = { deckId -> navController.navigate(Routes.deckDetail(deckId)) },
                     onBrowsePrecons = { navController.navigate(Routes.PRECONS) },
                     onNewDeck = { navController.navigate(Routes.NEW_DECK) { launchSingleTop = true } },
-                    onPasteList = { navController.navigate(Routes.welcome(WelcomeStep.DECK, paste = true)) { launchSingleTop = true } }
+                    onPasteList = { navController.navigate(Routes.welcome(WelcomeStep.DECK, paste = true)) { launchSingleTop = true } },
+                    onOpenCubes = { navController.navigate(Routes.CUBES) { launchSingleTop = true } }
                 )
+            }
+
+            destination(Routes.CUBES) {
+                CubesScreen(
+                    deckRepository = deckRepository,
+                    onBack = { navController.popBackStack() },
+                    onOpenCube = { id -> navController.navigate(Routes.cube(id)) }
+                )
+            }
+
+            destination(Routes.CUBE, arguments = listOf(navArgument("cubeId") { type = NavType.StringType })) { entry ->
+                val cubeId = entry.arguments?.getString("cubeId").orEmpty()
+                val viewModel: CubeViewModel = viewModel(factory = CubeViewModel.Factory(cubeId, deckRepository, collectionRepository))
+                val cube by viewModel.cube.collectAsState()
+                var sharing by remember { mutableStateOf(false) }
+                CubeScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null,
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
+                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onViewCard = { name -> navController.navigate(Routes.detail(name)) }
+                )
+                if (sharing) {
+                    // A cube is kept as a deck, so it's shared the way a deck is (Cube.kt).
+                    ShareDialog(
+                        social = socialRepository,
+                        sync = supabaseSync,
+                        kind = ShareKind.DECK,
+                        itemId = cubeId,
+                        name = cube?.name ?: "Cube",
+                        onOpenFriends = { navController.navigateToTab(Routes.FRIENDS) },
+                        onClose = { sharing = false }
+                    )
+                }
             }
 
             destination(Routes.NEW_DECK) {
@@ -1685,8 +1730,13 @@ fun MtgNavGraph(
                 val viewModel: DeckDetailViewModel = viewModel(
                     factory = DeckDetailViewModel.Factory(deckId, deckRepository, collectionRepository, settingsRepository, offlineCardRepository)
                 )
+                // A cube is kept as a deck (Cube.kt) but has its own screen: a link to one as a deck opens that.
+                val isCubeDeck by remember(deckId) { deckRepository.deckFlow(deckId).map { it?.isCube == true } }.collectAsState(initial = false)
+                LaunchedEffect(isCubeDeck) {
+                    if (isCubeDeck) navController.navigate(Routes.cube(deckId)) { popUpTo(Routes.DECK_DETAIL) { inclusive = true } }
+                }
                 // Remembered for Home's "continue where you left off" tile.
-                LaunchedEffect(deckId) { settingsRepository.setLastOpenedDeckId(deckId) }
+                LaunchedEffect(deckId) { if (!isCubeDeck) settingsRepository.setLastOpenedDeckId(deckId) }
                 var sharing by remember { mutableStateOf(false) }
                 var whoHas by remember { mutableStateOf<List<String>?>(null) }
                 var makingGoal by remember { mutableStateOf<com.mtgcompanion.app.data.Deck?>(null) }

@@ -61,6 +61,9 @@ import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.isCube
+import com.mtgcompanion.app.data.cubeSettings
+import com.mtgcompanion.app.ui.decks.createCube
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.DeckRepository
@@ -247,7 +250,8 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
             Box(Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(24.dp)).background(colors.surface)) {
                 deck.commander?.imageUrl?.let { AsyncImage(model = it.toArtCropUrl(), contentDescription = null, contentScale = ContentScale.Crop, alpha = 0.5f, modifier = Modifier.fillMaxSize()) }
                 Column(Modifier.align(Alignment.BottomStart).padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("${deck.mode.label} deck".uppercase(), style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+                    // A cube is shared as a deck (Cube.kt); it says what it is.
+                    Text((if (deck.isCube) "Cube · ${deck.cubeSettings.size} cards" else "${deck.mode.label} deck").uppercase(), style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
                     Text(deck.name, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.a11yHeading())
                     OwnerLine(item)
                 }
@@ -283,11 +287,16 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.accentGlow).clickable { onOpenDeck(id) }.padding(14.dp)
                 ) {
                     Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = colors.accent)
-                    Text("Copied to your decks — open your copy", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Text(if (deck.isCube) "Copied to your cubes — open your copy" else "Copied to your decks — open your copy", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 }
             } else {
-                LineButton("Copy to my decks", {
+                LineButton(if (deck.isCube) "Copy to my cubes" else "Copy to my decks", {
                     scope.launch {
+                        if (deck.isCube) {
+                            val s = deck.cubeSettings
+                            copied = createCube(deckRepository, deck.name, s.size, s.singleton, deck.cards.map { it.copy(proxyQuantity = null) })
+                            return@launch
+                        }
                         val made = deckRepository.createDeckWithCards(deck.name, deck.mode, deck.cards, deck.commander, deck.partnerCommander)
                         // The primer comes along: it's how the deck is meant to play.
                         val primer = tidyDescription(deck.description.orEmpty())

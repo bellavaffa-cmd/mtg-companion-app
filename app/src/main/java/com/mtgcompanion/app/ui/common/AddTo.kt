@@ -2,6 +2,7 @@ package com.mtgcompanion.app.ui.common
 
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.isCube
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
@@ -30,7 +31,7 @@ data class MoveTarget(
 )
 
 /** A deck as a place to put cards, with its commander's picture. */
-fun Deck.asTarget() = MoveTarget(SourceKind.DECK, id, name, imageUrl = commander?.imageUrl, cards = cards.sumOf { it.quantity }, hasSideboard = mode.hasSideboard, pool = mode.limited, archived = archived == true)
+fun Deck.asTarget() = MoveTarget(SourceKind.DECK, id, name, imageUrl = commander?.imageUrl, cards = cards.sumOf { it.quantity }, hasSideboard = mode.hasSideboard, pool = mode.limited, archived = archived == true || isCube)
 
 /** A binder as a place to put cards. */
 fun Binder.asTarget() = MoveTarget(SourceKind.BINDER, id, name, cards = entries.sumOf { it.quantity + it.foilQuantity })

@@ -5,6 +5,7 @@ import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.tester.TesterLog
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.isCube
 import com.mtgcompanion.app.data.social.Match
 import com.mtgcompanion.app.data.social.SocialApi
 import com.mtgcompanion.app.data.social.SocialRepository
@@ -367,6 +368,7 @@ class LifeCounterViewModel(
 
     /** The user's decks, for choosing the one their own games at this table are saved to. */
     val decks: StateFlow<List<Deck>> = (deckRepository?.decksFlow ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+        .map { all -> all.filterNot { it.isCube } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** The games played at this table, newest first. */

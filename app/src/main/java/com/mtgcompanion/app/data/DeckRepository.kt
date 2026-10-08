@@ -442,8 +442,9 @@ class DeckRepository(private val context: Context) {
                 val was = current.associateBy { it.id }
                 next.map { after ->
                     val before = was[after.id]
-                    // Untouched by this change: nothing to record.
-                    if (before === after) after
+                    // Untouched by this change: nothing to record. A cube keeps no versions or history:
+                    // hundreds of cards a version would only bloat it (Cube.kt).
+                    if (before === after || after.isCube) after
                     else withVersion(before, if (after.sample == true) after else withHistory(before, after, history))
                 }
             } else next

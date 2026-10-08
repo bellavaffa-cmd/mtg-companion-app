@@ -18,7 +18,7 @@ fun tidyFolder(name: String): String = name.replace(Regex("\\s+"), " ").trim().t
 /** The folder [deck] is in; null for none. */
 fun folderOf(deck: Deck): String? = deck.folder?.let(::tidyFolder)?.takeIf { it.isNotEmpty() }
 
-val Deck.isArchived: Boolean get() = archived == true
+val Deck.isArchived: Boolean get() = archived == true || isCube
 
 /** The decks a picker offers: every one not archived. */
 fun activeDecks(decks: List<Deck>): List<Deck> = decks.filterNot { it.isArchived }
