@@ -1779,6 +1779,17 @@ class ScanViewModel(
     suspend fun printingsOf(card: ScryfallCard): List<ScryfallCard> =
         runCatching { cardRepository.getPrintings(card.name) }.getOrDefault(emptyList())
 
+    /** "It's a different card": names as you type (Scryfall's autocomplete). */
+    suspend fun suggestNames(query: String): List<String> = cardRepository.autocomplete(query)
+
+    /** Every printing of the card called [name] — at least the card itself — or none, with the status saying why. */
+    suspend fun printingsNamed(name: String): List<ScryfallCard> {
+        val printings = runCatching { cardRepository.getPrintings(name) }.getOrDefault(emptyList())
+            .ifEmpty { listOfNotNull(runCatching { cardRepository.getByFuzzyName(name) }.getOrNull()) }
+        if (printings.isEmpty()) _uiState.update { it.copy(status = "Couldn't load $name — check the connection.") }
+        return printings
+    }
+
     /** The printing on a row, swapped for the art the user picked. */
     fun setPrinting(rowId: Long, card: ScryfallCard) {
         _uiState.value.scannedCards.firstOrNull { it.id == rowId }?.let { row -> if (row.card.id != card.id) learnFrom(rowId, card) }

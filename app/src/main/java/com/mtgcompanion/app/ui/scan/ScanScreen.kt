@@ -133,6 +133,8 @@ import com.mtgcompanion.app.data.REFOCUS_SETTLE_MS
 import com.mtgcompanion.app.data.cardMeteringPoints
 import com.mtgcompanion.app.data.guideToPreview
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -224,6 +226,11 @@ fun ScanScreen(
     // Scans a learned correction put right (ScanCorrections.kt), and the one whose "Learned" was tapped.
     val learned by viewModel.learned.collectAsState()
     var learnedOpen by remember { mutableStateOf<Pair<Long, Boolean>?>(null) }
+    // "It's a different card": the scan being fixed (its id, and whether it's the sort's newest), then
+    // the printings of the card searched for, to pick from.
+    var differentFor by remember { mutableStateOf<Pair<Long, Boolean>?>(null) }
+    var differentPick by remember { mutableStateOf<Triple<Long, Boolean, List<ScryfallCard>>?>(null) }
+    val scope = rememberCoroutineScope()
     val money by com.mtgcompanion.app.data.Prices.money.collectAsState()
     val recipeOn = recipe != null
     LaunchedEffect(recipeOn) {
@@ -888,7 +895,12 @@ fun ScanScreen(
             onDismissRequest = { recipeWrong = false },
             containerColor = Surface,
             title = { Text("Not ${last.name}?", color = GoldLight) },
-            text = { Text("Right card, wrong printing: pick the one you're holding. A different card: rescan it — it's taken off its pile first.", color = TextMuted) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Right card, wrong printing: pick the one you're holding. A different card: rescan it — it's taken off its pile first — or say which card it is, and the scanner learns it.", color = TextMuted)
+                    TextButton(onClick = { recipeWrong = false; differentFor = last.id to true }) { Text("It's a different card", color = Gold) }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = { recipeWrong = false; viewModel.rescanRecipe() }) { Text("Rescan it", color = Gold) }
             },
@@ -921,7 +933,8 @@ fun ScanScreen(
             row = ScanRow(-1, card, System.currentTimeMillis()),
             load = { viewModel.printingsOf(card) },
             onPick = { viewModel.setRecipePrinting(it); recipePrinting = null },
-            onDismiss = { recipePrinting = null }
+            onDismiss = { recipePrinting = null },
+            onDifferent = { recipe?.scans?.lastOrNull()?.let { differentFor = it.id to true }; recipePrinting = null }
         )
     }
     artPickerRow?.let { row ->
@@ -929,7 +942,33 @@ fun ScanScreen(
             row = row,
             load = { viewModel.printingsOf(row.card) },
             onPick = { viewModel.setPrinting(row.id, it); artPickerRow = null },
-            onDismiss = { artPickerRow = null }
+            onDismiss = { artPickerRow = null },
+            onDifferent = { differentFor = row.id to false; artPickerRow = null }
+        )
+    }
+    differentFor?.let { (rowId, inRecipe) ->
+        DifferentCardDialog(
+            suggest = viewModel::suggestNames,
+            onPick = { name ->
+                differentFor = null
+                scope.launch {
+                    val printings = viewModel.printingsNamed(name)
+                    if (printings.isNotEmpty()) differentPick = Triple(rowId, inRecipe, printings)
+                }
+            },
+            onDismiss = { differentFor = null }
+        )
+    }
+    differentPick?.let { (rowId, inRecipe, printings) ->
+        ArtPickerDialog(
+            row = ScanRow(-2, printings.first(), 0L),
+            load = { printings },
+            ringCurrent = false,
+            onPick = { card ->
+                differentPick = null
+                if (inRecipe) viewModel.setRecipePrinting(card) else viewModel.setPrinting(rowId, card)
+            },
+            onDismiss = { differentPick = null }
         )
     }
 
@@ -1338,7 +1377,11 @@ private fun ArtPickerDialog(
     row: ScanRow,
     load: suspend () -> List<ScryfallCard>,
     onPick: (ScryfallCard) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Given where a scan is being fixed: "It's a different card" — search for the card it really is. */
+    onDifferent: (() -> Unit)? = null,
+    /** Whether [row]'s card is ringed as the one it is now (not for a different card just searched for). */
+    ringCurrent: Boolean = true
 ) {
     var printings by remember(row.id) { mutableStateOf<List<ScryfallCard>?>(null) }
     LaunchedEffect(row.id) { printings = load() }
@@ -1359,7 +1402,7 @@ private fun ArtPickerDialog(
                 ) {
                     items(found, key = { it.id }) { card ->
                         Column(modifier = Modifier.clickable { onPick(card) }) {
-                            val picked = card.id == row.card.id
+                            val picked = ringCurrent && card.id == row.card.id
                             AsyncImage(
                                 model = card.displayImageUrl,
                                 contentDescription = card.printingLabel,
@@ -1384,6 +1427,55 @@ private fun ArtPickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = Gold) } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = Gold) } },
+        dismissButton = onDifferent?.let { different -> { TextButton(onClick = different) { Text("It's a different card", color = Gold) } } }
+    )
+}
+
+/**
+ * "It's a different card": the card's name, searched as you type (Scryfall's autocomplete, as elsewhere
+ * in the app), to fix a scan that read as another card altogether. [onPick] gets the name chosen.
+ */
+@Composable
+private fun DifferentCardDialog(suggest: suspend (String) -> List<String>, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    var query by remember { mutableStateOf("") }
+    var names by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(query) {
+        if (query.isBlank()) { names = emptyList(); return@LaunchedEffect }
+        kotlinx.coroutines.delay(250)
+        names = suggest(query.trim()).take(8)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = { Text("Which card is it?", color = GoldLight) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Card name", color = TextDim) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Gold
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                names.forEach { name ->
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary,
+                        modifier = Modifier.fillMaxWidth().clickable { onPick(name) }.padding(vertical = 10.dp)
+                    )
+                }
+                Text("Pick it, then its printing. The scanner remembers, and gets this read right next time.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) } }
     )
 }
