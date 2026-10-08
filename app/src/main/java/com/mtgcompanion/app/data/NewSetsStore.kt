@@ -94,9 +94,9 @@ object NewSetsStore {
         prefs(context).getStringSet("$REVEALS_SEEN$code", null)?.toSet()
 
     /** [ids] seen for [code] — on its page, or told in a notification. */
-    fun markRevealsSeen(context: Context, code: String, ids: Collection<String>) {
+    fun markRevealsSeen(context: Context, code: String, ids: Iterable<String>) {
         val had = revealsSeen(context, code)
-        if (had != null && had.containsAll(ids)) return
+        if (had != null && ids.all { it in had }) return
         prefs(context).edit().putStringSet("$REVEALS_SEEN$code", had.orEmpty() + ids).apply()
     }
 
