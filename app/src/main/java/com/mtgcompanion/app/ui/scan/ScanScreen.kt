@@ -811,20 +811,38 @@ fun ScanScreen(
             )
         }
 
-        // Bottom overlay: view-list button.
-        if (putAwayTarget == null && tickList == null && check == null && sort == null && recipe == null) Button(
-            onClick = { showList = true },
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(24.dp)
+        // Bottom overlay: the card just scanned (ScanCardPanel.kt), above the view-list button — only on
+        // the plain scanner; the other modes have panels of their own.
+        if (putAwayTarget == null && tickList == null && check == null && sort == null && recipe == null) Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)
         ) {
-            Text(
-                "View list (${state.scannedCards.size})",
-                style = MaterialTheme.typography.labelLarge,
-                color = Bg
+            // Beside the card rather than over it when the phone is on its side.
+            val wide = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp > it.screenHeightDp }
+            LastScannedOverlay(
+                viewModel = viewModel,
+                pile = state.scannedCards,
+                collections = collections,
+                decks = decks,
+                money = money,
+                onOpen = { onCardClick(it.name) },
+                onChangePrinting = { artPickerRow = it },
+                modifier = Modifier
+                    .align(if (wide) Alignment.Start else Alignment.CenterHorizontally)
+                    .then(if (wide) Modifier.width(320.dp) else Modifier.fillMaxWidth())
+                    .padding(bottom = 8.dp)
             )
+            Button(
+                onClick = { showList = true },
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)
+            ) {
+                Text(
+                    "View list (${state.scannedCards.size})",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Bg
+                )
+            }
         }
 
         // A box label the camera just read: put cards away here, open the box, or pull from it.

@@ -9,6 +9,18 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "scan-card-panel",
+        "Scanner: the last scanned card stays over the camera",
+        "Open Scan (the plain scanner, not Sort a pile). Before the first card nothing new shows. " +
+            "1) Scan a card: a panel appears at the bottom, above View list, below the outline — a small picture of the exact printing, the name, and big in gold the bottom-left details: set code · collector number · rarity letter · language (e.g. \"FIN · 0306 · L · EN\"; C/U/R/M, L for a basic land, S special, T token). Under it the set name, the price in your currency and \"×N in this scan\", and a line \"You own 3 · 2 in Red box, 1 in Krenko deck · +4 in other printings\" (or \"You don't own this card yet\"). A chip says how it was recognised: From small print, By name, By sight, Learned, Picked by you — or Best guess, with an amber outline round the panel: check it. " +
+            "2) It stays until the next card is scanned, then slides to the new one (with Remove animations on, it just changes). Turn the phone on its side and back: still there (on its side it sits at the bottom left, beside the card). " +
+            "3) Tap the picture or the name: the card's details. Tap ⇄ (Change printing): the printing picker, with It's a different card; pick one and the panel and the row change, the chip says Picked by you. Tap ✦: foil on and off (the panel says Foil and shows the foil price; only for printings that come in foil). Tap Undo: that scan is off View list and the panel goes back to the card scanned before it — undo them all and it hides. " +
+            "4) Camera reads another printing: scan a Forest whose small print reads (say FIN 306), keep it still, then tap Change printing and pick another Forest (say FIN 307) — keep the card under the camera. Within a moment the details line pulses amber (steady amber with Remove animations on) and \"Camera reads FIN · 306\" shows with a \"Use FIN 306\" button; tap it and the row goes back to what the camera reads. Taking the card away or showing the next card stops it; \"0306\" vs \"306\" never flashes. " +
+            "5) TalkBack: on each new card it says it in one go — \"Forest, FIN 306, basic land, English, $0.40\". " +
+            "6) Sort a pile, Put away, Check and Scan to tick: no panel (their own panels are unchanged). " +
+            "7) Settings › Scanner › Show last scanned card: off, and the scanner is as before."
+    ),
+    TesterNote(
         "scan-once",
         "Scanner: one card under the camera is counted once",
         "Your report: \"scanning the same card multiple times\" (Mountain again — copy 4). Scan on Accurate (Settings › Scanner). " +
