@@ -2,6 +2,7 @@
 
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.isArchived
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -566,7 +567,7 @@ fun NewGoalScreen(
     }
 
     // Deck goals
-    val usable = decks.filter { it.sample != true && it.archived != true }
+    val usable = decks.filter { it.sample != true && !it.isArchived }
     var deckId by rememberSaveable { mutableStateOf(startDeck ?: usable.firstOrNull()?.id) }
     var deckFoil by rememberSaveable { mutableStateOf(true) }
 

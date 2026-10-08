@@ -221,7 +221,7 @@ fun fitReason(fit: DeckFit): String =
 
 /** The decks the set is checked against: Commander decks with a commander, not put away, not samples. */
 fun commanderDecks(decks: List<Deck>): List<Deck> =
-    decks.filter { it.mode == GameMode.COMMANDER && it.commander != null && it.archived != true && !isSample(it) }
+    decks.filter { it.mode == GameMode.COMMANDER && it.commander != null && !it.isArchived && !isSample(it) }
 
 /** The set's cards whose name is on [wishlistNames] (lower case) — reprints of cards the user wants. Once each. */
 fun wishlistReprints(wishlistNames: Set<String>, cards: List<SetCard>): List<SetCard> {

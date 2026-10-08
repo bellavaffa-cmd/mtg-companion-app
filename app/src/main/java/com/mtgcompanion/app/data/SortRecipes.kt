@@ -520,7 +520,7 @@ fun deckNeedsOf(collections: List<Collection>, decks: List<Deck>): Map<String, L
         if (at >= 0) list[at] = list[at].copy(qty = list[at].qty + qty) else list += DeckNeed(d.id, d.name, qty)
     }
     for (d in decks) {
-        if (d.archived == true || d.sample == true) continue
+        if (d.isArchived || d.sample == true) continue
         for (m in missingCards(d, collections, decks)) want(m.entry.name, d, m.need)
         for (e in d.considering) want(e.name, d, 1)
     }
