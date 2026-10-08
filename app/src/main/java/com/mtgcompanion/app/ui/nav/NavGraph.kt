@@ -12,6 +12,10 @@ import com.mtgcompanion.app.ui.collection.TagBinderScreen
 import com.mtgcompanion.app.ui.collection.ValueHistoryScreen
 import com.mtgcompanion.app.ui.collection.NewSetScreen
 import com.mtgcompanion.app.ui.collection.NewSetsScreen
+import com.mtgcompanion.app.ui.collection.OpeningPacksScreen
+import com.mtgcompanion.app.data.DeckCardEntry
+import com.mtgcompanion.app.data.withPulled
+import com.mtgcompanion.app.data.withSpoilerWant
 import com.mtgcompanion.app.ui.collection.SpreadThinScreen
 import com.mtgcompanion.app.ui.collection.PlaceScreen
 import com.mtgcompanion.app.ui.collection.BinderFitScreen
@@ -460,6 +464,9 @@ private object Routes {
         "new_goal" + listOfNotNull(kind?.let { "kind=$it" }, deck?.let { "deck=" + URLEncoder.encode(it, StandardCharsets.UTF_8.name()) }).joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
     const val NEW_SET = "new_set/{code}"
     fun newSet(code: String) = "new_set/" + URLEncoder.encode(code, StandardCharsets.UTF_8.name())
+    /** A set's Opening packs list (SpoilersUi.kt): its wanted cards, ticked off at the prerelease. */
+    const val OPENING_PACKS = "opening_packs/{code}"
+    fun openingPacks(code: String) = "opening_packs/" + URLEncoder.encode(code, StandardCharsets.UTF_8.name())
     const val SET_CARDS = "set_cards/{code}"
     fun setCards(code: String) = "set_cards/" + URLEncoder.encode(code, StandardCharsets.UTF_8.name())
     fun detail(cardName: String) = "detail/" + URLEncoder.encode(cardName, StandardCharsets.UTF_8.name())
@@ -824,7 +831,32 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() },
                     onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
                     onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
-                    onOpenNewSets = { navController.navigate(Routes.NEW_SETS) { launchSingleTop = true } }
+                    onOpenNewSets = { navController.navigate(Routes.NEW_SETS) { launchSingleTop = true } },
+                    // Spoilers (data/Spoilers.kt): want a revealed card, consider it for a deck, open packs.
+                    onSetWant = { card, n, releasedAt ->
+                        addToScope.launch { collectionRepository.changeCollections { withSpoilerWant(it, card, n, releasedAt, java.time.LocalDate.now().toString()) } }
+                    },
+                    onConsider = { deckId, card ->
+                        addToScope.launch {
+                            deckRepository.addConsideringEntry(
+                                deckId,
+                                DeckCardEntry(card.id, card.name, card.imageUrl, 1, typeLine = card.typeLine, tags = card.tags)
+                            )
+                        }
+                    },
+                    onOpenPacks = { c -> navController.navigate(Routes.openingPacks(c)) }
+                )
+            }
+
+            destination(Routes.OPENING_PACKS, arguments = listOf(navArgument("code") { type = NavType.StringType })) { entry ->
+                val code = entry.arguments?.getString("code")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
+                val packBinders by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                OpeningPacksScreen(
+                    code = code,
+                    collections = packBinders,
+                    onBack = { navController.popBackStack() },
+                    onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
+                    onPulled = { pack, foil -> addToScope.launch { collectionRepository.changeCollections { withPulled(it, pack, foil) } } }
                 )
             }
 

@@ -58,7 +58,14 @@ data class CollectionEntry(
      */
     val alertAnyPrinting: Boolean? = null,
     /** Wishlists: only a foil copy will do — [priceAlert] is checked against the foil price. Null and kept as [alertAnyPrinting]. */
-    val alertFoilOnly: Boolean? = null
+    val alertFoilOnly: Boolean? = null,
+    /**
+     * The Wishlist: wanted from a set's spoilers before it's out — the set's release date
+     * ("2026-11-14"). Until that day the card shows "Releases in 5 days" and no price; from that day
+     * the date is taken off (Spoilers.kt's withReleasedCleared). Null (left out) otherwise; an entry
+     * saved by an app that doesn't know it gets it back (keepPreReleaseFromOlderApp).
+     */
+    val preRelease: String? = null
 )
 
 // The entry as JSON — locally, in sync and in shared binders — is these fields by name. Keys added
@@ -73,6 +80,7 @@ data class CollectionEntry(
 //                      where the copies are kept ([CopyPlace]); "foil", "section", "page" and "slot" left out when not said
 //   "forTrade":        number — owned binders: how many of the copies are for trade (friends can see them)
 //   "forSale":         number — owned binders: how many of the copies are to sell (0 once none are; Selling.kt)
+//   "preRelease":      "2026-11-14" — the Wishlist: wanted from the spoilers, the set's release date (Spoilers.kt)
 // Copies of one printing in different conditions aren't split into entries: the entry says one.
 
 /**

@@ -6,6 +6,7 @@ import com.mtgcompanion.app.data.isSample
 import com.mtgcompanion.app.data.keepCameFromFromOlderApp
 import com.mtgcompanion.app.data.keepDeckExtrasFromOlderApp
 import com.mtgcompanion.app.data.keepAlertOptionsFromOlderApp
+import com.mtgcompanion.app.data.keepPreReleaseFromOlderApp
 import com.mtgcompanion.app.data.keepHistoryFromOlderApp
 import com.mtgcompanion.app.data.keepForSaleFromOlderApp
 import com.mtgcompanion.app.data.keepLastChecked
@@ -294,7 +295,7 @@ internal class SyncCore(
                     // wishlist targets without their options (WishlistTargets.kt).
                     // ...and the pile saved without its sealed product, graded copies or gear (Sealed.kt, Graded.kt, Gear.kt).
                     // ...and its sorting recipes (SortRecipes.kt), what the scanner learned (ScanCorrections.kt), and its collection goals (CollectionGoals.kt).
-                    heal = { mine, theirs -> keepGoalsFromOlderApp(mine, keepCorrectionsFromOlderApp(mine, keepRecipesFromOlderApp(mine, keepGearFromOlderApp(mine, keepGradedFromOlderApp(mine, keepSealedFromOlderApp(mine, keepAlertOptionsFromOlderApp(mine, keepForSaleFromOlderApp(mine, keepPlaceSizes(mine, keepLoansFromOlderApp(mine, keepLastChecked(mine, keepPlacesFromOlderApp(mine, theirs)))))))))))) }
+                    heal = { mine, theirs -> keepGoalsFromOlderApp(mine, keepCorrectionsFromOlderApp(mine, keepRecipesFromOlderApp(mine, keepGearFromOlderApp(mine, keepGradedFromOlderApp(mine, keepSealedFromOlderApp(mine, keepAlertOptionsFromOlderApp(mine, keepPreReleaseFromOlderApp(mine, keepForSaleFromOlderApp(mine, keepPlaceSizes(mine, keepLoansFromOlderApp(mine, keepLastChecked(mine, keepPlacesFromOlderApp(mine, theirs))))))))))))) }
                 )
             }
             // A row this version can't read is read back by key every pass until an update can; the

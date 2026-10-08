@@ -36,7 +36,15 @@ data class SetCard(
     val colorIdentity: List<String>,
     val tags: List<String>,
     val imageUrl: String?,
-    val rarity: String?
+    val rarity: String?,
+    /** The role tags its rules text shows (RoleTags.kt's labels: "Token maker", "Treasure"…). */
+    val roles: List<String> = emptyList(),
+    /** When this printing comes out ("2026-11-14"). */
+    val releasedAt: String? = null,
+    /** Today's price, US dollars, as Scryfall sends it ("1.25"); none before release. */
+    val usd: String? = null,
+    /** Scryfall's Commander legality ("legal", "not_legal", "banned"); every card is "not_legal" before release. */
+    val commanderLegality: String? = null
 )
 
 /** Why a card suits a deck: what it shares, with how many of the deck's cards. */
@@ -106,8 +114,9 @@ fun themeKey(label: String): String {
         "draw", "card advantage" -> "card draw"
         "counterspells", "counters" -> "counterspell"
         "board wipes", "wipes", "wraths" -> "board wipe"
-        "token" -> "tokens"
+        "token", "token maker" -> "tokens"
         "life gain" -> "lifegain"
+        "mana ramp" -> "ramp"
         else -> k
     }
 }
@@ -149,13 +158,17 @@ data class DeckProfile(
     val names: Set<String>
 )
 
-fun deckProfile(deck: Deck, identity: List<String>): DeckProfile {
+/**
+ * [roles]: a card's role tags by name, as labels ("Card draw"), where they're known (RoleTags.kt) —
+ * they count as themes alongside its tags and categories.
+ */
+fun deckProfile(deck: Deck, identity: List<String>, roles: (String) -> List<String>? = { null }): DeckProfile {
     val seen = HashSet<String>()
     val entries = listOfNotNull(deck.commander, deck.partnerCommander).plus(deck.cards).filter { seen.add(it.name.lowercase()) }
     val themes = LinkedHashMap<String, Shared>()
     val types = LinkedHashMap<String, Shared>()
     for (e in entries) {
-        for ((key, label) in themesOf(e.tags, e.categories)) {
+        for ((key, label) in themesOf(e.tags + roles(e.name).orEmpty(), e.categories)) {
             val had = themes[key]
             themes[key] = Shared(had?.label ?: label, (had?.count ?: 0) + 1)
         }

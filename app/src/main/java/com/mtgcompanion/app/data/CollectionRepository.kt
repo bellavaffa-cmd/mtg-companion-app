@@ -49,6 +49,14 @@ class CollectionRepository(private val context: Context) {
         update(deleting = collectionId) { collections -> collections.filterNot { it.id == collectionId } }
     }
 
+    /**
+     * Spoilers (Spoilers.kt): a revealed card wanted, or one pulled from a pack — [change] gets the
+     * binders as they are now and answers them changed, in one change.
+     */
+    suspend fun changeCollections(change: (List<Collection>) -> List<Collection>) {
+        update(transform = change)
+    }
+
     /** Puts [cards] on the Wishlist (making it if needed), keeping the larger count of any already there. */
     suspend fun addWanted(cards: List<CollectionEntry>) {
         update { collections -> withWantedCards(collections, cards) }
@@ -258,10 +266,10 @@ class CollectionRepository(private val context: Context) {
      * (see [withWishlist]) and the Unsorted pile (see [withUnsortedPile]) — written only when
      * something changes.
      */
-    suspend fun maintainStandingCollections(decks: List<Deck>) {
+    suspend fun maintainStandingCollections(decks: List<Deck>, today: String? = null) {
         context.collectionDataStore.edit { prefs ->
             val current = readCollections(prefs)
-            val next = withStandingCollections(current, decks)
+            val next = withStandingCollections(current, decks, today)
             if (next !== current) prefs[key] = adapter.toJson(CollectionStore(collections = next))
         }
     }

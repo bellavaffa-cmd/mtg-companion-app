@@ -23,9 +23,12 @@ fun withUnsortedPile(collections: List<Collection>): List<Collection> =
  */
 val Collection.isBinder: Boolean get() = !isUnsorted && !isWishlist
 
-/** The collections that are always there: the Wishlist, kept up for [decks], and the Unsorted pile. */
-fun withStandingCollections(collections: List<Collection>, decks: List<Deck>): List<Collection> =
-    withUnsortedPile(withWishlist(collections, decks))
+/**
+ * The collections that are always there: the Wishlist, kept up for [decks], and the Unsorted pile —
+ * and, given [today], the Wishlist's cards wanted from spoilers whose set is out made plain (Spoilers.kt).
+ */
+fun withStandingCollections(collections: List<Collection>, decks: List<Deck>, today: String? = null): List<Collection> =
+    withUnsortedPile(withWishlist(collections, decks)).let { if (today == null) it else withReleasedCleared(it, today) }
 
 /** The same card by name: equal once case is ignored, and either face of a double-faced card counts. */
 private fun sameCardByName(a: String, b: String): Boolean {

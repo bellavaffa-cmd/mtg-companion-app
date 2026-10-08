@@ -115,7 +115,9 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         appScope.launch {
             kotlinx.coroutines.flow.combine(collectionRepository.collectionsFlow, deckRepository.decksFlow) { c, d -> c to d }
                 .collect { (collections, decks) ->
-                    if (withStandingCollections(collections, decks) !== collections) collectionRepository.maintainStandingCollections(decks)
+                    // ...and a Wishlist card wanted from the spoilers is a plain one once its set is out (Spoilers.kt).
+                    val today = java.time.LocalDate.now().toString()
+                    if (withStandingCollections(collections, decks, today) !== collections) collectionRepository.maintainStandingCollections(decks, today)
                 }
         }
         // The home-screen widget follows the collection's value and the currency prices show in.

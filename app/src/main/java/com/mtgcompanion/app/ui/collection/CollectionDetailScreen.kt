@@ -21,6 +21,7 @@ import com.mtgcompanion.app.data.buyListUrl
 import com.mtgcompanion.app.data.BuyLine
 import com.mtgcompanion.app.data.decksConsidering
 import com.mtgcompanion.app.data.isWishlist
+import com.mtgcompanion.app.data.preReleaseLabel
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.RoleTags
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -453,7 +454,8 @@ fun CollectionDetailScreen(
                                 onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
                                 onRemove = { removeTarget = entry },
                                 // A wishlist shows each card's price now, and can watch for it to drop.
-                                price = if (isWishlist) prices[entry.scryfallId] else null,
+                                // ...except a card wanted from the spoilers, which has none until its set is out.
+                                price = if (isWishlist && preReleaseLabel(entry, java.time.LocalDate.now().toString()) == null) prices[entry.scryfallId] else null,
                                 priceTrack = if (isWishlist) priceTracks?.get(entry.scryfallId) else null,
                                 onPriceAlert = if (isWishlist) ({ alertTarget = entry }) else null,
                                 considering = if (entry.auto) decksConsidering(decks, entry.name).joinToString(", ").ifEmpty { null } else null
@@ -691,6 +693,10 @@ private fun CollectionCardRow(
                 }
                 considering?.let {
                     Text("Considering in $it", style = MaterialTheme.typography.labelMedium, color = GoldDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // Wanted from a set's spoilers: "Releases in 5 days", and no price until then (Spoilers.kt).
+                preReleaseLabel(entry, java.time.LocalDate.now().toString())?.let {
+                    Text("$it · no price yet", style = MaterialTheme.typography.labelMedium, color = GoldDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 // Wishlists: the target and how far off it is ("Target $15 · $3.40 to go"), and the
                 // price now; a tap opens the target sheet.

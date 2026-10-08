@@ -21,10 +21,10 @@ class CardRepository {
     private val api = NetworkModule.scryfallApi
 
     /** [page] is 1-indexed, matching Scryfall's own paging — 175 cards per page. */
-    suspend fun search(query: String, order: String? = null, dir: String? = null, page: Int = 1): SearchPage {
+    suspend fun search(query: String, order: String? = null, dir: String? = null, page: Int = 1, unique: String? = null): SearchPage {
         if (query.isBlank()) return SearchPage(emptyList(), hasMore = false)
         return try {
-            val response = api.searchCards(query, page = page, order = order, dir = dir)
+            val response = api.searchCards(query, page = page, unique = unique, order = order, dir = dir)
             SearchPage(response.data, response.hasMore)
         } catch (e: HttpException) {
             // Scryfall returns 404 when a (possibly partial, as-you-type) query matches
@@ -101,7 +101,7 @@ class CardRepository {
         setsCache?.let { return it }
         val sets = api.getSets().data.mapNotNull { s ->
             val code = s.code?.lowercase() ?: return@mapNotNull null
-            code to SetInfo(code, s.name ?: code.uppercase(), s.cardCount ?: 0, s.releasedAt, s.iconSvgUri, s.setType, s.digital == true)
+            code to SetInfo(code, s.name ?: code.uppercase(), s.cardCount ?: 0, s.releasedAt, s.iconSvgUri, s.setType, s.digital == true, s.printedSize)
         }.toMap()
         if (sets.isNotEmpty()) setsCache = sets
         return sets
