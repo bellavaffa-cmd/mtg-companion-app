@@ -66,13 +66,19 @@ const val GUIDE_SLACK = 0.2f
  * sensor pixels on the card rather than interpolated ones.
  *
  * 1.8x takes that 55% to roughly a filled guide. It must stay below [LENS_SWITCH_ZOOM].
+ *
+ * This is where the scanner starts and what a reset goes back to; the user can pinch or step it
+ * from there (ScanZoom.kt), and the last zoom chosen is kept. Nothing here depends on the zoom: the
+ * camera zooms every stream alike, so the guide sits at the same share of the frame at any zoom, and
+ * the small print is scaled by the card's measured height ([smallPrintScale]), not by a zoom assumed.
  */
 const val SCAN_ZOOM = 1.8f
 
 /**
  * Where the phone stops cropping the main lens and switches to a telephoto one. The telephotos
  * cannot focus closer than 40 cm (the 10x, not until 80 cm), so a card held to be scanned would
- * simply never come into focus. Zoom must stay underneath this.
+ * simply never come into focus. The default zoom stays underneath this; the user may go past it
+ * when the camera offers it, with a "Hold the card farther away" hint while there ([showFartherHint]).
  */
 const val LENS_SWITCH_ZOOM = 2.9f
 

@@ -715,6 +715,16 @@ class HandsFreeCapture(private val steadyFrames: Int = 3, private val gapFrames:
     val holding: Boolean
         @Synchronized get() = held != null
 
+    /**
+     * The camera moved (the zoom changed): the reads in a row start over, as if the card had moved.
+     * The card held is still the one in view, so it stays held.
+     */
+    @Synchronized
+    fun moved() {
+        steady = 0
+        lastRead = null
+    }
+
     /** Forget the card in view: it can be taken again. */
     @Synchronized
     fun rescan() {

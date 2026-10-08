@@ -222,6 +222,10 @@ fun PageScanScreen(
     var choosing by remember { mutableStateOf<PageCell?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
+    // The zoom: 1× to start with (the whole page has to fit), then whatever was last chosen here —
+    // pinch on the preview, or − 1× + under it (ScanZoomControl.kt). Kept apart from the card
+    // scanner's. The photo is taken at the same zoom, so the guide still marks where the page is.
+    val zoom = rememberScanZoom("page", preferred = 1f)
 
     var hasCamera by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -344,11 +348,14 @@ fun PageScanScreen(
                                     if (lifecycleOwner.lifecycle.currentState == Lifecycle.State.DESTROYED) return@addListener
                                     provider.unbindAll()
                                     runCatching { provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, capture) }
+                                        .getOrNull()?.let { bound -> runCatching { zoom.bind(bound, lifecycleOwner) } }
                                     imageCapture = capture
                                 }, ContextCompat.getMainExecutor(ctx))
                                 previewView
                             }
                         )
+                        // Two fingers on the preview zoom it; one finger passes straight through.
+                        if (phase == Phase.CAMERA) Box(Modifier.fillMaxSize().pinchToZoom(zoom))
                         // The page's pockets, drawn where the page should be held.
                         if (guideW > 0f) {
                             val (cols, rows) = pageGrid(pockets)
@@ -383,11 +390,18 @@ fun PageScanScreen(
                     }
                 }
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        message ?: "Lay the page flat and fill the frame with it, one card in each box.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (message != null) colors.warning else colors.textMuted
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                message ?: "Lay the page flat and fill the frame with it, one card in each box.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (message != null) colors.warning else colors.textMuted
+                            )
+                            // Past the lens switch the phone may be on a telephoto that can't focus close.
+                            FartherHint(zoom, "page")
+                        }
+                        ZoomControl(zoom)
+                    }
                     Button(
                         onClick = ::takePhoto,
                         enabled = hasCamera && imageCapture != null && phase == Phase.CAMERA,

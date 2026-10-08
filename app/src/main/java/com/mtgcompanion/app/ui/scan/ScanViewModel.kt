@@ -347,6 +347,26 @@ class ScanViewModel(
     // The picture the frame being read came from, for a second look at the card's small print.
     private var currentFrame: (() -> Bitmap?)? = null
 
+    // Two fingers on the preview (ScanScreen's pinch to zoom): no card is taken until they're off.
+    @Volatile private var pinching = false
+
+    /** A pinch began or ended on the preview. While it lasts frames aren't read, so nothing is taken. */
+    fun setPinching(on: Boolean) {
+        pinching = on
+        if (on) zoomMoved()
+    }
+
+    /**
+     * The zoom changed (a pinch, − or +): the card in the frame changed size, so it counts as the card
+     * moving — the reads in a row start again. A card already taken is still the one in view, though,
+     * so it stays held and isn't taken twice.
+     */
+    fun zoomMoved() {
+        steadyReads = 0
+        lastCandidate = null
+        handsFree.moved()
+    }
+
     /** The screen says how big the camera preview is; the guide is a share of it (see ScanScreen). */
     fun previewSized(width: Int, height: Int) {
         previewWidth = width
@@ -395,7 +415,7 @@ class ScanViewModel(
             frameWanted = null
             want.complete(frame?.let { runCatching { it() }.getOrNull() }?.let { it to image.rotationDegrees })
         }
-        if (!busy.compareAndSet(false, true)) {
+        if (pinching || !busy.compareAndSet(false, true)) {
             onProcessed()
             return
         }
@@ -517,6 +537,13 @@ class ScanViewModel(
         forced: Boolean,
         seenBySight: Boolean
     ) {
+        // A frame read before the pinch began: the zoom is moving, so it's not a steady read.
+        if (pinching && !forced) {
+            lastCandidate = null
+            busy.set(false)
+            onProcessed()
+            return
+        }
 
         // Still the same physical card sitting in frame, even if this frame's OCR came out
         // slightly different from the exact string we last looked up — don't re-add it. A forced

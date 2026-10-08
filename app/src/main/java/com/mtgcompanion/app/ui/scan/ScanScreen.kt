@@ -32,9 +32,6 @@ import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
 import com.mtgcompanion.app.data.GUIDE_WIDTH
-import android.util.Log
-import com.mtgcompanion.app.data.SCAN_ZOOM
-import com.mtgcompanion.app.data.LENS_SWITCH_ZOOM
 import com.mtgcompanion.app.data.GUIDE_HEIGHT
 import androidx.compose.ui.layout.onSizeChanged
 import com.mtgcompanion.app.data.scannedTwiceOver
@@ -273,6 +270,11 @@ fun ScanScreen(
     /** Asks the camera to focus on the guide again; set once the camera is bound. */
     var refocus by remember { mutableStateOf<(() -> Unit)?>(null) }
 
+    // The zoom: SCAN_ZOOM to start with, then whatever was last chosen on this phone — pinch on the
+    // preview, or − 1.8× + under the top bar (ScanZoomControl.kt). Moving it counts as the card moving.
+    val zoom = rememberScanZoom("card", onMoved = viewModel::zoomMoved)
+    DisposableEffect(Unit) { onDispose { viewModel.setPinching(false) } }
+
     // Focus drifts off a card held in a bright, featureless box, and a soft frame is the one thing
     // the card index cannot survive. Asking again every few seconds costs nothing visible.
     LaunchedEffect(refocus) {
@@ -422,17 +424,11 @@ fun ScanScreen(
                     )
                     imageCapture = capture
                     // Zoomed in so the card fills the frame from where it is comfortable to hold it
-                    // (see SCAN_ZOOM). Kept under the ratio where the phone switches to a telephoto
-                    // lens, which could not focus this close, and clamped to whatever this phone
-                    // actually offers — a device with no zoom to give simply stays where it is.
-                    runCatching {
-                        val zoom = camera?.cameraInfo?.zoomState?.value
-                        val ratio = SCAN_ZOOM
-                            .coerceAtMost(LENS_SWITCH_ZOOM)
-                            .coerceIn(zoom?.minZoomRatio ?: 1f, zoom?.maxZoomRatio ?: 1f)
-                        camera?.cameraControl?.setZoomRatio(ratio)
-                        Log.d("ScanTiming", "zoom $ratio x (phone offers ${zoom?.minZoomRatio}..${zoom?.maxZoomRatio})")
-                    }
+                    // (see SCAN_ZOOM), or to the zoom last chosen here. The default stays under the
+                    // ratio where the phone switches to a telephoto lens, which could not focus this
+                    // close, and everything is clamped to what this phone actually offers — a device
+                    // with no zoom to give simply stays where it is, and shows no zoom control.
+                    camera?.let { bound -> runCatching { zoom.bind(bound, lifecycleOwner) } }
                     // Focus on the middle of the guide, which is where the card is — a white box at
                     // arm's length gives continuous autofocus almost nothing to lock onto, and a soft
                     // frame is the one thing the card index cannot survive. Re-asked for periodically
@@ -453,6 +449,14 @@ fun ScanScreen(
                 }, ContextCompat.getMainExecutor(ctx))
                 previewView
             }
+        )
+
+        // Two fingers on the preview zoom it; one finger passes straight through (nothing on the
+        // preview takes a tap today, but nothing here would stop one). Under every other overlay.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pinchToZoom(zoom, onPinching = viewModel::setPinching)
         )
 
         // Framing guide so the user knows to fill the frame with the card title — briefly
@@ -593,23 +597,32 @@ fun ScanScreen(
                     )
                 }
             }
-            state.status?.let { status ->
-                // TalkBack reads each new line as it comes, a recognised card's with its rarity ("Rare").
-                val spoken = state.statusRarity?.takeIf { it.first == status }?.let { "$status, ${it.second}" } ?: status
-                Text(
-                    status,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = GoldLight,
-                    modifier = Modifier
-                        .semantics {
-                            liveRegion = LiveRegionMode.Polite
-                            contentDescription = spoken
-                        }
-                        .padding(top = 8.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Bg.copy(alpha = 0.7f))
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                )
+            // The status line on the left, the zoom on the right — both above the framing guide.
+            Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    state.status?.let { status ->
+                        // TalkBack reads each new line as it comes, a recognised card's with its rarity ("Rare").
+                        val spoken = state.statusRarity?.takeIf { it.first == status }?.let { "$status, ${it.second}" } ?: status
+                        Text(
+                            status,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GoldLight,
+                            modifier = Modifier
+                                .semantics {
+                                    liveRegion = LiveRegionMode.Polite
+                                    contentDescription = spoken
+                                }
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Bg.copy(alpha = 0.7f))
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
+                    ZoomControl(zoom)
+                    // Past the lens switch the phone may be on a telephoto that can't focus close.
+                    FartherHint(zoom, "card", modifier = Modifier.padding(top = 6.dp))
+                }
             }
         }
 
