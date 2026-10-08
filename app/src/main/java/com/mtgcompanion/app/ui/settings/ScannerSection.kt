@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.settings
 
+import androidx.compose.ui.platform.LocalContext
+import com.mtgcompanion.app.ui.scan.AutoCameraSetting
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -159,6 +162,15 @@ internal fun ScannerSection(settingsRepository: SettingsRepository) {
         )
     }
 
+    Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+    // Kept on this phone only (ScanZoomControl.kt), like the zoom itself.
+    val context = LocalContext.current
+    val autoCamera by remember { AutoCameraSetting.flow(context) }.collectAsState()
+    SwitchRow(
+        "Auto zoom and focus",
+        "The camera zooms until the card fills the outline, and focuses again on it when it goes soft. Pinching or − / + takes the zoom over until you tap the zoom.",
+        autoCamera
+    ) { AutoCameraSetting.set(context, it) }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
     SwitchRow("Vibrate", "A buzz for each card, stronger for rarer ones.", s.vibrate) { change(s.copy(vibrate = it)) }
     SwitchRow("Play in silent mode", "Off: the sounds stay quiet while the phone is on silent or vibrate.", s.silent) { change(s.copy(silent = it)) }

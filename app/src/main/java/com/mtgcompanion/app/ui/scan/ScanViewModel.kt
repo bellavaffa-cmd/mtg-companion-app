@@ -17,6 +17,14 @@ import com.mtgcompanion.app.data.decideInSet
 import com.mtgcompanion.app.data.regularInSet
 import com.mtgcompanion.app.data.parseSetCode
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.channels.BufferOverflow
+import com.mtgcompanion.app.data.CardSighting
+import com.mtgcompanion.app.data.cardFill
+import com.mtgcompanion.app.data.findCard
+import com.mtgcompanion.app.data.greyOf
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.ScanMode
 import com.mtgcompanion.app.data.rarityLabel
@@ -33,6 +41,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import com.mtgcompanion.app.data.ScanBox
+import com.mtgcompanion.app.data.cardShaped
 import com.mtgcompanion.app.data.ScanPile
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
@@ -171,6 +180,12 @@ private const val SIGHT_EVERY_MS = 400L
  * where the card is (see [ScanViewModel.onFrame]).
  */
 private const val PROBE_EVERY = 10
+
+/** At most one card look (edges and crispness, for auto zoom and focus) this often. */
+private const val LOOK_EVERY_MS = 150L
+
+/** The width the card's edges are looked for at — FlatCard's own search width. */
+private const val LOOK_SEARCH_W = 240
 
 /** How many frames the card is looked at before the crispest is kept. */
 private const val SHARPEST_OF_FRAMES = 4
@@ -349,11 +364,90 @@ class ScanViewModel(
 
     // Two fingers on the preview (ScanScreen's pinch to zoom): no card is taken until they're off.
     @Volatile private var pinching = false
+    // Until when the picture is settling after an auto zoom step or a refocus: no card is taken.
+    @Volatile private var settleUntil = 0L
 
     /** A pinch began or ended on the preview. While it lasts frames aren't read, so nothing is taken. */
     fun setPinching(on: Boolean) {
         pinching = on
         if (on) zoomMoved()
+    }
+
+    /**
+     * Auto zoom just stepped, or the camera was asked to focus again: the picture moves for a moment,
+     * so for [ms] no card is taken, and it counts as the card moving (the reads in a row start over).
+     */
+    fun holdStill(ms: Long) {
+        settleUntil = maxOf(settleUntil, SystemClock.elapsedRealtime() + ms)
+        zoomMoved()
+    }
+
+    /** Whether auto zoom and focus is on: only then are the card looks below worked out. */
+    @Volatile var autoCamera = false
+
+    /** One card look (see [lookAtCard]): where the card was in the guide, if found, and how crisp the picture was. */
+    class CardLook(val card: CardSighting?, val sharp: Float)
+
+    private val _cardLooks = MutableSharedFlow<CardLook>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    /** What auto zoom and auto focus go by (ScanScreen); a few a second while a card is in the guide. */
+    val cardLooks: SharedFlow<CardLook> = _cardLooks.asSharedFlow()
+    private val looking = AtomicBoolean(false)
+    @Volatile private var lastLookAt = 0L
+
+    /**
+     * Looks for the card's edges in the guide just cut out, and how crisp it is — on the side, so the
+     * reading never waits on it, and no more often than every [LOOK_EVERY_MS]. The cut is only read.
+     */
+    private fun lookAtCard(cut: GuideCut, rotation: Int) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastLookAt < LOOK_EVERY_MS || !looking.compareAndSet(false, true)) return
+        lastLookAt = now
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val look = runCatching { cardLook(cut, rotation) }.getOrNull() ?: return@launch
+                _cardLooks.tryEmit(look)
+            } finally {
+                looking.set(false)
+            }
+        }
+    }
+
+    private fun cardLook(cut: GuideCut, rotation: Int): CardLook? {
+        val picture = cut.picture
+        if (picture.width < 40 || picture.height < 40) return null
+        // Crispness, on a nearest-pixel copy the size sharpness measures at anyway — the same number
+        // it would give on the full picture, for a fraction of the copying. Turning doesn't change it.
+        val measureW = 192
+        val measureH = maxOf(8, picture.height * measureW / picture.width)
+        val sample = Bitmap.createScaledBitmap(picture, measureW, measureH, false)
+        val samplePx = IntArray(measureW * measureH)
+        sample.getPixels(samplePx, 0, measureW, 0, 0, measureW, measureH)
+        val sharp = sharpness(samplePx, measureW, measureH)
+        // The card's edges, on a small upright grey copy, as FlatCard finds them.
+        val sideways = rotation % 180 != 0
+        val uprightW = if (sideways) picture.height else picture.width
+        val scale = LOOK_SEARCH_W.toFloat() / uprightW
+        val small = Bitmap.createScaledBitmap(picture, maxOf(1, (picture.width * scale).toInt()), maxOf(1, (picture.height * scale).toInt()), true)
+        val upright = uprightFrame(small, rotation) ?: return CardLook(null, sharp)
+        val px = IntArray(upright.width * upright.height)
+        upright.getPixels(px, 0, upright.width, 0, 0, upright.width, upright.height)
+        val guide = cut.guide
+        val shaped = guide.cardShaped()
+        val expected = ScanBox((shaped.left * scale).toInt(), (shaped.top * scale).toInt(), (shaped.right * scale).toInt(), (shaped.bottom * scale).toInt())
+        val quad = findCard(greyOf(px), upright.width, upright.height, expected) ?: return CardLook(null, sharp)
+        val xs = quad.corners.map { it.x / scale }
+        val ys = quad.corners.map { it.y / scale }
+        val gw = (guide.right - guide.left).toFloat()
+        val gh = (guide.bottom - guide.top).toFloat()
+        if (gw <= 0f || gh <= 0f) return CardLook(null, sharp)
+        val card = CardSighting(
+            left = (xs.min() - guide.left) / gw,
+            top = (ys.min() - guide.top) / gh,
+            right = (xs.max() - guide.left) / gw,
+            bottom = (ys.max() - guide.top) / gh,
+            fill = cardFill(quad.width / scale, quad.height / scale, (shaped.right - shaped.left).toFloat(), (shaped.bottom - shaped.top).toFloat())
+        )
+        return CardLook(card, sharp)
     }
 
     /**
@@ -429,6 +523,7 @@ class ScanViewModel(
         val probe = frame != null && !guideOff && guideBlankStreak >= PROBE_EVERY
         if (probe) guideBlankStreak = 0
         val cut = if (wholeFrame) null else guideCut(image, frame!!)
+        if (cut != null && autoCamera) lookAtCard(cut, image.rotationDegrees)
         recognizer.process(cut?.input ?: image)
             .addOnSuccessListener { visionText -> handleRecognizedText(visionText, image, onProcessed, cut, probe) }
             .addOnFailureListener {
@@ -537,9 +632,10 @@ class ScanViewModel(
         forced: Boolean,
         seenBySight: Boolean
     ) {
-        // A frame read before the pinch began: the zoom is moving, so it's not a steady read.
-        if (pinching && !forced) {
-            lastCandidate = null
+        // A frame read before the pinch began, or while auto zoom or a refocus settles: the picture
+        // is moving, so it's not a steady read.
+        if (!forced && (pinching || SystemClock.elapsedRealtime() < settleUntil)) {
+            zoomMoved()
             busy.set(false)
             onProcessed()
             return

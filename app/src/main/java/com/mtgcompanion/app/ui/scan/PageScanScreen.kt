@@ -226,6 +226,21 @@ fun PageScanScreen(
     // pinch on the preview, or − 1× + under it (ScanZoomControl.kt). Kept apart from the card
     // scanner's. The photo is taken at the same zoom, so the guide still marks where the page is.
     val zoom = rememberScanZoom("page", preferred = 1f)
+    // A tap on the preview focuses there (the page is photographed once, so there's no auto focus to pause).
+    var boundCamera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
+    var pagePreview by remember { mutableStateOf<PreviewView?>(null) }
+    val tapToFocus = remember<(Offset) -> Unit> {
+        { at: Offset ->
+            val pv = pagePreview
+            val cam = boundCamera
+            if (pv != null && cam != null) runCatching {
+                val point = pv.meteringPointFactory.createPoint(at.x, at.y)
+                cam.cameraControl.startFocusAndMetering(
+                    androidx.camera.core.FocusMeteringAction.Builder(point, androidx.camera.core.FocusMeteringAction.FLAG_AF or androidx.camera.core.FocusMeteringAction.FLAG_AE).build()
+                )
+            }
+        }
+    }
 
     var hasCamera by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -348,14 +363,18 @@ fun PageScanScreen(
                                     if (lifecycleOwner.lifecycle.currentState == Lifecycle.State.DESTROYED) return@addListener
                                     provider.unbindAll()
                                     runCatching { provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, capture) }
-                                        .getOrNull()?.let { bound -> runCatching { zoom.bind(bound, lifecycleOwner) } }
+                                        .getOrNull()?.let { bound ->
+                                            boundCamera = bound
+                                            pagePreview = previewView
+                                            runCatching { zoom.bind(bound, lifecycleOwner) }
+                                        }
                                     imageCapture = capture
                                 }, ContextCompat.getMainExecutor(ctx))
                                 previewView
                             }
                         )
-                        // Two fingers on the preview zoom it; one finger passes straight through.
-                        if (phase == Phase.CAMERA) Box(Modifier.fillMaxSize().pinchToZoom(zoom))
+                        // Two fingers on the preview zoom it; a tap focuses where it lands.
+                        if (phase == Phase.CAMERA) Box(Modifier.fillMaxSize().pinchToZoom(zoom, onTap = tapToFocus))
                         // The page's pockets, drawn where the page should be held.
                         if (guideW > 0f) {
                             val (cols, rows) = pageGrid(pockets)

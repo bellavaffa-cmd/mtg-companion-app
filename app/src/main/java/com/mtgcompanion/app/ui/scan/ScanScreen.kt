@@ -120,6 +120,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import android.os.SystemClock
+import androidx.compose.ui.geometry.Offset
+import com.mtgcompanion.app.data.AUTO_SETTLE_MS
+import com.mtgcompanion.app.data.AutoRefocus
+import com.mtgcompanion.app.data.AutoZoom
+import com.mtgcompanion.app.data.CardSighting
+import com.mtgcompanion.app.data.PreviewPoint
+import com.mtgcompanion.app.data.REFOCUS_SETTLE_MS
+import com.mtgcompanion.app.data.cardMeteringPoints
+import com.mtgcompanion.app.data.guideToPreview
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -267,21 +278,97 @@ fun ScanScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
 
-    /** Asks the camera to focus on the guide again; set once the camera is bound. */
-    var refocus by remember { mutableStateOf<(() -> Unit)?>(null) }
+    /** The preview, once made: focus and metering points are placed in its pixels. */
+    var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
 
     // The zoom: SCAN_ZOOM to start with, then whatever was last chosen on this phone — pinch on the
     // preview, or − 1.8× + under the top bar (ScanZoomControl.kt). Moving it counts as the card moving.
     val zoom = rememberScanZoom("card", onMoved = viewModel::zoomMoved)
-    DisposableEffect(Unit) { onDispose { viewModel.setPinching(false) } }
+    DisposableEffect(Unit) { onDispose { viewModel.setPinching(false); viewModel.autoCamera = false } }
+
+    // Auto zoom and focus (Settings › Scanner; ScanAutoCamera.kt): the card's edges and crispness,
+    // looked at a few times a second, zoom the card to fill the guide and refocus it when it goes soft.
+    val autoOn by remember { AutoCameraSetting.flow(context) }.collectAsState()
+    val autoLatest by androidx.compose.runtime.rememberUpdatedState(autoOn)
+    SideEffect {
+        zoom.autoEnabled = autoOn
+        viewModel.autoCamera = autoOn
+    }
+    val autoZoom = remember { AutoZoom() }
+    val autoFocus = remember { AutoRefocus() }
+    // The card as last seen, for the periodic refocus to aim at; null when it wasn't found.
+    var recentCard by remember { mutableStateOf<CardSighting?>(null) }
+
+    /** Focus at [af] and meter the exposure at [ae] (or both at [af]), in the preview's pixels. */
+    fun meter(af: PreviewPoint, ae: PreviewPoint?) {
+        val pv = previewViewRef ?: return
+        val cam = camera ?: return
+        runCatching {
+            val points = pv.meteringPointFactory
+            val action = FocusMeteringAction.Builder(
+                points.createPoint(af.x, af.y),
+                if (ae == null) FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE else FocusMeteringAction.FLAG_AF
+            )
+            if (ae != null) action.addPoint(points.createPoint(ae.x, ae.y), FocusMeteringAction.FLAG_AE)
+            // Left to settle rather than cancelling back to continuous drift.
+            cam.cameraControl.startFocusAndMetering(action.disableAutoCancel().build())
+        }
+    }
+
+    /**
+     * Focus on the card — its middle, with the exposure metered on its title bar so a foil's glare
+     * doesn't darken it — or on the middle of the guide when it hasn't been found.
+     */
+    fun focusOnCard(card: CardSighting?) {
+        val pv = previewViewRef ?: return
+        if (card == null) {
+            meter(PreviewPoint(pv.width / 2f, pv.height / 2f), null)
+        } else {
+            val (focus, exposure) = cardMeteringPoints(card)
+            meter(
+                guideToPreview(focus.first, focus.second, pv.width, pv.height),
+                guideToPreview(exposure.first, exposure.second, pv.width, pv.height)
+            )
+        }
+    }
+
+    // A tap on the preview focuses there, and auto refocus leaves it be for a few seconds.
+    val tapToFocus = remember<(Offset) -> Unit> {
+        { at: Offset ->
+            autoFocus.tapped(SystemClock.elapsedRealtime())
+            meter(PreviewPoint(at.x, at.y), null)
+        }
+    }
 
     // Focus drifts off a card held in a bright, featureless box, and a soft frame is the one thing
-    // the card index cannot survive. Asking again every few seconds costs nothing visible.
-    LaunchedEffect(refocus) {
-        val ask = refocus ?: return@LaunchedEffect
+    // the card index cannot survive. Asking again every few seconds costs nothing visible — aimed at
+    // the card when auto focus has found it, at the guide's middle otherwise; not after a tap.
+    LaunchedEffect(previewViewRef, camera) {
+        if (previewViewRef == null || camera == null) return@LaunchedEffect
         while (true) {
-            ask()
+            if (!autoFocus.paused(SystemClock.elapsedRealtime())) focusOnCard(if (autoLatest) recentCard else null)
             delay(3_000)
+        }
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.cardLooks.collect { look ->
+            if (!autoLatest) return@collect
+            recentCard = look.card
+            val now = SystemClock.elapsedRealtime()
+            if (zoom.auto && zoom.range.canZoom) {
+                autoZoom.next(look.card, zoom.ratio, zoom.range, now)?.let { target ->
+                    zoom.setAuto(target)
+                    viewModel.holdStill(AUTO_SETTLE_MS)
+                    autoFocus.reset()
+                }
+            } else {
+                autoZoom.reset()
+            }
+            if (autoFocus.onLook(look.sharp, look.card != null, now)) {
+                focusOnCard(look.card)
+                viewModel.holdStill(REFOCUS_SETTLE_MS)
+            }
         }
     }
 
@@ -432,31 +519,19 @@ fun ScanScreen(
                     // Focus on the middle of the guide, which is where the card is — a white box at
                     // arm's length gives continuous autofocus almost nothing to lock onto, and a soft
                     // frame is the one thing the card index cannot survive. Re-asked for periodically
-                    // rather than once: the card moves, and focus drifts back off it.
-                    refocus = {
-                        runCatching {
-                            val point = previewView.meteringPointFactory
-                                .createPoint(previewView.width / 2f, previewView.height / 2f)
-                            camera?.cameraControl?.startFocusAndMetering(
-                                FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
-                                    // Left to settle rather than cancelling back to continuous drift.
-                                    .disableAutoCancel()
-                                    .build()
-                            )
-                        }
-                    }
-                    refocus?.invoke()
+                    // rather than once (above): the card moves, and focus drifts back off it.
+                    previewViewRef = previewView
                 }, ContextCompat.getMainExecutor(ctx))
                 previewView
             }
         )
 
-        // Two fingers on the preview zoom it; one finger passes straight through (nothing on the
-        // preview takes a tap today, but nothing here would stop one). Under every other overlay.
+        // Two fingers on the preview zoom it; a tap focuses where it lands. Under every other overlay,
+        // so their own taps are theirs.
         Box(
             Modifier
                 .fillMaxSize()
-                .pinchToZoom(zoom, onPinching = viewModel::setPinching)
+                .pinchToZoom(zoom, onPinching = viewModel::setPinching, onTap = tapToFocus)
         )
 
         // Framing guide so the user knows to fill the frame with the card title — briefly
