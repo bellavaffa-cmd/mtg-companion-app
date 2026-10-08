@@ -51,6 +51,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.seasonTable
 import com.mtgcompanion.app.data.social.ACTIVITY_PREF_ROWS
+import com.mtgcompanion.app.data.social.GOAL_PREF_ROW
+import com.mtgcompanion.app.data.social.SocialArea
 import com.mtgcompanion.app.data.social.ACTIVITY_PRIVACY_NOTE
 import com.mtgcompanion.app.data.social.ActivityPrefs
 import com.mtgcompanion.app.data.social.ActivityTarget
@@ -121,6 +123,9 @@ internal fun ActivityFeed(social: SocialRepository, header: @Composable () -> Un
         }
     }
     LaunchedEffect(available, richer) { if (available == true && richer != null) load(null) }
+    // A friend completed a goal (a live ping): the newest page again.
+    val activityChanges = social.changes.collectAsState().value[SocialArea.ACTIVITY] ?: 0
+    LaunchedEffect(activityChanges) { if (activityChanges > 0 && loaded && !busy) load(null) }
 
     // League news names the leader: the table comes from the pod's games, as on the league screen.
     LaunchedEffect(items.size) {
@@ -219,6 +224,14 @@ private fun FeedRow(item: FeedItem, now: Long, table: LeagueSnapshot?, onOpen: (
                 color = colors.textPrimary
             )
             Text(line.sub?.let { "$it · $time" } ?: time, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // A completed goal shows its card, art first, beside the trophy.
+            if (item.kind == "goal_completed") Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.EmojiEvents, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
+                if (item.cover != null) AsyncImage(
+                    model = item.cover.toArtCropUrl(), contentDescription = null, contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = 64.dp, height = 46.dp).clip(RoundedCornerShape(8.dp)).background(colors.surface2)
+                )
+            }
             line.action?.let { action ->
                 Text(
                     action.label,
@@ -290,25 +303,28 @@ fun ActivityPrivacySection(social: SocialRepository) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val available = rememberActivityComments(social)
+    val goals by social.activity.goalsAvailable.collectAsState()
     var prefs by remember { mutableStateOf<ActivityPrefs?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(available) {
         if (available == true) try { prefs = social.activity.prefs() } catch (e: Exception) { error = e.message }
     }
+    // "Share completed goals" shows once the server has it (20261008110000_goal_activity.sql).
+    val rows = if (goals == true) ACTIVITY_PREF_ROWS + GOAL_PREF_ROW else ACTIVITY_PREF_ROWS
     if (available != true) return
     Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Friends' activity", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
         Text(ACTIVITY_PRIVACY_NOTE, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
         val current = prefs
         if (current == null && error == null) Text("Loading…", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-        if (current != null) ACTIVITY_PREF_ROWS.forEach { row ->
+        if (current != null) rows.forEach { row ->
             val on = current.isOn(row.key)
             fun flip() {
                 val next = current.withPref(row.key, !on)
                 prefs = next
                 error = null
                 scope.launch {
-                    try { social.activity.setPrefs(next) } catch (e: Exception) { prefs = current; error = e.message }
+                    try { social.activity.setPrefs(next, current) } catch (e: Exception) { prefs = current; error = e.message }
                 }
             }
             Row(

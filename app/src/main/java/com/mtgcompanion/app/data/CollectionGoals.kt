@@ -408,6 +408,22 @@ fun goalHits(goals: List<CollectionGoal>, collections: List<Collection>, decks: 
 /** "Goal: Duskmourn uncommons 41/92" */
 fun hitLine(h: GoalHit): String = "Goal: ${h.name} ${h.have}/${h.need}"
 
+// ---- Friends' Activity ----
+
+/** A completed goal as friends' Activity shows it: its name, kind, how many cards it took and a card to show (a Scryfall id). */
+data class GoalActivity(val goalId: String, val name: String, val kind: String, val cards: Int, val cover: String?)
+
+/**
+ * [goal], just completed, for friends' Activity: its copies as [p] counts them (all of them, as the
+ * goal is complete) and the card to show — its most valuable printing with a known price, else its
+ * first with a printing.
+ */
+fun goalActivityOf(goal: CollectionGoal, p: GoalProgress): GoalActivity {
+    val printed = p.lines.filter { !it.scryfallId.isNullOrEmpty() }
+    val cover = printed.filter { it.usd != null }.maxByOrNull { it.usd!! } ?: printed.firstOrNull()
+    return GoalActivity(goal.id, goal.name, goal.kind, p.need, cover?.scryfallId)
+}
+
 // ---- Wishlist and trades ----
 
 /** A missing card for the Wishlist: [quantity] copies wanted. */

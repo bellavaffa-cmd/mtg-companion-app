@@ -43,11 +43,11 @@ class SortRecipesTest {
         o.getString("id"), o.getString("name"), o.getJSONArray("pullOut").strings(), o.getJSONArray("levels").objects().map { level(it) },
         o.getJSONArray("apart").strings(),
         goTo = if (o.isNull("goTo")) null else o.getJSONArray("goTo").objects().map { PileGoTo(it.getString("pile"), it.getString("to")) },
-        createdAt = o.getLong("createdAt")
+        createdAt = o.getLong("createdAt"), goals = o.bool("goals")
     )
 
     private fun card(o: JSONObject) = RecipeCard(
-        name = o.getString("name"), colors = o.strings("colors"), colorIdentity = o.strings("colorIdentity"), typeLine = o.str("typeLine"),
+        name = o.getString("name"), scryfallId = o.str("scryfallId"), colors = o.strings("colors"), colorIdentity = o.strings("colorIdentity"), typeLine = o.str("typeLine"),
         set = o.str("set"), collectorNumber = o.str("collectorNumber"), cmc = o.dbl("cmc"), rarity = o.str("rarity"),
         usd = o.dbl("usd"), usdFoil = o.dbl("usdFoil"), foil = o.bool("foil") ?: false, lang = o.str("lang"), played = o.bool("played") ?: false
     )
@@ -68,7 +68,14 @@ class SortRecipesTest {
                     b.getJSONArray("names").strings(), b.getJSONArray("sets").strings()
                 )
             },
-            owned = owned.keys().asSequence().associateWith { owned.getInt(it) }
+            owned = owned.keys().asSequence().associateWith { owned.getInt(it) },
+            goals = if (o.isNull("goals")) emptyList() else o.getJSONArray("goals").objects().map { g ->
+                val missing = g.getJSONObject("missing")
+                GoalNeed(
+                    g.getString("goalId"), g.getString("name"), g.getString("kind"), g.getBoolean("foil"), g.getInt("have"), g.getInt("need"),
+                    missing.keys().asSequence().associateWith { missing.getInt(it) }, g.str("placeId")
+                )
+            }
         )
     }
 
@@ -112,10 +119,15 @@ class SortRecipesTest {
     }
 
     @Test
-    fun aSessionSmartPilesFirstThenKeepApartThenTheLevels() {
-        val context = ctx(v.getJSONObject("ctx"))
-        val cards = v.getJSONArray("session").objects().map { card(it) }
-        for (s in v.getJSONArray("sessions").objects()) {
+    fun aSessionSmartPilesFirstThenKeepApartThenTheLevels() = runSessions(v)
+
+    @Test
+    fun theGoalsNeedPileEachGoalClaimsOnlyWhatItsMissingAfterDecksBeforeFriendsAndBinders() = runSessions(v.getJSONObject("goalSessions"))
+
+    private fun runSessions(from: JSONObject) {
+        val context = ctx(from.getJSONObject("ctx"))
+        val cards = from.getJSONArray("session").objects().map { card(it) }
+        for (s in from.getJSONArray("sessions").objects()) {
             val r = recipe(s.getJSONObject("recipe"))
             val rate = s.getDouble("rate")
             val d = derivePiles(r, fmt)
@@ -176,6 +188,12 @@ class SortRecipesTest {
         assertEquals(listOf("Commander by colour", "Binder by set", "Rares by value", "What my collection needs"), t.map { it.name })
         assertEquals(listOf("DSK · #1–99", "DSK · #100–199"), derivePiles(t[1], fmt).piles.subList(3, 5).map { it.name })
         assertEquals(listOf("$20+", "$5–$20", "$1–$5", "under $1"), derivePiles(t[2], fmt).piles.drop(3).map { it.name })
+        // Goals need is off unless a goal is under way — then only "What my collection needs" pulls it out.
+        assertTrue(t.none { "GOALS" in it.pullOut })
+        val withGoals = recipeTemplates(listOf("dsk"), goals = true)
+        assertEquals(listOf(false, false, false, true), withGoals.map { "GOALS" in it.pullOut })
+        assertEquals("Decks need · Goals need · Friends want · Binder gaps · To trade · 6 piles", recipeLine(withGoals[3], fmt))
+        assertTrue("GOALS" !in newRecipe("n1", 5).pullOut)
         assertEquals("Value $2+ apart · then colour · 12 piles", recipeLine(newRecipe("n1", 5), fmt))
         assertEquals("1st2nd3rd11th22nd", ordinal(1) + ordinal(2) + ordinal(3) + ordinal(11) + ordinal(22))
     }
@@ -193,10 +211,14 @@ class SortRecipesTest {
             SortRecipe(
                 "x", "My recipe", listOf("DECKS", "TRADE"),
                 listOf(SplitLevel("VALUE", cuts = listOf(5.0, 1.0)), SplitLevel("NAME", letters = listOf("A", "C", "Q")), SplitLevel("NUMBER", cuts = listOf(1.0, 50.0))),
-                listOf("FOIL", "PLAYED"), goTo = listOf(PileGoTo("L:v0", "b")), createdAt = 3
+                listOf("FOIL", "PLAYED"), goTo = listOf(PileGoTo("L:v0", "b")), createdAt = 3, goals = false
             ),
             r
         )
+        // "goals" says whether the Goals need pile is pulled out, always.
+        val g = sortRecipe(newRecipe("y", 1).copy(pullOut = listOf("FRIENDS", "GOALS")))
+        assertEquals(true, g.goals)
+        assertEquals(listOf("GOALS", "FRIENDS"), g.pullOut)
     }
 
     private fun pile(recipes: List<SortRecipe>? = null) =
@@ -225,6 +247,89 @@ class SortRecipesTest {
         assertEquals(here.sortRecipes, ItemMerge.mergeCollections(here, here, older, minePreferred = false).sortRecipes)
         val both = ItemMerge.mergeCollections(pile(emptyList()), pile(listOf(r("a", "Bulk"))), pile(listOf(r("b", "Rares"))), minePreferred = true)
         assertEquals(listOf("a", "b"), both.sortRecipes!!.map { it.id })
+    }
+
+    @Test
+    fun aRecipeSavedByAnAppFromBeforeTheGoalsPileKeepsThisDevicesPileOneTurnedOffStaysOff() {
+        val goals = r("a", "Bulk").copy(pullOut = listOf("DECKS", "GOALS", "FRIENDS")).let { sortRecipe(it) }
+        val here = pile(listOf(goals, r("b", "Rares")))
+        // The older app drops GOALS and the "goals" key — and here it renamed the recipe too.
+        val older = goals.copy(name = "Bulk boxes", pullOut = listOf("DECKS", "FRIENDS"), goals = null)
+        val olderPile = pile(listOf(older, r("b", "Rares")))
+        val kept = keepRecipesFromOlderApp(here, olderPile).sortRecipes!!
+        assertEquals(listOf("DECKS", "GOALS", "FRIENDS"), kept[0].pullOut)
+        assertEquals("Bulk boxes", kept[0].name)
+        assertEquals(true, kept[0].goals)
+        // Nothing to put back: the same object.
+        assertTrue(keepRecipesFromOlderApp(here, here) === here)
+        // Through the whole merge, both ways round: the rename comes through, the pile stays.
+        for (minePreferred in listOf(true, false)) {
+            val merged = ItemMerge.mergeCollections(here, here, olderPile, minePreferred).sortRecipes!!
+            assertEquals(listOf("DECKS", "GOALS", "FRIENDS"), merged[0].pullOut)
+            assertEquals("Bulk boxes", merged[0].name)
+            assertEquals(listOf("DECKS", "GOALS", "FRIENDS"), ItemMerge.mergeCollections(here, olderPile, here, minePreferred).sortRecipes!![0].pullOut)
+        }
+        // A newer app that turned it off says so ("goals": false): it stays off.
+        val off = pile(listOf(sortRecipe(r("a", "Bulk").copy(pullOut = listOf("DECKS", "FRIENDS"))), r("b", "Rares")))
+        assertEquals(false, off.sortRecipes!![0].goals)
+        assertEquals(listOf("DECKS", "FRIENDS"), ItemMerge.mergeCollections(here, here, off, true).sortRecipes!![0].pullOut)
+    }
+
+    @Test
+    fun theGoalsTheGoalsPileGoesByOpenOnesMissingSomethingMostNearlyDoneFirstASetGoalWithItsBinder() {
+        val dskCards = listOf(GoalSetCard("d1", "Fear of Exposure", "uncommon"), GoalSetCard("d2", "Grim Cellar", "uncommon"), GoalSetCard("d3", "Valgavoth", "mythic"))
+        val dsk = newSetGoal("g-dsk", "DSK", "Duskmourn", dskCards, listOf("uncommon"), false, 1)
+        val shocks = newListGoal("g-shock", "PLAYSET", "Shock lands", listOf(GoalCard("Steam Vents"), GoalCard("Sacred Foundry")), 4, 1)
+        val done = newListGoal("g-done", "CUSTOM", "Done", listOf(GoalCard("Opt")), null, 1).copy(completedAt = 5)
+        val full = newListGoal("g-full", "CUSTOM", "Full", listOf(GoalCard("Opt")), null, 1)
+        val cols = listOf(
+            pile().copy(
+                entries = listOf(
+                    CollectionEntry("d1", "Fear of Exposure", null, quantity = 1),
+                    CollectionEntry("sv", "Steam Vents", null, quantity = 1),
+                    CollectionEntry("opt", "Opt", null, quantity = 1)
+                )
+            )
+        )
+        fun binder(id: String, sets: List<String>) = OrderedBinder(id, id, "SET", 9, emptyList(), emptyList(), sets)
+        val needs = goalNeedsOf(listOf(shocks, done, full, dsk), cols, emptyList(), listOf(binder("mixed", listOf("dsk", "m10")), binder("dskonly", listOf("dsk"))))
+        assertEquals(
+            listOf(
+                GoalNeed("g-dsk", "Duskmourn uncommons", "SET", false, 1, 2, mapOf("id:d2" to 1), "dskonly"),
+                GoalNeed("g-shock", "Shock lands", "PLAYSET", false, 1, 8, mapOf("n:steam vents" to 3, "n:sacred foundry" to 4))
+            ),
+            needs
+        )
+        assertEquals(listOf("n:steam vents", "n:sacred foundry"), needs[1].missing.keys.toList())
+        assertEquals("mixed", goalNeedsOf(listOf(dsk), cols, emptyList(), listOf(binder("mixed", listOf("dsk", "m10"))))[0].placeId)
+        assertNull(goalNeedsOf(listOf(dsk), cols, emptyList(), listOf(binder("m10", listOf("m10"))))[0].placeId)
+        // A foil goal moves only for a foil copy; a set goal only for its printing.
+        val ctx = SmartContext(goals = listOf(needs[0].copy(foil = true)))
+        assertEquals(emptyList<SortReason>(), reasonsFor(ctx, RecipeCard("Grim Cellar", scryfallId = "d2"), emptyList()))
+        assertEquals(emptyList<SortReason>(), reasonsFor(ctx, RecipeCard("Grim Cellar", scryfallId = "other-printing", foil = true), emptyList()))
+        assertEquals(listOf("GOAL · DUSKMOURN UNCOMMONS"), reasonsFor(ctx, RecipeCard("Grim Cellar", scryfallId = "d2", foil = true), emptyList()).map { reasonLine(it) })
+    }
+
+    @Test
+    fun filingTheGoalsPileIntoTheGoalsSetBinderElseNoPlaceOrWhereTheRecipeSays() {
+        val dsk = StoragePlace("dsk", "Duskmourn", PlaceKind.BINDER.name, sortRule = SortRule.SET.name, createdAt = 2)
+        val box = StoragePlace("box", "Goal box", PlaceKind.BOX.name, createdAt = 3)
+        val cols = listOf(pile().copy(storagePlaces = listOf(dsk, box)))
+        var recipe = sortRecipe(SortRecipe("r", "Goals", listOf("GOALS"), emptyList(), emptyList(), createdAt = 1))
+        val d = derivePiles(recipe, fmt)
+        assertEquals("", pileGoesTo(recipe, d.piles[0]))
+        fun scan(id: String, name: String, placeId: String? = null) = RecipeScan(
+            id.drop(1).toLong(), id, name, null, RecipeCard(name), CardFacts(name, set = "dsk"), CollectionEntry(id, name, null), 1, "S:GOALS",
+            SortReason("GOALS", goalId = "g", goal = "Duskmourn uncommons", have = 91, need = 92, placeId = placeId)
+        )
+        val scans = listOf(scan("s1", "Grim Cellar", "dsk"), scan("s2", "Steam Vents"))
+        assertEquals(listOf("dsk", null), scans.map { binderFiledInto(recipe, it) })
+        var filed = fileRecipe(cols, recipe, d, scans)
+        assertEquals(listOf("Grim Cellar → Duskmourn", "Steam Vents → No place yet"), filed.steps.map { "${it.scan.name} → ${it.to}" })
+        recipe = withGoTo(recipe, "S:GOALS", "box")
+        assertNull(binderFiledInto(recipe, scans[0]))
+        filed = fileRecipe(cols, recipe, d, scans)
+        assertEquals(listOf("Grim Cellar → Goal box", "Steam Vents → Goal box"), filed.steps.map { "${it.scan.name} → ${it.to}" })
     }
 
     @Test
@@ -286,6 +391,12 @@ class SortRecipesTest {
         assertEquals(listOf(deck), otherPile(recipe, d, c, 1, deck, listOf(friend), 1.0)?.also)
         assertEquals("L:v1/R", otherPile(recipe, d, c, 2, friend, emptyList(), 1.0)?.key)
         assertNull(otherPile(recipe, d, c, 11, null, emptyList(), 1.0))
+        // From the Goals need pile, the next smart pile after it: a friend's.
+        val goalRecipe = recipe(v.getJSONObject("goalSessions").getJSONArray("sessions").getJSONObject(0).getJSONObject("recipe"))
+        val gd = derivePiles(goalRecipe, fmt)
+        val goal = SortReason("GOALS", goalId = "g", goal = "Shock lands", have = 38, need = 40)
+        assertEquals("S:FRIENDS", otherPile(goalRecipe, gd, c, 2, goal, listOf(deck, friend), 1.0)?.key)
+        assertEquals("S:GOALS", otherPile(goalRecipe, gd, c, 1, deck, listOf(goal), 1.0)?.key)
     }
 
     @Test

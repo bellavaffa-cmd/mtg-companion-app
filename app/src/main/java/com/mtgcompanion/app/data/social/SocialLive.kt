@@ -15,7 +15,9 @@ enum class SocialArea {
     FRIENDS,
     LOANS,
     NIGHTS,
-    HOUSEHOLD;
+    HOUSEHOLD,
+    /** Friends' Activity: a friend completed a goal (20261008110000_goal_activity.sql). */
+    ACTIVITY;
 
     /** Whether the area is part of social_overview (trades, friends), so a ping reloads it. */
     val inOverview: Boolean get() = this == TRADES || this == FRIENDS
@@ -36,6 +38,7 @@ fun socialAreaFor(what: String): SocialArea? = when (what) {
     "loan" -> SocialArea.LOANS
     "night" -> SocialArea.NIGHTS
     "household" -> SocialArea.HOUSEHOLD
+    "activity" -> SocialArea.ACTIVITY
     else -> null
 }
 

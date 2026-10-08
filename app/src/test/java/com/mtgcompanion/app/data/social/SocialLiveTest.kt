@@ -44,6 +44,7 @@ class SocialLiveTest {
         assertEquals(SocialArea.LOANS, ping("loan"))
         assertEquals(SocialArea.NIGHTS, ping("night"))
         assertEquals(SocialArea.HOUSEHOLD, ping("household"))
+        assertEquals(SocialArea.ACTIVITY, ping("activity"))
         assertNull(ping("something new"))
         assertNull(socialAreaFor("social", null))
     }

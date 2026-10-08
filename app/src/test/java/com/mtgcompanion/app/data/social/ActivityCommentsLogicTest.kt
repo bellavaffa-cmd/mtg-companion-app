@@ -262,4 +262,52 @@ class ActivityCommentsLogicTest {
         assertNull(parseSelling("null"))
         assertEquals(true, parseSelling("""[{"item_id": "b", "scryfall_id": "s", "name": "Sol Ring", "for_sale": 2, "quantity": 3, "foil_quantity": 0, "wanted": true}]""")?.single()?.wanted)
     }
+
+    // ---- Completed goals (20261008110000_goal_activity.sql) ----
+
+    @Test
+    fun `a completed goal - who, which goal, its kind and cards, no action`() {
+        val done = feedLine(item("goal_completed").copy(itemId = "g1", name = "Duskmourn uncommons", goalKind = "SET", count = 92))
+        assertEquals("*Priya* completed a goal: *Duskmourn uncommons*", text(done))
+        assertEquals("Set goal · 92 cards", done.sub)
+        assertNull(done.action)
+        assertEquals("Playset goal · 1 card", feedLine(item("goal_completed").copy(name = "Shock lands", goalKind = "PLAYSET", count = 1)).sub)
+        assertEquals("Card list goal", feedLine(item("goal_completed").copy(name = "x")).sub)
+        assertEquals("Deck goal · 60 cards", feedLine(item("goal_completed").copy(name = "Foil Krenko", goalKind = "DECK", count = 60)).sub)
+        // Tapping it opens the friend.
+        assertEquals(ActivityTarget.Friend("p"), activityTarget(item("goal_completed").copy(itemId = "g1")))
+    }
+
+    @Test
+    fun `completed goals are read beside the feed and merged newest first`() {
+        val goals = parseFeed(
+            """[{"kind": "goal_completed", "actor": {"user_id": "p", "username": "priya", "display_name": "Priya"}, "at": 1500,
+                "item_id": "g1", "name": "Duskmourn uncommons", "goal_kind": "SET", "count": 92,
+                "cover": "https://cards.scryfall.io/normal/front/a/b/ab.jpg"}]"""
+        )
+        assertEquals(1, goals.size)
+        assertEquals("SET", goals[0].goalKind)
+        assertEquals(92, goals[0].count)
+        assertEquals("g1", goals[0].itemId)
+        assertEquals("https://cards.scryfall.io/normal/front/a/b/ab.jpg", goals[0].cover)
+        val main = listOf(item("deck_updated").copy(at = 2000), item("selling").copy(at = 1000), item("for_trade").copy(at = 500))
+        assertEquals(listOf(2000L, 1500L, 1000L), mergeFeeds(main, goals, 3).map { it.at })
+        assertEquals(listOf("deck_updated", "goal_completed", "selling", "for_trade"), mergeFeeds(main, goals, 30).map { it.kind })
+        // No goals (an older server): the page as it came.
+        assertTrue(mergeFeeds(main, emptyList(), 2) === main)
+    }
+
+    @Test
+    fun `share completed goals - on unless turned off, its own switch`() {
+        assertTrue(ActivityPrefs().goals)
+        assertFalse(parsePrefs("""{"goals": false}""").goals)
+        assertTrue(parsePrefs("""{"decks": false}""").goals)
+        assertEquals("goals", GOAL_PREF_ROW.key)
+        assertEquals("Share completed goals", GOAL_PREF_ROW.title)
+        assertTrue(ActivityPrefs().isOn("goals"))
+        assertFalse(ActivityPrefs().withPref("goals", false).goals)
+        assertEquals(ActivityPrefs(), ActivityPrefs().withPref("goals", false).withPref("goals", true))
+        // The four older switches don't include it (it's added once the server has it).
+        assertEquals(listOf("decks", "for_trade", "selling", "leagues"), ACTIVITY_PREF_ROWS.map { it.key })
+    }
 }
