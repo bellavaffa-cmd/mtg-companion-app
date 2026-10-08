@@ -685,11 +685,11 @@ class DeckDetailViewModel(
                 RoleTags.tagsOf(s.name)?.let { upgradeRoleOf(it) != null } == true &&
                 (allowed == null || RoleTags.identityOf(s.name)?.all { it.uppercaseChar() in allowed } != false)
         }
-        val wanted = pre.map { it.scryfallId }.filter { it !in upgradeCardData }
+        val wanted = pre.map { it.scryfallId }.filter { !upgradeCardData.containsKey(it) }
         if (wanted.isNotEmpty()) cardRepository.getCardsByIds(wanted).forEach { upgradeCardData[it.id] = it }
         // Offline, the downloaded card database (if there is one) knows them by name.
         offlineCards?.takeIf { it.status.value.hasData }?.let { db ->
-            pre.filter { it.scryfallId !in upgradeCardData }.forEach { s -> db.getByName(s.name)?.let { upgradeCardData[s.scryfallId] = it } }
+            pre.filter { !upgradeCardData.containsKey(it.scryfallId) }.forEach { s -> db.getByName(s.name)?.let { upgradeCardData[s.scryfallId] = it } }
         }
         val completers = a.comboCompleters
         val owned = pre.map { s ->
@@ -738,7 +738,7 @@ class DeckDetailViewModel(
      */
     fun applyUpgradeSwaps(swaps: List<UpgradeSwap>, onDone: (String) -> Unit) {
         viewModelScope.launch {
-            val missing = swaps.map { it.add.scryfallId }.filter { it !in upgradeCardData }
+            val missing = swaps.map { it.add.scryfallId }.filter { !upgradeCardData.containsKey(it) }
             if (missing.isNotEmpty()) cardRepository.getCardsByIds(missing).forEach { upgradeCardData[it.id] = it }
             val made = swaps.mapNotNull { s -> upgradeCardData[s.add.scryfallId]?.let { s to upgradeEntryOf(it) } }
             if (made.isEmpty()) {
