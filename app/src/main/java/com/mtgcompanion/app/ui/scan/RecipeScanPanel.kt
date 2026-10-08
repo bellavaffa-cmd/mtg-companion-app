@@ -81,7 +81,10 @@ fun RecipeScanPanel(
     onDone: () -> Unit,
     onFinishCheck: () -> Unit,
     onScanNow: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** The newest card was put right by a correction learned before (ScanCorrections.kt). */
+    learned: Boolean = false,
+    onLearned: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val scans = session.scans
@@ -159,6 +162,12 @@ fun RecipeScanPanel(
                 if (alt != null) Action("Send to pile ${alt.pile} instead") { onSend(alt) }
                 if (!filed) Action("Undo", onUndo)
                 if (!filed) Action("Wrong card?", onWrong)
+                if (learned) Text(
+                    "Learned", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.onAccent,
+                    modifier = Modifier.align(Alignment.CenterVertically).clip(RoundedCornerShape(12.dp)).background(colors.accent)
+                        .semantics { contentDescription = "Learned from your correction: ${last.name}" }
+                        .clickable(role = Role.Button, onClick = onLearned).heightIn(min = 32.dp).padding(horizontal = 10.dp, vertical = 7.dp)
+                )
                 if (filed) Text("Put with its deck", fontSize = 13.sp, color = InkMuted, modifier = Modifier.padding(vertical = 12.dp))
                 if (!voice.auto) Action("Scan now", onScanNow)
                 Spacer(Modifier.weight(1f))

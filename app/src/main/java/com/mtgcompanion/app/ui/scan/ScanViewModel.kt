@@ -123,6 +123,15 @@ import com.mtgcompanion.app.data.pulledCopies
 import com.mtgcompanion.app.data.putBackList
 import com.mtgcompanion.app.data.putBackRowToTick
 import com.mtgcompanion.app.data.sameCardName
+import com.mtgcompanion.app.data.AppliedCorrection
+import com.mtgcompanion.app.data.CardRef
+import com.mtgcompanion.app.data.ScanReading
+import com.mtgcompanion.app.data.correctionsOf
+import com.mtgcompanion.app.data.forgetCorrection
+import com.mtgcompanion.app.data.lookupCorrection
+import com.mtgcompanion.app.data.markUsed
+import com.mtgcompanion.app.data.recordCorrection
+import com.mtgcompanion.app.data.withCorrections
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -842,13 +851,27 @@ class ScanViewModel(
             val printed = printing != null && named.set.equals(printing.first, ignoreCase = true)
             val sight = if (recognizer != null && flat != null) sightPrinting(recognizer, flat, named, setCode, printed, scan.captureId) else null
             val card = sight?.card ?: named
-            val exact = if (sight != null) sight.certain else printed
+            // What was read, as read, and what the scanner made of it: the key a correction is learned
+            // by (ScanCorrections.kt). Corrected before, the card it really was goes in instead.
+            val reading = ScanReading(scan.candidate, printing?.first ?: setCode, printing?.second, card.id, card.name)
+            val fix = lookupCorrection(correctionsOf(collectionRepository.collectionsFlow.first()), reading)
+            val fixed = fix?.let { f ->
+                printingById[f.scryfallId]
+                    ?: runCatching { cardRepository.getCardsByIds(listOf(f.scryfallId)).firstOrNull() }.getOrNull()?.also { printingById[f.scryfallId] = it }
+            }
+            val applied = if (fixed != null) fix else null
+            val shown = fixed ?: card
+            val exact = applied != null || (if (sight != null) sight.certain else printed)
             sightWasCertain = exact
-            // A card known by sight needs no reading to account for it: its look already did.
-            accept(scan.candidate, card, scan.forced || scan.seenBySight, exact = exact)?.let { row ->
+            if (applied != null) Log.d("ScanTiming", "learned (${applied.kind}): ${card.name} ${card.set} #${card.collectorNumber} is ${shown.name} ${shown.set} #${shown.collectorNumber}")
+            // A card known by sight needs no reading to account for it: its look already did. A learned
+            // correction is held to the read as the card the scanner came up with was.
+            accept(scan.candidate, shown, scan.forced || scan.seenBySight, exact = exact, confirmAs = card)?.let { row ->
                 nameCache[cacheKey] = named
-                added = card
-                if (recognizer == null) matchArt(row, card, look, setCode)
+                added = shown
+                readings[row] = reading
+                if (applied != null) learnedApplied(row, applied)
+                else if (recognizer == null) matchArt(row, card, look, setCode)
             }
         } catch (e: Exception) {
             if (recipeGate() != null) {
@@ -936,6 +959,44 @@ class ScanViewModel(
 
     /** Printings fetched by id this session, for a card seen by sight more than once. */
     private val printingById = mutableMapOf<String, ScryfallCard>()
+
+    // ---- Learning from corrections (ScanCorrections.kt) ----
+
+    /** What each scan read, by its id, so a printing picked for it later is remembered against that read. */
+    private val readings = HashMap<Long, ScanReading>()
+    private val _learned = MutableStateFlow<Map<Long, String>>(emptyMap())
+    /** The scans a learned correction put right, with its key: they show "Learned". */
+    val learned: StateFlow<Map<Long, String>> = _learned.asStateFlow()
+
+    /** Scan [rowId] went in as [applied] says: tagged, the correction counted as used, and the status says so. */
+    private fun learnedApplied(rowId: Long, applied: AppliedCorrection) {
+        _learned.update { it + (rowId to applied.key) }
+        viewModelScope.launch {
+            collectionRepository.changeStorage { withCorrections(it, markUsed(correctionsOf(it), applied.key, System.currentTimeMillis())) }
+        }
+        _uiState.update { it.copy(status = (it.status ?: "") + " · learned from your correction") }
+    }
+
+    /** Scan [rowId] changed by hand to [card]: learned against what the scanner read for it. */
+    private fun learnFrom(rowId: Long, card: ScryfallCard) {
+        val reading = readings[rowId] ?: return
+        val key = _learned.value[rowId]
+        val ref = CardRef(card.id, card.name, card.set.orEmpty(), card.collectorNumber.orEmpty())
+        viewModelScope.launch {
+            collectionRepository.changeStorage { withCorrections(it, recordCorrection(correctionsOf(it), reading, ref, System.currentTimeMillis(), key)) }
+        }
+        if (key != null) _learned.update { it - rowId }
+    }
+
+    /** "Forget it": the correction that put scan [rowId] right is forgotten; the scan stays as it is. */
+    fun forgetLearned(rowId: Long) {
+        val key = _learned.value[rowId] ?: return
+        viewModelScope.launch {
+            collectionRepository.changeStorage { withCorrections(it, forgetCorrection(correctionsOf(it), key)) }
+        }
+        _learned.update { m -> m.filterValues { it != key } }
+        _uiState.update { it.copy(status = "Forgotten — the scanner goes by what it reads again") }
+    }
 
     /**
      * The guide, with its slack, cut out of the camera's picture before it's turned upright — so
@@ -1076,8 +1137,8 @@ class ScanViewModel(
      * card, so a card that wasn't all in the frame would otherwise join the list as if it had been
      * scanned properly. Tapping "Scan now" ([forced]) says "yes, really" and skips the check.
      */
-    private fun accept(candidate: String, card: ScryfallCard, forced: Boolean, exact: Boolean = false): Long? {
-        val confirmation = if (forced) Confirmation.YES else confirmRead(candidate, card.name, card.flavorName)
+    private fun accept(candidate: String, card: ScryfallCard, forced: Boolean, exact: Boolean = false, confirmAs: ScryfallCard = card): Long? {
+        val confirmation = if (forced) Confirmation.YES else confirmRead(candidate, confirmAs.name, confirmAs.flavorName)
         if (confirmation == Confirmation.YES) {
             return addScannedCard(card, exact)
         }
@@ -1421,9 +1482,12 @@ class ScanViewModel(
     fun lastRecipeCard(): ScryfallCard? = _recipe.value?.scans?.lastOrNull()?.let { recipeCards[it.id] }
 
     /** Wrong card? Pick the printing: the newest card is [card], sorted again. */
-    fun setRecipePrinting(card: ScryfallCard) = changeLast { last, rest ->
-        recipeCards[last.id] = card
-        resort(last, rest, recipeCardOf(card, last.card), card)
+    fun setRecipePrinting(card: ScryfallCard) {
+        _recipe.value?.scans?.lastOrNull()?.let { last -> if (last.scryfallId != card.id) learnFrom(last.id, card) }
+        changeLast { last, rest ->
+            recipeCards[last.id] = card
+            resort(last, rest, recipeCardOf(card, last.card), card)
+        }
     }
 
     /**
@@ -1717,6 +1781,7 @@ class ScanViewModel(
 
     /** The printing on a row, swapped for the art the user picked. */
     fun setPrinting(rowId: Long, card: ScryfallCard) {
+        _uiState.value.scannedCards.firstOrNull { it.id == rowId }?.let { row -> if (row.card.id != card.id) learnFrom(rowId, card) }
         // A printing that never comes in foil can't be a foil copy.
         setScanned(_uiState.value.scannedCards.map { if (it.id == rowId) it.copy(card = card, exact = true, foil = it.foil && card.canBeFoil) else it })
     }

@@ -340,6 +340,12 @@ data class Collection(
      * doesn't know about them.
      */
     val sortRecipes: List<SortRecipe>? = null,
+    /**
+     * The Unsorted pile only: what the scanner has learned from the user's corrections (see
+     * ScanCorrections.kt). Rides along like [sortRecipes] and merges entry by entry, the one used last
+     * winning. Null (left out) until the first is learned; then kept, as an empty list once none are left.
+     */
+    val scanCorrections: List<ScanCorrection>? = null,
     /** A sample binder from the welcome flow — see Deck.sample. Null (left out) on everything else. */
     val sample: Boolean? = null
 ) {

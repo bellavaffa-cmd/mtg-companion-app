@@ -8,9 +8,9 @@ import java.util.Locale
 //
 //  - Cards only: every binder and the Unsorted pile emptied (their cards' places, prices to watch and
 //    copies to sell go with the cards). Binders, storage places, the Wishlist, decks, sealed product,
-//    graded cards, gear and loans stay.
+//    graded cards, gear, loans and what the scanner learned (ScanCorrections.kt) stay.
 //  - Collection: every card, every binder but the Unsorted pile and the Wishlist (which stay, empty),
-//    the storage places, sealed product, graded cards, gear and loans. Decks stay, and so does card
+//    the storage places, sealed product, graded cards, gear, loans and what the scanner learned. Decks stay, and so does card
 //    price history — it's market data, not the collection.
 //  - Everything: the collection and every deck, with the decks' history and games logged. Settings,
 //    friends and the account stay.
@@ -23,11 +23,11 @@ import java.util.Locale
 enum class ResetScope(val title: String, val detail: String) {
     CARDS(
         "Cards only",
-        "Empties every binder and the Unsorted pile. Your binders, storage places, Wishlist, decks, sealed product, graded cards, gear and loans stay."
+        "Empties every binder and the Unsorted pile. Your binders, storage places, Wishlist, decks, sealed product, graded cards, gear, loans and what the scanner learned stay."
     ),
     COLLECTION(
         "Collection",
-        "Every card and binder, storage places, sealed product, graded cards, gear, loans, and your copies’ photos and history. The Unsorted pile and Wishlist stay, empty. Decks and card prices stay."
+        "Every card and binder, storage places, sealed product, graded cards, gear, loans, what the scanner learned from your corrections, and your copies’ photos and history. The Unsorted pile and Wishlist stay, empty. Decks and card prices stay."
     ),
     EVERYTHING(
         "Everything",
@@ -132,7 +132,8 @@ private fun emptiedPile(c: Collection, whole: Boolean): Collection =
         loans = c.loans?.let { emptyList() },
         sealed = c.sealed?.let { emptyList() },
         graded = c.graded?.let { emptyList() },
-        gear = c.gear?.let { emptyList() }
+        gear = c.gear?.let { emptyList() },
+        scanCorrections = c.scanCorrections?.let { emptyList() }
     )
 
 /** The library after a reset of [scope]: what goes listed, the rest emptied as the scope says. */

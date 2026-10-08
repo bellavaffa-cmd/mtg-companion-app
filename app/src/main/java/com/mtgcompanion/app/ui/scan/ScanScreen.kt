@@ -221,6 +221,9 @@ fun ScanScreen(
     // Recipe mode: each card goes in its pile by the sort's recipe (RecipeScanPanel.kt).
     val recipe by viewModel.recipe.collectAsState()
     val recipeVoice by viewModel.recipeVoice.collectAsState()
+    // Scans a learned correction put right (ScanCorrections.kt), and the one whose "Learned" was tapped.
+    val learned by viewModel.learned.collectAsState()
+    var learnedOpen by remember { mutableStateOf<Pair<Long, Boolean>?>(null) }
     val money by com.mtgcompanion.app.data.Prices.money.collectAsState()
     val recipeOn = recipe != null
     LaunchedEffect(recipeOn) {
@@ -777,6 +780,8 @@ fun ScanScreen(
                 money = money,
                 onUndo = viewModel::undoRecipe,
                 onWrong = { recipeWrong = true },
+                learned = sorting.scans.lastOrNull()?.id?.let { it in learned } == true,
+                onLearned = { sorting.scans.lastOrNull()?.let { learnedOpen = it.id to true } },
                 onSend = viewModel::sendRecipeTo,
                 onPutInDeck = viewModel::putRecipeCardInDeck,
                 onApart = viewModel::toggleRecipeApart,
@@ -838,6 +843,8 @@ fun ScanScreen(
                 onScanAgain = { viewModel.scanAgain(it.card) },
                 onRemove = { viewModel.removeScan(it.id) },
                 onPickArt = { artPickerRow = it },
+                learned = learned.keys,
+                onLearned = { learnedOpen = it.id to false },
                 onFoil = { row, foil -> viewModel.setFoil(row.id, foil) },
                 onAllTo = { addingAll = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -887,6 +894,25 @@ fun ScanScreen(
             },
             dismissButton = {
                 TextButton(onClick = { recipeWrong = false; recipePrinting = viewModel.lastRecipeCard() }) { Text("Pick the printing", color = Gold) }
+            }
+        )
+    }
+    learnedOpen?.let { (rowId, inRecipe) ->
+        val name = if (inRecipe) recipe?.scans?.lastOrNull { it.id == rowId }?.name else state.scannedCards.firstOrNull { it.id == rowId }?.card?.name
+        AlertDialog(
+            onDismissRequest = { learnedOpen = null },
+            containerColor = Surface,
+            title = { Text("Learned", color = GoldLight) },
+            text = { Text("You corrected this before, so it went in as ${name ?: "the card you picked"}. Forget it, and the scanner goes by what it reads again.", color = TextMuted) },
+            confirmButton = {
+                TextButton(onClick = {
+                    learnedOpen = null
+                    if (inRecipe) recipePrinting = viewModel.lastRecipeCard()
+                    else artPickerRow = state.scannedCards.firstOrNull { it.id == rowId }
+                }) { Text("Pick another printing", color = Gold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { learnedOpen = null; viewModel.forgetLearned(rowId) }) { Text("Forget it", color = Gold) }
             }
         )
     }
@@ -1066,6 +1092,9 @@ private fun ScannedListPanel(
     onScanAgain: (ScanRow) -> Unit,
     onRemove: (ScanRow) -> Unit,
     onPickArt: (ScanRow) -> Unit,
+    /** The scans a learned correction put right. */
+    learned: Set<Long>,
+    onLearned: (ScanRow) -> Unit,
     onFoil: (ScanRow, Boolean) -> Unit,
     onAllTo: () -> Unit,
     modifier: Modifier = Modifier
@@ -1136,6 +1165,7 @@ private fun ScannedListPanel(
                         onScanAgain = { onScanAgain(scanned) },
                         onRemove = { onRemove(scanned) },
                         onPickArt = { onPickArt(scanned) },
+                        onLearned = if (scanned.id in learned) ({ onLearned(scanned) }) else null,
                         // Only a printing that comes in foil can be a foil copy.
                         onFoil = if (scanned.card.canBeFoil) ({ foil -> onFoil(scanned, foil) }) else null
                     )
@@ -1157,6 +1187,8 @@ private fun ScannedCardRow(
     onScanAgain: () -> Unit,
     onRemove: () -> Unit,
     onPickArt: () -> Unit,
+    /** Given when a learned correction put this scan right: its "Learned" tag. */
+    onLearned: (() -> Unit)? = null,
     /** Marks this copy foil or not; null for a printing that doesn't come in foil. */
     onFoil: ((Boolean) -> Unit)? = null
 ) {
@@ -1196,7 +1228,12 @@ private fun ScannedCardRow(
                 // The set's name gives way before its number does: "Avatar: The Last Airbender" can
                 // be shortened and still read, but the number is the half that says which printing
                 // this is, so it keeps its room.
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Tapping it changes the printing — on any row, so a set code misread as another can be put right too.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.clickable(onClickLabel = "Change printing", onClick = onPickArt)
+                ) {
                     Text(
                         card.setName ?: card.set?.uppercase() ?: "Unknown set",
                         style = MaterialTheme.typography.labelMedium,
@@ -1212,6 +1249,20 @@ private fun ScannedCardRow(
                         Text("·", style = MaterialTheme.typography.labelMedium, color = TextDim)
                         Text("$$usd", style = MaterialTheme.typography.labelMedium, color = GoldLight, maxLines = 1)
                     }
+                }
+                if (onLearned != null) {
+                    // Corrected before, so put right this time (ScanCorrections.kt).
+                    Text(
+                        "Learned",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = GoldLight,
+                        modifier = Modifier
+                            .padding(vertical = 2.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(Gold.copy(alpha = 0.16f))
+                            .clickable(onClickLabel = "Learned from your correction", onClick = onLearned)
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
                 }
                 if (!scanned.exact) {
                     // The set code couldn't be read, so this is the card's usual printing.
