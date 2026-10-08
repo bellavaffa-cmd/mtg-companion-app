@@ -176,6 +176,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -568,7 +570,22 @@ fun DeckDetailScreen(
                         onMarkCut = { entry -> viewModel.setReplaceable(entry.scryfallId, true) },
                         onViewDetails = onViewDetails,
                         deck = currentDeck,
-                        onMessage = toast
+                        onMessage = toast,
+                        onUpgradeDone = { message, undo ->
+                            // In the app's snackbar with Undo, like every other add — and in the screen's
+                            // scope, so changing tab doesn't take the Undo away.
+                            scope.launch {
+                                val host = addTo.host
+                                host.currentSnackbarData?.dismiss()
+                                val result = host.showSnackbar(
+                                    message,
+                                    actionLabel = if (undo != null) "Undo" else null,
+                                    withDismissAction = undo == null,
+                                    duration = SnackbarDuration.Long
+                                )
+                                if (result == SnackbarResult.ActionPerformed) undo?.invoke()
+                            }
+                        }
                     )
                     else -> Unit
                 }
@@ -2404,7 +2421,9 @@ private fun AnalysisTab(
     onMarkCut: (DeckCardEntry) -> Unit,
     onViewDetails: (String) -> Unit,
     deck: Deck,
-    onMessage: (String) -> Unit
+    onMessage: (String) -> Unit,
+    /** What Swap now did, and its Undo (null when nothing changed). */
+    onUpgradeDone: (String, (() -> Unit)?) -> Unit
 ) {
     // "Not this one" on an upgrade swap is remembered per deck on this phone.
     val context = LocalContext.current
@@ -2440,7 +2459,7 @@ private fun AnalysisTab(
                     report = upgrade,
                     usesCommander = deck.mode.usesCommander,
                     dismissedCount = upgradeDismissed?.size ?: 0,
-                    onSwap = { swaps -> viewModel.applyUpgradeSwaps(swaps, onMessage) },
+                    onSwap = { swaps -> viewModel.applyUpgradeSwaps(swaps, onUpgradeDone) },
                     onConsider = { swap -> viewModel.considerUpgrade(swap, onMessage) },
                     onDismiss = { swap ->
                         val next = upgradeDismissed.orEmpty() + swap.key

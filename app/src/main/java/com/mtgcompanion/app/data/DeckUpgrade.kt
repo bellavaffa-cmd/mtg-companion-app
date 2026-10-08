@@ -270,12 +270,13 @@ fun upgradeSwaps(input: UpgradeInput): List<UpgradeSwap> {
 /** "Would move the deck to bracket 4". */
 fun bracketWarning(bracket: Int): String = "Would move the deck to bracket $bracket"
 
-/** "8 upgrades from your cards · would save $12.40 · pull from 3 places": what buying the cards coming in would cost. */
+/** "8 upgrades from your cards · $46 of cards you already own · pull from 3 places": what the cards coming in are worth (left out at $0). */
 fun upgradeSummary(swaps: List<UpgradeSwap>, money: (Double) -> String): String {
     val n = swaps.size
     val saved = round2(swaps.sumOf { it.add.usd ?: 0.0 })
     val places = swaps.filter { it.add.spare > 0 && it.add.placeKey != null }.mapNotNull { it.add.placeKey }.toSet().size
-    val parts = mutableListOf("$n upgrade${if (n == 1) "" else "s"} from your cards", "would save ${money(saved)}")
+    val parts = mutableListOf("$n upgrade${if (n == 1) "" else "s"} from your cards")
+    if (saved > 0) parts += "${money(saved)} of cards you already own"
     if (places > 0) parts += "pull from $places place${if (places == 1) "" else "s"}"
     return parts.joinToString(" · ")
 }
@@ -378,13 +379,27 @@ fun withUpgrade(deck: Deck, cutId: String, add: DeckCardEntry): Deck {
     )
 }
 
+/** What [applyUpgradesForUndo] did: the library after, and what [undoUpgrades] needs to put it back. */
+data class UpgradeApplied(
+    val collections: List<Collection>,
+    val decks: List<Deck>,
+    /** The deck as it was before; null when nothing changed. */
+    val before: Deck?,
+    /** The real copies of the cards cut that went back to the Unsorted pile. */
+    val back: List<CollectionEntry>
+)
+
 /**
  * [swaps] (cut id to the entry coming in) made in deck [deckId], in one change: each as [withUpgrade],
  * and the real copies of each card cut (a physical deck's, proxies aside) back to the Unsorted pile,
  * as moving a card to Considering does.
  */
-fun applyUpgrades(collections: List<Collection>, decks: List<Deck>, deckId: String, swaps: List<Pair<String, DeckCardEntry>>): Pair<List<Collection>, List<Deck>> {
-    val before = decks.firstOrNull { it.id == deckId } ?: return collections to decks
+fun applyUpgrades(collections: List<Collection>, decks: List<Deck>, deckId: String, swaps: List<Pair<String, DeckCardEntry>>): Pair<List<Collection>, List<Deck>> =
+    applyUpgradesForUndo(collections, decks, deckId, swaps).let { it.collections to it.decks }
+
+/** [applyUpgrades], saying what it did, for Undo. */
+fun applyUpgradesForUndo(collections: List<Collection>, decks: List<Deck>, deckId: String, swaps: List<Pair<String, DeckCardEntry>>): UpgradeApplied {
+    val before = decks.firstOrNull { it.id == deckId } ?: return UpgradeApplied(collections, decks, null, emptyList())
     var deck = before
     val back = mutableListOf<CollectionEntry>()
     for ((cutId, add) in swaps) {
@@ -395,8 +410,21 @@ fun applyUpgrades(collections: List<Collection>, decks: List<Deck>, deckId: Stri
         if (leaving > 0) back += pileEntryOf(cut, leaving)
         deck = next
     }
-    if (deck === before) return collections to decks
+    if (deck === before) return UpgradeApplied(collections, decks, null, emptyList())
     val cols = if (back.isEmpty()) collections
     else withUnsortedPile(collections).map { if (it.id == UNSORTED_COLLECTION_ID) it.copy(entries = intoPile(it.entries, back)) else it }
-    return cols to decks.map { if (it.id == deckId) deck else it }
+    return UpgradeApplied(cols, decks.map { if (it.id == deckId) deck else it }, before, back)
+}
+
+/**
+ * Undo for [applyUpgradesForUndo]: the deck exactly as it was ([before] — cut cards back in their place,
+ * added cards and their pull-list marks gone, Considering as it was), and the copies that went back
+ * to the Unsorted pile ([back]) taken out of it again.
+ */
+fun undoUpgrades(collections: List<Collection>, decks: List<Deck>, before: Deck, back: List<CollectionEntry>): Pair<List<Collection>, List<Deck>> {
+    val cols = if (back.isEmpty()) collections else collections.map { c ->
+        if (c.id != UNSORTED_COLLECTION_ID) c
+        else c.copy(entries = back.fold(c.entries) { entries, e -> takenFromUnsorted(entries, e.scryfallId, e.name, e.quantity).first })
+    }
+    return cols to decks.map { if (it.id == before.id) before else it }
 }

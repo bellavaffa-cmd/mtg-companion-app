@@ -89,7 +89,7 @@ class DeckUpgradeTest {
         assertEquals(33.0, upgradeScore(UpgradeDeckCard("X", inclusion = 33), true), 0.0)
         assertEquals(0.0, upgradeScore(UpgradeDeckCard("X"), true), 0.0)
         assertEquals(44.0, upgradeScore(UpgradeDeckCard("X", edhrecRank = 1000, cmc = 2.0), false), 0.0)
-        assertEquals("0 upgrades from your cards · would save $0", upgradeSummary(emptyList()) { "$" + whole(it) })
+        assertEquals("0 upgrades from your cards", upgradeSummary(emptyList()) { "$" + whole(it) })
     }
 
     // ---- Where the owned cards are ----
@@ -157,5 +157,22 @@ class DeckUpgradeTest {
         val (sameCols, sameDecks) = applyUpgrades(cols, listOf(deck), "me", listOf("id-Gone" to dcard("Arcane Signet")))
         assertSame(deck, sameDecks[0])
         assertSame(cols, sameCols)
+    }
+
+    @Test
+    fun undoPutsTheDeckAndUnsortedBackExactly() {
+        val deck = deckOf("me", "Krenko", DeckOwnership.PHYSICAL, listOf(dcard("Mind Stone", replaceable = true), dcard("Shock"), dcard("Opt")))
+            .copy(considering = listOf(dcard("Big Score")))
+        val other = deckOf("x", "Other", DeckOwnership.VIRTUAL, listOf(dcard("Sol Ring")))
+        val cols = listOf(Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME, listOf(entry("Opt", 2)), createdAt = 0, type = CollectionType.OWNED.name))
+        val applied = applyUpgradesForUndo(cols, listOf(deck, other), "me", listOf("id-Mind Stone" to dcard("Arcane Signet")))
+        assertEquals(listOf("Opt" to 2, "Mind Stone" to 1), applied.collections[0].entries.map { it.name to it.quantity })
+        assertEquals(listOf("Mind Stone"), applied.back.map { it.name })
+        val (cols2, decks2) = undoUpgrades(applied.collections, applied.decks, applied.before!!, applied.back)
+        assertEquals(deck, decks2[0])
+        assertSame(other, decks2[1])
+        assertEquals(listOf("Opt" to 2), cols2[0].entries.map { it.name to it.quantity })
+        // Nothing made: nothing to undo.
+        assertNull(applyUpgradesForUndo(cols, listOf(deck), "me", listOf("id-Gone" to dcard("Arcane Signet"))).before)
     }
 }

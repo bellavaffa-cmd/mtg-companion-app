@@ -32,7 +32,8 @@ import com.mtgcompanion.app.data.UpgradeDeckCard
 import com.mtgcompanion.app.data.UpgradeInput
 import com.mtgcompanion.app.data.UpgradeOwnedCard
 import com.mtgcompanion.app.data.UpgradeSwap
-import com.mtgcompanion.app.data.applyUpgrades
+import com.mtgcompanion.app.data.applyUpgradesForUndo
+import com.mtgcompanion.app.data.undoUpgrades
 import com.mtgcompanion.app.data.ownedSources
 import com.mtgcompanion.app.data.upgradeRoleOf
 import com.mtgcompanion.app.data.upgradeSwaps
@@ -736,25 +737,36 @@ class DeckDetailViewModel(
      * card coming in into the deck and onto its pull list (DeckUpgrade.kt applyUpgrades). Says what
      * happened through [onDone].
      */
-    fun applyUpgradeSwaps(swaps: List<UpgradeSwap>, onDone: (String) -> Unit) {
+    fun applyUpgradeSwaps(swaps: List<UpgradeSwap>, onDone: (message: String, undo: (() -> Unit)?) -> Unit) {
         viewModelScope.launch {
             val missing = swaps.map { it.add.scryfallId }.filter { !upgradeCardData.containsKey(it) }
             if (missing.isNotEmpty()) cardRepository.getCardsByIds(missing).forEach { upgradeCardData[it.id] = it }
             val made = swaps.mapNotNull { s -> upgradeCardData[s.add.scryfallId]?.let { s to upgradeEntryOf(it) } }
             if (made.isEmpty()) {
-                onDone("Couldn't look up ${swaps.firstOrNull()?.add?.name ?: "the card"} — try again when you're online.")
+                onDone("Couldn't look up ${swaps.firstOrNull()?.add?.name ?: "the card"} — try again when you're online.", null)
                 return@launch
             }
-            val (cols, ds) = applyUpgrades(
+            val applied = applyUpgradesForUndo(
                 collectionRepository.collectionsFlow.first(), repository.decksFlow.first(), deckId,
                 made.map { (s, entry) -> s.cut.scryfallId to entry }
             )
-            collectionRepository.applySync { cols }
-            repository.change { ds }
+            val before = applied.before ?: return@launch
+            collectionRepository.applySync { applied.collections }
+            repository.change { applied.decks }
             val one = made.first().first
+            // Undo: the deck exactly as it was, and the cut cards' copies back out of Unsorted.
+            val undo = {
+                viewModelScope.launch {
+                    val (cols, ds) = undoUpgrades(collectionRepository.collectionsFlow.first(), repository.decksFlow.first(), before, applied.back)
+                    collectionRepository.applySync { cols }
+                    repository.change { ds }
+                }
+                Unit
+            }
             onDone(
                 if (made.size == 1) "${one.add.name} in for ${one.cut.name} — on the pull list" + (one.add.where?.takeIf { one.add.spare > 0 }?.let { " ($it)" } ?: "")
-                else "${made.size} swaps made — the new cards are on the pull list"
+                else "${made.size} swaps made — the new cards are on the pull list",
+                undo
             )
         }
     }
