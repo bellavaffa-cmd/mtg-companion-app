@@ -176,6 +176,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -401,6 +403,11 @@ fun DeckDetailScreen(
                     if (d != null) {
                         val deckActions = buildList {
                             if (onShare != null) add(CardMenuAction("Share with friends", Icons.Filled.Group, description = "View only — friends, pods or a link") { onShare() })
+                            if (d.cards.isNotEmpty() && !d.mode.limited) {
+                                add(CardMenuAction("Upgrade with my cards", Icons.Filled.SwapHoriz, description = "Swaps from cards you already own") {
+                                    tabs.indexOf("Suggestions").takeIf { it >= 0 }?.let { page -> scope.launch { pagerState.animateScrollToPage(page) } }
+                                })
+                            }
                             add(CardMenuAction("Playtest", Icons.Filled.Casino, description = "Mulligan, play or draw, then turns") { showGoldfish = true })
                             add(CardMenuAction("Compare with…", Icons.Filled.Layers, description = "Another deck or a saved version") { comparePicking = true })
                             if (onHistory != null) add(CardMenuAction("History", Icons.Filled.History, description = "Every change to the list, and versions saved by name") { onHistory() })
@@ -561,7 +568,24 @@ fun DeckDetailScreen(
                         onConsiderName = { name -> addSuggestion = name to null },
                         onConsiderCard = { card -> addSuggestion = card.name to card },
                         onMarkCut = { entry -> viewModel.setReplaceable(entry.scryfallId, true) },
-                        onViewDetails = onViewDetails
+                        onViewDetails = onViewDetails,
+                        deck = currentDeck,
+                        onMessage = toast,
+                        onUpgradeDone = { message, undo ->
+                            // In the app's snackbar with Undo, like every other add — and in the screen's
+                            // scope, so changing tab doesn't take the Undo away.
+                            scope.launch {
+                                val host = addTo.host
+                                host.currentSnackbarData?.dismiss()
+                                val result = host.showSnackbar(
+                                    message,
+                                    actionLabel = if (undo != null) "Undo" else null,
+                                    withDismissAction = undo == null,
+                                    duration = SnackbarDuration.Long
+                                )
+                                if (result == SnackbarResult.ActionPerformed) undo?.invoke()
+                            }
+                        }
                     )
                     else -> Unit
                 }
@@ -2395,12 +2419,21 @@ private fun AnalysisTab(
     onConsiderName: (String) -> Unit,
     onConsiderCard: (ScryfallCard) -> Unit,
     onMarkCut: (DeckCardEntry) -> Unit,
-    onViewDetails: (String) -> Unit
+    onViewDetails: (String) -> Unit,
+    deck: Deck,
+    onMessage: (String) -> Unit,
+    /** What Swap now did, and its Undo (null when nothing changed). */
+    onUpgradeDone: (String, (() -> Unit)?) -> Unit
 ) {
+    // "Not this one" on an upgrade swap is remembered per deck on this phone.
+    val context = LocalContext.current
+    LaunchedEffect(deck.id) { viewModel.setUpgradeDismissed(UpgradeDismissedStore.load(context, deck.id)) }
     if (analysis.loading) {
         LoadingBox()
         return
     }
+    val upgrade by viewModel.upgrade.collectAsState()
+    val upgradeDismissed by viewModel.upgradeDismissed.collectAsState()
     val viewMode by viewModel.recViewMode.collectAsState()
     val gridColumns by viewModel.gridColumns.collectAsState()
     val budgetSwaps by viewModel.budgetSwaps.collectAsState()
@@ -2420,6 +2453,27 @@ private fun AnalysisTab(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (deck.cards.isNotEmpty() && !deck.mode.limited) {
+            item(key = "upgrade") {
+                UpgradePanel(
+                    report = upgrade,
+                    usesCommander = deck.mode.usesCommander,
+                    dismissedCount = upgradeDismissed?.size ?: 0,
+                    onSwap = { swaps -> viewModel.applyUpgradeSwaps(swaps, onUpgradeDone) },
+                    onConsider = { swap -> viewModel.considerUpgrade(swap, onMessage) },
+                    onDismiss = { swap ->
+                        val next = upgradeDismissed.orEmpty() + swap.key
+                        viewModel.setUpgradeDismissed(next)
+                        UpgradeDismissedStore.save(context, deck.id, next)
+                    },
+                    onBringBack = {
+                        viewModel.setUpgradeDismissed(emptySet())
+                        UpgradeDismissedStore.save(context, deck.id, emptySet())
+                    },
+                    onOpen = onViewDetails
+                )
+            }
+        }
         item(key = "owned-only") {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
