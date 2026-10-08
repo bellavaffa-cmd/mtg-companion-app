@@ -26,6 +26,8 @@ import com.mtgcompanion.app.data.mergeCopyPlaces
 import com.mtgcompanion.app.data.mergeGear
 import com.mtgcompanion.app.data.keepRecipesFromOlderApp
 import com.mtgcompanion.app.data.mergeRecipes
+import com.mtgcompanion.app.data.keepGoalsFromOlderApp
+import com.mtgcompanion.app.data.mergeGoals
 import com.mtgcompanion.app.data.mergeLoans
 import com.mtgcompanion.app.data.mergePlaceLists
 import com.mtgcompanion.app.data.tidied
@@ -56,6 +58,8 @@ import com.mtgcompanion.app.data.tidied
  *    on like a deck's tags; a pile saved by an app that doesn't know about gear leaves it as it was.
  *  - The sorting recipes (on the Unsorted pile, see SortRecipes.kt) merge recipe by recipe; a pile
  *    saved by an app that doesn't know about recipes leaves them as they were.
+ *  - The collection goals (on the Unsorted pile, see CollectionGoals.kt) merge goal by goal; a pile
+ *    saved by an app that doesn't know about goals leaves them as they were.
  *  - The loans (on the Unsorted pile, see Loans.kt) merge loan by loan, their cards card by card, and
  *    the copies back only go up; a pile saved by an app that doesn't know about loans leaves them as
  *    they were.
@@ -227,8 +231,9 @@ object ItemMerge {
             // ...and one that doesn't know about a wishlist target's options left those as they were.
             // ...and one that doesn't know about sealed product, graded copies or gear left those as they were.
             // ...and one that doesn't know about sorting recipes left those as they were.
-            keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine))))))))),
-            keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs))))))))),
+            // ...and one that doesn't know about collection goals left those as they were.
+            keepGoalsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine)))))))))),
+            keepGoalsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs)))))))))),
             minePreferred
         )
 
@@ -239,6 +244,7 @@ object ItemMerge {
         graded = mergeGraded(base.graded, mine.graded, theirs.graded, minePreferred),
         gear = mergeGear(base.gear, mine.gear, theirs.gear, minePreferred),
         sortRecipes = mergeRecipes(base.sortRecipes, mine.sortRecipes, theirs.sortRecipes, minePreferred),
+        collectionGoals = mergeGoals(base.collectionGoals, mine.collectionGoals, theirs.collectionGoals, minePreferred),
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         type = pick(base.type, mine.type, theirs.type, minePreferred),
         createdAt = minOf(mine.createdAt, theirs.createdAt),

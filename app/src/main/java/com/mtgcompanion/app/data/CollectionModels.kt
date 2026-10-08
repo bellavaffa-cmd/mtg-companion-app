@@ -340,6 +340,13 @@ data class Collection(
      * doesn't know about them.
      */
     val sortRecipes: List<SortRecipe>? = null,
+    /**
+     * The Unsorted pile only: the user's collection goals (see CollectionGoals.kt). Rides along like
+     * [sortRecipes] and merges goal by goal. Null (left out) until the first is saved; then kept, as an
+     * empty list once none are left — so a pile with no "collectionGoals" key was saved by an app that
+     * doesn't know about them.
+     */
+    val collectionGoals: List<CollectionGoal>? = null,
     /** A sample binder from the welcome flow — see Deck.sample. Null (left out) on everything else. */
     val sample: Boolean? = null
 ) {
