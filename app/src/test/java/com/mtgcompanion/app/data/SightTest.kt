@@ -83,4 +83,16 @@ class SightTest {
         assertTrue(smallPrintAgrees(m("Island", 1, 0.7f, "plst"), named))
         assertTrue(smallPrintAgrees(null, named))
     }
+
+    @Test
+    fun aPrintingNamedBySmallPrintAloneStandsWhenTheLookBearsItOut() {
+        val forest = IndexEntry(900, "fin306", 0, "Forest", "fin", "306", 77)
+        val itself = IndexMatch(forest, 0.82f)
+        // The look agrees: it's that Forest.
+        assertTrue(smallPrintStands(forest, listOf(itself, m("Forest", 78, 0.8f)), itself, listOf(itself)))
+        // The look plainly says it's another card altogether: a misread number named the wrong card.
+        assertFalse(smallPrintStands(forest, listOf(IndexMatch(forest, 0.4f)), IndexMatch(forest, 0.4f), listOf(m("Lightning Bolt", 5, 0.9f), m("Lightning Bolt", 6, 0.85f))))
+        // Or another Forest, by far.
+        assertFalse(smallPrintStands(forest, listOf(m("Forest", 78, 0.9f)), IndexMatch(forest, 0.6f), emptyList()))
+    }
 }

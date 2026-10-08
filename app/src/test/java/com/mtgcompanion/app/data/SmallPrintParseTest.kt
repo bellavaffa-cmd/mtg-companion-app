@@ -1,7 +1,9 @@
 package com.mtgcompanion.app.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -61,5 +63,89 @@ class SmallPrintParseTest {
         assertEquals("FRC", parseSetCode(listOf("Illus. Someone", "FRC ENTTUS LUNTER")))
         assertNull(parseSetCode(listOf("U 0211")))
         assertNull(parseSetCode(listOf("U 0021", "RAY XY")))
+    }
+
+    // The owner's report from tester build 39: a Final Fantasy full-art Forest, its small print plainly
+    // in view, went in as "Forest again — copy 3". These are the two lines exactly as printed.
+    private val finForest = "L 0306   FFIX\nFIN • EN  [paintbrush] ALAYNA DANNER"
+
+    @Test
+    fun theFinalFantasyForestsSmallPrintNamesItsPrinting() {
+        // The game's code ("FFIX") on the number line is neither a set code nor in the way.
+        assertEquals("FIN" to "306", read(finForest))
+        assertEquals("FIN" to "306", read("L 0306   FFIX\nFIN • EN  ALAYNA DANNER"))
+        assertEquals("FIN", parseSetCode(finForest.split("\n")))
+        // The bottom-right lines run on by the reader don't change it.
+        assertEquals("FIN" to "306", read("L 0306 FFIX FF© SQUARE ENIX\nFIN • EN ALAYNA DANNER ™ & © 2025 Wizards of the Coast"))
+    }
+
+    @Test
+    fun aSecondCardsSmallPrintInViewIsNotPairedWithTheFirsts() {
+        // The card underneath peeks out of the pile; its small print read first used to give the top
+        // card's set code the other card's number (FIN #309, a different Forest).
+        assertEquals("FIN" to "306", read("FF© SQUARE ENIX\nL 0309   FFXII\nL 0306   FFIX\nFIN • EN  ALAYNA DANNER"))
+        // Both cards' small print read whole: no telling which is which, so no printing at all...
+        val both = "$finForest\nL 0307   FFX\nFIN • EN  SOMEONE ELSE"
+        assertNull(read(both))
+        assertEquals(listOf("FIN" to "306", "FIN" to "307"), smallPrintReadings(both.split("\n")))
+        // ...and off the camera's whole frame, two set lines in view are left to the card's own edges.
+        assertNull(frameSetAndNumber(listOf("L 0306   FFIX", "FIN • EN  ALAYNA DANNER", "FIN • EN")))
+        assertEquals("FIN" to "306", frameSetAndNumber(finForest.split("\n")))
+        // Two different set codes: neither is the card's for sure.
+        assertNull(parseSetCode(listOf("FIN • EN", "DSK • EN")))
+    }
+
+    @Test
+    fun everyLayoutOfTheSmallPrintReads() {
+        assertEquals("DSK" to "123", read("0123/0277 R\nDSK • EN")) // number/total, before 2023's sets
+        assertEquals("DSK" to "123", read("R 0123\nDSK • EN")) // rarity first, since
+        assertEquals("SLD" to "1234", read("M 1234\nSLD • EN")) // four digits
+        assertEquals("DSK" to "123p", read("R 0123p\nDSK • EN")) // a promo's letter
+        assertEquals("SLD" to "1★", read("R 0001★\nSLD • EN"))
+        assertEquals("2X2" to "12", read("C 0012\n2X2 • EN")) // digits in the set code
+        assertEquals("M21" to "45", read("R 0045\nM21 • EN"))
+        assertEquals("40K" to "45", read("R 0045\n40K • EN"))
+        assertEquals("PLST" to "211", read("U 0211\nPLST • EN")) // four and five letters
+        assertEquals("DSK" to "45", read("R 0045\nDSK • JA")) // Japanese
+        assertEquals("DSK" to "45", read("r 0045\ndsk • en")) // read in lowercase
+        // Lowercase without a mark between is just words.
+        assertNull(read("r 0045\nthe en"))
+    }
+
+    @Test
+    fun samePrintingIgnoresLeadingZerosAndCase() {
+        assertTrue(samePrinting("FIN" to "0306", "fin" to "306"))
+        assertFalse(samePrinting("FIN" to "306", "FIN" to "307"))
+        assertEquals("123", plainNumber("123p"))
+        assertEquals("1", plainNumber("1★"))
+    }
+
+    @Test
+    fun aPrintingReadWithTheTitleUnreadCountsOnceItReadsTheSameTwice() {
+        val streak = SmallPrintStreak()
+        assertNull(streak.see("FIN" to "306"))
+        assertEquals("FIN" to "306", streak.see("FIN" to "0306"))
+        assertNull(streak.see("FIN" to "308")) // a misread digit starts again
+        assertNull(streak.see(null))
+        assertNull(streak.see("FIN" to "308"))
+    }
+
+    @Test
+    fun theNextBasicLandOfAPileIsToldApartByItsSmallPrint() {
+        val fin306 = "FIN" to "306"
+        val fin307 = "FIN" to "307"
+        // The Forest just taken was FIN 306; FIN 307 now reads twice running: a new card.
+        assertTrue(newPrintingInView(fin307, fin307, fin306, null))
+        assertTrue(newPrintingInView(fin307, fin307, null, fin306))
+        // Read once only, or the same printing as before: the card just taken, still in view.
+        assertFalse(newPrintingInView(fin307, null, fin306, null))
+        assertFalse(newPrintingInView(fin307, fin306, fin306, null))
+        assertFalse(newPrintingInView(fin306, fin306, fin306, null))
+        // Nothing read now, or nothing to compare with: as before, by name.
+        assertFalse(newPrintingInView(null, null, fin306, null))
+        assertFalse(newPrintingInView(fin307, fin307, null, null))
+        // What was read at the lookup counts over what it went in as, so a printing the look chose
+        // differently isn't taken for a new card frame after frame.
+        assertFalse(newPrintingInView(fin307, fin307, fin307, fin306))
     }
 }

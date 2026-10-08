@@ -163,3 +163,15 @@ const val SMALL_PRINT_SHARE = 0.015f
 
 /** How tall the reader wants the small print's letters, in pixels. */
 private const val SMALL_PRINT_TEXT_PX = 32f
+
+/**
+ * Where the small print is looked for when the card's own edges weren't found: the band [top]..[bottom]
+ * (shares of a card's height) of the card the guide holds — fitted to a card's shape ([cardShaped]) —
+ * not of the guide. The guide is a different shape from a card, so its bottom band sat partly below
+ * the card, on whatever lay there: in a pile, the next card's small print.
+ */
+fun smallPrintBand(guide: ScanBox, top: Float, bottom: Float): ScanBox {
+    val card = guide.cardShaped()
+    val height = card.bottom - card.top
+    return ScanBox(card.left, card.top + (height * top).toInt(), card.right, card.top + (height * bottom).toInt())
+}

@@ -193,4 +193,19 @@ class ScanCropTest {
         assertTrue("the card should fill the guide's width, but is $slack px narrower", slack <= 2)
     }
 
+
+    @Test
+    fun theSmallPrintIsLookedForAtTheBottomOfTheCardNotOfTheGuide() {
+        // The guide is wider and taller than a card's shape; the card fits it by width.
+        val guide = ScanBox(110, 325, 970, 1595)
+        val card = guide.cardShaped()
+        val band = smallPrintBand(guide, 0.88f, 0.99f)
+        assertEquals(card.left, band.left)
+        assertEquals(card.right, band.right)
+        // Inside the card, not below it — where the guide's own bottom band reached, onto the next card.
+        assertTrue(band.bottom <= card.bottom)
+        assertTrue(band.top >= card.top + (card.bottom - card.top) * 0.87f)
+        val guideBandBottom = guide.top + ((guide.bottom - guide.top) * 0.99f).toInt()
+        assertTrue(guideBandBottom > card.bottom)
+    }
 }

@@ -57,6 +57,11 @@ import com.mtgcompanion.app.data.confirmRead
 import com.mtgcompanion.app.data.scanCacheKey
 import com.mtgcompanion.app.data.STEADY_READS
 import com.mtgcompanion.app.data.parseSetAndNumber
+import com.mtgcompanion.app.data.frameSetAndNumber
+import com.mtgcompanion.app.data.newPrintingInView
+import com.mtgcompanion.app.data.plainNumber
+import com.mtgcompanion.app.data.smallPrintStands
+import com.mtgcompanion.app.data.SmallPrintStreak
 import com.mtgcompanion.app.data.Confirmation
 import com.mtgcompanion.app.data.scannedTwiceOver
 import com.mtgcompanion.app.data.copyNumber
@@ -337,6 +342,12 @@ class ScanViewModel(
     private var lastCandidate: String? = null
     private var lastLookedUp: String? = null
     private var lastAddedCard: ScryfallCard? = null
+    // The small print read in the previous frame, and the one the card last looked up was read with:
+    // a pile of one name (basic lands) is told apart by its printing — see newPrintingInView.
+    private var lastFramePrinting: Pair<String, String>? = null
+    private var lastLookedUpPrinting: Pair<String, String>? = null
+    // The small print read with the title unread, which has to read the same twice running.
+    private val smallPrintStreak = SmallPrintStreak()
     private var blankFrameStreak = 0
     // Reads of the same title in a row; a card is looked up at STEADY_READS of them.
     private var steadyReads = 0
@@ -629,6 +640,9 @@ class ScanViewModel(
             lastCandidate = null
             lastLookedUp = null
             lastAddedCard = null
+            lastFramePrinting = null
+            lastLookedUpPrinting = null
+            smallPrintStreak.reset()
             inFlight.cardLeft()
         }
         busy.set(false)
@@ -643,19 +657,35 @@ class ScanViewModel(
     private fun lookBySight(recognizer: CardRecognizer, image: InputImage, onProcessed: () -> Unit, cut: GuideCut) {
         viewModelScope.launch {
             val started = SystemClock.elapsedRealtime()
-            val sight = withContext(Dispatchers.Default) {
-                runCatching {
-                    uprightFrame(cut.picture, image.rotationDegrees)?.let { FlatCard.find(it, cut.guide) }
-                        ?.let { cardBySight(recognizer.recognize(it).anywhere) }
-                }.getOrNull()
+            val flat = withContext(Dispatchers.Default) {
+                runCatching { uprightFrame(cut.picture, image.rotationDegrees)?.let { FlatCard.find(it, cut.guide) } }.getOrNull()
+            }
+            val seen = flat?.let { withContext(Dispatchers.Default) { runCatching { recognizer.recognize(it) }.getOrNull() } }
+            var sight = seen?.let { cardBySight(it.anywhere) }
+            // The small print says which printing it is as plainly as the title says which card: set
+            // code and number, looked up in the index on the phone. Read here only when the look alone
+            // can't tell, since it's another read of the card; taken once it's read the same twice
+            // running, and only if the look bears it out.
+            var printed: Pair<String, String>? = null
+            if (sight == null && flat != null && _uiState.value.scanMode.readsSmallPrint) {
+                val lines = withContext(Dispatchers.Default) { flat.smallPrintStrip() }?.let { readStrip(it) }
+                val read = smallPrintStreak.see(lines?.let { parseSetAndNumber(it) })
+                val entry = read?.let { recognizer.index.printingAt(it.first, it.second) }
+                if (read != null && entry != null) {
+                    val check = withContext(Dispatchers.Default) { runCatching { recognizer.recognize(flat, entry.name, entry.set, entry.id) }.getOrNull() }
+                    if (check == null || smallPrintStands(entry, check.named, check.printing, check.anywhere)) {
+                        sight = entry
+                        printed = read
+                    } else Log.d("ScanTiming", "title unread; small print said ${read.first} #${read.second} (${entry.name}), but it doesn't look like it")
+                }
             }
             if (sight == null) {
                 noTitle(onProcessed)
                 return@launch
             }
-            timing("title unread; by sight: ${sight.name} ${sight.set} #${sight.number}", started)
+            timing("title unread; ${if (printed != null) "by its small print" else "by sight"}: ${sight.name} ${sight.set} #${sight.number}", started)
             blankFrameStreak = 0
-            proceed(sight.name, emptyList(), image, onProcessed, cut, forced = false, seenBySight = true)
+            proceed(sight.name, emptyList(), image, onProcessed, cut, forced = false, seenBySight = true, printingHint = printed)
         }
     }
 
@@ -670,7 +700,8 @@ class ScanViewModel(
         onProcessed: () -> Unit,
         cut: GuideCut?,
         forced: Boolean,
-        seenBySight: Boolean
+        seenBySight: Boolean,
+        printingHint: Pair<String, String>? = null
     ) {
         // A frame read before the pinch began, or while auto zoom or a refocus settles: the picture
         // is moving, so it's not a steady read.
@@ -698,6 +729,22 @@ class ScanViewModel(
             return
         }
         val skipGuards = forced || taken
+        // The exact printing, when the small print was read in this frame (or with the title unread).
+        val fromFrame = printingHint ?: extractSetAndNumber(lines)
+        val previousFramePrinting = lastFramePrinting
+        lastFramePrinting = fromFrame
+        if (!skipGuards && newPrintingInView(
+                fromFrame, previousFramePrinting, lastLookedUpPrinting,
+                lastAddedCard?.let { c -> c.set?.let { s -> c.collectorNumber?.let { n -> s to n } } }
+            ) && lastAddedCard?.let { looksLikeSameCard(candidate, it.name) } == true
+        ) {
+            // The same name, but its small print names another printing, read twice running: not the
+            // card just taken still in view, but the next of a pile of them laid on top (basic lands).
+            Log.d("ScanTiming", "same name, new printing in view: ${fromFrame?.first} #${fromFrame?.second}")
+            lastAddedCard = null
+            lastLookedUp = null
+            inFlight.cardLeft()
+        }
         if (!skipGuards) {
             val added = lastAddedCard?.let { looksLikeSameCard(candidate, it.name) } == true
             if (added || inFlight.isOnItsWay(candidate, ::looksLikeSameCard)) {
@@ -721,12 +768,12 @@ class ScanViewModel(
             return
         }
         lastLookedUp = normalized
+        lastLookedUpPrinting = fromFrame
 
         // The set code + collector number name the exact printing. The camera's own pass sometimes
         // reads them; when it doesn't, a copy of the picture goes with the card, for a closer look
         // at the small print and for matching the art — both done in the lookup queue, off the
         // camera.
-        val fromFrame = extractSetAndNumber(lines)
         val frameSet = if (fromFrame != null) null else parseSetCode(lines.map { it.text })
         val grabFrame: (() -> Bitmap?)? = if (cut != null) ({ cut.picture }) else currentFrame
         val rotation = image.rotationDegrees
@@ -809,7 +856,10 @@ class ScanViewModel(
         var printing = scan.fromFrame ?: strip?.let { parseSetAndNumber(it) }
         // When the number wouldn't read, the set code on its own still narrows the printings to
         // that set's few, for the look to choose between (see matchArt).
-        var setCode = if (printing != null) null else strip?.let { parseSetCode(it) } ?: scan.frameSet
+        // Kept even when the number read too: should that printing turn out not to be the card (a
+        // misread number), the set code still narrows its printings to that set's. Dropping it left a
+        // pile of basic lands all going in as the name's usual printing — "Forest again — copy 3".
+        var setCode = printing?.first ?: strip?.let { parseSetCode(it) } ?: scan.frameSet
         // Still not read: a few more goes on fresh frames, for as long as the card is in view.
         if (printing == null && readsSmallPrint && scan.fromFrame == null && picture != null) {
             val until = SystemClock.elapsedRealtime() + SMALL_PRINT_PATIENCE_MS
@@ -825,11 +875,11 @@ class ScanViewModel(
                 if (setCode == null) setCode = lines?.let { parseSetCode(it) }
                 tries++
             }
-            if (printing != null) setCode = null
+            printing?.let { setCode = it.first }
             Log.d("ScanTiming", "small print ${if (printing != null) "read on retry $tries" else "still unread after $tries more"}")
         }
         // What it read, as well as how long it took: a quicker read is no use if it reads less.
-        if (scan.fromFrame == null && picture != null && readsSmallPrint) timing("small print ${printing?.let { "read ${it.first} #${it.second}" } ?: setCode?.let { "read set $it only" } ?: "not read"}", started)
+        if (scan.fromFrame == null && picture != null && readsSmallPrint) timing("small print ${printing?.let { p -> "read ${p.first} #${p.second}" } ?: setCode?.let { "read set $it only" } ?: "not read"}", started)
         else if (scan.fromFrame != null) Log.d("ScanTiming", "small print read in the frame itself: ${scan.fromFrame.first} #${scan.fromFrame.second}")
         // Keyed on the title as well as the printing. On the printing alone, a misread collector
         // number hands back whichever card was scanned under that number earlier — a different card
@@ -906,6 +956,7 @@ class ScanViewModel(
                     name = card?.name, set = card?.set, number = card?.collectorNumber,
                     certain = card != null && sightWasCertain == true,
                     how = when {
+                        scan.fromFrame != null && scan.seenBySight -> "title unread; printing read off the small print"
                         scan.fromFrame != null -> "printing read in the frame"
                         printing != null -> "printing read off the small print"
                         scan.seenBySight -> "known by sight"
@@ -1186,12 +1237,15 @@ class ScanViewModel(
      */
     private suspend fun resolveCard(candidate: String, printing: Pair<String, String>?): ScryfallCard {
         if (printing != null) {
-            val exact = try {
-                cardRepository.getBySetAndNumber(printing.first, printing.second)
-            } catch (e: Exception) {
-                null
+            // A promo's letter ("123p") may have been read where there is none; tried without it too.
+            for (number in listOf(printing.second, plainNumber(printing.second)).distinct()) {
+                val exact = try {
+                    cardRepository.getBySetAndNumber(printing.first, number)
+                } catch (e: Exception) {
+                    null
+                }
+                if (exact != null && looksLikeSameCard(candidate, exact.name)) return exact
             }
-            if (exact != null && looksLikeSameCard(candidate, exact.name)) return exact
         }
         return cardRepository.getByFuzzyName(candidate)
     }
@@ -2020,4 +2074,4 @@ internal fun extractCardName(lines: List<Text.Line>): String? {
  * confidently (the caller then falls back to name).
  */
 internal fun extractSetAndNumber(textLines: List<Text.Line>): Pair<String, String>? =
-    parseSetAndNumber(textLines.map { it.text })
+    frameSetAndNumber(textLines.map { it.text })

@@ -122,6 +122,25 @@ class CardIndex(bytes: ByteArray) {
     /** The rows of the printing with Scryfall id [id] — one per face. */
     fun rowsWithId(id: String): IntArray = byId[id] ?: IntArray(0)
 
+    // Built the first time a printing is asked for by its small print.
+    private val bySetNumber: Map<String, IntArray> by lazy {
+        val map = HashMap<String, MutableList<Int>>()
+        for (r in 0 until count) map.getOrPut(setNumberKey(setOf(r), numbers[numberOf[r].toInt() and 0xFFFF])) { mutableListOf() } += r
+        map.mapValues { it.value.toIntArray() }
+    }
+
+    /**
+     * The printing the small print names — set code [set] (any case: "fin", "FIN", "2X2", "40K") and
+     * collector number [number] ("0306" and "306" alike) — its front face, or null when the index
+     * holds no such printing. A promo's letter ("123p") is tried without it too.
+     */
+    fun printingAt(set: String, number: String): IndexEntry? {
+        val rows = bySetNumber[setNumberKey(set, number)]
+            ?: bySetNumber[setNumberKey(set, plainNumber(number))]
+            ?: return null
+        return rows.map { entry(it) }.minByOrNull { it.face }
+    }
+
     /** The set code of row [row]'s printing. */
     fun setOf(row: Int): String = sets[setOf[row].toInt() and 0xFFFF]
 
@@ -158,5 +177,8 @@ class CardIndex(bytes: ByteArray) {
 
     private companion object {
         const val MAGIC = 0x5849424d // "MBIX", little-endian
+
+        fun setNumberKey(set: String, number: String) =
+            set.lowercase() + ":" + number.trimStart('0').ifEmpty { "0" }.lowercase()
     }
 }

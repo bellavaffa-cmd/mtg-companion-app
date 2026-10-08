@@ -86,4 +86,17 @@ class CardIndexTest {
     fun somethingThatIsNotACardIndexIsRefused() {
         CardIndex(ByteArray(40))
     }
+
+    @Test
+    fun aPrintingIsFoundByItsSmallPrintWhateverTheCaseAndZeros() {
+        assertEquals(id(1), index.printingAt("MSC", "0213")?.id)
+        assertEquals(id(1), index.printingAt("msc", "213")?.id)
+        assertEquals(id(3), index.printingAt("2XM", "129")?.id)
+        assertEquals(id(2), index.printingAt("SLD", "2330")?.id)
+        // A promo's letter read where the index has none.
+        assertEquals(id(1), index.printingAt("MSC", "213p")?.id)
+        assertEquals("Delver of Secrets // Insectile Aberration", index.printingAt("ISD", "51")?.name)
+        assertEquals(null, index.printingAt("MSC", "214"))
+        assertEquals(null, index.printingAt("FIN", "306"))
+    }
 }

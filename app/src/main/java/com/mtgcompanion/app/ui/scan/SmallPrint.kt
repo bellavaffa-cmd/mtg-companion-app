@@ -3,6 +3,7 @@ package com.mtgcompanion.app.ui.scan
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import com.mtgcompanion.app.data.ScanBox
+import com.mtgcompanion.app.data.smallPrintBand
 import com.mtgcompanion.app.data.smallPrintScale
 
 /**
@@ -30,7 +31,7 @@ fun uprightFrame(frame: Bitmap, rotation: Int): Bitmap? {
 }
 
 /**
- * The bottom strip of the guide, upright and blown up, or null when there's nothing worth reading.
+ * The bottom strip of the card in the guide, upright and blown up, or null when there's nothing worth reading.
  * [frame] is the camera's picture, [rotation] how far it has to be turned to stand upright.
  */
 fun smallPrintStrip(frame: Bitmap, rotation: Int, guide: ScanBox?): Bitmap? {
@@ -38,12 +39,13 @@ fun smallPrintStrip(frame: Bitmap, rotation: Int, guide: ScanBox?): Bitmap? {
         val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
         runCatching { Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, matrix, true) }.getOrNull() ?: return null
     }
-    val box = guide ?: ScanBox(0, 0, upright.width, upright.height)
-    val left = box.left.coerceIn(0, upright.width - 1)
-    val right = box.right.coerceIn(left + 1, upright.width)
-    val height = box.bottom - box.top
-    val top = (box.top + height * STRIP_TOP).toInt().coerceIn(0, upright.height - 1)
-    val bottom = (box.top + height * STRIP_BOTTOM).toInt().coerceIn(top + 1, upright.height)
+    // The bottom of the card the guide holds, not of the guide itself (see smallPrintBand).
+    val band = smallPrintBand(guide ?: ScanBox(0, 0, upright.width, upright.height), STRIP_TOP, STRIP_BOTTOM)
+    val left = band.left.coerceIn(0, upright.width - 1)
+    val right = band.right.coerceIn(left + 1, upright.width)
+    val top = band.top.coerceIn(0, upright.height - 1)
+    val bottom = band.bottom.coerceIn(top + 1, upright.height)
+    val height = ((band.bottom - band.top) / (STRIP_BOTTOM - STRIP_TOP)).toInt()
     if (right - left < 40 || bottom - top < 8) return null
 
     val strip = runCatching { Bitmap.createBitmap(upright, left, top, right - left, bottom - top) }.getOrNull() ?: return null
