@@ -181,6 +181,13 @@ internal fun ScannerSection(settingsRepository: SettingsRepository) {
         "The camera zooms until the card fills the outline, and focuses again on it when it goes soft. Pinching or − / + takes the zoom over until you tap the zoom.",
         autoCamera
     ) { AutoCameraSetting.set(context, it) }
+    // Kept on this phone only too (ui/scan/ScanCardPanel.kt).
+    val lastScanned by remember { com.mtgcompanion.app.ui.scan.LastScannedSetting.flow(context) }.collectAsState()
+    SwitchRow(
+        "Show last scanned card",
+        "The card just scanned stays over the camera until the next one: its set code and number, how it was recognised, and Change printing, Foil and Undo.",
+        lastScanned
+    ) { com.mtgcompanion.app.ui.scan.LastScannedSetting.set(context, it) }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
     LearnedCorrections()
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))

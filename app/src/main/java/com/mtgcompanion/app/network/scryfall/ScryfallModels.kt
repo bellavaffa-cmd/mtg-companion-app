@@ -93,7 +93,9 @@ data class ScryfallCard(
     /** Printed with art over the whole card. */
     @Json(name = "full_art") val fullArt: Boolean? = null,
     val artist: String? = null,
-    @Json(name = "flavor_text") val flavorText: String? = null
+    @Json(name = "flavor_text") val flavorText: String? = null,
+    /** The printing's language ("en", "ja"…): the scanner's Last scanned panel shows it as printed. */
+    val lang: String? = null
 ) {
     val displayImageUrl: String?
         get() = imageUris?.normal ?: cardFaces?.firstOrNull()?.imageUris?.normal

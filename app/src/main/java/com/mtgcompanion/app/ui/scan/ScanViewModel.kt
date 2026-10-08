@@ -71,6 +71,8 @@ import com.mtgcompanion.app.data.Confirmation
 import com.mtgcompanion.app.data.scannedTwiceOver
 import com.mtgcompanion.app.data.copyNumber
 import com.mtgcompanion.app.data.ScanRow
+import com.mtgcompanion.app.data.ScanHow
+import com.mtgcompanion.app.data.HeldPrintingWatch
 import com.mtgcompanion.app.data.CheckScan
 import com.mtgcompanion.app.data.CheckScope
 import com.mtgcompanion.app.data.CheckSessions
@@ -354,6 +356,7 @@ class ScanViewModel(
             if (value == null) {
                 lastAddedRow = null
                 held.reset()
+                stopWatchingHeld()
             }
         }
     // The card just taken while it stays under the camera: counted once however its printing reads,
@@ -659,6 +662,7 @@ class ScanViewModel(
             lastAddedCard = null
             lastAddedRow = null
             held.reset()
+            stopWatchingHeld()
             smallPrintStreak.reset()
             inFlight.cardLeft()
         }
@@ -740,6 +744,7 @@ class ScanViewModel(
             titleBox(r.left, r.top, r.right, r.bottom, input.width, input.height)
         }
         val verdict = held.frame(candidate, fromFrame, where, seenBySight)
+        watchHeld(candidate, fromFrame, verdict)
 
         // Still the same physical card sitting in frame, even if this frame's OCR came out
         // slightly different from the exact string we last looked up — don't re-add it. A forced
@@ -965,6 +970,12 @@ class ScanViewModel(
                 added = shown
                 addedRow = row
                 readings[row] = reading
+                noteHow(row, when {
+                    applied != null -> ScanHow.LEARNED
+                    printed && sight == null -> ScanHow.SMALL_PRINT
+                    scan.seenBySight -> ScanHow.SIGHT
+                    else -> ScanHow.NAME
+                })
                 if (applied != null) learnedApplied(row, applied)
                 else if (recognizer == null) matchArt(row, card, look, setCode)
             }
@@ -1234,6 +1245,7 @@ class ScanViewModel(
             rows.map { if (it.id == rowId) it.copy(card = pick, exact = only) else it },
             if (pick.id == scanned.id) null else "${scanned.name} — $how"
         )
+        noteHow(rowId, ScanHow.SIGHT)
     }
 
     /**
@@ -1786,6 +1798,7 @@ class ScanViewModel(
         _putAwayTarget.value?.let { return putAwayCard(card, it) }
         _check.value?.let { return checkCard(card, exact, it) }
         val row = ScanRow(nextScanId++, card, System.currentTimeMillis(), exact)
+        _panel.update { it.copy(rows = it.rows + row.id) }
         val rows = listOf(row) + _uiState.value.scannedCards
         val copy = copyNumber(rows, row)
         val status = if (copy > 1) {
@@ -1835,6 +1848,7 @@ class ScanViewModel(
             try {
                 val card = cardRepository.getByFuzzyName(trimmed)
                 val row = addScannedCard(card)
+                noteHow(row, ScanHow.NAME)
                 lastAddedCard = card
                 lastAddedRow = row
                 held.taken(card.name, listOf(printingOf(card)))
@@ -1886,6 +1900,7 @@ class ScanViewModel(
             }
             // The picture says which art; only when no other printing shares it is it certain.
             val row = addScannedCard(card, exact = seen.anywhere.drop(1).none { it.entry.group == sight.group })
+            noteHow(row, ScanHow.SIGHT)
             lastAddedCard = card
             lastAddedRow = row
             held.taken(card.name, listOf(printingOf(card)), seenBySight = true)
@@ -1935,6 +1950,7 @@ class ScanViewModel(
                 rows.map { if (it.id == rowId) it.copy(card = found, foil = it.foil && found.canBeFoil) else it },
                 "${found.name} — printing read as ${found.set?.uppercase()} #${found.collectorNumber}"
             )
+            noteHow(rowId, ScanHow.SMALL_PRINT)
             if (lastAddedRow == rowId) lastAddedCard = found
         }
     }
@@ -1944,6 +1960,7 @@ class ScanViewModel(
         _uiState.value.scannedCards.firstOrNull { it.id == rowId }?.let { row -> if (row.card.id != card.id) learnFrom(rowId, card) }
         // A printing that never comes in foil can't be a foil copy.
         setScanned(_uiState.value.scannedCards.map { if (it.id == rowId) it.copy(card = card, exact = true, foil = it.foil && card.canBeFoil) else it })
+        noteHow(rowId, ScanHow.PICKED)
     }
 
     /** Marks one scanned copy foil or not — the camera can't tell, so the user says. */
@@ -1982,7 +1999,7 @@ class ScanViewModel(
                 _uiState.value = _uiState.value.copy(status = "OCR read \"$candidate\" — looking up…")
                 viewModelScope.launch {
                     try {
-                        addScannedCard(resolveCard(candidate, printing))
+                        noteHow(addScannedCard(resolveCard(candidate, printing)), ScanHow.NAME)
                     } catch (e: Exception) {
                         _uiState.value = _uiState.value.copy(status = "No match for \"$candidate\"")
                     }
@@ -2003,6 +2020,80 @@ class ScanViewModel(
     /** Takes one scan off the pile — a card read twice, or read wrongly. */
     fun removeScan(rowId: Long) {
         setScanned(_uiState.value.scannedCards.filterNot { it.id == rowId })
+    }
+
+    // ---- The Last scanned panel (ScanCardPanel.kt) ----
+
+    /**
+     * The panel's state: the scans made since the scanner opened, oldest first (the panel shows the
+     * newest still in the pile, so it's hidden before the first scan and falls back on Undo), how each
+     * was identified, and the printing the camera is steadily reading off the card still held, with its row.
+     */
+    data class PanelState(
+        val rows: List<Long> = emptyList(),
+        val how: Map<Long, ScanHow> = emptyMap(),
+        val cameraReads: Pair<Long, Pair<String, String>>? = null
+    )
+
+    private val _panel = MutableStateFlow(PanelState())
+    val panel: StateFlow<PanelState> = _panel.asStateFlow()
+
+    private fun noteHow(rowId: Long, how: ScanHow) {
+        _panel.update { it.copy(how = it.how + (rowId to how)) }
+    }
+
+    // The small print read off the card still under the camera, after it was taken (see watchHeld).
+    private val heldWatch = HeldPrintingWatch()
+
+    /**
+     * One frame of the card still held: while it's the card just taken (same name, not swapped), a
+     * printing its small print reads steadily is told to the panel — which flashes when that's not the
+     * printing it shows. Anything else (another card, the card swapped) and the panel is told nothing.
+     */
+    private fun watchHeld(candidate: String, read: Pair<String, String>?, verdict: CardHeld.Verdict) {
+        val row = lastAddedRow
+        val card = lastAddedCard
+        if (verdict == CardHeld.Verdict.NEW_CARD || row == null || card == null || !looksLikeSameCard(candidate, card.name)) {
+            stopWatchingHeld()
+            return
+        }
+        val seen = heldWatch.see(read) ?: return
+        if (_panel.value.cameraReads != (row to seen)) _panel.update { it.copy(cameraReads = row to seen) }
+    }
+
+    private fun stopWatchingHeld() {
+        heldWatch.reset()
+        if (_panel.value.cameraReads != null) _panel.update { it.copy(cameraReads = null) }
+    }
+
+    /** The panel's Undo: that scan off the pile; the panel goes back to the scan before it. */
+    fun undoScan(rowId: Long) {
+        val row = _uiState.value.scannedCards.firstOrNull { it.id == rowId } ?: return
+        removeScan(rowId)
+        _panel.update { it.copy(rows = it.rows - rowId, cameraReads = it.cameraReads?.takeIf { r -> r.first != rowId }) }
+        _uiState.update { it.copy(status = "${row.card.name} taken off the list") }
+    }
+
+    /** "Use FIN 307": row [rowId] becomes the printing the camera is reading off the card, as a printing picked by hand. */
+    fun useCameraPrinting(rowId: Long) {
+        val read = _panel.value.cameraReads?.takeIf { it.first == rowId }?.second ?: return
+        viewModelScope.launch {
+            val row = _uiState.value.scannedCards.firstOrNull { it.id == rowId } ?: return@launch
+            var card: ScryfallCard? = null
+            for (number in listOf(read.second, plainNumber(read.second)).distinct()) {
+                card = runCatching { cardRepository.getBySetAndNumber(read.first, number) }.getOrNull()
+                    ?.takeIf { looksLikeSameCard(row.card.name, it.name) }
+                if (card != null) break
+            }
+            val found = card
+            if (found == null) {
+                _uiState.update { it.copy(status = "Couldn't find ${read.first.uppercase()} #${read.second} for ${row.card.name}") }
+                return@launch
+            }
+            setPrinting(rowId, found)
+            if (lastAddedRow == rowId) lastAddedCard = found
+            _uiState.update { it.copy(status = "${found.name} — now ${found.set?.uppercase()} #${found.collectorNumber}") }
+        }
     }
 
     /** A pile's copies of a card as a binder entry: the ones marked foil as foil copies. */
