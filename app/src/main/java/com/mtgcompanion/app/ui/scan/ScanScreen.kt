@@ -690,7 +690,7 @@ fun ScanScreen(
             }
             // The status line on the left, the zoom on the right — both above the framing guide.
             Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                Box(modifier = Modifier.weight(1f)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
                     state.status?.let { status ->
                         // TalkBack reads each new line as it comes, a recognised card's with its rarity ("Rare").
                         val spoken = state.statusRarity?.takeIf { it.first == status }?.let { "$status, ${it.second}" } ?: status
@@ -706,6 +706,18 @@ fun ScanScreen(
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(Bg.copy(alpha = 0.7f))
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                    // "Goal: Duskmourn uncommons 41/92" — small, under the card that moved a goal on.
+                    state.goalNote?.takeIf { it.first == state.status }?.let { (_, line) ->
+                        Text(
+                            line,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = GoldLight,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Bg.copy(alpha = 0.6f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }

@@ -150,6 +150,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.combine
+import com.mtgcompanion.app.data.goalHits
+import com.mtgcompanion.app.data.goalsOf
+import com.mtgcompanion.app.data.hitLine
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -256,7 +260,9 @@ data class ScanUiState(
     /** A recognised card's line and its rarity ("Rare"): TalkBack hears the rarity with that line, and only that one. */
     val statusRarity: Pair<String, String>? = null,
     /** How careful the scanner is being — see ScanMode. */
-    val scanMode: ScanMode = ScanMode.ACCURATE
+    val scanMode: ScanMode = ScanMode.ACCURATE,
+    /** A scanned card's line and the collection goal it moves on ("Goal: Duskmourn uncommons 41/92"), shown under that line only. */
+    val goalNote: Pair<String, String>? = null
 )
 
 class ScanViewModel(
@@ -505,6 +511,15 @@ class ScanViewModel(
         viewModelScope.launch { for (scan in lookups) lookUp(scan) }
         viewModelScope.launch {
             settingsRepository.scanMode.collect { mode -> _uiState.update { it.copy(scanMode = mode) } }
+        }
+    }
+
+    /** The library as it is, for the goals a scanned card moves on. */
+    @Volatile private var goalLibrary: Pair<List<Collection>, List<Deck>> = emptyList<Collection>() to emptyList()
+
+    init {
+        viewModelScope.launch {
+            combine(collectionRepository.collectionsFlow, deckRepository.decksFlow) { c, d -> c to d }.collect { goalLibrary = it }
         }
     }
 
@@ -1618,7 +1633,11 @@ class ScanViewModel(
             "Added ${card.name}"
         }
         setScanned(rows, status)
-        _uiState.value = _uiState.value.copy(statusRarity = spoken(status, card), successToken = _uiState.value.successToken + 1)
+        // The collection goals this copy moves on, counting the copies of it already in the list (CollectionGoals.kt).
+        val (goalCollections, goalDecks) = goalLibrary
+        val hits = goalHits(goalsOf(goalCollections), goalCollections, goalDecks, card.id, card.name, foil = false, pending = copy)
+        val goalNote = hits.firstOrNull()?.let { status to hitLine(it) + if (hits.size > 1) " · +${hits.size - 1} more" else "" }
+        _uiState.value = _uiState.value.copy(statusRarity = spoken(status, card), successToken = _uiState.value.successToken + 1, goalNote = goalNote)
         ScanFeedback.cardRecognised(card)
         return row.id
     }

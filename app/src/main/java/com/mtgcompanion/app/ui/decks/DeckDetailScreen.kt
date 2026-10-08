@@ -236,6 +236,7 @@ import com.mtgcompanion.app.network.spellbook.Variant
 import com.mtgcompanion.app.ui.common.AnimatedUsdText
 import com.mtgcompanion.app.ui.common.CardActionMenu
 import com.mtgcompanion.app.ui.common.CardMenuAction
+import androidx.compose.material.icons.filled.Flag
 import com.mtgcompanion.app.ui.common.CardZoomDialog
 import com.mtgcompanion.app.ui.common.SimilarCardsDialog
 import com.mtgcompanion.app.ui.common.ComboDetailDialog
@@ -290,6 +291,8 @@ fun DeckDetailScreen(
     onTakeApart: (() -> Unit)? = null,
     /** The deck's history: every change to its list, and versions saved by name (DeckHistoryScreen). */
     onHistory: (() -> Unit)? = null,
+    /** "Make this a goal": every card of the deck in foil, or every card at all (CollectionGoals.kt). */
+    onMakeGoal: ((Deck) -> Unit)? = null,
     /** The tab to open on ("Suggestions" for a deck just made with its commander); null for Cards. */
     initialTab: String? = null
 ) {
@@ -414,6 +417,7 @@ fun DeckDetailScreen(
                             }
                             add(CardMenuAction("Print proxies…", Icons.Filled.Print, description = "Nine to a page at real size, to cut out") { printingProxies = true })
                             add(CardMenuAction("Cards I don't own", Icons.Filled.Sell, description = "Buy them, wishlist them, or ask friends") { showMissing = true })
+                            if (onMakeGoal != null) add(CardMenuAction("Make this a goal", Icons.Filled.Flag, description = "Foil every card, or own every card — with its progress") { onMakeGoal(d) })
                             if (d.mode.limited) {
                                 add(CardMenuAction("Add basic lands", Icons.Filled.Landscape, description = "17 for 40 cards, by the colours you play") { addingBasics = true })
                                 add(CardMenuAction("Add pool to a binder", Icons.Filled.Collections, description = "Every card here, deck and pool, copied into a binder") { poolToBinder = true })

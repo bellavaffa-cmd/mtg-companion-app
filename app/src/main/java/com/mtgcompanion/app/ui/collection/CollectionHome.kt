@@ -76,7 +76,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 /*
  * The Collection's home (data/CollectionHome.kt), the web app's CollectionHome.tsx: "Find a card, a
  * place or a deck", a tile for each part — All cards, Storage, Binders, Sets, Sealed and graded,
- * Loans and selling — the few things worth doing this week (from Upkeep) and Scan, Sort a pile and
+ * Loans and selling — the collection goals nearest done, the few things worth doing this week (from Upkeep) and Scan, Sort a pile and
  * Import. The value sits in the top bar (CollectionsScreen). The tiles open the Collection's pages.
  */
 
@@ -103,7 +103,11 @@ class CollectionHomeActions(
     val onSortPile: () -> Unit,
     val onImport: () -> Unit,
     /** New sets (NewSetsScreen.kt). */
-    val onOpenNewSets: () -> Unit = {}
+    val onOpenNewSets: () -> Unit = {},
+    /** Collection goals (GoalsScreen.kt): all of them, one, and New goal. */
+    val onOpenGoals: () -> Unit = {},
+    val onOpenGoal: (String) -> Unit = {},
+    val onNewGoal: () -> Unit = {}
 )
 
 private fun tileIcon(key: HomeTileKey): ImageVector = when (key) {
@@ -203,6 +207,8 @@ fun CollectionHomePage(
         }
 
         NewSetsRow(actions.onOpenNewSets)
+
+        GoalsHomeCard(collections, decks, money, actions.onOpenGoals, actions.onOpenGoal, actions.onNewGoal)
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.tourTarget(tour, TourTarget.HOME_TODO)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
