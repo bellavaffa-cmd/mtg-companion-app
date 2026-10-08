@@ -9,6 +9,21 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "printing-search",
+        "Scanner: search the printing picker by set name, code or number",
+        "Open Scan and scan a card with many printings — a basic land (Forest, Island) is best, or Sol Ring. " +
+            "1) Open the printing picker: tap \"Best guess · pick art\" on a scan-list row, or the row's set line, or ⇄ (Change printing) on the last-scanned panel, or in Sort a pile Wrong card? › Pick the printing. " +
+            "At the top is a search field (\"Set name, code or number\"); the keyboard does NOT come up by itself, so the art stays in view. Under it \"N printings\" (\"· loading more…\" while a basic land's later pages come in — the first tiles show straight away). " +
+            "Each tile now reads set code · number (\"FIN · 306\") with the set's name small beneath. " +
+            "2) Tap the field and type \"final fan\": only Final Fantasy printings, \"N of M printings\". Try \"dusk\" (Duskmourn), accents and capitals don't matter. " +
+            "3) Type a set code: \"fin\" or \"FIN\" — that set's printings come first, then sets whose code begins fin, then sets whose name has it (Unfinity). \"plst\" for The List. " +
+            "4) A number: \"306\" or \"0306\" — every printing numbered 306. Set and number: \"fin 306\", \"FIN·306\" or \"fin#306\" — just that one. A year: \"2025\" — printings released that year. " +
+            "5) With exactly one match left, the keyboard's Search key picks it (the row changes, the chip says Picked by you). With more than one, Search just puts the keyboard down. " +
+            "6) Type nonsense (\"xyz\"): \"No printing of Forest in “xyz”\" with an It's a different card button that opens the card-name search. The × in the field clears it and every printing is back. " +
+            "7) A set code typed while a basic land is still loading (or for a card with more printings than load) is asked of Scryfall: its printings from that set appear after a moment. " +
+            "8) Close and reopen the picker: the search starts empty."
+    ),
+    TesterNote(
         "scan-card-panel",
         "Scanner: the last scanned card stays over the camera",
         "Open Scan (the plain scanner, not Sort a pile). Before the first card nothing new shows. " +

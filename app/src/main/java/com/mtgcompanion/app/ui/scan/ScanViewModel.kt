@@ -1911,8 +1911,12 @@ class ScanViewModel(
      * Every printing of a scanned card, for picking the art actually in hand when the tiny set code
      * couldn't be read and the card came in as its usual printing.
      */
-    suspend fun printingsOf(card: ScryfallCard): List<ScryfallCard> =
-        runCatching { cardRepository.getPrintings(card.name) }.getOrDefault(emptyList())
+    suspend fun printingsOf(card: ScryfallCard, onPage: ((List<ScryfallCard>, Int?) -> Unit)? = null): List<ScryfallCard> =
+        runCatching { cardRepository.getPrintings(card.name, onPage = onPage) }.getOrDefault(emptyList())
+
+    /** The printings of the card called [name] in the set [set] — the picker's search asking Scryfall for a set it hasn't loaded. */
+    suspend fun printingsInSet(name: String, set: String): List<ScryfallCard> =
+        runCatching { cardRepository.getPrintings(name, set) }.getOrDefault(emptyList())
 
     /** "It's a different card": names as you type (Scryfall's autocomplete). */
     suspend fun suggestNames(query: String): List<String> = cardRepository.autocomplete(query)

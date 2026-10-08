@@ -961,7 +961,8 @@ fun ScanScreen(
     recipePrinting?.let { card ->
         ArtPickerDialog(
             row = ScanRow(-1, card, System.currentTimeMillis()),
-            load = { viewModel.printingsOf(card) },
+            load = { onPage -> viewModel.printingsOf(card, onPage) },
+            loadSet = { set -> viewModel.printingsInSet(card.name, set) },
             onPick = { viewModel.setRecipePrinting(it); recipePrinting = null },
             onDismiss = { recipePrinting = null },
             onDifferent = { recipe?.scans?.lastOrNull()?.let { differentFor = it.id to true }; recipePrinting = null }
@@ -970,7 +971,8 @@ fun ScanScreen(
     artPickerRow?.let { row ->
         ArtPickerDialog(
             row = row,
-            load = { viewModel.printingsOf(row.card) },
+            load = { onPage -> viewModel.printingsOf(row.card, onPage) },
+            loadSet = { set -> viewModel.printingsInSet(row.card.name, set) },
             onPick = { viewModel.setPrinting(row.id, it); artPickerRow = null },
             onDismiss = { artPickerRow = null },
             onDifferent = { differentFor = row.id to false; artPickerRow = null }
@@ -993,6 +995,7 @@ fun ScanScreen(
         ArtPickerDialog(
             row = ScanRow(-2, printings.first(), 0L),
             load = { printings },
+            loadSet = { set -> viewModel.printingsInSet(printings.first().name, set) },
             ringCurrent = false,
             onPick = { card ->
                 differentPick = null
@@ -1395,71 +1398,6 @@ private fun ScannedCardRow(
             }
         }
     }
-}
-
-/**
- * Which printing is in your hand. The camera reads a card's name easily; the tiny set code that
- * says *which* printing often can't be read at all, and then the card comes in as its usual
- * printing. This shows every printing there is, so the right art is a tap away.
- */
-@Composable
-private fun ArtPickerDialog(
-    row: ScanRow,
-    load: suspend () -> List<ScryfallCard>,
-    onPick: (ScryfallCard) -> Unit,
-    onDismiss: () -> Unit,
-    /** Given where a scan is being fixed: "It's a different card" — search for the card it really is. */
-    onDifferent: (() -> Unit)? = null,
-    /** Whether [row]'s card is ringed as the one it is now (not for a different card just searched for). */
-    ringCurrent: Boolean = true
-) {
-    var printings by remember(row.id) { mutableStateOf<List<ScryfallCard>?>(null) }
-    LaunchedEffect(row.id) { printings = load() }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text(row.card.name, color = GoldLight) },
-        text = {
-            val found = printings
-            when {
-                found == null -> Text("Looking up printings…", style = MaterialTheme.typography.bodySmall, color = TextMuted)
-                found.isEmpty() -> Text("Only one printing of this card.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
-                else -> LazyVerticalGrid(
-                    columns = GridCells.Adaptive(96.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.height(420.dp)
-                ) {
-                    items(found, key = { it.id }) { card ->
-                        Column(modifier = Modifier.clickable { onPick(card) }) {
-                            val picked = ringCurrent && card.id == row.card.id
-                            AsyncImage(
-                                model = card.displayImageUrl,
-                                contentDescription = card.printingLabel,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(0.72f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .border(
-                                        BorderStroke(if (picked) 2.dp else 1.dp, if (picked) Gold else BorderColor),
-                                        RoundedCornerShape(10.dp)
-                                    )
-                            )
-                            Text(
-                                card.printingLabel,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = TextMuted,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = Gold) } },
-        dismissButton = onDifferent?.let { different -> { TextButton(onClick = different) { Text("It's a different card", color = Gold) } } }
-    )
 }
 
 /**

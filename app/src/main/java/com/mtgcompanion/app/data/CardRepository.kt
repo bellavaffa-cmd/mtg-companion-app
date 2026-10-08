@@ -46,8 +46,16 @@ class CardRepository {
     /** A random card, for the Search tab's discovery button. */
     suspend fun getRandom(): ScryfallCard = api.getRandomCard()
 
-    /** Every printing of a card (unique arts/sets), newest first, for alternate-art selection. */
-    suspend fun getPrintings(cardName: String, set: String? = null): List<ScryfallCard> {
+    /**
+     * Every printing of a card (unique arts/sets), newest first, for alternate-art selection.
+     * [onPage] hears each page as it comes — the printings so far and how many Scryfall says there
+     * are — so the scanner's printing picker shows the first ones while a basic land's hundreds load.
+     */
+    suspend fun getPrintings(
+        cardName: String,
+        set: String? = null,
+        onPage: ((soFar: List<ScryfallCard>, total: Int?) -> Unit)? = null
+    ): List<ScryfallCard> {
         return try {
             val all = mutableListOf<ScryfallCard>()
             // [set] narrows it to that one set's printings — a handful, in one request.
@@ -58,6 +66,7 @@ class CardRepository {
                     query = query, page = page, unique = "prints", order = "released"
                 )
                 all += response.data
+                onPage?.invoke(all.toList(), response.totalCards)
                 if (!response.hasMore) break
             }
             all
