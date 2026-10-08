@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.isCube
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.DriveImporter
 import com.mtgcompanion.app.data.NewsItem
@@ -63,7 +64,7 @@ class HomeViewModel(
 
     /** Every deck, most recently opened first — Home's deck rail. */
     val decks: StateFlow<List<Deck>> = combine(deckRepository.decksFlow, settingsRepository.lastOpenedDeckId) { list, lastId ->
-        list.sortedByDescending { it.id == lastId }
+        list.filterNot { it.isCube }.sortedByDescending { it.id == lastId }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**

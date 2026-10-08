@@ -99,6 +99,7 @@ import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Checkbox
 import com.mtgcompanion.app.data.DeckOwnership
@@ -124,7 +125,9 @@ fun DecksScreen(
     onBrowsePrecons: () -> Unit,
     onNewDeck: () -> Unit,
     /** The empty list's "Paste a list": a first deck from a pasted list (ui/onboarding/WelcomeScreen.kt). */
-    onPasteList: (() -> Unit)? = null
+    onPasteList: (() -> Unit)? = null,
+    /** The cubes (CubeScreens.kt): kept as decks, listed on their own. */
+    onOpenCubes: (() -> Unit)? = null
 ) {
     val decks by viewModel.decks.collectAsState()
     val commanderColors by viewModel.commanderColors.collectAsState()
@@ -187,6 +190,13 @@ fun DecksScreen(
                             Modifier.size(42.dp).clip(CircleShape).background(app.surface).clickable { makingFolder = true },
                             contentAlignment = Alignment.Center
                         ) { Icon(Icons.Filled.CreateNewFolder, contentDescription = "New folder", tint = app.textPrimary, modifier = Modifier.size(20.dp)) }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    if (onOpenCubes != null) {
+                        Box(
+                            Modifier.size(42.dp).clip(CircleShape).background(app.surface).clickable(onClick = onOpenCubes),
+                            contentAlignment = Alignment.Center
+                        ) { Icon(Icons.Filled.GridView, contentDescription = "Cubes", tint = app.textPrimary, modifier = Modifier.size(20.dp)) }
                         Spacer(Modifier.width(8.dp))
                     }
                     Box(

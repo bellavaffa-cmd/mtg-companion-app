@@ -44,6 +44,8 @@ fun proxySwaps(collections: List<Collection>, decks: List<Deck>): List<ProxySwap
     val spare = spareCopies(collections).toMutableMap()
     val out = mutableListOf<ProxySwap>()
     for (deck in decks) {
+        // A cube's proxies are filled from the collection by its own pull list, into the cube box (Cube.kt).
+        if (deck.isCube) continue
         for (entry in deck.cards) {
             val proxies = proxyCopies(deck, entry)
             if (proxies == 0) continue

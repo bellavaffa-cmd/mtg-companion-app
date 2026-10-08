@@ -8,6 +8,8 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.DeckValueHistory
 import com.mtgcompanion.app.data.decksDue
+import com.mtgcompanion.app.data.isCube
+import kotlinx.coroutines.flow.map
 import com.mtgcompanion.app.data.deckValueOf
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -24,7 +26,8 @@ class DecksViewModel(
     private val cardRepository: CardRepository = CardRepository()
 ) : ViewModel() {
 
-    val decks: StateFlow<List<Deck>> = repository.decksFlow.stateIn(
+    // Cubes are kept as decks but have their own list (CubesScreen.kt).
+    val decks: StateFlow<List<Deck>> = repository.decksFlow.map { all -> all.filterNot { it.isCube } }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 

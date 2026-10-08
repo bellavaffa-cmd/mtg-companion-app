@@ -238,7 +238,13 @@ data class Deck(
      * A sample from the welcome flow (Onboarding.kt): shown with a "Sample" label, never synced to the
      * account, and gone with one "Remove samples". Null (left out of the JSON) on everything else.
      */
-    val sample: Boolean? = null
+    val sample: Boolean? = null,
+    /**
+     * A cube's settings (Cube.kt): there on a deck whose gameMode is "CUBE", null (left out of the
+     * JSON) on every other. A cube saved without it was saved by an app from before cubes, and gets
+     * this device's back (keepCubeFromOlderApp). The web app's Deck.cube.
+     */
+    val cube: CubeSettings? = null
 ) {
     val mode: GameMode get() = GameMode.fromName(gameMode)
     val ownershipType: DeckOwnership get() = DeckOwnership.fromName(ownership)
