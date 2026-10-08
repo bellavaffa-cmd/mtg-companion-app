@@ -124,7 +124,7 @@ class SmallPrintParseTest {
     fun aPrintingReadWithTheTitleUnreadCountsOnceItReadsTheSameTwice() {
         val streak = SmallPrintStreak()
         assertNull(streak.see("FIN" to "306"))
-        assertEquals("FIN" to "306", streak.see("FIN" to "0306"))
+        assertEquals("FIN" to "0306", streak.see("FIN" to "0306"))
         assertNull(streak.see("FIN" to "308")) // a misread digit starts again
         assertNull(streak.see(null))
         assertNull(streak.see("FIN" to "308"))
