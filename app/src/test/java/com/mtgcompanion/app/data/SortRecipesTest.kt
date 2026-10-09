@@ -184,18 +184,33 @@ class SortRecipesTest {
 
     @Test
     fun templatesAndANewRecipe() {
-        val t = recipeTemplates(listOf("dsk"))
-        assertEquals(listOf("Commander by colour", "Binder by set", "Rares by value", "What my collection needs"), t.map { it.name })
-        assertEquals(listOf("DSK · #1–99", "DSK · #100–199"), derivePiles(t[1], fmt).piles.subList(3, 5).map { it.name })
-        assertEquals(listOf("$20+", "$5–$20", "$1–$5", "under $1"), derivePiles(t[2], fmt).piles.drop(3).map { it.name })
+        val tv = v.getJSONObject("templates")
+        val t = recipeTemplates(tv.getJSONArray("sets").strings())
+        assertEquals(tv.getJSONArray("recipes").strings(), t.map { "${it.id} ${it.name}" })
+        assertEquals(listOf("DSK · #1–99", "DSK · #100–199"), derivePiles(t[2], fmt).piles.subList(3, 5).map { it.name })
+        assertEquals(listOf("$20+", "$5–$20", "$1–$5", "under $1"), derivePiles(t[3], fmt).piles.drop(3).map { it.name })
         // Goals need is off unless a goal is under way — then only "What my collection needs" pulls it out.
         assertTrue(t.none { "GOALS" in it.pullOut })
         val withGoals = recipeTemplates(listOf("dsk"), goals = true)
-        assertEquals(listOf(false, false, false, true), withGoals.map { "GOALS" in it.pullOut })
-        assertEquals("Decks need · Goals need · Friends want · Binder gaps · To trade · 6 piles", recipeLine(withGoals[3], fmt))
+        assertEquals(listOf(false, false, false, false, true), withGoals.map { "GOALS" in it.pullOut })
+        assertEquals("Decks need · Goals need · Friends want · Binder gaps · To trade · 6 piles", recipeLine(withGoals[4], fmt))
         assertTrue("GOALS" !in newRecipe("n1", 5).pullOut)
         assertEquals("Value $2+ apart · then colour · 12 piles", recipeLine(newRecipe("n1", 5), fmt))
         assertEquals("1st2nd3rd11th22nd", ordinal(1) + ordinal(2) + ordinal(3) + ordinal(11) + ordinal(22))
+    }
+
+    @Test
+    fun byCardTypeACardWithTwoTypesGoesInTheFirstPileItFits() {
+        val level = recipeTemplates().first { it.id == "tpl-type" }.levels[0]
+        fun pile(typeLine: String) = bucketOf(level, RecipeCard("X", typeLine = typeLine), 1.0)
+        assertEquals("creatures", pile("Artifact Creature — Golem"))
+        assertEquals("creatures", pile("Enchantment Creature — God"))
+        assertEquals("creatures", pile("Land Creature — Forest Dryad"))
+        assertEquals("artifacts", pile("Artifact Land"))
+        assertEquals("enchantments", pile("Enchantment Land — Urza’s Saga"))
+        assertEquals("instants", pile("Instant // Land"))
+        // The editor offers card type third, after value and colour.
+        assertEquals(listOf("VALUE", "COLOUR", "TYPE"), LEVEL_BYS.take(3))
     }
 
     @Test

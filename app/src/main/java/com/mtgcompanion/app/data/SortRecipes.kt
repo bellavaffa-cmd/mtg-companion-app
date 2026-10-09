@@ -49,7 +49,8 @@ val SMART_PILE_NAMES = mapOf("DECKS" to "Decks need", "GOALS" to "Goals need", "
 val APART_KINDS = listOf("FOIL", "FOREIGN", "PLAYED")
 val APART_LABELS = mapOf("FOIL" to "Foils", "FOREIGN" to "Not English", "PLAYED" to "Played")
 
-val LEVEL_BYS = listOf("VALUE", "COLOUR", "IDENTITY", "SET", "MANA_VALUE", "RARITY", "TYPE", "NAME", "NUMBER")
+/** In the editor's order: the common ways first. Stored by name, so the order is free to change. */
+val LEVEL_BYS = listOf("VALUE", "COLOUR", "TYPE", "SET", "MANA_VALUE", "RARITY", "IDENTITY", "NAME", "NUMBER")
 val LEVEL_LABELS = mapOf(
     "VALUE" to "Value", "COLOUR" to "Colour", "IDENTITY" to "Colour identity", "SET" to "Set", "MANA_VALUE" to "Mana value",
     "RARITY" to "Rarity", "TYPE" to "Card type", "NAME" to "A–Z", "NUMBER" to "Collector number"
@@ -159,11 +160,18 @@ fun recipeTemplates(sets: List<String> = emptyList(), goals: Boolean = false): L
     val needs = if (goals) listOf("DECKS", "GOALS", "FRIENDS", "BINDER", "TRADE") else listOf("DECKS", "FRIENDS", "BINDER", "TRADE")
     return listOf(
         SortRecipe("tpl-colour", "Commander by colour", smart, listOf(SplitLevel("COLOUR", lands = true))),
+        SortRecipe("tpl-type", "By card type", smart, listOf(SplitLevel("TYPE"))),
         SortRecipe("tpl-set", "Binder by set", smart, listOf(splitLevel(SplitLevel("SET", sets = sets.take(5))), splitLevel(SplitLevel("NUMBER")))),
         SortRecipe("tpl-value", "Rares by value", smart, listOf(SplitLevel("VALUE", cuts = listOf(20.0, 5.0, 1.0)))),
         SortRecipe("tpl-needs", "What my collection needs", needs)
     )
 }
+
+/**
+ * By card type's line. A card with two types goes in the first pile of TYPE_SECTIONS it fits
+ * (typeSection): an artifact creature with the creatures, an artifact land with the artifacts.
+ */
+const val TYPE_TEMPLATE_LINE = "Creatures · Instants · Sorceries · Artifacts · Enchantments · Lands — an artifact creature goes with Creatures"
 
 /** What "Make your own recipe" starts with. */
 fun newRecipe(id: String, now: Long): SortRecipe = SortRecipe(

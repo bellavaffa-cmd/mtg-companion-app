@@ -87,6 +87,7 @@ import com.mtgcompanion.app.data.SMART_LABELS
 import com.mtgcompanion.app.data.SortRecipe
 import com.mtgcompanion.app.data.SortRule
 import com.mtgcompanion.app.data.SplitLevel
+import com.mtgcompanion.app.data.TYPE_TEMPLATE_LINE
 import com.mtgcompanion.app.data.addedMove
 import com.mtgcompanion.app.data.capWarning
 import com.mtgcompanion.app.data.cardsIn
@@ -260,6 +261,7 @@ private fun fmtLocal(n: Double): String = money().formatLocal(n, whole = n == Ma
 /** The templates' lines, as the mockup words them. */
 private fun templateLine(r: SortRecipe): String = when (r.id) {
     "tpl-colour" -> "W · U · B · R · G · Multi · Colourless · Lands"
+    "tpl-type" -> TYPE_TEMPLATE_LINE
     "tpl-set" -> "One pile per set, then collector number"
     "tpl-value" -> levelLine(r.levels[0], ::fmtLocal)
     "tpl-needs" -> "Decks need it · friends want it · binder gaps · trade · bulk"
