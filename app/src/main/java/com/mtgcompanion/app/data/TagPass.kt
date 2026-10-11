@@ -34,13 +34,13 @@ object TagPass {
     private const val PAUSE_MS = 250L
 
     /** Every card the user has, once a name: binders, the Wishlist, decks — commanders, considering and sideboards too. */
-    fun refsOf(collections: List<Collection>, decks: List<Deck>): List<CardRef> {
-        val out = LinkedHashMap<String, CardRef>()
+    fun refsOf(collections: List<Collection>, decks: List<Deck>): List<TagRef> {
+        val out = LinkedHashMap<String, TagRef>()
         fun add(name: String, id: String) {
             val k = RoleTags.key(name)
             if (k.isEmpty()) return
             val had = out[k]
-            if (had == null || (had.scryfallId == null && RoleTags.isScryfallId(id))) out[k] = CardRef(name, id.takeIf(RoleTags::isScryfallId))
+            if (had == null || (had.scryfallId == null && RoleTags.isScryfallId(id))) out[k] = TagRef(name, id.takeIf(RoleTags::isScryfallId))
         }
         for (c in collections) for (e in c.entries) add(e.name, e.scryfallId)
         for (d in decks) {
@@ -59,7 +59,7 @@ object TagPass {
     }
 
     /** Settings › Data and speed's "Retag now": [names] are looked up afresh, now. */
-    suspend fun retag(context: Context, names: Collection<String>) {
+    suspend fun retag(context: Context, names: List<String>) {
         RoleTags.forget(names)
         // A running pass may have finished these already: replace it with a new one.
         val request = OneTimeWorkRequestBuilder<Worker>()
@@ -97,7 +97,7 @@ object TagPass {
  * card chips show without a lookup; entries saved before that have none. This fills them in once —
  * every binder and deck in one change each, written the way a sync's are (no deck versions), so the
  * next sync carries them in one pass rather than a change per card. The web app's
- * src/tags/entryTagBackfill.ts.
+ * src/tags/tagPass.ts.
  */
 object EntryTagBackfill {
     /** Bumped to fill in again (say, if ScryfallCard.tags learns new tags). */

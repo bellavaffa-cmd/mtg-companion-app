@@ -117,7 +117,7 @@ class TagFixesTest {
         assertEquals(records, RoleTags.readCards(RoleTags.writeCards(records)))
         val old = RoleTags.readCards("""{"v":4,"cards":{"sol ring":{"t":["ramp"],"at":99,"c":""}}}""")
         assertEquals(listOf("ramp"), old.getValue("sol ring").tags)
-        assertTrue(RoleTags.isDue(old.getValue("sol ring"), 1_000L, null))
+        assertTrue(RoleTags.isDue(old.getValue("sol ring"), System.currentTimeMillis(), null))
     }
 
     // ---- Looking up: id first, name as a fallback, retry and resume ----
@@ -142,11 +142,11 @@ class TagFixesTest {
         }
         val found = HashMap<String, TagRecord>()
         val refs = listOf(
-            CardRef("My Sol Ring proxy", sol),
+            TagRef("My Sol Ring proxy", sol),
             // A printing Scryfall doesn't know: asked again by name.
-            CardRef("Llanowar Elves", "99999999-aaaa-bbbb-cccc-000000000009"),
+            TagRef("Llanowar Elves", "99999999-aaaa-bbbb-cccc-000000000009"),
             // A made-up id (a sample's) never goes to Scryfall as an id.
-            CardRef("Treasure", "sample-treasure")
+            TagRef("Treasure", "sample-treasure")
         )
         val ok = RoleTags.lookUp(refs, fetch, sets, "f1", sleep = {}) { m, _ -> found += m }
         assertTrue(ok)
@@ -165,7 +165,7 @@ class TagFixesTest {
 
     @Test
     fun aFailedRequestIsRetriedWithBackoffAndAStoppedLookupResumesWhereItStopped() = runBlocking {
-        val refs = (1..160).map { CardRef("Card $it") }
+        val refs = (1..160).map { TagRef("Card $it") }
         var calls = 0
         var failing = 0
         val slept = mutableListOf<Long>()

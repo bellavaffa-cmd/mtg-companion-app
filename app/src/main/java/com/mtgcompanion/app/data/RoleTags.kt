@@ -36,7 +36,7 @@ data class RoleTag(
 )
 
 /** A card to tag: its name (what screens ask by) and, when known, the printing's Scryfall id. */
-data class CardRef(val name: String, val scryfallId: String? = null)
+data class TagRef(val name: String, val scryfallId: String? = null)
 
 /**
  * What a card's rules text and type line say, kept with its lookup so its tags can be worked out
@@ -221,7 +221,7 @@ object RoleTags {
     }
 
     /** Remembers which printing each of [refs] is, so a lookup by name alone can go by id. */
-    fun hint(refs: Iterable<CardRef>) {
+    fun hint(refs: Iterable<TagRef>) {
         synchronized(idHints) {
             for (r in refs) {
                 val id = r.scryfallId?.takeIf(::isScryfallId) ?: continue
@@ -243,7 +243,7 @@ object RoleTags {
     }
 
     /** Whether any of [refs] is due to be looked up. */
-    fun anyDue(refs: Iterable<CardRef>, now: Long = System.currentTimeMillis()): Boolean =
+    fun anyDue(refs: Iterable<TagRef>, now: Long = System.currentTimeMillis()): Boolean =
         synchronized(cards) { refs.any { key(it.name).isNotEmpty() && isDue(cards[key(it.name)], now, setsFile) } }
 
     /** Whether [query] finds a card by its name or one of its tags' labels. */
@@ -358,7 +358,7 @@ object RoleTags {
      * is kept, and the rest is looked up next time).
      */
     suspend fun ensure(names: Iterable<String>, cardRepository: CardRepository): Boolean {
-        val refs = synchronized(idHints) { names.map { CardRef(it, idHints[key(it)]) } }
+        val refs = synchronized(idHints) { names.map { TagRef(it, idHints[key(it)]) } }
         return ensureRefs(refs, cardRepository)
     }
 
@@ -369,13 +369,13 @@ object RoleTags {
      * between requests, for the background pass to go gently.
      */
     suspend fun ensureRefs(
-        refs: Iterable<CardRef>,
+        refs: Iterable<TagRef>,
         cardRepository: CardRepository,
         retries: List<Long> = RETRY_MS,
         pauseMs: Long = 0L
     ): Boolean = lock.withLock {
         val now = System.currentTimeMillis()
-        val due = LinkedHashMap<String, CardRef>()
+        val due = LinkedHashMap<String, TagRef>()
         synchronized(cards) {
             for (r in refs) {
                 val k = key(r.name)
@@ -427,7 +427,7 @@ object RoleTags {
      * tried again after each of [retries]; then this stops, answering false.
      */
     suspend fun lookUp(
-        refs: List<CardRef>,
+        refs: List<TagRef>,
         fetch: suspend (List<ScryfallIdentifier>) -> ScryfallCollectionResponse,
         tagSets: Map<String, Set<String>>,
         file: String?,
