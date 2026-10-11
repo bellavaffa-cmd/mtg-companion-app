@@ -53,7 +53,7 @@ class StoragePlacesTest {
 
     @Test
     fun aPlaceSaysWhatItIs() {
-        assertEquals("Bulk · by colour, then A–Z", placeSubtitle(red))
+        assertEquals("Bulk · by colour · A–Z", placeSubtitle(red))
         assertEquals("Binder · 9 per page", placeSubtitle(trade))
         assertEquals("Deck box", placeSubtitle(place("x", kind = PlaceKind.DECK_BOX)))
     }

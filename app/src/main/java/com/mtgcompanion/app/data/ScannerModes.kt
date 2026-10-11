@@ -100,9 +100,8 @@ fun sortStart(recipeScans: Int?, classicScans: Int?, hasLastRecipe: Boolean): So
     else -> SortStart.PICK
 }
 
-/** Put away's "Let the app choose": offered once some box or deck box has a rule to go by. */
-fun canLetAppChoose(places: List<StoragePlace>): Boolean =
-    places.any { it.rule != null && it.placeKind != PlaceKind.BINDER }
+/** Put away's "Let the app choose": offered once some place has a rule to go by (StorageRules.kt hasRule). */
+fun canLetAppChoose(places: List<StoragePlace>): Boolean = places.any { hasRule(it) }
 
 /** The put-away target that means "the place whose rule fits each card" (bestPlaceByRule). */
 const val PUT_AWAY_BY_RULE = BY_RULE

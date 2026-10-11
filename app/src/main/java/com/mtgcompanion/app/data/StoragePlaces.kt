@@ -55,7 +55,11 @@ fun storagePlace(p: StoragePlace): StoragePlace = p.copy(
     lastChecked = p.lastChecked?.takeIf { it > 0 },
     // A size taken off stays as 0, so an older app's save can be told from it (keepPlaceSizes).
     capacity = p.capacity?.coerceAtLeast(0),
-    pages = p.pages?.coerceAtLeast(0)
+    pages = p.pages?.coerceAtLeast(0),
+    // The rules as both apps write them (StorageRules.kt).
+    holds = cleanHolds(p.holds),
+    sectionsBy = p.sectionsBy?.let { cleanSectionsBy(it) },
+    sortBy = p.sortBy?.let { cleanSortBy(it) }
 )
 
 /** [collections] with [place] added, or put in place of the one with its id. */
@@ -156,11 +160,11 @@ fun placePath(places: List<StoragePlace>, id: String): String =
 fun canMoveInto(places: List<StoragePlace>, id: String, parentId: String?): Boolean =
     parentId == null || (places.any { it.id == parentId } && parentId !in placeAndInside(places, id))
 
-/** "Bulk · by colour, then A–Z", "Binder · 9 per page". */
+/** "Bulk · Holds blue cards · by card type · A–Z", "Binder · 9 per page · in order by set, then number". */
 fun placeSubtitle(place: StoragePlace): String {
     val parts = mutableListOf(place.note?.trim()?.takeIf { it.isNotEmpty() } ?: place.placeKind.label)
     if (place.placeKind == PlaceKind.BINDER) parts += "${place.pockets} per page"
-    place.rule?.let { parts += it.short }
+    rulesLine(place).takeIf { it.isNotEmpty() }?.let { parts += it }
     return parts.joinToString(" · ")
 }
 
@@ -672,13 +676,23 @@ fun keptLabel(entry: CollectionEntry, places: List<StoragePlace>): String {
 
 // ---- Sorting rules: where a new card goes ----
 
-/** What a sorting rule needs to know about a card: its colours (a double-faced card's front face's), type, set and number. */
+/**
+ * What a sorting rule needs to know about a card: its colours (a double-faced card's front face's), type,
+ * set and number — and, for a place's rules (StorageRules.kt), its colour identity, mana value, rarity
+ * and prices (US dollars) and whether the copy is foil.
+ */
 data class CardFacts(
     val name: String,
     val colors: List<String>? = null,
     val typeLine: String? = null,
     val set: String? = null,
-    val collectorNumber: String? = null
+    val collectorNumber: String? = null,
+    val colorIdentity: List<String>? = null,
+    val cmc: Double? = null,
+    val rarity: String? = null,
+    val usd: Double? = null,
+    val usdFoil: Double? = null,
+    val foil: Boolean = false
 )
 
 /** A Scryfall card's facts for the sorting rules. */
@@ -687,7 +701,12 @@ fun cardFactsOf(card: ScryfallCard): CardFacts = CardFacts(
     colors = card.colors ?: card.cardFaces?.firstOrNull()?.colors ?: emptyList(),
     typeLine = card.typeLine ?: card.cardFaces?.firstOrNull()?.typeLine,
     set = card.set,
-    collectorNumber = card.collectorNumber
+    collectorNumber = card.collectorNumber,
+    colorIdentity = card.colorIdentity,
+    cmc = card.cmc,
+    rarity = card.rarity?.lowercase(),
+    usd = card.prices?.usd?.toDoubleOrNull(),
+    usdFoil = card.prices?.usdFoil?.toDoubleOrNull()
 )
 
 private val COLOUR_NAMES = mapOf("W" to "White", "U" to "Blue", "B" to "Black", "R" to "Red", "G" to "Green")
@@ -747,18 +766,27 @@ fun ruleSection(rule: SortRule, f: CardFacts, sections: List<String> = emptyList
 }
 
 /** Where a card should go in [place], and that as words: "Red › around “L”", "Page 3, slot 6". */
-fun suggestSpot(place: StoragePlace, f: CardFacts?, collections: List<Collection>): Pair<Spot, String?> {
+/**
+ * Where a card should go in [place], and that as words: "Red › between Lightning Bolt and Lava Spike",
+ * "Page 3, slot 6". A box goes by its rules (StorageRules.kt): the section, and where in it among the
+ * cards there — [factsOf] gives their facts when their card data is here (else only names count, for A–Z).
+ */
+fun suggestSpot(
+    place: StoragePlace,
+    f: CardFacts?,
+    collections: List<Collection>,
+    factsOf: (CollectionEntry) -> CardFacts? = { null },
+    fmt: (Double) -> String = ::plainDollars,
+    rate: Double = 1.0
+): Pair<Spot, String?> {
     if (place.placeKind == PlaceKind.BINDER) {
         // A binder in order: the card waits beside it, to be fitted in with Add cards in order (BinderPages.kt).
         if (place.rule != null) return Spot(place.id) to null
         val (page, slot) = nextPocket(place, collections)
         return Spot(place.id, page = page, slot = slot) to pocketLabel(page, slot)
     }
-    val rule = place.rule
-    if (rule != null && f != null) {
-        val section = ruleSection(rule, f, place.sections.orEmpty())
-        val hint = listOfNotNull(section, positionHint(rule, f)).joinToString(" › ")
-        return Spot(place.id, section = section) to hint.ifEmpty { null }
+    if (f != null && placeRules(place).let { it.sectionsBy != null || it.sortBy.isNotEmpty() }) {
+        return ruleSpot(place, f, cardsIn(collections, place.id), factsOf, fmt, rate)
     }
     return Spot(place.id) to null
 }
@@ -996,7 +1024,10 @@ fun mergePlaceLists(base: List<StoragePlace>?, mine: List<StoragePlace>?, theirs
             // Only ever moves on, so the later check wins — and a side that dropped it didn't clear it.
             lastChecked = maxOf(bp.lastChecked ?: 0L, mp.lastChecked ?: 0L, tp.lastChecked ?: 0L).takeIf { it > 0 },
             capacity = pick(bp.capacity, mp.capacity, tp.capacity, minePreferred),
-            pages = pick(bp.pages, mp.pages, tp.pages, minePreferred)
+            pages = pick(bp.pages, mp.pages, tp.pages, minePreferred),
+            holds = pick(bp.holds, mp.holds, tp.holds, minePreferred),
+            sectionsBy = pick(bp.sectionsBy, mp.sectionsBy, tp.sectionsBy, minePreferred),
+            sortBy = pick(bp.sortBy, mp.sortBy, tp.sortBy, minePreferred)
         ))
     }
     return out

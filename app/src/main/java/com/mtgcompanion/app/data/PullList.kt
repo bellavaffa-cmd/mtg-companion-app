@@ -704,21 +704,24 @@ data class PutBackGroup(
 data class PutBackListData(val groups: List<PutBackGroup>, val total: Int)
 
 /**
- * The best place by rule for a card: the first box (in tree order) with a sorting rule it fits — one
- * with no sections takes any card, one with sections only cards its rule files in one of them.
- * Binders aren't sorted by rule. Null when none fits.
+ * The best place by rule for a card: the first place in the user's rule order whose rules it fits
+ * (StorageRules.kt placeFor) — [card] is the card as the places' "Holds" judge it; without it only
+ * places that hold everything can take it. Null when none fits.
  */
-fun bestPlaceByRule(places: List<StoragePlace>, facts: CardFacts, collections: List<Collection>): Pair<Spot, StoragePlace>? {
-    for (node in placeTree(places)) {
-        val place = node.place
-        val rule = place.rule ?: continue
-        if (place.placeKind == PlaceKind.BINDER) continue
-        val sections = place.sections.orEmpty()
-        val section = ruleSection(rule, facts, sections)
-        if (sections.isNotEmpty() && !(section != null && sections.any { it.equals(section, ignoreCase = true) })) continue
-        return suggestSpot(place, facts, collections).first to place
-    }
-    return null
+fun bestPlaceByRule(
+    places: List<StoragePlace>,
+    facts: CardFacts,
+    collections: List<Collection>,
+    /** The card as the places' "Holds" judge it; without it only places that hold everything can take it. */
+    card: RuleCard? = null,
+    factsOf: (CollectionEntry) -> CardFacts? = { null },
+    toUsd: (Double) -> Double = { it },
+    /** Pass over a place that's full (putting away one card at a time); filing a sorted pile warns instead. */
+    needRoom: Boolean = false
+): Pair<Spot, StoragePlace>? {
+    // The first place in the user's rule order whose rules the card fits (and, with [needRoom], that has room) — StorageRules.kt.
+    val place = placeFor(places, placeOrderOf(collections), card ?: RuleCard(facts), { !needRoom || hasRoom(it, collections) }, toUsd) ?: return null
+    return suggestSpot(place, facts, collections, factsOf).first to place
 }
 
 /** "Mountains", "Plains", "Snow-Covered Islands". */

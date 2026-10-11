@@ -53,8 +53,14 @@ val APART_LABELS = mapOf("FOIL" to "Foils", "FOREIGN" to "Not English", "PLAYED"
 val LEVEL_BYS = listOf("VALUE", "COLOUR", "TYPE", "SET", "MANA_VALUE", "RARITY", "IDENTITY", "NAME", "NUMBER")
 val LEVEL_LABELS = mapOf(
     "VALUE" to "Value", "COLOUR" to "Colour", "IDENTITY" to "Colour identity", "SET" to "Set", "MANA_VALUE" to "Mana value",
-    "RARITY" to "Rarity", "TYPE" to "Card type", "NAME" to "A–Z", "NUMBER" to "Collector number"
+    "RARITY" to "Rarity", "TYPE" to "Card type", "NAME" to "A–Z", "NUMBER" to "Collector number", "PLACE" to "Place"
 )
+
+/**
+ * The level of "Into my storage" (tpl-storage): a pile per place with rules, in the user's rule order,
+ * and one for cards no place fits (StorageRules.kt). Not offered in the editor's levels.
+ */
+const val PLACE_LEVEL = "PLACE"
 
 /**
  * One way of splitting ([by], a LEVEL_BYS name). [cuts]: VALUE — the band edges in the user's
@@ -70,7 +76,10 @@ data class SplitLevel(
     val letters: List<String>? = null,
     val sets: List<String>? = null,
     val lands: Boolean? = null,
-    val restOn: Boolean? = null
+    val restOn: Boolean? = null,
+    /** PLACE: the places' ids, in rule order, and their names as the piles say them. */
+    val places: List<String>? = null,
+    val names: List<String>? = null
 )
 
 /** Where one pile is filed: a place's id, BY_RULE ("the box whose rule fits"), or "" — no place (Unsorted). */
@@ -104,6 +113,10 @@ private val DEFAULT_LETTERS = listOf("A", "F", "L", "R")
 
 /** A level as both apps keep it: only the fields its kind uses, tidied (sorted, no repeats). */
 fun splitLevel(l: SplitLevel): SplitLevel {
+    if (l.by == PLACE_LEVEL) {
+        val ids = l.places.orEmpty()
+        return SplitLevel(PLACE_LEVEL, places = ids, names = ids.indices.map { l.names?.getOrNull(it) ?: "Place ${it + 1}" })
+    }
     val by = if (l.by in LEVEL_BYS) l.by else "COLOUR"
     return when (by) {
         "VALUE" -> {
@@ -155,10 +168,13 @@ fun sortRecipe(r: SortRecipe): SortRecipe {
  * Binder by set. [goals]: the user has a goal under way — then "What my collection needs" pulls out
  * the cards the goals need too (without one, that pile would only stand empty on the table).
  */
-fun recipeTemplates(sets: List<String> = emptyList(), goals: Boolean = false): List<SortRecipe> {
+fun recipeTemplates(sets: List<String> = emptyList(), goals: Boolean = false, storage: List<Pair<String, String>> = emptyList()): List<SortRecipe> {
     val smart = listOf("DECKS", "FRIENDS", "BINDER")
     val needs = if (goals) listOf("DECKS", "GOALS", "FRIENDS", "BINDER", "TRADE") else listOf("DECKS", "FRIENDS", "BINDER", "TRADE")
-    return listOf(
+    // Into my storage: once a place holds something particular — a pile per place with rules, in rule order.
+    val mine = if (storage.isEmpty()) emptyList()
+    else listOf(SortRecipe(STORAGE_TEMPLATE, "Into my storage", smart, listOf(SplitLevel(PLACE_LEVEL, places = storage.map { it.first }, names = storage.map { it.second }))))
+    return mine + listOf(
         SortRecipe("tpl-colour", "Commander by colour", smart, listOf(SplitLevel("COLOUR", lands = true))),
         SortRecipe("tpl-type", "By card type", smart, listOf(SplitLevel("TYPE"))),
         SortRecipe("tpl-set", "Binder by set", smart, listOf(splitLevel(SplitLevel("SET", sets = sets.take(5))), splitLevel(SplitLevel("NUMBER")))),
@@ -180,6 +196,12 @@ fun newRecipe(id: String, now: Long): SortRecipe = SortRecipe(
 )
 
 val SortRecipe.isTemplate: Boolean get() = id.startsWith("tpl-")
+
+/** "Into my storage"'s id. */
+const val STORAGE_TEMPLATE = "tpl-storage"
+
+/** Whether a recipe sorts into the places (its levels have PLACE): its cards need [RecipeCard.place]. */
+val SortRecipe.intoPlaces: Boolean get() = levels.any { it.by == PLACE_LEVEL }
 
 // ---- The piles ----
 
@@ -232,6 +254,7 @@ fun levelBuckets(level: SplitLevel, fmt: (Double) -> String): List<RecipeBucket>
         }
         "RARITY" -> RECIPE_RARITY_BUCKETS.map { (key, label, band) -> RecipeBucket(key, label, band) }
         "TYPE" -> TYPE_SECTIONS.map { RecipeBucket(it.lowercase(), it, null) }
+        PLACE_LEVEL -> l.names!!.mapIndexed { i, n -> RecipeBucket("p$i", n, null) } + RecipeBucket("none", "No place fits", null)
         else -> {
             val letters = l.letters!!
             letters.mapIndexed { i, c ->
@@ -300,6 +323,7 @@ fun levelLine(level: SplitLevel, fmt: (Double) -> String): String {
     val l = splitLevel(level)
     if (l.by == "COLOUR") return if (l.lands == true) "W · U · B · R · G · Multi · Colourless · Lands" else "W · U · B · R · G · Multi · Colourless/lands"
     if (l.by == "IDENTITY") return "W · U · B · R · G · Multi · Colourless"
+    if (l.by == PLACE_LEVEL) return "A pile per place, in your rule order · No place fits"
     val buckets = levelBuckets(l, fmt)
     if (l.by == "VALUE" && l.restOn == true) return buckets.dropLast(1).joinToString(" · ") { it.label } + " apart, rest continue"
     if (l.by == "SET" && l.sets!!.isEmpty()) return "One pile per set you name"
@@ -340,7 +364,9 @@ data class RecipeCard(
     val usdFoil: Double? = null,
     val foil: Boolean = false,
     val lang: String? = null,
-    val played: Boolean = false
+    val played: Boolean = false,
+    /** The place with rules it goes to (StorageRules.kt placeFor), for "Into my storage"; null when none fits. */
+    val place: String? = null
 )
 
 /** The card's price in US dollars for its finish, or null when not known. */
@@ -387,6 +413,7 @@ fun bucketOf(level: SplitLevel, card: RecipeCard, rate: Double): String {
         "NUMBER" -> "c${lastAtOrBelow(l.cuts!!, leadingNumber(card.collectorNumber))}"
         "RARITY" -> if (card.rarity in listOf("mythic", "rare", "uncommon")) card.rarity!! else "common"
         "TYPE" -> typeSection(recipeFacts(card)).lowercase()
+        PLACE_LEVEL -> l.places!!.indexOf(card.place ?: "").let { if (it < 0) "none" else "p$it" }
         else -> {
             val letter = letterOf(card.name)
             "n${if (letter == "#") 0 else lastAtOrBelow(l.letters!!, letter)}"
@@ -931,6 +958,11 @@ fun checkPileCard(derived: DerivedPiles, scans: List<RecipeScan>, pile: Int, che
  */
 fun pileGoesTo(recipe: SortRecipe, pile: RecipePile): String {
     recipe.goTo.orEmpty().firstOrNull { it.pile == pile.key }?.let { return it.to }
+    // Into my storage: a place's pile goes to that place, "No place fits" to none.
+    recipe.levels.firstOrNull()?.takeIf { it.by == PLACE_LEVEL }?.let { l ->
+        if (pile.key == "L:none") return ""
+        Regex("^L:p(\\d+)$").find(pile.key)?.let { m -> l.places?.getOrNull(m.groupValues[1].toInt())?.let { return it } }
+    }
     return if (pile.key == "S:DECKS" || pile.key == "S:GOALS" || pile.key == "S:FRIENDS" || pile.key == "S:TRADE") "" else BY_RULE
 }
 

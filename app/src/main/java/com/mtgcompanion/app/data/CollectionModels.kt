@@ -134,7 +134,20 @@ data class StoragePlace(
      */
     val capacity: Int? = null,
     /** A binder's pages: its size is pages × pockets per page. Null and 0 as [capacity]. */
-    val pages: Int? = null
+    val pages: Int? = null,
+    /**
+     * The place's rules (StorageRules.kt). [holds]: the cards it holds, as a saved filter's JSON —
+     * {"basic": {…}, "advanced": {…}} (AdvancedFilter.kt's savedFiltersToJson, one filter) — null
+     * (left out) for everything. [sectionsBy]: the one level its sections go by, a sorting recipe's
+     * level (SortRecipes.kt's SplitLevel). [sortBy]: the order inside a section, up to two of
+     * SORT_BYS ("NAME", "NUMBER", "MANA_VALUE", "VALUE" — dearest first — "SET"). Written by an app
+     * that knows rules once the place has had one: [sortBy] then always says, [] for none — so a place
+     * without it on a device that had it was saved by an app that doesn't know about rules
+     * (keepPlaceRules). [sortRule] is still written, as the nearest old rule, for those apps.
+     */
+    val holds: Map<String, Any?>? = null,
+    val sectionsBy: SplitLevel? = null,
+    val sortBy: List<String>? = null
 ) {
     val placeKind: PlaceKind get() = PlaceKind.fromName(kind)
     val rule: SortRule? get() = SortRule.fromName(sortRule)
@@ -361,6 +374,13 @@ data class Collection(
      * doesn't know about them.
      */
     val collectionGoals: List<CollectionGoal>? = null,
+    /**
+     * The Unsorted pile only: the order the places with rules are tried in when a card fits more than
+     * one (StorageRules.kt's "Rule order"), by place id — the user's choice. Null (left out) until it's
+     * first set; then kept — so a pile without it on a device that had it was saved by an app that
+     * doesn't know about rules.
+     */
+    val placeOrder: List<String>? = null,
     /** A sample binder from the welcome flow — see Deck.sample. Null (left out) on everything else. */
     val sample: Boolean? = null
 ) {

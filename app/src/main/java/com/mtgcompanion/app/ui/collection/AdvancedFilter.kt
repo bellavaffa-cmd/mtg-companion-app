@@ -592,7 +592,7 @@ private fun jsonList(list: List<String>) = list.joinToString(",", "[", "]") { js
 
 private fun jsonObject(fields: List<Pair<String, String>>) = fields.joinToString(",", "{", "}") { (k, v) -> "${jsonString(k)}:$v" }
 
-private fun basicJson(b: CollectionFilter) = jsonObject(listOf(
+internal fun basicJson(b: CollectionFilter) = jsonObject(listOf(
     "type" to jsonString(b.type),
     "text" to jsonString(b.text),
     "colors" to jsonList(wubrgOrder(b.colors.map { it.toString() })),
@@ -604,7 +604,7 @@ private fun basicJson(b: CollectionFilter) = jsonObject(listOf(
 ))
 
 // Keys in this order on both apps, so the JSON is the same text.
-private fun advancedJson(a: AdvancedFilter) = jsonObject(listOf(
+internal fun advancedJson(a: AdvancedFilter) = jsonObject(listOf(
     "colorTarget" to jsonString(a.colorTarget), "colorMode" to jsonString(a.colorMode),
     "colors" to jsonList(wubrgOrder(a.colors)), "multicolor" to a.multicolor.toString(),
     "mvOp" to jsonString(a.mvOp), "mv" to jsonString(a.mv), "manaCost" to jsonString(a.manaCost),
@@ -641,7 +641,7 @@ private fun JSONObject.strList(key: String): List<String> {
 private fun JSONObject.oneOf(key: String, options: List<String>, fallback: String): String =
     (opt(key) as? String)?.takeIf { it in options } ?: fallback
 
-private fun basicFrom(o: JSONObject) = CollectionFilter(
+internal fun basicFrom(o: JSONObject) = CollectionFilter(
     type = o.str("type"),
     text = o.str("text"),
     colors = o.strList("colors").filter { it.length == 1 && it[0] in "WUBRG" }.map { it[0] }.toSet(),
@@ -650,7 +650,7 @@ private fun basicFrom(o: JSONObject) = CollectionFilter(
     userTags = o.strList("userTags").toSet()
 )
 
-private fun advancedFrom(o: JSONObject): AdvancedFilter {
+internal fun advancedFrom(o: JSONObject): AdvancedFilter {
     val d = AdvancedFilter()
     return AdvancedFilter(
         colorTarget = o.oneOf("colorTarget", COLOR_TARGETS, d.colorTarget),

@@ -21,6 +21,7 @@ import com.mtgcompanion.app.data.keepSealedFromOlderApp
 import com.mtgcompanion.app.data.mergeGraded
 import com.mtgcompanion.app.data.mergeSealed
 import com.mtgcompanion.app.data.keepPlaceSizes
+import com.mtgcompanion.app.data.keepPlaceRules
 import com.mtgcompanion.app.data.keepDeckExtrasFromOlderApp
 import com.mtgcompanion.app.data.withMergedExtras
 import com.mtgcompanion.app.data.keepPlacesFromOlderApp
@@ -245,8 +246,9 @@ object ItemMerge {
             // ...and one that doesn't know about sorting recipes left those as they were.
             // ...and one that doesn't know about what the scanner learned left that as it was.
             // ...and one that doesn't know about collection goals left those as they were.
-            keepGoalsFromOlderApp(base, keepCorrectionsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepPreReleaseFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine)))))))))))),
-            keepGoalsFromOlderApp(base, keepCorrectionsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepPreReleaseFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs)))))))))))),
+            // ...and one that doesn't know about places' rules left those (and the rule order) as they were.
+            keepGoalsFromOlderApp(base, keepCorrectionsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepPreReleaseFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceRules(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, mine))))))))))))),
+            keepGoalsFromOlderApp(base, keepCorrectionsFromOlderApp(base, keepRecipesFromOlderApp(base, keepGearFromOlderApp(base, keepGradedFromOlderApp(base, keepSealedFromOlderApp(base, keepAlertOptionsFromOlderApp(base, keepPreReleaseFromOlderApp(base, keepForSaleFromOlderApp(base, keepPlaceRules(base, keepPlaceSizes(base, keepLoansFromOlderApp(base, keepPlacesFromOlderApp(base, theirs))))))))))))),
             minePreferred
         )
 
@@ -259,6 +261,8 @@ object ItemMerge {
         sortRecipes = mergeRecipes(base.sortRecipes, mine.sortRecipes, theirs.sortRecipes, minePreferred),
         scanCorrections = mergeCorrections(base.scanCorrections, mine.scanCorrections, theirs.scanCorrections, minePreferred),
         collectionGoals = mergeGoals(base.collectionGoals, mine.collectionGoals, theirs.collectionGoals, minePreferred),
+        // The rule order (StorageRules.kt): whoever changed it, the more recent when both did.
+        placeOrder = pick(base.placeOrder, mine.placeOrder, theirs.placeOrder, minePreferred),
         name = pick(base.name, mine.name, theirs.name, minePreferred),
         type = pick(base.type, mine.type, theirs.type, minePreferred),
         createdAt = minOf(mine.createdAt, theirs.createdAt),

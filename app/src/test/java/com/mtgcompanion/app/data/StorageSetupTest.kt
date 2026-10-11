@@ -37,7 +37,7 @@ class StorageSetupTest {
         assertEquals(SortRule.COLOUR.name, box.sortRule)
         assertEquals(COLOUR_SECTIONS, box.sections)
         assertEquals(listOf(1000L, 1001L, 1002L), made.map { it.createdAt })
-        assertEquals("Bulk · by colour, then A–Z", placeSubtitle(box.copy(note = "Bulk")))
+        assertEquals("Bulk · by colour · A–Z", placeSubtitle(box.copy(note = "Bulk")))
         // Nine pockets is the default, so it isn't written; nor sections for a box not sorted.
         val plain = SetupCounts(binders = 1, boxes = 1, boxRule = null, shelves = 0)
         val (b, x) = setupPlaces(plain, setupDrafts(plain), emptyMap(), 0, ids())
