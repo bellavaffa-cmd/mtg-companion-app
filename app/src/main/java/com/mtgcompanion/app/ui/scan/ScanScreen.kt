@@ -613,7 +613,8 @@ fun ScanScreen(
                     )
                 } else if (tickList != null) {
                     TickTarget(
-                        (if (tickList?.pull == true) "Ticking off: pull list for " else "Ticking off: put back list for ") + (tickDeck?.name ?: "a deck") +
+                        (if (tickList?.deckId == com.mtgcompanion.app.ui.collection.WalkSession.TICK_ID) "Ticking off: walk list · " + (com.mtgcompanion.app.ui.collection.WalkSession.walk.value?.title ?: "")
+                        else (if (tickList?.pull == true) "Ticking off: pull list for " else "Ticking off: put back list for ") + (tickDeck?.name ?: "a deck")) +
                             (tickCount?.let { " · ${it.first} of ${it.second}" } ?: ""),
                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
                     )

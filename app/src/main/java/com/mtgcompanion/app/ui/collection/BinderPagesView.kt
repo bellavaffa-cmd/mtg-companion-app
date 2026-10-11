@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -102,7 +103,9 @@ fun BinderPagesView(
     onChange: ((StorageChange) -> Unit)?,
     onOpenCard: (String) -> Unit,
     modifier: Modifier = Modifier,
-    marked: Set<Int> = emptySet()
+    marked: Set<Int> = emptySet(),
+    /** A filter's matches (PlaceFilter.kt matchingPockets): these pockets picked out, the other cards dimmed. */
+    hits: Set<Int>? = null
 ) {
     val colors = LocalAppColors.current
     val density = LocalDensity.current
@@ -236,6 +239,7 @@ fun BinderPagesView(
                                     when {
                                         picked -> Modifier.border(2.dp, colors.accent, shape)
                                         i in marked -> Modifier.border(2.dp, colors.success, shape)
+                                        hits != null && card != null && i in hits -> Modifier.border(2.dp, colors.accent, shape)
                                         card == null -> Modifier.border(2.dp, colors.border, shape)
                                         else -> Modifier
                                     }
@@ -253,7 +257,11 @@ fun BinderPagesView(
                                 )
                         ) {
                             if (card != null) {
-                                ArtImage(card.entry.imageUrl, card.entry.name, Modifier.fillMaxSize(), contentDescription = card.entry.name)
+                                ArtImage(
+                                    card.entry.imageUrl, card.entry.name,
+                                    Modifier.fillMaxSize().then(if (hits != null && i !in hits) Modifier.alpha(0.28f) else Modifier),
+                                    contentDescription = card.entry.name + if (hits != null) (if (i in hits) ", matches" else ", doesn't match") else ""
+                                )
                                 val n = here.sumOf { it.line.qty }
                                 if (n > 1) Text(
                                     "×$n",

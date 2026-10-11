@@ -67,7 +67,10 @@ import com.mtgcompanion.app.data.PlaceKind
 import com.mtgcompanion.app.data.SortRule
 import com.mtgcompanion.app.data.StoragePlace
 import com.mtgcompanion.app.data.canMoveInto
+import com.mtgcompanion.app.data.cardsByPlace
 import com.mtgcompanion.app.data.childrenOf
+import com.mtgcompanion.app.data.copiesByPlace
+import com.mtgcompanion.app.data.walkPullList
 import com.mtgcompanion.app.data.copiesWithin
 import com.mtgcompanion.app.data.defaultSections
 import com.mtgcompanion.app.data.gearOf
@@ -152,7 +155,21 @@ fun StorageTab(
     /** Settings › Data and speed: the backup (DataAndSpeedSection.kt). */
     onOpenDataAndSpeed: () -> Unit = {},
     /** Search everywhere (Find anything) with the header's search. */
-    onSearchEverywhere: () -> Unit = {}
+    onSearchEverywhere: () -> Unit = {},
+    /** The Storage tab's own filters (the header's filter button): with the header's search, they also find the cards in storage. */
+    filter: CardsFilter = CardsFilter(),
+    onFilterChange: ((CardsFilter) -> Unit)? = null,
+    filterOpen: Boolean = false,
+    /** Opens the Advanced filters for the Storage tab's filters. */
+    onAdvanced: () -> Unit = {},
+    /** What the filters judge the cards by (the Cards tab's, from the view model). */
+    facts: FilterFacts = FilterFacts(),
+    /** scryfallId → its (plain, foil) price in US dollars; empty until loaded. */
+    prices: Map<String, Pair<Double?, Double?>> = emptyMap(),
+    onOpenCard: (String) -> Unit = {},
+    onOpenPlaceAt: (String, String?, Int?) -> Unit = { id, _, _ -> onOpenPlace(id) },
+    /** Walk this list (WalkListScreen): the list to walk is in WalkSession. */
+    onWalk: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -165,6 +182,15 @@ fun StorageTab(
     val upkeep = rememberUpkeep(collections, decks)
     val money = rememberMoney()
     val q = query.trim()
+    // The header's search and the filters, over every copy in storage: "Cards in storage matching …".
+    val searching = filter.copy(query = query)
+    val matchingOn = searching.active
+    val stored = remember(collections) {
+        val known = placesOf(collections).map { it.id }.toSet()
+        cardsByPlace(collections).values.flatten().filter { it.line.placeId in known }
+    }
+    val matching = remember(stored, searching, facts) { if (matchingOn) filterCopies(stored, searching, facts) else emptyList() }
+    var showAllRows by remember { mutableStateOf(false) }
     val putAway = { if (places.isEmpty()) onSetUp() else choosing = true }
     // A place's line: what it is, and the binders with copies in it ("in 2 binders").
     fun detail(p: StoragePlace, withSubtitle: Boolean): String? =
@@ -210,6 +236,25 @@ fun StorageTab(
                     }
                 }
             }
+        }
+        if (onFilterChange != null) item(key = "filters") {
+            CardsFilterArea(filter, { onFilterChange(it.copy(query = "")) }, filterOpen, onAdvanced, collections)
+        }
+        if (matchingOn && places.isNotEmpty()) {
+            item(key = "matches-head") {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    Text(storageMatchingTitle(searching), style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, modifier = Modifier.a11yHeading())
+                    val usdOf: ((com.mtgcompanion.app.data.PlacedCard) -> Double?)? =
+                        if (prices.isEmpty()) null else { c: com.mtgcompanion.app.data.PlacedCard -> prices[c.entry.scryfallId]?.let { (plain, foil) -> placedCopyUsd(c, plain, foil) } }
+                    FilterTotalsLine(totalsLine(filterTotals(stored, matching, usdOf)) { money.format(it, whole = true) }, matching.isNotEmpty()) {
+                        WalkSession.start(storageMatchingTitle(searching).replace("Cards in storage matching ", "Storage · "), walkPullList(matching, places))
+                        onWalk()
+                    }
+                }
+            }
+            if (matching.isEmpty()) item(key = "matches-none") {
+                Text("No cards in your places match.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+            } else copyGroupItems(copiesByPlace(matching, places), places, showAllRows, { showAllRows = true }, onOpenCard, onOpenPlaceAt, "match:")
         }
         item(key = "places-head") {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {

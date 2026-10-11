@@ -18,6 +18,9 @@ import com.mtgcompanion.app.data.withPulled
 import com.mtgcompanion.app.data.withSpoilerWant
 import com.mtgcompanion.app.ui.collection.SpreadThinScreen
 import com.mtgcompanion.app.ui.collection.PlaceScreen
+import com.mtgcompanion.app.ui.collection.SavedFilters
+import com.mtgcompanion.app.ui.collection.WalkListScreen
+import com.mtgcompanion.app.ui.collection.WalkSession
 import com.mtgcompanion.app.ui.collection.BinderFitScreen
 import com.mtgcompanion.app.ui.collection.SortRecipesScreen
 import com.mtgcompanion.app.ui.collection.CheckResultsScreen
@@ -417,6 +420,8 @@ private object Routes {
     const val SPACE = "space"
     /** The To sell list (Selling.kt). */
     const val SELL = "sell"
+    /** Walk this list: a filtered place's or the Storage tab's matches (PlaceFilter.kt WalkSession). */
+    const val WALK = "walk_list"
     /** Sealed product (Sealed.kt). */
     const val SEALED = "sealed"
     /** A graded copy: a new one of [card], or the one marked with [id] (Graded.kt). */
@@ -464,7 +469,7 @@ private object Routes {
     fun deckHistory(deckId: String) = "deck_history/$deckId"
     const val DECK_VERSION = "deck_version/{deckId}/{entryId}"
     fun deckVersion(deckId: String, entryId: String) = "deck_version/$deckId/" + URLEncoder.encode(entryId, StandardCharsets.UTF_8.name())
-    /** The scanner ticking a deck's pull list ([kind] "pull") or put-back list ("put_back"). */
+    /** The scanner ticking a deck's pull list ([kind] "pull") or put-back list ("put_back"), or the walk list (deckId WalkSession.TICK_ID). */
     const val SCAN_TICK = "scan_tick/{deckId}/{kind}"
     fun scanTick(deckId: String, pull: Boolean) = "scan_tick/$deckId/" + if (pull) "pull" else "put_back"
     /** A tag's automatic binder: every owned card with that tag. */
@@ -891,6 +896,8 @@ fun MtgNavGraph(
                 val startSection = entry.arguments?.getString("section")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
+                // The Cards tab's saved filters, for the place's Advanced filters.
+                val savedFilters = remember { SavedFilters(settingsRepository, addToScope) }
                 PlaceScreen(
                     placeId = placeId,
                     collections = collections,
@@ -910,6 +917,10 @@ fun MtgNavGraph(
                     onScanPage = { id, page -> navController.navigate(Routes.pageScan(id, page)) },
                     social = socialRepository,
                     onOpenHousehold = { id -> navController.navigate(Routes.household(id)) },
+                    savedFilters = savedFilters,
+                    onWalk = { navController.navigate(Routes.WALK) },
+                    onOpenPlaceAt = { id, section, page -> navController.navigate(Routes.place(id, page, section)) },
+                    onWalk = { navController.navigate(Routes.WALK) },
                     onProposeTrade = { friend, want, give ->
                         socialRepository.draft = SocialRepository.TradeDraft(to = friend, want = want, give = give)
                         navController.navigate(Routes.tradeNew(friend))
@@ -1294,6 +1305,13 @@ fun MtgNavGraph(
                     decks = decks,
                     onBack = { navController.popBackStack() },
                     onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } }
+                )
+            }
+
+            destination(Routes.WALK) {
+                WalkListScreen(
+                    onBack = { navController.popBackStack() },
+                    onScan = { navController.navigate(Routes.scanTick(WalkSession.TICK_ID, pull = true)) }
                 )
             }
 

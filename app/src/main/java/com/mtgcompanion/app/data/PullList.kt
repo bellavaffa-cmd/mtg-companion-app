@@ -356,6 +356,75 @@ fun sellPullList(collections: List<Collection>): PullListData {
     )
 }
 
+// ---- Walk this list: any copies in storage, in walking order ----
+
+/** Some copies kept at one place (and section), for a filtered place or the Storage tab's results. */
+data class CopyGroup(
+    val key: String,
+    val placeId: String,
+    val section: String?,
+    /** "Red box › Red", "Rares binder". */
+    val title: String,
+    /** The places it sits in: "Shelf, study". */
+    val detail: String,
+    val copies: List<PlacedCard>
+)
+
+/**
+ * [copies] grouped by place › section as you'd walk round to fetch them — places in the Storage
+ * tree's order, a box's own sections in order, then by page and pocket (a binder) or name (a box).
+ * Copies in a place that's gone are left out.
+ */
+fun copiesByPlace(copies: List<PlacedCard>, places: List<StoragePlace>): List<CopyGroup> {
+    val known = places.map { it.id }.toSet()
+    val heads = LinkedHashMap<String, PlaceGroupHead>()
+    val byGroup = LinkedHashMap<String, MutableList<PlacedCard>>()
+    val spots = HashMap<String, Pair<String, String?>>()
+    for (c in copies) {
+        if (c.line.placeId !in known) continue
+        val section = c.line.section?.takeIf { it.isNotEmpty() }
+        val head = placeGroup(places, c.line.placeId, section)
+        heads.getOrPut(head.key) { head }
+        spots.getOrPut(head.key) { c.line.placeId to section }
+        byGroup.getOrPut(head.key) { mutableListOf() } += c
+    }
+    val groups = heads.values.map { h ->
+        val (placeId, section) = spots.getValue(h.key)
+        CopyGroup(h.key, placeId, section, h.title, h.detail, byGroup.getValue(h.key).sortedWith(compareBy(inPlaceOrder) { Triple(it.entry.name, it.line.page, it.line.slot) }))
+    }
+    return sortPlaceGroups(groups, places, { it.placeId }, { it.section })
+}
+
+/** [copies] in the order you'd walk round to fetch them (see copiesByPlace). */
+fun walkingOrder(copies: List<PlacedCard>, places: List<StoragePlace>): List<PlacedCard> =
+    copiesByPlace(copies, places).flatMap { it.copies }
+
+/**
+ * "Walk this list": any copies kept in places — a filtered place or the Storage tab's results — as a
+ * pull list (the deck pull list's groups and rows), to tick off by hand or with the scanner. A row a
+ * line of copies at one spot; its key stays the same while the collection does.
+ */
+fun walkPullList(copies: List<PlacedCard>, places: List<StoragePlace>): PullListData {
+    val byId = places.associateBy { it.id }
+    val groups = copiesByPlace(copies, places).map { g ->
+        val rows = g.copies.map { c ->
+            val spot = spotHint(byId[c.line.placeId], c.line.page, c.line.slot, CardFacts(c.entry.name))
+            val hint = listOfNotNull(spot, if (c.line.isFoil) "foil" else null).joinToString(" · ").ifEmpty { null }
+            PullRow(
+                "walk:${c.collectionId}:${c.entry.scryfallId}:${copyKey(c.line)}", c.entry.name, c.entry.scryfallId, c.line.qty,
+                PullSource.Place(c.collectionId, c.entry.scryfallId, c.line), hint, listOfNotNull(g.title.ifEmpty { null }, hint).joinToString(" · ")
+            )
+        }
+        PullGroup(g.key, PullGroupKind.PLACE, g.title, g.detail, g.placeId, g.section, rows)
+    }
+    return PullListData(
+        groups = groups,
+        total = groups.sumOf { g -> g.rows.sumOf { it.qty } },
+        toBuy = 0,
+        places = groups.mapNotNull { it.placeId }.distinct().size
+    )
+}
+
 /** Every row of the list that can be pulled (not the cards not owned), A–Z. */
 fun pullRowsAZ(list: PullListData): List<PullRow> =
     list.groups.filter { it.kind != PullGroupKind.MISSING }.flatMap { it.rows }

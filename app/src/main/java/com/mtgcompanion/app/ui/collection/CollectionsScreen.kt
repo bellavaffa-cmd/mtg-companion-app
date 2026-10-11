@@ -38,7 +38,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Inbox
@@ -51,8 +50,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -154,6 +151,7 @@ import com.mtgcompanion.app.ui.common.SyncIconButton
 import com.mtgcompanion.app.ui.common.ViewModeButton
 import com.mtgcompanion.app.ui.common.ZoomCard
 import com.mtgcompanion.app.ui.common.a11yHeading
+import com.mtgcompanion.app.data.cardsByPlace
 import com.mtgcompanion.app.ui.common.adaptiveGridColumns
 import com.mtgcompanion.app.ui.common.adaptiveListColumns
 import com.mtgcompanion.app.ui.common.addToMessage
@@ -170,7 +168,6 @@ import com.mtgcompanion.app.ui.theme.GoldDim
 import com.mtgcompanion.app.ui.theme.GoldLight
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.theme.NumberStyle
-import com.mtgcompanion.app.ui.theme.OnGold
 import com.mtgcompanion.app.ui.theme.Surface
 import com.mtgcompanion.app.ui.theme.TextDim
 import com.mtgcompanion.app.ui.theme.TextMuted
@@ -247,7 +244,9 @@ fun CollectionsScreen(
     /** The Binders tab's Goals (GoalsScreen.kt): all goals, one, and New goal. */
     onOpenGoals: () -> Unit = {},
     onOpenGoal: (String) -> Unit = {},
-    onNewGoal: () -> Unit = {}
+    onNewGoal: () -> Unit = {},
+    /** Walk this list from the Storage tab's results (WalkListScreen; the list is in WalkSession). */
+    onWalk: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val colors = LocalAppColors.current
@@ -329,6 +328,10 @@ fun CollectionsScreen(
     val copyFacts by viewModel.copyFacts.collectAsState()
     val savedFilters by viewModel.savedFilters.collectAsState()
     val filtering = cardFilter.active || advFilter.active
+    // The Storage tab's filters (the Cards tab's kind, over the copies in places), kept while the app runs.
+    val keptFilters by PlaceFilterStore.filters.collectAsState()
+    val storageFilter = filterIn(keptFilters, STORAGE_FILTER_KEY)
+    var storageAdvancedOpen by remember { mutableStateOf(false) }
     val spareIds = remember(spares) { spares.map { it.entry.scryfallId }.toSet() }
     val quickSets = remember(collections, chipIndex) { quickSets(collections, chipIndex) }
     val named = remember(allCards, query, tagVersion) {
@@ -447,9 +450,9 @@ fun CollectionsScreen(
                 query = query,
                 onQueryChange = { query = it },
                 tab = tab,
-                filtersOn = cardFilter.count + advFilter.count,
+                filtersOn = if (tab == CollectionTab.STORAGE) storageFilter.count else cardFilter.count + advFilter.count,
                 filterOpen = filterOpen,
-                onFilter = if (tab == CollectionTab.CARDS) ({ filterOpen = !filterOpen }) else null,
+                onFilter = if (tab == CollectionTab.CARDS || tab == CollectionTab.STORAGE) ({ filterOpen = !filterOpen }) else null,
                 viewMode = if (tab == CollectionTab.CARDS) viewMode else null,
                 onViewMode = viewModel::setViewMode,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp).tourTarget(tourTargets, TourTarget.SEARCH)
@@ -576,7 +579,18 @@ fun CollectionsScreen(
                         onOpenHousehold = onOpenHousehold,
                         onOpenGear = onOpenGear,
                         onOpenDataAndSpeed = onOpenDataAndSpeed,
-                        onSearchEverywhere = { onFind(query) }
+                        onSearchEverywhere = { onFind(query) },
+                        filter = storageFilter,
+                        onFilterChange = { PlaceFilterStore.set(STORAGE_FILTER_KEY, it) },
+                        filterOpen = filterOpen,
+                        onAdvanced = { storageAdvancedOpen = true },
+                        facts = remember(cardFacts, advancedFacts, copyFacts, collections, decks, money) {
+                            storageFilterFacts(cardFacts, advancedFacts, copyFacts, collections, decks) { money.toUsd(it) }
+                        },
+                        prices = remember(advancedFacts) { advancedFacts.mapValues { it.value.usd to it.value.usdFoil } },
+                        onOpenCard = onViewDetails,
+                        onOpenPlaceAt = onOpenPlaceAt,
+                        onWalk = onWalk
                     )
                     CollectionTab.WISHLIST -> if (wishlistPage != null) wishlistPage(query) else EmptyPrompt(Icons.Filled.Star, "Your wishlist is loading…")
                 }
@@ -614,6 +628,22 @@ fun CollectionsScreen(
             }
         )
     }
+    }
+
+    if (storageAdvancedOpen) {
+        val storageFacts = storageFilterFacts(cardFacts, advancedFacts, copyFacts, collections, decks) { money.toUsd(it) }
+        val stored = remember(collections) { cardsByPlace(collections).values.flatten().filter { c -> places.any { it.id == c.line.placeId } } }
+        CardsAdvancedFilters(
+            filter = storageFilter,
+            onChange = { PlaceFilterStore.set(STORAGE_FILTER_KEY, it) },
+            countFor = { f -> filterCopies(stored, f.copy(query = query), storageFacts).sumOf { it.line.qty } },
+            collections = collections,
+            sets = allCards.mapNotNull { c -> cardFacts[c.scryfallId]?.takeIf { it.set.isNotBlank() }?.let { it.set to it.setName.ifBlank { it.set.uppercase() } } }
+                .distinctBy { it.first }.sortedBy { it.second.lowercase() },
+            saved = savedFilters,
+            savedFilters = viewModel.savedFilterStore,
+            onDismiss = { storageAdvancedOpen = false }
+        )
     }
 
     if (advancedOpen) {
@@ -720,7 +750,7 @@ private fun CollectionSearchBar(
     val hint = when (tab) {
         CollectionTab.CARDS -> "Search your cards, e.g. ramp"
         CollectionTab.BINDERS -> "Search binders and goals"
-        CollectionTab.STORAGE -> "Search your places"
+        CollectionTab.STORAGE -> "Search your places and the cards in them"
         CollectionTab.WISHLIST -> "Search your wishlist"
     }
     OutlinedTextField(
@@ -747,17 +777,7 @@ private fun CollectionSearchBar(
                     }
                 }
                 if (viewMode != null) ViewModeButton(viewMode, onViewMode)
-                if (onFilter != null) {
-                    IconButton(onClick = onFilter) {
-                        BadgedBox(badge = { if (filtersOn > 0) Badge(containerColor = Gold, contentColor = OnGold) { Text("$filtersOn") } }) {
-                            Icon(
-                                Icons.Filled.FilterList,
-                                contentDescription = if (filtersOn > 0) "Filters, $filtersOn on" else "Filters",
-                                tint = if (filtersOn > 0 || filterOpen) Gold else TextMuted
-                            )
-                        }
-                    }
-                }
+                if (onFilter != null) FilterIconButton(filtersOn, filterOpen, onFilter)
             }
         },
         modifier = modifier.fillMaxWidth().semantics { contentDescription = hint }
