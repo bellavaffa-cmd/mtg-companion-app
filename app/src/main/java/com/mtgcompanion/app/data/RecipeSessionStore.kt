@@ -34,14 +34,24 @@ class RecipeSessionStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("sort_recipes", Context.MODE_PRIVATE)
     private val sessionAdapter by lazy { localMoshi.adapter(RecipeSessionState::class.java) }
     private val voiceAdapter by lazy { localMoshi.adapter(RecipeVoice::class.java) }
+    private val recipeAdapter by lazy { localMoshi.adapter(SortRecipe::class.java) }
 
     fun session(): RecipeSessionState? = prefs.getString(SESSION, null)
         ?.let { runCatching { sessionAdapter.fromJson(it) }.getOrNull() }
         ?.let { it.copy(recipe = sortRecipe(it.recipe)) }
 
     fun saveSession(session: RecipeSessionState?) {
-        prefs.edit().apply { if (session == null) remove(SESSION) else putString(SESSION, sessionAdapter.toJson(session)) }.apply()
+        prefs.edit().apply {
+            if (session == null) remove(SESSION) else putString(SESSION, sessionAdapter.toJson(session))
+            // The recipe last sorted with — a template or your own — for the scanner's Sort a pile: "Start".
+            if (session != null) putString(LAST_RECIPE, recipeAdapter.toJson(session.recipe))
+        }.apply()
     }
+
+    /** The recipe last sorted with, as it was then (a recipe of your own may have changed since: see the collection's). */
+    fun lastRecipe(): SortRecipe? = prefs.getString(LAST_RECIPE, null)
+        ?.let { runCatching { recipeAdapter.fromJson(it) }.getOrNull() }
+        ?.let { sortRecipe(it) }
 
     fun voice(): RecipeVoice = prefs.getString(VOICE, null)?.let { runCatching { voiceAdapter.fromJson(it) }.getOrNull() } ?: RecipeVoice()
 
@@ -59,5 +69,6 @@ class RecipeSessionStore(context: Context) {
         const val SESSION = "session"
         const val VOICE = "voice"
         const val LAST = "last"
+        const val LAST_RECIPE = "last_recipe"
     }
 }

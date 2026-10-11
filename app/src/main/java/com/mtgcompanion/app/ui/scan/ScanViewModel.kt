@@ -100,6 +100,17 @@ import com.mtgcompanion.app.data.RecipeMiss
 import com.mtgcompanion.app.data.RecipeScan
 import com.mtgcompanion.app.data.RecipeSessionState
 import com.mtgcompanion.app.data.RecipeSessionStore
+import com.mtgcompanion.app.data.PUT_AWAY_BY_RULE
+import com.mtgcompanion.app.data.ScannerEntry
+import com.mtgcompanion.app.data.ScannerMode
+import com.mtgcompanion.app.data.SortRecipe
+import com.mtgcompanion.app.data.SortStart
+import com.mtgcompanion.app.data.bestPlaceByRule
+import com.mtgcompanion.app.data.recipesOf
+import com.mtgcompanion.app.data.isTemplate
+import com.mtgcompanion.app.data.scannerStart
+import com.mtgcompanion.app.data.sortStart
+import com.mtgcompanion.app.data.startRecipeSession
 import com.mtgcompanion.app.data.RecipeVoice
 import com.mtgcompanion.app.data.SmartContext
 import com.mtgcompanion.app.data.DerivedPiles
@@ -303,8 +314,36 @@ class ScanViewModel(
     /** Sort mode: each card scanned goes in the first pile whose rule fits it (SortPiles.kt). */
     sortPile: Boolean = false,
     /** Recipe mode: each card scanned goes in its pile by the sort's recipe (SortRecipes.kt). */
-    private val recipeSort: Boolean = false
+    recipeSort: Boolean = false,
+    /** Opened in Sort a pile with no sorter chosen (Storage's Sort a new pile): what it starts with is sortStart's. */
+    sortEntry: Boolean = false
 ) : ViewModel() {
+
+    // ---- The scanner's modes (ScannerModes.kt) ----
+
+    /** Where the scanner was opened from, which decides the mode it opens in. */
+    private val entry = when {
+        tickList != null -> ScannerEntry.TICK
+        putAwayPlaceId != null -> ScannerEntry.PUT_AWAY
+        checkPlaceId != null -> ScannerEntry.CHECK
+        sortPile || recipeSort || sortEntry -> ScannerEntry.SORT
+        else -> ScannerEntry.PLAIN
+    }
+    private val start = scannerStart(entry, ScannerModeSetting.last(appContext))
+
+    /** Whether the mode switch shows: everywhere but ticking a deck's list. */
+    val showModeSwitch: Boolean = start.showSwitch
+
+    private val _mode = MutableStateFlow(start.mode)
+    /** What the scanner's doing — Add cards, Sort a pile, Put away, Check — or null for ticking a deck's list. */
+    val mode: StateFlow<ScannerMode?> = _mode.asStateFlow()
+
+    /** Cards wait while the recipe picker is open over the camera. */
+    @Volatile private var paused = false
+
+    fun setPaused(on: Boolean) {
+        paused = on
+    }
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
@@ -578,7 +617,8 @@ class ScanViewModel(
             frameWanted = null
             want.complete(frame?.let { runCatching { it() }.getOrNull() }?.let { it to image.rotationDegrees })
         }
-        if (pinching || !busy.compareAndSet(false, true)) {
+        // Cards wait while the recipe picker is up, or while a mode still needs its place or recipe.
+        if (pinching || paused || waitingFor() != null || !busy.compareAndSet(false, true)) {
             onProcessed()
             return
         }
@@ -1308,6 +1348,8 @@ class ScanViewModel(
     // ---- Put-away mode ----
 
     private val _putAwayTarget = MutableStateFlow(putAwayPlaceId)
+    /** The place last put away into here, for coming back to Put away after another mode. */
+    private var lastPutAway: String? = putAwayPlaceId
     /** The storage place cards are being put away into, or null when scanning into the pile. */
     val putAwayTarget: StateFlow<String?> = _putAwayTarget.asStateFlow()
     private val _session = MutableStateFlow<List<PutAwayRow>>(emptyList())
@@ -1316,16 +1358,35 @@ class ScanViewModel(
 
     fun setPutAwayTarget(placeId: String) {
         _putAwayTarget.value = placeId
-        // Putting away is what the scanner does now, not ticking a list or checking a place.
+        lastPutAway = placeId
+        // Putting away is what the scanner does now, not ticking a list, checking a place or sorting.
         _tickList.value = null
         _check.value = null
+        _sort.value = null
+        _recipe.value = null
+        _mode.value = ScannerMode.PUT_AWAY
+        _uiState.update { it.copy(status = if (placeId == PUT_AWAY_BY_RULE) "Each card goes where its box's rule says" else "Scan cards to put them away") }
     }
 
     // ---- Check mode ----
 
-    private val _check = MutableStateFlow(checkPlaceId?.let { id ->
+    private val _check = MutableStateFlow(checkPlaceId?.let { id -> checkSessionOf(id) })
+    /** The place last checked here, for coming back to Check after another mode. */
+    private var lastCheck: String? = checkPlaceId
+
+    private fun checkSessionOf(id: String): CheckSessions.Session =
         CheckSessions.load(id) ?: CheckSessions.Session(id, null, emptyList()).also { CheckSessions.save(it) }
-    })
+
+    /** Check mode's place, picked: its check carries on where it was, or starts. */
+    fun chooseCheck(placeId: String) {
+        lastCheck = placeId
+        _putAwayTarget.value = null
+        _sort.value = null
+        _recipe.value = null
+        _check.value = checkSessionOf(placeId)
+        _mode.value = ScannerMode.CHECK
+        _uiState.update { it.copy(status = "Scan everything in it, one card at a time") }
+    }
     /**
      * The check going on (PlaceCheck.kt): the place, the section or null for all of it, and the cards
      * scanned so far — kept in CheckSessions too, so the results screen sees them. The web app's
@@ -1432,6 +1493,7 @@ class ScanViewModel(
 
     private val recipeStore = RecipeSessionStore(appContext)
     private val _recipe = MutableStateFlow(if (recipeSort) recipeStore.session() else null)
+    private var binderDataLoaded = false
     /**
      * Sorting with a recipe (SortRecipes.kt): the recipe, each card sorted so far in its pile, the cards
      * that couldn't be read, a pile being checked; kept in RecipeSessionStore too, so leaving the scanner
@@ -1449,8 +1511,21 @@ class ScanViewModel(
     private val binderData = MutableStateFlow<Map<String, ScryfallCard>>(emptyMap())
 
     init {
-        // The binders kept in order: their cards' sets and numbers, for the gaps a card would fill.
-        if (recipeSort) viewModelScope.launch {
+        if (recipeSort) loadBinderData()
+        // Opened in Sort a pile without a sorter: a sort under way carries on, else Start or pick a recipe.
+        if (sortEntry && !sortPile && !recipeSort) enterSort()
+        // The bottom bar's Scan, opening in the mode last picked.
+        if (entry == ScannerEntry.PLAIN) when (start.mode) {
+            ScannerMode.SORT -> enterSort()
+            else -> Unit
+        }
+    }
+
+    /** The binders kept in order: their cards' sets and numbers, for the gaps a card would fill. */
+    private fun loadBinderData() {
+        if (binderDataLoaded) return
+        binderDataLoaded = true
+        viewModelScope.launch {
             val cols = collectionRepository.collectionsFlow.first()
             val ids = placesOf(cols).filter { it.placeKind == com.mtgcompanion.app.data.PlaceKind.BINDER && !it.sortRule.isNullOrEmpty() }
                 .flatMap { com.mtgcompanion.app.data.cardsIn(cols, it.id).map { c -> c.entry.scryfallId } }.distinct()
@@ -1458,8 +1533,137 @@ class ScanViewModel(
         }
     }
 
+    // ---- Moving between modes (the switch at the top of the scanner) ----
+
+    /** Every job's state off the screen (each is still kept on the phone): the scanner is about to do another. */
+    private fun clearJobs() {
+        _putAwayTarget.value = null
+        _check.value = null
+        _sort.value = null
+        _recipe.value = null
+    }
+
+    /**
+     * The mode switch: [to] is what the scanner does now, without stopping the camera. It's remembered on
+     * this phone for the bottom bar's Scan. The Add cards list is never touched (carryOver); Put away and
+     * Check go back to the place they last had here, or ask for one; Sort a pile carries on a sort under
+     * way, or offers the recipe used last (sortStart).
+     */
+    fun switchMode(to: ScannerMode) {
+        if (!showModeSwitch) return
+        ScannerModeSetting.setLast(appContext, to)
+        if (_mode.value == to) return
+        val places = placesOf(collections.value)
+        when (to) {
+            ScannerMode.ADD -> {
+                clearJobs()
+                _mode.value = ScannerMode.ADD
+                val n = _uiState.value.scannedCards.size
+                _uiState.update { it.copy(status = if (n > 0) "Adding cards — $n in the list" else "Scan cards to add them to the list") }
+            }
+            ScannerMode.SORT -> enterSort()
+            ScannerMode.PUT_AWAY -> {
+                val was = lastPutAway
+                if (was != null && (was == PUT_AWAY_BY_RULE || places.any { it.id == was })) setPutAwayTarget(was)
+                else {
+                    clearJobs()
+                    _mode.value = ScannerMode.PUT_AWAY
+                    _uiState.update { it.copy(status = "Pick where the cards go") }
+                }
+            }
+            ScannerMode.CHECK -> {
+                val was = lastCheck
+                if (was != null && places.any { it.id == was }) chooseCheck(was)
+                else {
+                    clearJobs()
+                    _mode.value = ScannerMode.CHECK
+                    _uiState.update { it.copy(status = "Pick the place to check") }
+                }
+            }
+        }
+    }
+
+    /** A change to the collection from the recipe picker over the camera (a recipe saved, deleted, filed). */
+    fun changeStorage(change: (List<Collection>) -> List<Collection>) {
+        viewModelScope.launch { collectionRepository.changeStorage(change) }
+    }
+
+    /** Put away and Check with no place yet, or Sort a pile with no sorter: a line saying so. Null when ready. */
+    private fun waitingFor(): String? = when (_mode.value) {
+        ScannerMode.SORT -> if (_sort.value == null && _recipe.value == null) "Start the sort first — or pick a recipe" else null
+        ScannerMode.PUT_AWAY -> if (_putAwayTarget.value == null) "Pick where the cards go first" else null
+        ScannerMode.CHECK -> if (_check.value == null) "Pick the place to check first" else null
+        else -> null
+    }
+
+    /** The recipe last sorted with: your own as it is now in the collection, or a template as it was. */
+    fun lastRecipe(): SortRecipe? = recipeStore.lastRecipe()?.let { last -> recipesOf(collections.value).firstOrNull { it.id == last.id } ?: last }
+
+    /** Sort a pile, picked: a sort under way carries on; otherwise Start (the recipe used last) or pick one. */
+    fun enterSort() {
+        _putAwayTarget.value = null
+        _check.value = null
+        _mode.value = ScannerMode.SORT
+        val withRecipe = recipeStore.session()
+        val classic = sortStore.session()
+        when (sortStart(withRecipe?.scans?.size, classic?.scans?.size, lastRecipe() != null)) {
+            SortStart.RESUME_RECIPE -> withRecipe?.let { useRecipe(it, "Carrying on: ${it.scans.size} sorted with ${it.recipe.name}") }
+            SortStart.RESUME_CLASSIC -> startClassicSort()
+            SortStart.START_LAST, SortStart.PICK -> {
+                _sort.value = null
+                _recipe.value = null
+                _uiState.update { it.copy(status = "Sort a pile: start, or pick how it splits") }
+            }
+        }
+    }
+
+    /** Start: a new sort with [recipe] (the one used last, as it is). */
+    fun startRecipe(recipe: SortRecipe) {
+        if (!recipe.isTemplate) recipeStore.setLastRecipeId(recipe.id)
+        val session = startRecipeSession(recipe)
+        recipeStore.saveSession(session)
+        useRecipe(session, "Sorting with ${recipe.name} — show the first card")
+    }
+
+    /** Back from the recipe picker: the sort it started (or carried on) is the one kept on the phone. */
+    fun reloadRecipe() {
+        val session = recipeStore.session() ?: return enterSort()
+        useRecipe(session, "Sorting with ${session.recipe.name}")
+    }
+
+    /**
+     * Back on the scanner after another screen (the sort's summary, say): the sort with a recipe is the
+     * one kept on the phone, which may have been filed and ended there.
+     */
+    fun resyncRecipe() {
+        if (_recipe.value == null) return
+        val stored = recipeStore.session()
+        if (stored == null) enterSort() else if (stored != _recipe.value) _recipe.value = stored
+    }
+
+    private fun useRecipe(session: RecipeSessionState, status: String) {
+        _putAwayTarget.value = null
+        _check.value = null
+        _sort.value = null
+        _recipe.value = session
+        _mode.value = ScannerMode.SORT
+        loadBinderData()
+        _uiState.update { it.copy(status = status) }
+    }
+
+    /** "Keep, spares, decks, bulk": the first sorter, from the recipe picker. */
+    fun startClassicSort() {
+        _putAwayTarget.value = null
+        _check.value = null
+        _recipe.value = null
+        _mode.value = ScannerMode.SORT
+        val kept = sortStore.session() ?: SortSession(rules = emptyList())
+        setSort(if (kept.rules.isEmpty()) kept.copy(rules = sortStore.piles(collections.value)) else kept)
+        _uiState.update { it.copy(status = "Sorting into piles — show the first card") }
+    }
+
     /** Null when not sorting with a recipe; else whether cards are taken without a tap. */
-    private fun recipeGate(): Boolean? = if (recipeSort && _recipe.value != null) _recipeVoice.value.auto else null
+    private fun recipeGate(): Boolean? = if (_recipe.value != null) _recipeVoice.value.auto else null
 
     /** Friends' names by user id, for their wants. */
     private var friendNames: (String) -> String? = { null }
@@ -1792,11 +1996,26 @@ class ScanViewModel(
         // While a box label's sheet is up, cards wait.
         if (_labelPlace.value != null) return nextScanId++
         Usage.action(UsageAction.CARD_SCANNED)
-        if (recipeSort) _recipe.value?.let { return recipeCard(card, it) }
+        _recipe.value?.let { return recipeCard(card, it) }
         _sort.value?.let { return sortCard(card, it) }
         _tickList.value?.let { return tickCard(card, it) }
-        _putAwayTarget.value?.let { return putAwayCard(card, it) }
+        _putAwayTarget.value?.let { target ->
+            if (target != PUT_AWAY_BY_RULE) return putAwayCard(card, target)
+            // Let the app choose: the place whose rule fits this card; with none, it waits in the Add cards list.
+            val cols = collections.value
+            val best = bestPlaceByRule(placesOf(cols), cardFactsOf(card), cols)
+            if (best != null) return putAwayCard(card, best.second.id)
+            val row = ScanRow(nextScanId++, card, System.currentTimeMillis(), exact)
+            setScanned(listOf(row) + _uiState.value.scannedCards, "No box's rule fits ${card.name} — it's in Add cards for now")
+            ScanFeedback.cardRecognised(card)
+            return row.id
+        }
         _check.value?.let { return checkCard(card, exact, it) }
+        // A mode still waiting for its place or recipe: the card waits too.
+        waitingFor()?.let { line ->
+            _uiState.update { it.copy(status = line) }
+            return nextScanId++
+        }
         val row = ScanRow(nextScanId++, card, System.currentTimeMillis(), exact)
         _panel.update { it.copy(rows = it.rows + row.id) }
         val rows = listOf(row) + _uiState.value.scannedCards
@@ -2180,7 +2399,8 @@ class ScanViewModel(
         private val tickList: TickList? = null,
         private val checkPlaceId: String? = null,
         private val sortPile: Boolean = false,
-        private val recipeSort: Boolean = false
+        private val recipeSort: Boolean = false,
+        private val sortEntry: Boolean = false
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -2195,7 +2415,8 @@ class ScanViewModel(
                 tickList = tickList,
                 checkPlaceId = checkPlaceId,
                 sortPile = sortPile,
-                recipeSort = recipeSort
+                recipeSort = recipeSort,
+                sortEntry = sortEntry
             ) as T
         }
     }
