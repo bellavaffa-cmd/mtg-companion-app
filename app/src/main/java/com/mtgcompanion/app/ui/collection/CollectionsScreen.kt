@@ -597,7 +597,9 @@ fun CollectionsScreen(
                         prices = remember(advancedFacts) { advancedFacts.mapValues { it.value.usd to it.value.usdFoil } },
                         onOpenCard = onViewDetails,
                         onOpenPlaceAt = onOpenPlaceAt,
-                        onWalk = onWalk
+                        onWalk = onWalk,
+                        saved = savedFilters,
+                        savedFilters = viewModel.savedFilterStore
                     )
                     CollectionTab.WISHLIST -> if (wishlistPage != null) wishlistPage(query) else EmptyPrompt(Icons.Filled.Star, "Your wishlist is loading…")
                 }

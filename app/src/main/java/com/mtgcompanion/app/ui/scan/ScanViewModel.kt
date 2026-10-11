@@ -106,6 +106,7 @@ import com.mtgcompanion.app.data.ScannerMode
 import com.mtgcompanion.app.data.SortRecipe
 import com.mtgcompanion.app.data.SortStart
 import com.mtgcompanion.app.data.bestPlaceByRule
+import com.mtgcompanion.app.data.intoPlaces
 import com.mtgcompanion.app.data.recipesOf
 import com.mtgcompanion.app.data.isTemplate
 import com.mtgcompanion.app.data.scannerStart
@@ -1367,7 +1368,42 @@ class ScanViewModel(
         _sort.value = null
         _recipe.value = null
         _mode.value = ScannerMode.PUT_AWAY
-        _uiState.update { it.copy(status = if (placeId == PUT_AWAY_BY_RULE) "Each card goes where its box's rule says" else "Scan cards to put them away") }
+        loadStorageData()
+        _uiState.update { it.copy(status = if (placeId == PUT_AWAY_BY_RULE) "Each card goes to the place whose rules fit it" else "Scan cards to put them away") }
+    }
+
+    /**
+     * Scryfall's data for the cards in places sorted by more than name (StorageRules.kt: by number, mana
+     * value, price, set), so Put away can say "between Counterspell and Cryptic Command". Cards put away
+     * this session are added as they come.
+     */
+    private val storageData = MutableStateFlow<Map<String, ScryfallCard>>(emptyMap())
+    private var storageDataLoaded = false
+
+    private fun loadStorageData() {
+        if (storageDataLoaded) return
+        storageDataLoaded = true
+        viewModelScope.launch {
+            val cols = collectionRepository.collectionsFlow.first()
+            val ids = placesOf(cols).filter { com.mtgcompanion.app.data.needsCardData(com.mtgcompanion.app.data.placeRules(it).sortBy) }
+                .flatMap { com.mtgcompanion.app.data.cardsIn(cols, it.id).map { c -> c.entry.scryfallId } }.distinct()
+            if (ids.isNotEmpty()) {
+                val got = runCatching { cardRepository.getCardsByIds(ids).associateBy { it.id } }.getOrDefault(emptyMap())
+                storageData.update { got + it }
+            }
+        }
+    }
+
+    /** A copy's sorting facts, when its card's data is here. */
+    private fun storageFactsOf(e: CollectionEntry): com.mtgcompanion.app.data.CardFacts? = storageData.value[e.scryfallId]?.let { cardFactsOf(it) }
+
+    /** A scanned card as the places' rules judge it (StorageRules.kt): its data, role tags and the user's own tags. */
+    private fun scannedRuleCard(card: ScryfallCard): com.mtgcompanion.app.data.RuleCard {
+        val (cols, decks) = goalLibrary
+        return com.mtgcompanion.app.data.ruleCardOf(
+            card, roleTags = com.mtgcompanion.app.data.RoleTags.tagsOf(card.name),
+            userTags = com.mtgcompanion.app.data.userTagsById(decks, cols)[card.id].orEmpty()
+        )
     }
 
     // ---- Check mode ----
@@ -1514,6 +1550,7 @@ class ScanViewModel(
 
     init {
         if (recipeSort) loadBinderData()
+        if (putAwayPlaceId != null) loadStorageData()
         // Opened in Sort a pile without a sorter: a sort under way carries on, else Start or pick a recipe.
         if (sortEntry && !sortPile && !recipeSort) enterSort()
         // The bottom bar's Scan, opening in the mode last picked.
@@ -1705,6 +1742,10 @@ class ScanViewModel(
     }
 
     private fun recipeCardOf(card: ScryfallCard, was: RecipeCard? = null) = RecipeCard(
+        // Into my storage: the place with rules the card goes to (StorageRules.kt), when the recipe sorts into places.
+        place = if (_recipe.value?.recipe?.intoPlaces == true) collections.value.let { cols ->
+            com.mtgcompanion.app.data.placeFor(placesOf(cols), com.mtgcompanion.app.data.placeOrderOf(cols), scannedRuleCard(card), toUsd = { Prices.money.value.toUsd(it) })?.id
+        } else null,
         name = card.name,
         scryfallId = card.id,
         colors = card.colors ?: card.cardFaces?.firstOrNull()?.colors ?: emptyList(),
@@ -1957,7 +1998,7 @@ class ScanViewModel(
             var row: PutAwayRow? = null
             collectionRepository.changeStorage { collections ->
                 val place = placesOf(collections).firstOrNull { it.id == placeId } ?: return@changeStorage collections
-                val (spot, hint) = suggestSpot(place, cardFactsOf(card), collections)
+                val (spot, hint) = suggestSpot(place, cardFactsOf(card), collections, ::storageFactsOf)
                 val outcome = putAwayInto(collections, card.id, card.name, spot, newEntryOf(card))
                 val page = spot.page
                 val slot = spot.slot
@@ -1966,6 +2007,7 @@ class ScanViewModel(
                 outcome.collections
             }
             val done = row ?: return@launch
+            storageData.update { it + (card.id to card) }
             // The copy's history (CopyHistory.kt): put away from where it was, or added here.
             val places = placesOf(collections.value)
             val here = places.firstOrNull { it.id == placeId }?.let { MoveSpot(it.id, listOfNotNull(it.name, done.spot.section).joinToString(" › ")) }
@@ -2022,12 +2064,13 @@ class ScanViewModel(
         _tickList.value?.let { return tickCard(card, it) }
         _putAwayTarget.value?.let { target ->
             if (target != PUT_AWAY_BY_RULE) return putAwayCard(card, target)
-            // Let the app choose: the place whose rule fits this card; with none, it waits in the Add cards list.
+            // Let the app choose: the first place in the rule order whose rules fit this card and that has
+            // room (StorageRules.kt); with none, it waits in the Add cards list to be given a place.
             val cols = collections.value
-            val best = bestPlaceByRule(placesOf(cols), cardFactsOf(card), cols)
+            val best = bestPlaceByRule(placesOf(cols), cardFactsOf(card), cols, scannedRuleCard(card), ::storageFactsOf, { Prices.money.value.toUsd(it) }, needRoom = true)
             if (best != null) return putAwayCard(card, best.second.id)
             val row = ScanRow(nextScanId++, card, System.currentTimeMillis(), exact)
-            setScanned(listOf(row) + _uiState.value.scannedCards, "No box's rule fits ${card.name} — it's in Add cards for now")
+            setScanned(listOf(row) + _uiState.value.scannedCards, "No place fits ${card.name} — it's in Add cards: choose a place, or make a rule for cards like it")
             ScanFeedback.cardRecognised(card)
             return row.id
         }

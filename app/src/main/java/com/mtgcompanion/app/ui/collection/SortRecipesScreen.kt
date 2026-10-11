@@ -182,7 +182,13 @@ fun SortRecipesScreen(
     }
     val sets = setIds.mapNotNull { setData[it]?.takeIf { s -> s.isNotEmpty() } }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
     // With a goal under way, "What my collection needs" pulls out what the goals need too.
-    val templates = recipeTemplates(sets, goals = goalsOf(collections).any { it.completedAt == null })
+    // Once a place holds something particular, "Into my storage": a pile per place with rules, in rule order (StorageRules.kt).
+    val storage = remember(collections) {
+        val places = placesOf(collections)
+        if (places.none { com.mtgcompanion.app.data.holdsOf(it) != null }) emptyList()
+        else com.mtgcompanion.app.data.rulePlaces(places, com.mtgcompanion.app.data.placeOrderOf(collections)).map { it.id to it.name }
+    }
+    val templates = recipeTemplates(sets, goals = goalsOf(collections).any { it.completedAt == null }, storage = storage)
     when (val s = step) {
         RecipeStep.Pick -> RecipePicker(collections, templates, store, resumes, onBack, onClassic, onScan,
             onSummary = { step = RecipeStep.Summary }, onEdit = { step = RecipeStep.Edit(null) }, onLayout = { step = RecipeStep.Layout(it) })
@@ -275,6 +281,7 @@ private fun templateLine(r: SortRecipe): String = when (r.id) {
     "tpl-set" -> "One pile per set, then collector number"
     "tpl-value" -> levelLine(r.levels[0], ::fmtLocal)
     "tpl-needs" -> "Decks need it · friends want it · binder gaps · trade · bulk"
+    "tpl-storage" -> r.levels[0].names.orEmpty().joinToString(" · ") + " · No place fits"
     else -> recipeLine(r, ::fmtLocal)
 }
 
@@ -487,7 +494,7 @@ private fun RecipeLayout(
     fun goesTo(p: RecipePile): String = when (p.key) {
         "S:DECKS" -> "For their decks"
         "S:BINDER" -> "Into its binder"
-        else -> pileGoesTo(draft, p).let { to -> if (to == BY_RULE) "Box whose rule fits" else if (to.isEmpty()) "Unsorted" else places.firstOrNull { it.id == to }?.name ?: "No place" }
+        else -> pileGoesTo(draft, p).let { to -> if (to == BY_RULE) "Place whose rules fit" else if (to.isEmpty()) "Unsorted" else places.firstOrNull { it.id == to }?.name ?: "No place" }
     }
     val begin = {
         if (!draft.isTemplate && sortRecipe(start) != draft) onChange { saveRecipe(it, draft) }
@@ -539,7 +546,7 @@ private fun RecipeLayout(
             title = { Text("Where pile ${p.number} goes", color = colors.accentLight) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    (listOf(BY_RULE to "The box whose rule fits", "" to "No place (Unsorted)") + placeTree(places).map { it.place.id to "  ".repeat(it.depth) + it.place.name }).forEach { (id, name) ->
+                    (listOf(BY_RULE to "The place whose rules fit", "" to "No place (Unsorted)") + placeTree(places).map { it.place.id to "  ".repeat(it.depth) + it.place.name }).forEach { (id, name) ->
                         RecipeRow(name, if (pileGoesTo(draft, p) == id) "Chosen" else "", mine = pileGoesTo(draft, p) == id) { draft = withGoTo(draft, p.key, id); placing = null }
                     }
                 }

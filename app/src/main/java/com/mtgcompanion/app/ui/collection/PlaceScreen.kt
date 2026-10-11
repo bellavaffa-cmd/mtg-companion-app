@@ -1,5 +1,15 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.cardFactsOf
+import com.mtgcompanion.app.data.hasRule
+import com.mtgcompanion.app.data.misfits
+import com.mtgcompanion.app.data.moveMisfit
+import com.mtgcompanion.app.data.placeOrderOf
+import com.mtgcompanion.app.data.placeRules
+import com.mtgcompanion.app.data.ruleCardOf
+import com.mtgcompanion.app.data.rulesLine
+import com.mtgcompanion.app.data.sortedForRule
+import com.mtgcompanion.app.data.suggestSpot
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -218,6 +228,19 @@ fun PlaceScreen(
     var deleting by remember { mutableStateOf(false) }
     var sizing by remember { mutableStateOf(false) }
     var splitting by remember { mutableStateOf(false) }
+    var ruleOrder by remember { mutableStateOf(false) }
+    var reviewing by remember { mutableStateOf(false) }
+    // The place's rules (StorageRules.kt): what here doesn't fit them, once the cards' data is here.
+    val rules = place?.let { placeRules(it) }
+    val cardOf = { c: PlacedCard ->
+        cardData?.get(c.entry.scryfallId)?.let { card ->
+            ruleCardOf(card, c.line.isFoil, facts.roleTags(c.entry.name), facts.userTags(c.entry.scryfallId), copyFactsOfCopy(c, facts.copies[c.entry.scryfallId], facts.chains))
+        }
+    }
+    val found = remember(place, collections, cardData, facts) {
+        if (place == null || cardData == null || !hasRule(place)) emptyList() else misfits(place, collections, cardOf, { money.toUsd(it) })
+    }
+    val factsOfEntry = { e: com.mtgcompanion.app.data.CollectionEntry -> cardData?.get(e.scryfallId)?.let { cardFactsOf(it) } }
 
     Scaffold(
         containerColor = colors.bg,
@@ -385,13 +408,24 @@ fun PlaceScreen(
             }
             // Sharing storage at home: who else sees it, or Share at home (nothing before the server has households).
             if (social != null) item { HomeShareLine(place, social, onOpenHousehold) }
-            if (binder == null) place.rule?.let { rule ->
+            if (binder == null) rulesLine(place).takeIf { it.isNotEmpty() }?.let { line ->
                 item {
                     Text(
-                        "Sorted ${rule.label.replaceFirstChar { it.lowercase() }}. New cards get a section by this rule.",
+                        "$line. New cards get a section and a spot by these rules.",
                         style = MaterialTheme.typography.labelMedium,
                         color = colors.textMuted
                     )
+                }
+            }
+            // What here doesn't fit the place's rules: the wrong place, or the wrong section.
+            if (found.isNotEmpty()) item(key = "misfits") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface2).clickable { reviewing = true }.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    val n = found.sumOf { it.card.line.qty }
+                    Text("$n ${if (n == 1) "card doesn't" else "cards don't"} fit this place's rules", style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+                    Text("Review", style = MaterialTheme.typography.labelLarge, color = colors.accent)
                 }
             }
             if (binder != null) item {
@@ -491,7 +525,8 @@ fun PlaceScreen(
                     CardGroup(
                         title = s.name ?: if (sections.size > 1) "No section" else "Cards",
                         copies = s.copies,
-                        cards = s.cards,
+                        // In the place's order when it has one (A–Z, by number, by price…).
+                        cards = sortedForRule(rules?.sortBy.orEmpty(), s.cards) { c -> factsOfEntry(c.entry)?.copy(foil = c.line.isFoil) ?: com.mtgcompanion.app.data.CardFacts(c.entry.name) },
                         isOpen = filtering || key in open || (sections.size == 1 && s.name == null),
                         onToggle = { open = if (key in open) open - key else open + key },
                         onOpenCard = onOpenCard
@@ -604,13 +639,21 @@ fun PlaceScreen(
         )
     }
     if (place != null && editing) {
-        PlaceDialog(place = place, parentId = null, places = places, onDismiss = { editing = false }) { changed ->
+        PlaceDialog(
+            place = place, parentId = null, places = places, onDismiss = { editing = false },
+            order = placeOrderOf(collections), ruleCards = remember(collections, facts) { ruleCardsOf(collections, facts) }, collections = collections,
+            saved = saved, savedFilters = savedFilters, userTagOptions = userTagOptions, onRuleOrder = { ruleOrder = true }
+        ) { changed ->
             onChange { savePlace(it, changed) }
             editing = false
         }
     }
     if (place != null && adding) {
-        PlaceDialog(place = null, parentId = place.id, places = places, onDismiss = { adding = false }) { made ->
+        PlaceDialog(
+            place = null, parentId = place.id, places = places, onDismiss = { adding = false },
+            order = placeOrderOf(collections), collections = collections, saved = saved, savedFilters = savedFilters,
+            userTagOptions = userTagOptions, onRuleOrder = { ruleOrder = true }
+        ) { made ->
             onChange { savePlace(it, made) }
             adding = false
         }
@@ -641,6 +684,22 @@ fun PlaceScreen(
                 }) { Text("Split and print new label", color = colors.accent) }
             },
             dismissButton = { TextButton(onClick = { splitting = false }) { Text("Cancel", color = colors.textMuted) } }
+        )
+    }
+    if (ruleOrder) RuleOrderDialog(collections, onChange) { ruleOrder = false }
+    if (place != null && reviewing) {
+        MisfitsDialog(
+            found = found,
+            spotFor = { m ->
+                val to = m.to
+                val card = cardData?.get(m.card.entry.scryfallId)
+                if (to == null) null else suggestSpot(to, card?.let { cardFactsOf(it).copy(foil = m.card.line.isFoil) }, collections, factsOfEntry).first
+            },
+            onMove = { moves ->
+                onChange { current -> moves.fold(current) { cols, (m, spot) -> moveMisfit(cols, m, spot) } }
+                if (moves.size >= found.size) reviewing = false
+            },
+            onDismiss = { reviewing = false }
         )
     }
     if (place != null && deleting) {

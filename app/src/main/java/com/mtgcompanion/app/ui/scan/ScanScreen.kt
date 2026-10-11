@@ -637,7 +637,7 @@ fun ScanScreen(
                 if (putAwayPlace != null) {
                     PutAwayTarget(putAwayPlace.name, onClick = { choosingPlace = true }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
                 } else if (putAwayTarget == PUT_AWAY_BY_RULE) {
-                    PutAwayTarget("the box whose rule fits", onClick = { choosingPlace = true }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                    PutAwayTarget("the place whose rules fit", onClick = { choosingPlace = true }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
                 } else if (check != null) {
                     val c = check
                     val what = when (checkPlace?.placeKind) { PlaceKind.BINDER -> "binder"; PlaceKind.BOX -> "box"; else -> "place" }
@@ -871,7 +871,7 @@ fun ScanScreen(
             val auto = canLetAppChoose(placesOf(collections))
             PlacePromptPanel(
                 "Put cards away",
-                "Pick the box or binder, and each card you scan goes straight in." + if (auto) " Or let the app choose: each card goes to the box whose rule fits it." else "",
+                "Pick the box or binder, and each card you scan goes straight in." + if (auto) " Or let the app choose: each card goes to the first place whose rules fit it (Storage › Rule order)." else "",
                 onPick = { choosingPlace = true },
                 onAuto = if (auto) ({ viewModel.setPutAwayTarget(PUT_AWAY_BY_RULE) }) else null,
                 modifier = Modifier.align(Alignment.BottomCenter)

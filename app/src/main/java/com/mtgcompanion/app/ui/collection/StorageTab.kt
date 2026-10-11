@@ -72,7 +72,6 @@ import com.mtgcompanion.app.data.childrenOf
 import com.mtgcompanion.app.data.copiesByPlace
 import com.mtgcompanion.app.data.walkPullList
 import com.mtgcompanion.app.data.copiesWithin
-import com.mtgcompanion.app.data.defaultSections
 import com.mtgcompanion.app.data.gearOf
 import com.mtgcompanion.app.data.gearSummary
 import com.mtgcompanion.app.data.placeAndInside
@@ -80,6 +79,15 @@ import com.mtgcompanion.app.data.placeSubtitle
 import com.mtgcompanion.app.data.placeTree
 import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.savePlace
+import com.mtgcompanion.app.data.PlaceRules
+import com.mtgcompanion.app.data.RuleCard
+import com.mtgcompanion.app.data.holdsMap
+import com.mtgcompanion.app.data.holdsSummary
+import com.mtgcompanion.app.data.overlaps
+import com.mtgcompanion.app.data.placeOrderOf
+import com.mtgcompanion.app.data.placeRules
+import com.mtgcompanion.app.data.ruleSections
+import com.mtgcompanion.app.data.withRules
 import com.mtgcompanion.app.data.storageSummary
 import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.common.rememberMoney
@@ -169,7 +177,10 @@ fun StorageTab(
     onOpenCard: (String) -> Unit = {},
     onOpenPlaceAt: (String, String?, Int?) -> Unit = { id, _, _ -> onOpenPlace(id) },
     /** Walk this list (WalkListScreen): the list to walk is in WalkSession. */
-    onWalk: () -> Unit = {}
+    onWalk: () -> Unit = {},
+    /** The saved filters, for a place's "Holds" (StorageRules.kt). */
+    saved: List<SavedFilter> = emptyList(),
+    savedFilters: SavedFilters? = null
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
@@ -180,6 +191,9 @@ fun StorageTab(
     var editing by remember { mutableStateOf(false) }
     var choosing by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
+    var ruleOrder by remember { mutableStateOf(false) }
+    // The collection's cards as the places' rules judge them, for the rule editor's overlap warnings.
+    val ruleCards = remember(collections, facts) { ruleCardsOf(collections, facts) }
     val share = if (summary.total > 0) summary.placed.toFloat() / summary.total else 0f
     val upkeep = rememberUpkeep(collections, decks)
     val money = rememberMoney()
@@ -230,6 +244,7 @@ fun StorageTab(
                             "Space" to onOpenSpace,
                             "To sell" to onOpenSell,
                             "Sort a new pile" to onSortPile,
+                            "Rule order" to { ruleOrder = true },
                             "Data and speed" to onOpenDataAndSpeed,
                             "Sharing storage at home" to onOpenHousehold
                         ).forEach { (label, open) ->
@@ -404,11 +419,16 @@ fun StorageTab(
     }
 
     if (editing) {
-        PlaceDialog(place = null, parentId = null, places = places, onDismiss = { editing = false }) { place ->
+        PlaceDialog(
+            place = null, parentId = null, places = places, onDismiss = { editing = false },
+            order = placeOrderOf(collections), ruleCards = ruleCards, collections = collections, saved = saved, savedFilters = savedFilters,
+            userTagOptions = userTagOptions, onRuleOrder = { ruleOrder = true }
+        ) { place ->
             onChange { savePlace(it, place) }
             editing = false
         }
     }
+    if (ruleOrder) RuleOrderDialog(collections, onChange) { ruleOrder = false }
     if (choosing) {
         PlacePickerDialog("Put cards away into…", places, onDismiss = { choosing = false }) { id ->
             choosing = false
@@ -490,17 +510,42 @@ internal fun PickField(label: String, value: String, options: List<Pair<String, 
     }
 }
 
-/** Make a place ([place] null), or change one: its name, what it is, where it sits and how it's organised. */
+/**
+ * Make a place ([place] null), or change one: its name, what it is, where it sits and how it's organised
+ * — and its rules (StorageRules.kt): what it holds, its sections and its order. [order]: the rule order;
+ * [ruleCards]: the collection's cards as the rules judge them, for the overlap warnings; [onRuleOrder]
+ * opens Rule order.
+ */
 @Composable
-fun PlaceDialog(place: StoragePlace?, parentId: String?, places: List<StoragePlace>, onDismiss: () -> Unit, onSave: (StoragePlace) -> Unit) {
+fun PlaceDialog(
+    place: StoragePlace?,
+    parentId: String?,
+    places: List<StoragePlace>,
+    onDismiss: () -> Unit,
+    order: List<String> = emptyList(),
+    ruleCards: List<RuleCard> = emptyList(),
+    collections: List<Collection> = emptyList(),
+    saved: List<SavedFilter> = emptyList(),
+    savedFilters: SavedFilters? = null,
+    userTagOptions: List<String> = emptyList(),
+    onRuleOrder: (() -> Unit)? = null,
+    onSave: (StoragePlace) -> Unit
+) {
     val colors = LocalAppColors.current
     var name by remember { mutableStateOf(place?.name ?: "") }
     var kind by remember { mutableStateOf(place?.placeKind ?: PlaceKind.BOX) }
     var parent by remember { mutableStateOf(place?.parentId ?: parentId ?: "") }
     var note by remember { mutableStateOf(place?.note ?: "") }
     var pockets by remember { mutableStateOf((place?.pocketsPerPage ?: DEFAULT_POCKETS).toString()) }
+    // A binder's order (BinderPages.kt).
     var rule by remember { mutableStateOf(place?.sortRule ?: "") }
     var sections by remember { mutableStateOf(place?.sections.orEmpty().joinToString(", ")) }
+    // The rules (StorageRules.kt), as the place goes by them now — an older app's sorting rule read as what it meant.
+    val startRules = remember { place?.let { placeRules(it) } ?: PlaceRules() }
+    var holds by remember { mutableStateOf(startRules.holds) }
+    var level by remember { mutableStateOf(startRules.sectionsBy) }
+    var sortKey by remember { mutableStateOf(startRules.sortBy.joinToString(",")) }
+    var choosingHolds by remember { mutableStateOf(false) }
     val parents = placeTree(places).filter { place == null || canMoveInto(places, place.id, it.place.id) }
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = colors.accent,
@@ -509,28 +554,43 @@ fun PlaceDialog(place: StoragePlace?, parentId: String?, places: List<StoragePla
         unfocusedTextColor = colors.textPrimary,
         cursorColor = colors.accent
     )
+    val isBinder = kind == PlaceKind.BINDER
+    val sortBy = sortKey.split(",").filter { it.isNotEmpty() }
+    fun built(): StoragePlace {
+        val list = sections.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val pocketCount = pockets.toIntOrNull()?.takeIf { it > 0 && it != DEFAULT_POCKETS }
+        val base = StoragePlace(
+            id = place?.id ?: "new",
+            name = name.trim(),
+            kind = kind.name,
+            parentId = parent.ifEmpty { null },
+            note = note.trim().ifEmpty { null },
+            sections = if (!isBinder && list.isNotEmpty()) list else null,
+            pocketsPerPage = if (isBinder) pocketCount else null,
+            // A binder's order (BinderPages.kt); anything else's is written from its rules (withRules).
+            sortRule = if (isBinder) rule.ifEmpty { null } else place?.sortRule,
+            createdAt = place?.createdAt ?: System.currentTimeMillis(),
+            // When it was last checked (PlaceCheck.kt) isn't changed here, nor its size (Change size, BoxSpace.kt).
+            lastChecked = place?.lastChecked,
+            capacity = place?.capacity,
+            pages = place?.pages,
+            holds = place?.holds,
+            sectionsBy = place?.sectionsBy,
+            sortBy = place?.sortBy
+        )
+        return withRules(base, holds?.let { (b, a) -> holdsMap(b, a) }, if (isBinder) null else level, if (isBinder) emptyList() else sortBy)
+    }
     val save = {
         if (name.isNotBlank()) {
-            val list = sections.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            val pocketCount = pockets.toIntOrNull()?.takeIf { it > 0 && it != DEFAULT_POCKETS }
             if (place == null) Usage.action(UsageAction.PLACE_CREATED)
-            onSave(StoragePlace(
-                id = place?.id ?: UUID.randomUUID().toString(),
-                name = name.trim(),
-                kind = kind.name,
-                parentId = parent.ifEmpty { null },
-                note = note.trim().ifEmpty { null },
-                sections = if (kind == PlaceKind.BOX && list.isNotEmpty()) list else null,
-                pocketsPerPage = if (kind == PlaceKind.BINDER) pocketCount else null,
-                // A box's sorting rule, or a binder's order (BinderPages.kt).
-                sortRule = if (kind == PlaceKind.BOX || kind == PlaceKind.BINDER) rule.ifEmpty { null } else null,
-                createdAt = place?.createdAt ?: System.currentTimeMillis(),
-                // When it was last checked (PlaceCheck.kt) isn't changed here, nor its size (Change size, BoxSpace.kt).
-                lastChecked = place?.lastChecked,
-                capacity = place?.capacity,
-                pages = place?.pages
-            ))
+            val made = built()
+            onSave(if (place == null) made.copy(id = UUID.randomUUID().toString()) else made)
         }
+    }
+    val placeName = { id: String -> places.firstOrNull { it.id == id }?.name }
+    val binderName = { id: String -> collections.firstOrNull { it.id == id }?.name }
+    val overlapLines = remember(holds, level, sortKey, kind, ruleCards, order) {
+        if (holds == null || ruleCards.isEmpty()) emptyList() else overlaps(built(), places, order, ruleCards).map { it.line }
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -591,11 +651,21 @@ fun PlaceDialog(place: StoragePlace?, parentId: String?, places: List<StoragePla
                         color = colors.textMuted
                     )
                 }
-                if (kind == PlaceKind.BOX) {
-                    PickField("Sorted", rule, listOf("" to "Not sorted") + SortRule.entries.map { it.name to it.label }) { picked ->
-                        rule = picked
-                        if (sections.isBlank() && picked.isNotEmpty()) sections = defaultSections(SortRule.fromName(picked)).joinToString(", ")
-                    }
+                RulesEditor(
+                    isBinder = isBinder,
+                    holds = holds,
+                    onHolds = { holds = it },
+                    level = level,
+                    onLevel = { l -> level = l; sections = ruleSections(l).joinToString(", ") },
+                    sortKey = sortKey,
+                    onSortKey = { sortKey = it },
+                    saved = saved,
+                    overlaps = overlapLines,
+                    onRuleOrder = onRuleOrder,
+                    holdsLine = holds?.let { (b, a) -> "Holds " + holdsSummary(b, a, binderName, placeName) } ?: "Everything",
+                    onChooseHolds = { choosingHolds = true }
+                )
+                if (!isBinder && (level != null || kind == PlaceKind.BOX || sections.isNotBlank())) {
                     OutlinedTextField(
                         value = sections,
                         onValueChange = { sections = it },
@@ -604,7 +674,7 @@ fun PlaceDialog(place: StoragePlace?, parentId: String?, places: List<StoragePla
                         colors = fieldColors
                     )
                     Text(
-                        "In order, with commas between. Cards put away go in the section the rule gives them.",
+                        "In order, with commas between. Cards put away go in the section the rule gives them; rename them as you like.",
                         style = MaterialTheme.typography.labelMedium,
                         color = colors.textMuted
                     )
@@ -618,4 +688,10 @@ fun PlaceDialog(place: StoragePlace?, parentId: String?, places: List<StoragePla
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = colors.textMuted) } }
     )
+    if (choosingHolds) {
+        HoldsDialog(holds, ruleCards, collections, saved, savedFilters, userTagOptions, onDismiss = { choosingHolds = false }) {
+            holds = it
+            choosingHolds = false
+        }
+    }
 }
