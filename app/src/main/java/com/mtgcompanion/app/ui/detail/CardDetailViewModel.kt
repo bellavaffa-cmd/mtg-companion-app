@@ -8,12 +8,13 @@ import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionRepository
 import com.mtgcompanion.app.data.ComboRepository
 import com.mtgcompanion.app.data.Deck
-import com.mtgcompanion.app.data.DeckOwnership
+import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.DeckRepository
 import com.mtgcompanion.app.data.EdhrecRepository
 import com.mtgcompanion.app.data.GRID_COLUMNS_DEFAULT
 import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.data.isOffline
+import com.mtgcompanion.app.data.ownedCopies
 import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.buildCardSources
@@ -79,9 +80,9 @@ class CardDetailViewModel(
     )
 
     /**
-     * Copies owned of each card name, across every binder and Physical deck — shown on the
-     * enlarged card. Virtual/Prototype decks are excluded: their cards aren't cards the user
-     * actually owns yet, so counting them here would overstate how many copies are on hand.
+     * Copies owned of each card name, across the owned binders and the real copies in owned decks
+     * (OwnedCopies.kt) — shown on the enlarged card. Virtual/Prototype decks, cubes and proxies are
+     * left out: they aren't cards the user actually owns, so counting them would overstate it.
      * Counted under the front face as well as the full name, since a double-faced card is
      * "Tony Stark // The Invincible Iron Man" here but just "Tony Stark" to EDHREC.
      */
@@ -96,11 +97,12 @@ class CardDetailViewModel(
                 val front = full.substringBefore(" // ")
                 if (front != full) merge(front, quantity) { a, b -> a + b }
             }
-            colls.forEach { collection ->
+            // Owned binders (not the Wishlist) and the real copies in owned decks (OwnedCopies.kt).
+            colls.filter { it.kind == CollectionType.OWNED }.forEach { collection ->
                 collection.entries.forEach { entry -> count(entry.name, entry.quantity + entry.foilQuantity) }
             }
-            decks.filter { it.ownershipType == DeckOwnership.PHYSICAL }.forEach { deck ->
-                deck.cards.forEach { entry -> count(entry.name, entry.quantity) }
+            decks.forEach { deck ->
+                deck.cards.forEach { entry -> ownedCopies(deck, entry).takeIf { it > 0 }?.let { count(entry.name, it) } }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())

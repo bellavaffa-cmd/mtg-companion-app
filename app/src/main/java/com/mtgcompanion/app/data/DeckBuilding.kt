@@ -1,6 +1,5 @@
 package com.mtgcompanion.app.data
 
-import com.mtgcompanion.app.data.proxyCopies
 import com.mtgcompanion.app.network.spellbook.Variant
 
 /**
@@ -192,13 +191,10 @@ private val BASIC_LANDS = setOf("plains", "island", "swamp", "mountain", "forest
 internal fun isBasicLand(name: String) = name.trim().lowercase().removePrefix("snow-covered ") in BASIC_LANDS
 
 /** Copies of each card this deck really holds — proxies are print-outs, not copies you have. */
-internal fun copiesHeld(deck: Deck): Map<String, Int> = when (deck.ownershipType) {
-    DeckOwnership.PHYSICAL, DeckOwnership.PROXY ->
-        deck.cards.groupBy { it.name.lowercase() }
-            .mapValues { (_, printings) -> printings.sumOf { it.quantity - proxyCopies(deck, it) } }
-            .filterValues { it > 0 }
-    else -> emptyMap()
-}
+internal fun copiesHeld(deck: Deck): Map<String, Int> =
+    deck.cards.groupBy { it.name.lowercase() }
+        .mapValues { (_, printings) -> printings.sumOf { ownedCopies(deck, it) } }
+        .filterValues { it > 0 }
 
 /**
  * Cards in [deck] the user doesn't own: what their OWNED binders and the decks they really hold

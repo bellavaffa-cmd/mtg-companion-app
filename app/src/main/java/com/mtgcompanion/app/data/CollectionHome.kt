@@ -13,7 +13,7 @@ import java.util.Locale
 
 /** What the home's tiles say. */
 data class HomeNumbers(
-    /** Different cards on All cards: owned printings in binders, the Unsorted pile and decks. */
+    /** Different cards on All cards: owned printings in binders, the Unsorted pile and owned decks (countsAsOwned). */
     val cards: Int,
     val places: Int,
     /** The share of copies with a place, as Storage says it (placedPercent). */
@@ -40,7 +40,7 @@ fun homeNumbers(collections: List<Collection>, decks: List<Deck>): HomeNumbers {
         if (c.kind == CollectionType.WISHLIST) continue
         for (e in c.entries) if (maxOf(0, e.quantity) + maxOf(0, e.foilQuantity) > 0) printings.add(e.scryfallId)
     }
-    for (d in decks) for (e in d.cards) if (e.quantity > 0) printings.add(e.scryfallId)
+    for (d in decks) for (e in d.cards) if (ownedCopies(d, e) + ownedProxies(d, e) > 0) printings.add(e.scryfallId)
     val sealed = sealedOf(collections)
     val graded = gradedOf(collections)
     return HomeNumbers(

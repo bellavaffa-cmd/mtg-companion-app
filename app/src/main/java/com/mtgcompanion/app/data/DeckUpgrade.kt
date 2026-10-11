@@ -335,7 +335,7 @@ fun ownedSources(collections: List<Collection>, decks: List<Deck>, deckId: Strin
         for (e in d.cards) {
             val key = nameKey(e.name)
             if (d.holdsCards) {
-                if (e.quantity - proxyCopies(d, e) > 0 && key !in heldIn) heldIn[key] = Triple(e.name, e.scryfallId, d.name)
+                if (ownedCopies(d, e) > 0 && key !in heldIn) heldIn[key] = Triple(e.name, e.scryfallId, d.name)
             } else {
                 val need = (e.quantity - (e.proxyQuantity ?: 0).coerceAtLeast(0)).coerceAtLeast(0)
                 if (need <= 0) continue

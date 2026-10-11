@@ -105,14 +105,14 @@ fun pileFor(rules: List<PileRule>, f: SortFacts): PileChoice? {
 
 private fun key(name: String) = name.trim().lowercase().split(" // ")[0].trim()
 
-/** Copies of each card owned (by name): the binders' and the Unsorted pile's, and physical decks' real ones. */
+/** Copies of each card owned (by name): the binders' and the Unsorted pile's, and owned decks' real ones (ownedCopies). */
 fun ownedCounts(collections: List<Collection>, decks: List<Deck>): Map<String, Int> {
     val out = LinkedHashMap<String, Int>()
     for (c in collections) {
         if (c.kind == CollectionType.WISHLIST) continue
         for (e in c.entries) out[key(e.name)] = (out[key(e.name)] ?: 0) + e.quantity + e.foilQuantity
     }
-    for (d in decks) for (e in realCopiesOf(d)) out[key(e.name)] = (out[key(e.name)] ?: 0) + e.quantity
+    for (d in decks) for (e in d.cards) ownedCopies(d, e).takeIf { it > 0 }?.let { out[key(e.name)] = (out[key(e.name)] ?: 0) + it }
     return out
 }
 

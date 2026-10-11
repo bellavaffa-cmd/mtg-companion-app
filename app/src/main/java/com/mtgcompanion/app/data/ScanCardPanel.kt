@@ -148,8 +148,8 @@ fun cameraButtonLabel(read: Pair<String, String>): String = "Use ${read.first.up
 data class OwnedSummary(val samePrinting: Int, val otherPrintings: Int, val places: List<Pair<String, Int>>)
 
 /**
- * Copies of the card [name] in binders, the Unsorted pile, storage places and decks that hold their own
- * copies — the scan's own pile isn't in any of those yet. This printing ([cardId]) by where they are
+ * Copies of the card [name] in binders, the Unsorted pile, storage places and the real copies in owned
+ * decks (ownedCopies) — the scan's own pile isn't in any of those yet. This printing ([cardId]) by where they are
  * (a place's name, "Krenko deck", or the binder for copies with no place), most first.
  */
 fun ownedSummary(collections: List<Collection>, decks: List<Deck>, cardId: String, name: String): OwnedSummary {
@@ -175,9 +175,10 @@ fun ownedSummary(collections: List<Collection>, decks: List<Deck>, cardId: Strin
             at(c.name, copies - placed)
         }
     }
-    for (d in decks) for (e in realCopiesOf(d)) {
-        if (!sameCardName(e.name, name)) continue
-        if (e.scryfallId == cardId) { same += e.quantity; at("${d.name} deck", e.quantity) } else other += e.quantity
+    for (d in decks) for (e in d.cards) {
+        val n = ownedCopies(d, e)
+        if (n <= 0 || !sameCardName(e.name, name)) continue
+        if (e.scryfallId == cardId) { same += n; at("${d.name} deck", n) } else other += n
     }
     return OwnedSummary(same, other, where.entries.sortedByDescending { it.value }.map { it.key to it.value })
 }

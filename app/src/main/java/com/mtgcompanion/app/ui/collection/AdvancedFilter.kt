@@ -10,6 +10,8 @@ import com.mtgcompanion.app.data.placeChains
 import com.mtgcompanion.app.data.placeFactsOf
 import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.data.languageName
+import com.mtgcompanion.app.data.ownedCopies
+import com.mtgcompanion.app.data.ownedProxies
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import org.json.JSONArray
 import org.json.JSONObject
@@ -257,7 +259,7 @@ data class CopyFacts(
 )
 
 /**
- * By scryfallId, the copies in the owned binders (not wishlists) and in decks — the places All cards
+ * By scryfallId, the copies in the owned binders (not wishlists) and in owned decks (countsAsOwned) — the places All cards
  * lists and buildCardSources names. A deck keeps no finish, so its copies count as non-foil.
  */
 fun copyFactsOf(collections: List<Collection>, decks: List<Deck>): Map<String, CopyFacts> {
@@ -295,10 +297,11 @@ fun copyFactsOf(collections: List<Collection>, decks: List<Deck>): Map<String, C
     }
     for (d in decks) {
         for (e in d.cards) {
-            if (e.quantity <= 0) continue
+            val n = ownedCopies(d, e) + ownedProxies(d, e)
+            if (n <= 0) continue
             val f = out.getOrPut(e.scryfallId) { Acc() }
-            f.nonfoil += e.quantity
-            f.copies += e.quantity
+            f.nonfoil += n
+            f.copies += n
             f.inDeck = true
         }
     }

@@ -9,12 +9,13 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "sort-by-type",
-        "Sort a pile: a ready-made recipe by card type",
-        "1) Collection › Sort a pile. Under Start from, second (after Commander by colour) is a new \"By card type\", its line \"Creatures · Instants · Sorceries · Artifacts · Enchantments · Lands — an artifact creature goes with Creatures\". " +
-            "2) Tap it: the table shows 1 Decks need, 2 Friends want, 3 Binder gaps, then Creatures, Planeswalkers, Battles, Instants, Sorceries, Artifacts, Enchantments, Lands, Other (12 piles). " +
-            "3) Sort a few cards: a creature, an instant, a land, and some with two types. A card goes on the first of those piles it fits: an artifact creature or enchantment creature (and Dryad Arbor) on Creatures, an artifact land on Artifacts, Urza's Saga on Enchantments, a spell // land card by its front face (Instant // Land on Instants). Anything none of those (a Conspiracy, a Scheme) goes on Other. " +
-            "4) Make your own recipe: the Split by choices now read Value, Colour, Card type, Set, Mana value, Rarity, Colour identity, A–Z, Collector number — Card type in the first row. Your saved recipes are unchanged (open one that splits by colour identity: still colour identity). " +
-            "5) The other templates are as before: Binder by set, Rares by value, What my collection needs."
+        "owned-count",
+        "Cards in Virtual and Prototype decks and cubes no longer count as owned",
+        "1) Note Collection's All cards count (on the home tile and at the top of All cards) and the collection value on the All cards dashboard. " +
+            "2) Make a Virtual deck and add a card you don't own anywhere else. Back on All cards: that card isn't listed, the count is the same and the value hasn't changed. Sets doesn't show it as owned either. " +
+            "3) Do the same with a Prototype deck, and with a cube: their cards aren't on All cards and don't add to the value. " +
+            "4) Make a Physical deck with a card you don't own: it does appear on All cards, the count goes up by one and the value by its price. " +
+            "5) A Proxy deck's cards show on All cards marked proxy, but add nothing to the value. " +
+            "6) Also check \"You own N\" on the scanner's Last scanned panel and in Sort a pile: copies in Virtual/Prototype decks and cubes aren't counted, real copies in Physical decks are."
     )
 )

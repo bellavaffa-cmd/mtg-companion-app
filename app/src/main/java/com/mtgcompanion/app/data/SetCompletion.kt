@@ -63,7 +63,8 @@ fun <T> missingFromSet(setCards: List<T>, owned: Set<String>, id: (T) -> String)
 
 /**
  * Real copies held of each printing, by scryfallId, counted as All cards counts them: owned binders
- * (the Unsorted pile too) and every deck's cards, proxies left out. Wishlists don't count.
+ * (the Unsorted pile too) and the real copies in owned decks (ownedCopies: not Virtual, Prototype or
+ * a cube), proxies left out. Wishlists don't count.
  */
 fun ownedPrintings(collections: List<Collection>, decks: List<Deck>): Map<String, Int> {
     val out = HashMap<String, Int>()
@@ -71,7 +72,7 @@ fun ownedPrintings(collections: List<Collection>, decks: List<Deck>): Map<String
         c.entries.forEach { e -> (e.quantity + e.foilQuantity).takeIf { it > 0 }?.let { out.merge(e.scryfallId, it) { a, b -> a + b } } }
     }
     decks.forEach { d ->
-        d.cards.forEach { e -> (e.quantity - proxyCopies(d, e)).takeIf { it > 0 }?.let { out.merge(e.scryfallId, it) { a, b -> a + b } } }
+        d.cards.forEach { e -> ownedCopies(d, e).takeIf { it > 0 }?.let { out.merge(e.scryfallId, it) { a, b -> a + b } } }
     }
     return out
 }

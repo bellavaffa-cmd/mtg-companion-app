@@ -3,13 +3,15 @@ package com.mtgcompanion.app.ui.collection
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
-import com.mtgcompanion.app.data.proxyCopies
+import com.mtgcompanion.app.data.ownedCopies
+import com.mtgcompanion.app.data.ownedProxies
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.SourceKind
 
 /**
  * All cards: every card owned anywhere (all binders — the Unsorted pile too, never a wishlist — and
- * all decks), one entry a printing, with the copies added up and where they are; A to Z. Kept apart
+ * the decks whose cards count as owned — countsAsOwned: Physical and Proxy, never Virtual, Prototype,
+ * a cube or a sample), one entry a printing, with the copies added up and where they are; A to Z. Kept apart
  * from the view model so the speed guards (BigCollectionPerfTest) can time it on a 25,000-copy
  * collection. The web app's allCardsOf (src/collection/allCards.ts).
  */
@@ -37,9 +39,10 @@ fun allCardEntries(collections: List<Collection>, decks: List<Deck>): List<AllCa
     }
     decks.forEach { deck ->
         deck.cards.forEach {
-            // A deck marked Proxy is proxies until real copies are swapped in, card by card.
-            val proxies = proxyCopies(deck, it)
-            add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, it.quantity - proxies, CardSource(SourceKind.DECK, deck.id, deck.name, it.quantity - proxies))
+            // Real copies, then proxies (held, worth nothing); both 0 for a deck that isn't owned.
+            val real = ownedCopies(deck, it)
+            val proxies = ownedProxies(deck, it)
+            add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, real, CardSource(SourceKind.DECK, deck.id, deck.name, real))
             add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, proxies, CardSource(SourceKind.DECK, deck.id, deck.name, proxies), proxy = true)
         }
     }

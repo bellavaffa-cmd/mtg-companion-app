@@ -259,9 +259,6 @@ fun goalTargets(goal: CollectionGoal, decks: List<Deck>): List<GoalCard> {
     }
 }
 
-/** A deck the user holds the cards of (or a proxy deck's real ones), samples aside. */
-private fun holdsCards(d: Deck): Boolean = d.sample != true && (d.ownershipType == DeckOwnership.PHYSICAL || d.ownershipType == DeckOwnership.PROXY)
-
 /**
  * The copies [goal] counts of each card it could want, by its card key: owned binders, boxes and
  * the Unsorted pile (wishlists never), and with countDecks the real copies in decks held. A foil goal
@@ -277,12 +274,12 @@ fun goalCounts(goal: CollectionGoal, collections: List<Collection>, decks: List<
     }
     if (goal.countsDecks) {
         for (d in decks) {
-            if (!holdsCards(d)) continue
+            if (!d.countsAsOwned) continue
             // The foil copies the deck's pull list brought in, by name, handed out to its cards in order.
             val foils = HashMap<String, Int>()
             if (foil) for (f in d.cameFrom.orEmpty()) if (f.foil == true) foils.merge(goalNameKey(f.name), f.qty, Int::plus)
             for (e in d.cards) {
-                val real = e.quantity - proxyCopies(d, e)
+                val real = ownedCopies(d, e)
                 if (real <= 0) continue
                 if (!foil) { add(goalCardKey(goal.kind, e.name, e.scryfallId), real); continue }
                 val left = foils[goalNameKey(e.name)] ?: 0
