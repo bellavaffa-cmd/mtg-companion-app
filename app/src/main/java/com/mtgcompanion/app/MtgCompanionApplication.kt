@@ -46,6 +46,7 @@ import com.mtgcompanion.app.network.NetworkModule
 import com.mtgcompanion.app.update.UpdateManager
 import com.mtgcompanion.app.widget.CollectionWidget
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.collectLatest
 
 class MtgCompanionApplication : Application(), ImageLoaderFactory {
 
@@ -118,6 +119,17 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
                     // ...and a Wishlist card wanted from the spoilers is a plain one once its set is out (Spoilers.kt).
                     val today = java.time.LocalDate.now().toString()
                     if (withStandingCollections(collections, decks, today) !== collections) collectionRepository.maintainStandingCollections(decks, today)
+                }
+        }
+        // Every card the user has gets its role tags in the background (TagPass.kt) — at start, and a
+        // few seconds after the cards change (a sync, an import, a scan), not only on screens that ask.
+        appScope.launch {
+            kotlinx.coroutines.flow.combine(collectionRepository.collectionsFlow, deckRepository.decksFlow) { c, d -> com.mtgcompanion.app.data.TagPass.refsOf(c, d) }
+                .distinctUntilChanged()
+                .collectLatest { refs ->
+                    RoleTags.hint(refs)
+                    kotlinx.coroutines.delay(5_000)
+                    if (RoleTags.anyDue(refs) || com.mtgcompanion.app.data.EntryTagBackfill.pending(this@MtgCompanionApplication)) com.mtgcompanion.app.data.TagPass.schedule(this@MtgCompanionApplication)
                 }
         }
         // The home-screen widget follows the collection's value and the currency prices show in.

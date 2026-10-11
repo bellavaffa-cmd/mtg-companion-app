@@ -57,6 +57,15 @@ fun userTagsOf(decks: List<Deck>, collections: List<Collection>, scryfallId: Str
     return tidyUserTags(found)
 }
 
+/** Printing (scryfallId) → the user's tags on it, wherever it's held: the Cards filter's tag chips. */
+fun userTagsById(decks: List<Deck>, collections: List<Collection>): Map<String, List<String>> {
+    val found = HashMap<String, MutableList<String>>()
+    fun note(id: String, tags: List<String>) { if (tags.isNotEmpty()) found.getOrPut(id) { mutableListOf() } += tags }
+    for (deck in decks) for (e in deck.allEntries()) note(e.scryfallId, e.userTags)
+    for (c in collections) for (e in c.entries) note(e.scryfallId, e.userTags)
+    return found.mapValues { tidyUserTags(it.value) }
+}
+
 /** Every tag the user has used, most-used first, for offering them again. */
 fun allUserTags(decks: List<Deck>, collections: List<Collection>): List<String> {
     val counts = LinkedHashMap<String, Pair<String, Int>>()

@@ -25,7 +25,9 @@ const val MIN_SHARED = 4
 /** Keywords nearly every deck is full of, too common to say anything about one. */
 val COMMON_KEYWORDS = setOf(
     "flying", "first strike", "double strike", "trample", "haste", "vigilance", "reach", "deathtouch", "menace",
-    "defender", "flash", "hexproof", "indestructible", "ward", "lifelink", "scry", "mill", "surveil"
+    "defender", "flash", "hexproof", "indestructible", "ward", "lifelink", "scry", "mill", "surveil",
+    // RoleTags' type-line tags: every deck has lands, so they'd make every new land "fit".
+    "land", "fixing", "vanilla"
 )
 
 /** A set's card, as much of it as the matching needs. */

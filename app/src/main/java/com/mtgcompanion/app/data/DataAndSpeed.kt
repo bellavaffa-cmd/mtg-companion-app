@@ -49,6 +49,13 @@ fun secondsLabel(ms: Long): String = when {
 /** "18,402 of 18,402" — printings with their card data kept, of the printings owned. */
 fun offlineLabel(saved: Int, total: Int): String = "${n(saved)} of ${n(total)}"
 
+/**
+ * Card tags: "1,204 of 1,250 tagged" — cards (by name) with at least one role tag, of all the user
+ * has; "· tagging…" while a lookup runs. The web app's tagsLabel.
+ */
+fun tagsLabel(tagged: Int, total: Int, running: Boolean = false): String =
+    "${n(tagged)} of ${n(total)} tagged" + if (running) " · tagging…" else ""
+
 /** "0.4 s", or "Not opened yet". */
 fun openLabel(timing: DataAndSpeed.OpenTiming?): String = timing?.let { secondsLabel(it.ms) } ?: "Not opened yet"
 

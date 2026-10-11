@@ -477,6 +477,8 @@ fun filterChips(
     if (basic.text.isNotBlank()) add("text", "Text: ${basic.text.trim()}")
     wubrgOrder(basic.colors.map { it.toString() }).forEach { add("color:$it", "Colour", listOf(it)) }
     COLLECTION_FILTER_RARITIES.filter { it in basic.rarities }.forEach { add("rarity:$it", cap(it)) }
+    if (basic.untagged) add("untagged", UNTAGGED)
+    basic.userTags.sorted().forEach { add("usertag:$it", "Tag: $it") }
 
     val target = if (a.colorTarget == "identity") "Identity" else "Colour"
     if (a.colorless) add("colors", target, listOf("C"))
@@ -531,6 +533,8 @@ fun removeChip(basic: CollectionFilter, a: AdvancedFilter, key: String): Pair<Co
         "text" -> b = b.copy(text = "")
         "color" -> b = b.copy(colors = b.colors.filterNot { it.toString() == value }.toSet())
         "rarity" -> b = b.copy(rarities = b.rarities - value)
+        "untagged" -> b = b.copy(untagged = false)
+        "usertag" -> b = b.copy(userTags = b.userTags - value)
         "colors" -> adv = adv.copy(colors = emptyList())
         "multicolor" -> adv = adv.copy(multicolor = false)
         "mv" -> adv = adv.copy(mv = "")
@@ -593,6 +597,10 @@ private fun basicJson(b: CollectionFilter) = jsonObject(listOf(
     "text" to jsonString(b.text),
     "colors" to jsonList(wubrgOrder(b.colors.map { it.toString() })),
     "rarities" to jsonList(COLLECTION_FILTER_RARITIES.filter { it in b.rarities })
+) + listOfNotNull(
+    // Only when on, so a filter without them is the same text as before they existed.
+    if (b.untagged) "untagged" to "true" else null,
+    if (b.userTags.isNotEmpty()) "userTags" to jsonList(b.userTags.sorted()) else null
 ))
 
 // Keys in this order on both apps, so the JSON is the same text.
@@ -637,7 +645,9 @@ private fun basicFrom(o: JSONObject) = CollectionFilter(
     type = o.str("type"),
     text = o.str("text"),
     colors = o.strList("colors").filter { it.length == 1 && it[0] in "WUBRG" }.map { it[0] }.toSet(),
-    rarities = o.strList("rarities").filter { it in COLLECTION_FILTER_RARITIES }.toSet()
+    rarities = o.strList("rarities").filter { it in COLLECTION_FILTER_RARITIES }.toSet(),
+    untagged = o.opt("untagged") == true,
+    userTags = o.strList("userTags").toSet()
 )
 
 private fun advancedFrom(o: JSONObject): AdvancedFilter {

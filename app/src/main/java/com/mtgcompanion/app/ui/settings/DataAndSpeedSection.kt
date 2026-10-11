@@ -94,6 +94,13 @@ fun DataAndSpeedSection() {
             Triple(copies, printings.count { it.name.trim().lowercase() in known }, printings.size)
         }
     }
+    // Card tags: how many of the cards the user has (binders, Wishlist, decks) have a role tag (TagPass.kt).
+    val tagVersion by com.mtgcompanion.app.data.RoleTags.version.collectAsState()
+    val tagging by com.mtgcompanion.app.data.RoleTags.progress.collectAsState()
+    val tagNames by produceState<List<String>?>(null, collections, decks) {
+        value = withContext(Dispatchers.Default) { com.mtgcompanion.app.data.TagPass.refsOf(collections, decks).map { it.name } }
+    }
+    val tagCoverage = remember(tagNames, tagVersion) { tagNames?.let { com.mtgcompanion.app.data.RoleTags.coverage(it) } }
     val opened = remember { DataAndSpeed.lastAllCardsOpen() }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -138,6 +145,19 @@ fun DataAndSpeedSection() {
         FigureRow("Card data saved for offline", figures?.let { offlineLabel(it.second, it.third) } ?: "…")
         FigureRow("Opening All cards", openLabel(opened), quick = opened != null && opened.ms < QUICK_OPEN_MS)
         FigureRow("Last synced", lastSyncedLabel(account != null, sync.lastSyncedAt, now))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("Card tags", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
+                Text(
+                    tagCoverage?.let { com.mtgcompanion.app.data.tagsLabel(it.first, it.second, tagging != null) } ?: "…",
+                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary
+                )
+            }
+            TextButton(
+                onClick = { tagNames?.let { names -> scope.launch { com.mtgcompanion.app.data.TagPass.retag(app, names) } } },
+                enabled = tagNames != null && tagging == null
+            ) { Text("Retag now", color = colors.accent) }
+        }
     }
     if (figures != null && !offline.hasData) {
         Text(
