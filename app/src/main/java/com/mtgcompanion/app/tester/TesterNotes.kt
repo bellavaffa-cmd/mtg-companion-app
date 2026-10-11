@@ -18,5 +18,17 @@ val TESTER_NOTES: List<TesterNote> = listOf(
             "5) Leave the scanner on Sort a pile and open Scan from the bottom bar again: it opens on Sort a pile (the last mode you picked; only taps on the switch are remembered, on this phone only). " +
             "6) From a place: Put cards away opens on Put away for that place, Check on Check. Collection › Storage › ⋮ › Sort a new pile opens the scanner on Sort a pile. A deck's pull list or put-back list \"Scan to tick\" has no switch — it's its own job. " +
             "7) Back with cards in the list asks only on Add cards; from the other modes it just leaves, and the list is still there next time."
+    ),
+    TesterNote(
+        "tag-fixes",
+        "Card tags reach every card — not only the ones a screen has shown",
+        "1) Update and open the app with the network on; leave it a minute (a big collection, a few). Settings › Data and speed › Card tags says \"N of M tagged\" and N climbs to nearly M without opening any deck or binder (it says \"· tagging…\" while it works). " +
+            "2) Collection › Cards › filter: the new Tags row has \"Untagged\" — tap it: only cards that got no tag at all are left (expect few: tokens with no text, odd cards). Lands now show \"Land\" (and dual/tri lands, fetches and any-colour rocks \"Fixing\"), creatures with no rules text \"Vanilla\". " +
+            "3) Your own tags (the card zoom's tag row) show as chips in the same Tags row; tap one and only cards carrying it are left. Typing your tag in the search finds those cards too. The chips show in the bar above the list and × removes them; a saved filter keeps them. " +
+            "4) A proxy or a card you renamed: it's tagged by its printing now, so it gets the real card's tags (search its role, e.g. \"ramp\"). " +
+            "5) Turn on aeroplane mode, add a few new cards, then turn the network back on: within a few minutes they're tagged without opening anything. " +
+            "6) Tap \"Retag now\": tags stay on screen while it re-checks every card, and the count comes back to the same or higher. " +
+            "7) Older cards in binders/decks now show their keyword chips (Flying, Lifelink…) in the card zoom after the first pass; it syncs once, not card by card. " +
+            "8) Deck view: the role counts (Ramp, Card draw, Removal) are at least as high as before; cards Tagger doesn't know yet (a brand-new set) now get Ramp/Card draw/Removal from their text."
     )
 )

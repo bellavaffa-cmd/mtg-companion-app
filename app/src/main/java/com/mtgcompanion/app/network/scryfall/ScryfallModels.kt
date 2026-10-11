@@ -193,6 +193,8 @@ data class ScryfallPart(
 
 data class ScryfallCardFace(
     val name: String? = null,
+    /** A reversible card keeps its Oracle id on its faces (RoleTags.recordOf). */
+    @Json(name = "oracle_id") val oracleId: String? = null,
     @Json(name = "image_uris") val imageUris: ScryfallImageUris? = null,
     @Json(name = "oracle_text") val oracleText: String? = null,
     @Json(name = "type_line") val typeLine: String? = null,

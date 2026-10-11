@@ -331,19 +331,25 @@ fun CollectionsScreen(
     val filtering = cardFilter.active || advFilter.active
     val spareIds = remember(spares) { spares.map { it.entry.scryfallId }.toSet() }
     val quickSets = remember(collections, chipIndex) { quickSets(collections, chipIndex) }
-    val named = remember(allCards, query, tagVersion) {
-        // "proxy" reads as a tag of its own, so a search finds the cards standing in for real ones.
+    // The user's own tags on each printing, and the ones offered as filter chips (most used first).
+    val userTagIndex = remember(collections, decks) { com.mtgcompanion.app.data.userTagsById(decks, collections) }
+    val userTagOptions = remember(collections, decks) { com.mtgcompanion.app.data.allUserTags(decks, collections).take(12) }
+    val named = remember(allCards, query, tagVersion, userTagIndex) {
+        // "proxy" reads as a tag of its own, so a search finds the cards standing in for real ones;
+        // the user's own tags are found too.
         if (query.isBlank()) allCards
         else allCards.filter { card ->
             val tags = RoleTags.tagsOf(card.name).orEmpty() + if (card.proxies > 0) listOf("proxy") else emptyList()
-            RoleTags.matches(card.name, tags, query)
+            RoleTags.matches(card.name, tags, query) ||
+                userTagIndex[card.scryfallId].orEmpty().any { it.contains(query.trim(), ignoreCase = true) }
         }
     }
     // The panel's filters and the advanced ones; a card whose data hasn't loaded is left out while either is on.
     fun passes(card: AllCardEntry, basic: CollectionFilter, adv: AdvancedFilter): Boolean =
         basic.matches(cardFacts[card.scryfallId]) &&
+            basic.matchesTags(RoleTags.tagsOf(card.name), userTagIndex[card.scryfallId].orEmpty()) &&
             advancedMatches(adv, advancedFacts[card.scryfallId], copyFacts[card.scryfallId]) { money.toUsd(it) }
-    val unquick = remember(named, sparesOnly, spareIds, cardFilter, cardFacts, advFilter, advancedFacts, copyFacts, money) {
+    val unquick = remember(named, sparesOnly, spareIds, cardFilter, cardFacts, advFilter, advancedFacts, copyFacts, money, tagVersion, userTagIndex) {
         named.filter { (!filtering || passes(it, cardFilter, advFilter)) && (!sparesOnly || it.scryfallId in spareIds) }
     }
     val filtered = remember(unquick, quick, quickSets) { unquick.filter { passesQuick(quick, it.scryfallId, it.name, quickSets) } }
@@ -498,6 +504,7 @@ fun CollectionsScreen(
                         onRemoveChip = { key -> val (b, a) = removeChip(cardFilter, advFilter, key); cardFilter = b; advFilter = a },
                         onClearFilters = clearFilters,
                         onOpenAdvanced = { advancedOpen = true },
+                        userTagOptions = userTagOptions,
                         unquick = unquick,
                         filtered = filtered,
                         groupBy = groupBy,
@@ -851,6 +858,8 @@ private fun CardsTab(
     onRemoveChip: (String) -> Unit,
     onClearFilters: () -> Unit,
     onOpenAdvanced: () -> Unit,
+    /** The user's own tags, offered in the filter panel's Tags row. */
+    userTagOptions: List<String> = emptyList(),
     /** The cards before the quick filter (for its counts), and after. */
     unquick: List<AllCardEntry>,
     filtered: List<AllCardEntry>,
@@ -918,7 +927,7 @@ private fun CardsTab(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (filterOpen) {
-                item { CollectionFilterPanel(cardFilter, onCardFilterChange, onAdvanced = onOpenAdvanced, onClear = onClearFilters, anyOn = filtering) }
+                item { CollectionFilterPanel(cardFilter, onCardFilterChange, onAdvanced = onOpenAdvanced, onClear = onClearFilters, anyOn = filtering, userTagOptions = userTagOptions) }
             } else if (filtering) {
                 item { ActiveFilterChips(chips, onRemoveChip, onClearFilters) }
             }

@@ -72,17 +72,27 @@ data class CardFacts(
     }
 }
 
-/** The All cards filter: Search's type, text, color and rarity filters, over the cards you own. */
+/**
+ * The All cards filter: Search's type, text, color and rarity filters, over the cards you own — and
+ * their tags: [untagged], cards no role tag fits (RoleTags.untagged), and [userTags], the user's own.
+ */
 data class CollectionFilter(
     /** Words that must all be in the type line, e.g. "legendary creature". */
     val type: String = "",
     /** A phrase that must be in the rules text, e.g. "draw a card". */
     val text: String = "",
     val colors: Set<Char> = emptySet(),
-    val rarities: Set<String> = emptySet()
+    val rarities: Set<String> = emptySet(),
+    /** Only cards looked up and given no role tag. */
+    val untagged: Boolean = false,
+    /** Only cards carrying every one of these tags of the user's own (any case). */
+    val userTags: Set<String> = emptySet()
 ) {
-    val active: Boolean get() = type.isNotBlank() || text.isNotBlank() || colors.isNotEmpty() || rarities.isNotEmpty()
-    val count: Int get() = (if (type.isNotBlank()) 1 else 0) + (if (text.isNotBlank()) 1 else 0) + colors.size + rarities.size
+    /** The filters judged by the card's Scryfall data. */
+    private val factsActive: Boolean get() = type.isNotBlank() || text.isNotBlank() || colors.isNotEmpty() || rarities.isNotEmpty()
+    val active: Boolean get() = factsActive || untagged || userTags.isNotEmpty()
+    val count: Int get() = (if (type.isNotBlank()) 1 else 0) + (if (text.isNotBlank()) 1 else 0) + colors.size + rarities.size +
+        (if (untagged) 1 else 0) + userTags.size
 
     /**
      * A card passes when its type line has every word typed, its rules text has the phrase typed,
@@ -90,7 +100,7 @@ data class CollectionFilter(
      * ([facts] null) can't be judged, so it's left out while a filter is on.
      */
     fun matches(facts: CardFacts?): Boolean {
-        if (!active) return true
+        if (!factsActive) return true
         if (facts == null) return false
         if (type.split(' ').any { it.isNotBlank() && !facts.typeLine.contains(it, ignoreCase = true) }) return false
         if (text.isNotBlank() && !facts.text.contains(text.trim(), ignoreCase = true)) return false
@@ -98,9 +108,26 @@ data class CollectionFilter(
         if (rarities.isNotEmpty() && facts.rarity !in rarities) return false
         return true
     }
+
+    /**
+     * The tag filters: with Untagged on, a card passes only once it's been looked up and no role tag
+     * fits it ([roleTags] empty; null = not looked up yet); with user tags chosen, only a card that
+     * carries all of them ([cardUserTags]).
+     */
+    fun matchesTags(roleTags: List<String>?, cardUserTags: List<String>): Boolean {
+        if (untagged && roleTags?.isEmpty() != true) return false
+        if (userTags.isNotEmpty()) {
+            val has = cardUserTags.map { it.lowercase() }.toSet()
+            if (userTags.any { it.lowercase() !in has }) return false
+        }
+        return true
+    }
 }
 
 val COLLECTION_FILTER_RARITIES = listOf("common", "uncommon", "rare", "mythic")
+
+/** The Tags row's first chip: cards no role tag fits. */
+const val UNTAGGED = "Untagged"
 
 private fun <T> Set<T>.toggle(item: T): Set<T> = if (item in this) this - item else this + item
 
@@ -115,7 +142,9 @@ fun CollectionFilterPanel(
     onChange: (CollectionFilter) -> Unit,
     onAdvanced: () -> Unit,
     onClear: () -> Unit,
-    anyOn: Boolean
+    anyOn: Boolean,
+    /** The user's own tags, to filter by (allUserTags). */
+    userTagOptions: List<String> = emptyList()
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -150,6 +179,11 @@ fun CollectionFilterPanel(
         }
         Text("Rarity", style = MaterialTheme.typography.labelMedium, color = GoldDim)
         FilterChips(COLLECTION_FILTER_RARITIES, filter.rarities) { onChange(filter.copy(rarities = filter.rarities.toggle(it))) }
+        // Untagged: what the tag pass found no role for. Then the user's own tags, most used first.
+        Text("Tags", style = MaterialTheme.typography.labelMedium, color = GoldDim)
+        FilterChips(listOf(UNTAGGED) + userTagOptions, (if (filter.untagged) setOf(UNTAGGED) else emptySet()) + filter.userTags) { option ->
+            onChange(if (option == UNTAGGED) filter.copy(untagged = !filter.untagged) else filter.copy(userTags = filter.userTags.toggle(option)))
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
             OutlinedButton(onClick = onAdvanced, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, BorderColor)) {
                 Icon(Icons.Filled.Tune, contentDescription = null, tint = Gold, modifier = Modifier.size(18.dp))
