@@ -139,6 +139,7 @@ import com.mtgcompanion.app.data.ownedCounts
 import com.mtgcompanion.app.data.putAwayMove
 import com.mtgcompanion.app.data.wantedByDecks
 import com.mtgcompanion.app.data.PullProgress
+import com.mtgcompanion.app.ui.collection.WalkSession
 import com.mtgcompanion.app.data.PullSource
 import com.mtgcompanion.app.data.placeIdFromLabel
 import com.mtgcompanion.app.data.pullList
@@ -1865,6 +1866,25 @@ class ScanViewModel(
     /** Ticks [card]'s row on the list: the first not ticked yet, as the list's own Scan to tick does. */
     private fun tickCard(card: ScryfallCard, list: TickList): Long {
         val id = nextScanId++
+        // Walk this list (PlaceFilter.kt WalkSession): a filtered place's or the Storage tab's matches.
+        if (list.deckId == WalkSession.TICK_ID) {
+            val walk = WalkSession.walk.value
+            val status = if (walk == null) "Nothing to walk any more" else {
+                val rows = walk.list.groups.flatMap { it.rows }
+                val row = pullRowToTick(rows, walk.ticked, card.name)
+                if (row == null) {
+                    if (rows.any { sameCardName(it.name, card.name) }) "${card.name} — already ticked" else "${card.name} isn't on the list"
+                } else {
+                    val now = walk.ticked + row.key
+                    WalkSession.setTicked(now)
+                    _tickCount.value = pulledCopies(rows, now) to rows.sumOf { it.qty }
+                    "${card.name} — ticked (${row.where})"
+                }
+            }
+            _uiState.update { it.copy(status = status, statusRarity = spoken(status, card), successToken = it.successToken + 1) }
+            ScanFeedback.cardRecognised(card)
+            return id
+        }
         val deck = decks.value.firstOrNull { it.id == list.deckId }
         if (deck == null) {
             _uiState.update { it.copy(status = "That deck isn't here any more") }

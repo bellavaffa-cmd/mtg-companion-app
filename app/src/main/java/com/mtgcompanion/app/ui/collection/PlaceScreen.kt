@@ -62,6 +62,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mtgcompanion.app.data.CardRepository
+import com.mtgcompanion.app.data.copiesByPlace
+import com.mtgcompanion.app.data.walkPullList
+import androidx.compose.foundation.horizontalScroll
 import com.mtgcompanion.app.data.social.SocialRepository
 import com.mtgcompanion.app.data.social.TradeCard
 import com.mtgcompanion.app.data.social.WantedHere
@@ -146,7 +149,13 @@ fun PlaceScreen(
     /** Bring to game night: the cards onto the game night deck's pull list. */
     onBringToGameNight: (List<WantedHere>) -> Unit = {},
     /** Sharing storage at home (HouseholdScreen.kt): the household this place is shared in. */
-    onOpenHousehold: (String) -> Unit = {}
+    onOpenHousehold: (String) -> Unit = {},
+    /** The Advanced filters' saved filters (the Cards tab's); null: none to save to. */
+    savedFilters: SavedFilters? = null,
+    /** Walk this list (WalkListScreen): the list to walk is in WalkSession. */
+    onWalk: () -> Unit = {},
+    /** Opens a place at a box's section or a binder's page (a result row's place chip). */
+    onOpenPlaceAt: (String, String?, Int?) -> Unit = { id, _, _ -> onOpenPlace(id) }
 ) {
     val colors = LocalAppColors.current
     val historyContext = androidx.compose.ui.platform.LocalContext.current
@@ -169,6 +178,31 @@ fun PlaceScreen(
     }
     // scryfallId → (plain, foil) price in US dollars; null until they've loaded.
     val prices = cardData?.mapValues { (_, c) -> c.prices?.usd?.toDoubleOrNull() to c.prices?.usdFoil?.toDoubleOrNull() }
+    val usdOf: ((PlacedCard) -> Double?)? = prices?.let { p -> { c: PlacedCard -> p[c.entry.scryfallId]?.let { (plain, foil) -> placedCopyUsd(c, plain, foil) } } }
+    // Search and filter what's here with the Cards tab's filters (PlaceFilter.kt), kept for this place
+    // while the app runs.
+    val keptFilters by PlaceFilterStore.filters.collectAsState()
+    val filter = filterIn(keptFilters, placeId)
+    val setFilter: (CardsFilter) -> Unit = { PlaceFilterStore.set(placeId, it) }
+    val filtering = filter.active
+    var filterOpen by remember { mutableStateOf(false) }
+    var advancedOpen by remember { mutableStateOf(false) }
+    var showAllRows by remember { mutableStateOf(false) }
+    val savedFlow = remember(savedFilters) { savedFilters?.list ?: kotlinx.coroutines.flow.flowOf(emptyList()) }
+    val saved by savedFlow.collectAsState(initial = emptyList())
+    // The collection's copies (In a deck, Copies) only once an Advanced filter needs them.
+    val needCopies = filter.advanced.active || advancedOpen
+    val copyFacts = remember(collections, decks, needCopies) { if (needCopies) copyFactsOf(collections, decks) else emptyMap() }
+    val facts = remember(cardData, copyFacts, collections, decks, money) {
+        storageFilterFacts(
+            cardData?.mapValues { CardFacts.of(it.value) }.orEmpty(),
+            cardData?.mapValues { advancedFactsOf(it.value) }.orEmpty(),
+            copyFacts, collections, decks
+        ) { money.toUsd(it) }
+    }
+    val matchHere = remember(cards, filter, facts) { filterCopies(cards, filter, facts) }
+    val matchInside = remember(within, placeId, filter, facts) { filterCopies(within.filter { it.line.placeId != placeId }, filter, facts) }
+    val matching = matchHere + matchInside
     var listView by rememberSaveable { mutableStateOf(false) }
     var page by rememberSaveable(placeId) { mutableIntStateOf(startPage) }
     var choosingCheck by remember { mutableStateOf(false) }
@@ -238,18 +272,22 @@ fun PlaceScreen(
             return@Scaffold
         }
         val inside = childrenOf(places, place.id)
-        val sections = sectionsOf(place, cards)
+        val allSections = sectionsOf(place, cards)
+        // While filtering, a box shows only its sections with a match, each open.
+        val sections = if (filtering) sectionsOf(place, matchHere).filter { it.cards.isNotEmpty() } else allSections
         val binder = if (place.placeKind == PlaceKind.BINDER) pagesOf(place, cards) else null
+        val hits = if (filtering && binder != null) matchingPockets(place, cards, matchHere) else null
+        val hitPages = if (filtering && binder != null) matchingPages(place, cards, matchHere) else emptyList()
         val copies = copiesWithin(summary, places, place.id)
-        val value = prices?.let { p ->
-            within.sumOf { c ->
-                val (plain, foil) = p[c.entry.scryfallId] ?: (null to null)
-                ((if (c.line.isFoil) foil ?: plain else plain ?: foil) ?: 0.0) * c.line.qty
-            }
+        val value = usdOf?.let { p -> within.sumOf { c -> (p(c) ?: 0.0) * c.line.qty } }
+        val walk = {
+            val q = filter.query.trim()
+            WalkSession.start(place.name + if (q.isNotEmpty()) " · “$q”" else "", walkPullList(matching, places))
+            onWalk()
         }
         val third = when {
             binder != null -> binder.first.size to if (binder.first.size == 1) "page" else "pages"
-            place.placeKind == PlaceKind.BOX || place.sections.orEmpty().isNotEmpty() -> sections.count { it.name != null } to "sections"
+            place.placeKind == PlaceKind.BOX || place.sections.orEmpty().isNotEmpty() -> allSections.count { it.name != null } to "sections"
             else -> inside.size to if (inside.size == 1) "place inside" else "places inside"
         }
         // Opened at a section (a card row's chip): scrolled down to it once the list is laid out.
@@ -328,6 +366,21 @@ fun PlaceScreen(
                     }
                 }
             }
+            item(key = "search") {
+                PlaceSearchBar(
+                    query = filter.query,
+                    onQueryChange = { setFilter(filter.copy(query = it)) },
+                    hint = "Search ${place.name}, e.g. goblin",
+                    filtersOn = filter.count,
+                    filterOpen = filterOpen,
+                    onFilter = { filterOpen = !filterOpen },
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            item(key = "filters") { CardsFilterArea(filter, setFilter, filterOpen, { advancedOpen = true }, collections) }
+            if (filtering) item(key = "totals") {
+                FilterTotalsLine(totalsLine(filterTotals(within, matching, usdOf)) { money.format(it, whole = true) }, matching.isNotEmpty(), walk)
+            }
             // Sharing storage at home: who else sees it, or Share at home (nothing before the server has households).
             if (social != null) item { HomeShareLine(place, social, onOpenHousehold) }
             if (binder == null) place.rule?.let { rule ->
@@ -351,7 +404,8 @@ fun PlaceScreen(
             place.lastChecked?.let { at ->
                 item { Text("Last checked: ${lastCheckedLabel(at, System.currentTimeMillis())}", style = MaterialTheme.typography.labelMedium, color = colors.textMuted) }
             }
-            items(inside, key = { "inside:" + it.id }) { p ->
+            if (filtering) copyGroupItems(copiesByPlace(matchInside, places), places, showAllRows, { showAllRows = true }, onOpenCard, onOpenPlaceAt, "inside-match:")
+            else items(inside, key = { "inside:" + it.id }) { p ->
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface2).padding(horizontal = 12.dp, vertical = 10.dp)) {
                     PlaceRow(placeIcon(p.placeKind), p.name, placeSubtitle(p), "${copiesWithin(summary, places, p.id)}", gold = true, onClick = { onOpenPlace(p.id) })
                 }
@@ -365,12 +419,23 @@ fun PlaceScreen(
                         ViewChip("List", listView) { listView = true }
                         Box(Modifier.weight(1f))
                         val pageWord = if (binder.first.size == 1) "page" else "pages"
-                        Text("${cards.sumOf { it.line.qty }} cards · ${binder.first.size} $pageWord", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                        val of = if (filtering) "${matchHere.sumOf { it.line.qty }} of " else ""
+                        Text("$of${cards.sumOf { it.line.qty }} cards · ${binder.first.size} $pageWord", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                    }
+                }
+                // Which pages have a match: tap one to turn to it.
+                if (filtering && !listView) item(key = "match-pages") {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        if (hitPages.isEmpty()) Text("No pocket here matches.", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                        else {
+                            Text(if (hitPages.size == 1) "Matches on page" else "Matches on pages", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                            hitPages.forEach { p -> ViewChip("$p", p == page) { page = p } }
+                        }
                     }
                 }
                 item {
-                    if (listView) BinderList(place, cards, onOpenCard)
-                    else BinderPagesView(place, collections, cardData, page, { page = it }, onChange, onOpenCard)
+                    if (listView) BinderList(place, if (filtering) matchHere else cards, onOpenCard)
+                    else BinderPagesView(place, collections, cardData, page, { page = it }, onChange, onOpenCard, hits = hits)
                 }
                 if (!listView) item {
                     Button(
@@ -383,8 +448,9 @@ fun PlaceScreen(
                         Text("Scan this page", fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
-                if (!listView && binder.second.isNotEmpty()) item {
-                    CardGroup("Not in a pocket yet", binder.second.sumOf { it.line.qty }, binder.second, true, {}, onOpenCard)
+                val loose = if (filtering) binder.second.filter { it in matchHere } else binder.second
+                if (!listView && loose.isNotEmpty()) item {
+                    CardGroup("Not in a pocket yet", loose.sumOf { it.line.qty }, loose, true, {}, onOpenCard)
                 }
                 if (cards.isEmpty()) item {
                     Text("Nothing here yet. Put cards away to fill it, pocket by pocket.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
@@ -424,12 +490,15 @@ fun PlaceScreen(
                         title = s.name ?: if (sections.size > 1) "No section" else "Cards",
                         copies = s.copies,
                         cards = s.cards,
-                        isOpen = key in open || (sections.size == 1 && s.name == null),
+                        isOpen = filtering || key in open || (sections.size == 1 && s.name == null),
                         onToggle = { open = if (key in open) open - key else open + key },
                         onOpenCard = onOpenCard
                     )
                 }
-                if (cards.isEmpty() && sections.isEmpty() && inside.isEmpty()) item {
+                if (filtering && matching.isEmpty()) item {
+                    Text("No cards here match.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
+                }
+                if (!filtering && cards.isEmpty() && sections.isEmpty() && inside.isEmpty()) item {
                     Text("Nothing here yet. Put cards away to fill it.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
                 }
             }
@@ -454,6 +523,19 @@ fun PlaceScreen(
         }
     }
 
+    if (place != null && advancedOpen) {
+        CardsAdvancedFilters(
+            filter = filter,
+            onChange = setFilter,
+            countFor = { f -> filterCopies(within, f, facts).sumOf { it.line.qty } },
+            collections = collections,
+            sets = cardData.orEmpty().values.mapNotNull { c -> c.set?.takeIf { it.isNotBlank() }?.let { it.lowercase() to (c.setName ?: it.uppercase()) } }
+                .distinctBy { it.first }.sortedBy { it.second.lowercase() },
+            saved = saved,
+            savedFilters = savedFilters,
+            onDismiss = { advancedOpen = false }
+        )
+    }
     if (place != null && choosingCheck) {
         val going = CheckSessions.load(place.id)
         val what = when (place.placeKind) { PlaceKind.BINDER -> "binder"; PlaceKind.BOX -> "box"; else -> "place" }

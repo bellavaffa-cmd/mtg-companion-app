@@ -1,7 +1,5 @@
 package com.mtgcompanion.app.ui.collection
 
-import com.mtgcompanion.app.data.usage.Usage
-import com.mtgcompanion.app.data.usage.UsageAction
 import com.mtgcompanion.app.data.spares
 import com.mtgcompanion.app.data.spreadThin
 import com.mtgcompanion.app.data.Spare
@@ -178,38 +176,19 @@ class CollectionsViewModel(
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    /** The filters saved by name on Advanced filters, kept on this device. */
-    val savedFilters: StateFlow<List<SavedFilter>> = settingsRepository.savedFiltersJson.map { savedFiltersFromJson(it) }
+    /** The filters saved by name on Advanced filters, kept on this device (SavedFilters.kt). */
+    private val saved = SavedFilters(settingsRepository, viewModelScope)
+    /** The same, for the Storage tab's Advanced filters. */
+    val savedFilterStore: SavedFilters get() = saved
+    val savedFilters: StateFlow<List<SavedFilter>> = saved.list
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Saves the filters under [name]; one already called that is replaced. */
-    fun saveFilter(name: String, basic: CollectionFilter, advanced: AdvancedFilter) {
-        val n = name.trim()
-        if (n.isEmpty()) return
-        Usage.action(UsageAction.FILTER_SAVED)
-        viewModelScope.launch {
-            settingsRepository.updateSavedFiltersJson { json ->
-                val list = savedFiltersFromJson(json)
-                val same = list.firstOrNull { it.name.equals(n, ignoreCase = true) }
-                val item = SavedFilter(same?.id ?: java.util.UUID.randomUUID().toString(), n, basic, advanced)
-                savedFiltersToJson(if (same != null) list.map { if (it.id == same.id) item else it } else list + item)
-            }
-        }
-    }
+    fun saveFilter(name: String, basic: CollectionFilter, advanced: AdvancedFilter) = saved.save(name, basic, advanced)
 
-    fun renameFilter(id: String, name: String) {
-        val n = name.trim()
-        if (n.isEmpty()) return
-        viewModelScope.launch {
-            settingsRepository.updateSavedFiltersJson { json -> savedFiltersToJson(savedFiltersFromJson(json).map { if (it.id == id) it.copy(name = n) else it }) }
-        }
-    }
+    fun renameFilter(id: String, name: String) = saved.rename(id, name)
 
-    fun deleteFilter(id: String) {
-        viewModelScope.launch {
-            settingsRepository.updateSavedFiltersJson { json -> savedFiltersToJson(savedFiltersFromJson(json).filterNot { it.id == id }) }
-        }
-    }
+    fun deleteFilter(id: String) = saved.delete(id)
 
     /**
      * Where the collection's value sits (by set, colour, rarity, type) and its dearest cards, for the

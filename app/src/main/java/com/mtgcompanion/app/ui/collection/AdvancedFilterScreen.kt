@@ -391,7 +391,7 @@ fun AdvancedFilterScreen(
 /** The filters on, a chip each — tap one to take it off — and Clear all. Shown under the search. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ActiveFilterChips(chips: List<ActiveChip>, onRemove: (String) -> Unit, onClear: () -> Unit) {
+fun ActiveFilterChips(chips: List<ActiveChip>, onRemove: (String) -> Unit, onClear: () -> Unit, clearLabel: String = "Clear all") {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         chips.forEach { chip ->
             FilterChip(
@@ -411,7 +411,7 @@ fun ActiveFilterChips(chips: List<ActiveChip>, onRemove: (String) -> Unit, onCle
                 )
             )
         }
-        TextButton(onClick = onClear) { Text("Clear all", color = Gold) }
+        TextButton(onClick = onClear) { Text(clearLabel, color = Gold) }
     }
 }
 
