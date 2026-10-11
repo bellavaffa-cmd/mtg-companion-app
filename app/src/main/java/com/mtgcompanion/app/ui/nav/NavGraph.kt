@@ -920,7 +920,6 @@ fun MtgNavGraph(
                     savedFilters = savedFilters,
                     onWalk = { navController.navigate(Routes.WALK) },
                     onOpenPlaceAt = { id, section, page -> navController.navigate(Routes.place(id, page, section)) },
-                    onWalk = { navController.navigate(Routes.WALK) },
                     onProposeTrade = { friend, want, give ->
                         socialRepository.draft = SocialRepository.TradeDraft(to = friend, want = want, give = give)
                         navController.navigate(Routes.tradeNew(friend))
@@ -1656,6 +1655,7 @@ fun MtgNavGraph(
                     onOpenSpreadThin = { navController.navigate(Routes.SPREAD_THIN) },
                     onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
                     onOpenPlaceAt = { id, section, page -> navController.navigate(Routes.place(id, page, section)) },
+                    onWalk = { navController.navigate(Routes.WALK) },
                     onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
                     onPutAway = { id -> navController.navigate(Routes.putAway(id)) },
                     onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
