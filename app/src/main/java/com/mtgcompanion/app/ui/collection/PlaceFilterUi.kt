@@ -114,12 +114,20 @@ fun PlaceSearchBar(query: String, onQueryChange: (String) -> Unit, hint: String,
  * scrolling can't close it).
  */
 @Composable
-fun CardsFilterArea(filter: CardsFilter, onChange: (CardsFilter) -> Unit, open: Boolean, onAdvanced: () -> Unit, collections: List<Collection>) {
+fun CardsFilterArea(
+    filter: CardsFilter,
+    onChange: (CardsFilter) -> Unit,
+    open: Boolean,
+    onAdvanced: () -> Unit,
+    collections: List<Collection>,
+    /** The user's own tags, offered in the panel's Tags row (allUserTags), as on the Cards tab. */
+    userTagOptions: List<String> = emptyList()
+) {
     val money = rememberMoney()
     val clear = { onChange(CardsFilter()) }
     if (open) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            CollectionFilterPanel(filter.basic, { onChange(filter.copy(basic = it)) }, onAdvanced = onAdvanced, onClear = clear, anyOn = filter.active)
+            CollectionFilterPanel(filter.basic, { onChange(filter.copy(basic = it)) }, onAdvanced = onAdvanced, onClear = clear, anyOn = filter.active, userTagOptions = userTagOptions)
             PillChip("Spares only", filter.sparesOnly, { onChange(filter.copy(sparesOnly = !filter.sparesOnly)) })
         }
     } else if (filter.active) {
@@ -178,15 +186,24 @@ fun storageFilterFacts(
     collections: List<Collection>,
     decks: List<Deck>,
     toUsd: (Double) -> Double
-): FilterFacts = FilterFacts(
-    card = { card[it] },
-    advanced = { advanced[it] },
-    copies = copies,
-    chains = placeChains(placesOf(collections)),
-    usedNames = namesDecksUse(decks),
-    toUsd = toUsd,
-    searchMatches = { c, q -> RoleTags.matches(c.entry.name, RoleTags.tagsOf(c.entry.name).orEmpty(), q) }
-)
+): FilterFacts {
+    val userTagIndex = com.mtgcompanion.app.data.userTagsById(decks, collections)
+    return FilterFacts(
+        card = { card[it] },
+        advanced = { advanced[it] },
+        copies = copies,
+        chains = placeChains(placesOf(collections)),
+        usedNames = namesDecksUse(decks),
+        toUsd = toUsd,
+        // As the Cards tab searches: name and role tags ("proxy" never applies in a place), and the user's own tags.
+        searchMatches = { c, q ->
+            RoleTags.matches(c.entry.name, RoleTags.tagsOf(c.entry.name).orEmpty(), q) ||
+                userTagIndex[c.entry.scryfallId].orEmpty().any { it.contains(q.trim(), ignoreCase = true) }
+        },
+        roleTags = { RoleTags.tagsOf(it) },
+        userTags = { userTagIndex[it].orEmpty() }
+    )
+}
 
 /** "14 of 312 cards · $118" and Walk this list, over a filter's results. */
 @Composable

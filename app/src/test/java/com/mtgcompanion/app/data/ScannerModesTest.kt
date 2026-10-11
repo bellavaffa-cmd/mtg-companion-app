@@ -34,6 +34,14 @@ class ScannerModesTest {
     }
 
     @Test
+    fun tickingTheStorageWalkListIsTheSameFixedJobWithNoSwitch() {
+        ScannerMode.entries.map { it as ScannerMode? }.plus(null).forEach { last ->
+            assertEquals(ScannerStart(null, false), scannerStart(ScannerEntry.WALK, last))
+        }
+        assertEquals(scannerStart(ScannerEntry.TICK, null), scannerStart(ScannerEntry.WALK, null))
+    }
+
+    @Test
     fun modesAreKeptByKey() {
         ScannerMode.entries.forEach { assertEquals(it, ScannerMode.of(it.key)) }
         assertNull(ScannerMode.of(null))

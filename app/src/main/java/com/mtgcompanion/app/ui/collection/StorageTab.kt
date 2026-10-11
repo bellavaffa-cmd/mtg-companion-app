@@ -173,6 +173,8 @@ fun StorageTab(
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
+    // The user's own tags, offered in the filter panel's Tags row as on the Cards tab.
+    val userTagOptions = remember(collections, decks) { com.mtgcompanion.app.data.allUserTags(decks, collections).take(12) }
     val summary = remember(collections, decks) { storageSummary(collections, decks) }
     val byPlace = remember(collections) { bindersByPlace(collections) }
     var editing by remember { mutableStateOf(false) }
@@ -238,7 +240,7 @@ fun StorageTab(
             }
         }
         if (onFilterChange != null) item(key = "filters") {
-            CardsFilterArea(filter, { onFilterChange(it.copy(query = "")) }, filterOpen, onAdvanced, collections)
+            CardsFilterArea(filter, { onFilterChange(it.copy(query = "")) }, filterOpen, onAdvanced, collections, userTagOptions)
         }
         if (matchingOn && places.isNotEmpty()) {
             item(key = "matches-head") {

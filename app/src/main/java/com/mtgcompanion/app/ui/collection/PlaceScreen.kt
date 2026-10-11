@@ -165,6 +165,8 @@ fun PlaceScreen(
     val places = placesOf(collections)
     val place = places.firstOrNull { it.id == placeId }
     val summary = remember(collections, decks) { storageSummary(collections, decks) }
+    // The user's own tags, offered in the filter panel's Tags row as on the Cards tab.
+    val userTagOptions = remember(collections, decks) { com.mtgcompanion.app.data.allUserTags(decks, collections).take(12) }
     val cards = remember(collections, placeId) { cardsIn(collections, placeId) }
     // Every copy in it and in the places inside it, for its value.
     val within = remember(collections, placeId) { placeAndInside(places, placeId).flatMap { cardsIn(collections, it) } }
@@ -377,7 +379,7 @@ fun PlaceScreen(
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
-            item(key = "filters") { CardsFilterArea(filter, setFilter, filterOpen, { advancedOpen = true }, collections) }
+            item(key = "filters") { CardsFilterArea(filter, setFilter, filterOpen, { advancedOpen = true }, collections, userTagOptions) }
             if (filtering) item(key = "totals") {
                 FilterTotalsLine(totalsLine(filterTotals(within, matching, usdOf)) { money.format(it, whole = true) }, matching.isNotEmpty(), walk)
             }

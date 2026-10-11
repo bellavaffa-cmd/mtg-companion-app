@@ -324,6 +324,7 @@ class ScanViewModel(
 
     /** Where the scanner was opened from, which decides the mode it opens in. */
     private val entry = when {
+        tickList?.deckId == WalkSession.TICK_ID -> ScannerEntry.WALK
         tickList != null -> ScannerEntry.TICK
         putAwayPlaceId != null -> ScannerEntry.PUT_AWAY
         checkPlaceId != null -> ScannerEntry.CHECK
@@ -332,7 +333,7 @@ class ScanViewModel(
     }
     private val start = scannerStart(entry, ScannerModeSetting.last(appContext))
 
-    /** Whether the mode switch shows: everywhere but ticking a deck's list. */
+    /** Whether the mode switch shows: everywhere but ticking a deck's list or the walk list. */
     val showModeSwitch: Boolean = start.showSwitch
 
     private val _mode = MutableStateFlow(start.mode)

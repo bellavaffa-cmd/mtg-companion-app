@@ -241,4 +241,46 @@ class PlaceFilterTest {
         assertEquals(setOf(key), WalkSession.walk.value?.ticked)
         assertEquals("Red box · “bolt”", WalkSession.walk.value?.title)
     }
+
+    @Test
+    fun theTagsRowUntaggedAndYourOwnTagsWorkOnStorageAsOnCards() {
+        // Role tags by name (Goblin Guide looked up, no tag fits; Atraxa not looked up yet) and the
+        // user's own tags on each printing, from the collection (userTagsById) as the screens give them.
+        val roles = mapOf("Lightning Bolt" to listOf("Removal"), "Counterspell" to listOf("Counter"), "Goblin Guide" to emptyList<String>())
+        val tagged = collections.map { c ->
+            c.copy(entries = c.entries.map { e ->
+                when (e.scryfallId) {
+                    "bolt" -> e.copy(userTags = listOf("Trade"))
+                    "atx" -> e.copy(userTags = listOf("trade", "Commander"))
+                    else -> e
+                }
+            })
+        }
+        val index = com.mtgcompanion.app.data.userTagsById(decks, tagged)
+        val withTags = FilterFacts(facts.card, facts.advanced, facts.copies, facts.chains, facts.usedNames,
+            roleTags = { roles[it] }, userTags = { index[it].orEmpty() })
+        val stored = cardsIn(tagged, "red") + cardsIn(tagged, "rares")
+
+        // Untagged: only copies looked up with no role tag; a card not looked up yet isn't.
+        assertEquals(listOf("Goblin Guide ×1"), names(filterCopies(stored, f(basic = CollectionFilter(untagged = true)), withTags)))
+        // A tag of your own, any case; two need both.
+        assertEquals(listOf("Lightning Bolt ×2", "Atraxa, Praetors' Voice ×1", "Lightning Bolt (foil) ×1"),
+            names(filterCopies(stored, f(basic = CollectionFilter(userTags = setOf("TRADE"))), withTags)))
+        assertEquals(listOf("Atraxa, Praetors' Voice ×1"),
+            names(filterCopies(stored, f(basic = CollectionFilter(userTags = setOf("trade", "commander"))), withTags)))
+        // With the panel's other filters, and the Storage tab's heading counts them.
+        assertEquals(listOf("Lightning Bolt ×2", "Lightning Bolt (foil) ×1"),
+            names(filterCopies(stored, f(basic = CollectionFilter(colors = setOf('R'), userTags = setOf("Trade"))), withTags)))
+        val tags = f(basic = CollectionFilter(untagged = true, userTags = setOf("Trade")))
+        assertTrue(tags.active)
+        assertEquals(2, tags.count)
+        assertEquals("Cards in storage matching your filters", storageMatchingTitle(tags))
+        // Their chips, each removable, as on Cards.
+        val chips = cardsFilterChips(tags, { null }, { "$it" })
+        assertEquals(listOf("untagged", "usertag:Trade"), chips.map { it.key })
+        assertEquals(CollectionFilter(userTags = setOf("Trade")), removeCardsFilterChip(tags, "untagged").basic)
+        assertEquals(CollectionFilter(untagged = true), removeCardsFilterChip(tags, "usertag:Trade").basic)
+        // Without tag facts (nothing looked up), Untagged leaves nothing rather than everything.
+        assertEquals(emptyList<PlacedCard>(), filterCopies(stored, f(basic = CollectionFilter(untagged = true)), facts))
+    }
 }

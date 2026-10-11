@@ -735,7 +735,7 @@ fun ScanScreen(
                     )
                 }
             }
-            // Add cards · Sort a pile · Put away · Check — not while ticking a deck's list, a job of its own.
+            // Add cards · Sort a pile · Put away · Check — not while ticking a deck's list or the walk list, a job of its own.
             if (viewModel.showModeSwitch) {
                 ScannerModeSwitch(mode, state.scannedCards.size, onPick = pickMode, modifier = Modifier.padding(top = 8.dp))
                 if (!sortTipSeen && mode != ScannerMode.SORT) SortModeTip(onDismiss = { ScannerModeSetting.dismissSortTip(context) })

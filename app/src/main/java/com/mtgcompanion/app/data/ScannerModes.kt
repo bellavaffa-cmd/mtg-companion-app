@@ -31,7 +31,9 @@ enum class ScannerEntry {
     /** A place's Check. */
     CHECK,
     /** A deck's pull list or put-back list, ticking it off: a fixed job, no mode switch. */
-    TICK
+    TICK,
+    /** Storage's "Walk this list" (a filtered place's or the Storage tab's matches), ticking it off: the same fixed job. */
+    WALK
 }
 
 /** How the scanner opens: in [mode] (null: a fixed job of its own), and whether the mode switch shows. */
@@ -40,14 +42,15 @@ data class ScannerStart(val mode: ScannerMode?, val showSwitch: Boolean)
 /**
  * The mode the scanner opens in. The plain entry opens in the mode last picked on the switch on this
  * device ([last]), Add cards the first time; every other entry opens in its own job, and doesn't
- * change what's remembered. Ticking a deck's list is its own fixed job, with the switch hidden.
+ * change what's remembered. Ticking a deck's list, or the walk list, is its own fixed job, with the
+ * switch hidden.
  */
 fun scannerStart(entry: ScannerEntry, last: ScannerMode?): ScannerStart = when (entry) {
     ScannerEntry.PLAIN -> ScannerStart(last ?: ScannerMode.ADD, true)
     ScannerEntry.SORT -> ScannerStart(ScannerMode.SORT, true)
     ScannerEntry.PUT_AWAY -> ScannerStart(ScannerMode.PUT_AWAY, true)
     ScannerEntry.CHECK -> ScannerStart(ScannerMode.CHECK, true)
-    ScannerEntry.TICK -> ScannerStart(null, false)
+    ScannerEntry.TICK, ScannerEntry.WALK -> ScannerStart(null, false)
 }
 
 /** What switching mode does with the Add cards list (the cards scanned but not added anywhere yet). */

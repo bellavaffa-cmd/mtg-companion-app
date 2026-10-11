@@ -591,7 +591,7 @@ fun CollectionsScreen(
                         onFilterChange = { PlaceFilterStore.set(STORAGE_FILTER_KEY, it) },
                         filterOpen = filterOpen,
                         onAdvanced = { storageAdvancedOpen = true },
-                        facts = remember(cardFacts, advancedFacts, copyFacts, collections, decks, money) {
+                        facts = remember(cardFacts, advancedFacts, copyFacts, collections, decks, money, tagVersion) {
                             storageFilterFacts(cardFacts, advancedFacts, copyFacts, collections, decks) { money.toUsd(it) }
                         },
                         prices = remember(advancedFacts) { advancedFacts.mapValues { it.value.usd to it.value.usdFoil } },

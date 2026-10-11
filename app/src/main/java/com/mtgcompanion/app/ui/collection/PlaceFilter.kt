@@ -55,7 +55,11 @@ class FilterFacts(
     /** An amount typed in the chosen currency, in US dollars. */
     val toUsd: (Double) -> Double = { it },
     /** Whether the search finds a copy — its name and tags, as Cards searches. Plain name by default. */
-    val searchMatches: (PlacedCard, String) -> Boolean = { c, q -> c.entry.name.contains(q.trim(), ignoreCase = true) }
+    val searchMatches: (PlacedCard, String) -> Boolean = { c, q -> c.entry.name.contains(q.trim(), ignoreCase = true) },
+    /** A card's role tags by name (RoleTags.tagsOf), for the Tags row's Untagged; null = not looked up yet. */
+    val roleTags: (String) -> List<String>? = { null },
+    /** The user's own tags on a printing (userTagsById), by scryfallId, for the Tags row's chips. */
+    val userTags: (String) -> List<String> = { emptyList() }
 )
 
 /**
@@ -85,6 +89,8 @@ fun copyMatches(f: CardsFilter, copy: PlacedCard, facts: FilterFacts): Boolean {
     if (q.isNotEmpty() && !facts.searchMatches(copy, q)) return false
     if (f.sparesOnly && facts.usedNames?.contains(copy.entry.name.trim().lowercase()) != false) return false
     if (!f.basic.matches(facts.card(id))) return false
+    // The Tags row (Untagged, the user's own tags), judged as the Cards tab judges it.
+    if (!f.basic.matchesTags(facts.roleTags(copy.entry.name), facts.userTags(id))) return false
     if (f.advanced.active) {
         val mine = copyFactsOfCopy(copy, facts.copies[id], facts.chains)
         if (!advancedMatches(f.advanced, facts.advanced(id), mine, facts.toUsd)) return false
