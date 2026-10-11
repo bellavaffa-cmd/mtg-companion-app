@@ -44,6 +44,7 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.PlacedCard
 import com.mtgcompanion.app.data.CopyGroup
 import com.mtgcompanion.app.data.RoleTags
+import com.mtgcompanion.app.data.copyFitsItsPlace
 import com.mtgcompanion.app.data.StoragePlace
 import com.mtgcompanion.app.data.namesDecksUse
 import com.mtgcompanion.app.data.placeChains
@@ -128,7 +129,13 @@ fun CardsFilterArea(
     if (open) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             CollectionFilterPanel(filter.basic, { onChange(filter.copy(basic = it)) }, onAdvanced = onAdvanced, onClear = clear, anyOn = filter.active, userTagOptions = userTagOptions)
-            PillChip("Spares only", filter.sparesOnly, { onChange(filter.copy(sparesOnly = !filter.sparesOnly)) })
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PillChip("Spares only", filter.sparesOnly, { onChange(filter.copy(sparesOnly = !filter.sparesOnly)) })
+                // Once a place has rules (StorageRules.kt): the copies they say don't belong where they are.
+                if (placesOf(collections).any { com.mtgcompanion.app.data.hasRule(it) }) {
+                    PillChip(MISFITS_CHIP, filter.misfitsOnly, { onChange(filter.copy(misfitsOnly = !filter.misfitsOnly)) })
+                }
+            }
         }
     } else if (filter.active) {
         val places = placesOf(collections)
@@ -201,7 +208,12 @@ fun storageFilterFacts(
                 userTagIndex[c.entry.scryfallId].orEmpty().any { it.contains(q.trim(), ignoreCase = true) }
         },
         roleTags = { RoleTags.tagsOf(it) },
-        userTags = { userTagIndex[it].orEmpty() }
+        userTags = { userTagIndex[it].orEmpty() },
+        fitsItsPlace = run {
+            val places = placesOf(collections).associateBy { it.id }
+            val chains = placeChains(places.values.toList());
+            { c: PlacedCard -> copyFitsItsPlace(places, c, ruleCardOfCopy(c, card[c.entry.scryfallId], advanced[c.entry.scryfallId], RoleTags.tagsOf(c.entry.name), userTagIndex[c.entry.scryfallId].orEmpty(), copies, chains), toUsd) }
+        }
     )
 }
 

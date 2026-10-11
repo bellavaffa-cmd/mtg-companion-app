@@ -84,6 +84,16 @@ fun holdsOf(place: StoragePlace): Pair<CollectionFilter, AdvancedFilter>? = hold
 
 fun holdsFromMap(map: Map<String, Any?>?): Pair<CollectionFilter, AdvancedFilter>? {
     if (map == null) return null
+    // Asked for again and again (each card against each place): read once per filter.
+    synchronized(holdsRead) { if (holdsRead.containsKey(map)) return holdsRead[map] }
+    val read = readHolds(map)
+    synchronized(holdsRead) { holdsRead[map] = read }
+    return read
+}
+
+private val holdsRead = java.util.WeakHashMap<Map<String, Any?>, Pair<CollectionFilter, AdvancedFilter>?>()
+
+private fun readHolds(map: Map<String, Any?>): Pair<CollectionFilter, AdvancedFilter>? {
     val o = try { JSONObject(map) } catch (e: Exception) { return null }
     val basic = o.optJSONObject("basic")?.let(::basicFrom) ?: CollectionFilter()
     val advanced = o.optJSONObject("advanced")?.let(::advancedFrom) ?: AdvancedFilter()
@@ -443,6 +453,21 @@ fun moveMisfit(collections: List<Collection>, m: Misfit, spot: Spot?): List<Coll
         if (c.id != m.card.collectionId) c
         else c.copy(entries = c.entries.map { e -> if (e.scryfallId == m.card.entry.scryfallId) moveCopies(e, m.card.line, to, m.card.line.qty).first else e })
     }
+}
+
+/**
+ * Whether a line of copies fits its place's rules: the place holds it, and (with sections by a level)
+ * it's in the section they give it. True in a place with no rules; null when the card's data isn't
+ * here — the Storage filters' "Doesn't fit its place".
+ */
+fun copyFitsItsPlace(places: Map<String, StoragePlace>, copy: PlacedCard, card: RuleCard?, toUsd: (Double) -> Double = { it }): Boolean? {
+    val place = places[copy.line.placeId] ?: return true
+    if (!hasRule(place)) return true
+    if (card == null) return null
+    if (!fitsPlace(place, card, toUsd)) return false
+    if (place.placeKind == PlaceKind.BINDER || placeRules(place).sectionsBy == null) return true
+    val want = ruleSectionFor(place, card.facts) ?: return true
+    return want.equals(copy.line.section ?: "", ignoreCase = true)
 }
 
 // ---- Places whose rules overlap ----

@@ -11,7 +11,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import com.mtgcompanion.app.ui.collection.CardFacts as FilterFacts
+import com.mtgcompanion.app.ui.collection.CardFacts as BasicFacts
+import com.mtgcompanion.app.ui.collection.CardsFilter
+import com.mtgcompanion.app.ui.collection.FilterFacts
+import com.mtgcompanion.app.ui.collection.filterCopies
 
 /**
  * A place's rules. The cases in storageRulesVectors.json are the web app's too (MtgCompanionWeb's
@@ -84,7 +87,7 @@ class StorageRulesTest {
         val identity = c.strings("colorIdentity").orEmpty()
         return RuleCard(
             facts,
-            basic = FilterFacts(identity.map { it[0] }.toSet(), c.getString("typeLine"), c.getString("rarity"), c.str("text") ?: "", c.getString("set").lowercase()),
+            basic = BasicFacts(identity.map { it[0] }.toSet(), c.getString("typeLine"), c.getString("rarity"), c.str("text") ?: "", c.getString("set").lowercase()),
             advanced = AdvancedFacts(
                 colors = c.strings("colors").orEmpty(), identity = identity, cmc = c.dbl("cmc"), set = c.getString("set").lowercase(),
                 usd = c.dbl("usd"), usdFoil = c.dbl("usdFoil")
@@ -303,6 +306,21 @@ class StorageRulesTest {
         val kept = ItemMerge.mergeCollections(base, base, older, minePreferred = true)
         assertEquals(order, kept.placeOrder)
         assertEquals(listOf("MANA_VALUE", "NAME"), kept.storagePlaces!!.first { it.id == "red" }.sortBy)
+    }
+
+    @Test
+    fun `the Storage filters' Doesn't fit its place`() {
+        val cols = library()
+        val byId = places.associateBy { it.id }
+        val cards = cardsIn(cols, "blue")
+        assertEquals(
+            mapOf("Brainstorm" to true, "Counterspell" to true, "Cryptic Command" to false, "Lightning Bolt" to false),
+            cards.associate { it.entry.name to copyFitsItsPlace(byId, it, ruleCard(it.entry.scryfallId)) }
+        )
+        assertNull(copyFitsItsPlace(byId, cards[0], null))
+        val facts = FilterFacts(fitsItsPlace = { c -> copyFitsItsPlace(byId, c, ruleCard(c.entry.scryfallId)) })
+        assertEquals(listOf("Cryptic Command", "Lightning Bolt"), filterCopies(cards, CardsFilter(misfitsOnly = true), facts).map { it.entry.name })
+        assertEquals(1, CardsFilter(misfitsOnly = true).count)
     }
 
     @Test

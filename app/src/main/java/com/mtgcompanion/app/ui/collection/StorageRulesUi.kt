@@ -391,5 +391,28 @@ fun ruleCardsOf(collections: List<Collection>, facts: FilterFacts): List<RuleCar
     return out
 }
 
+/**
+ * A line of copies as the rules judge it, from the filter facts already worked out: the card's
+ * ([basic], [advanced]; null when its data isn't here) and the copy's own (copyFactsOfCopy).
+ */
+fun ruleCardOfCopy(
+    c: com.mtgcompanion.app.data.PlacedCard,
+    basic: CardFacts?,
+    advanced: AdvancedFacts?,
+    roleTags: List<String>?,
+    userTags: List<String>,
+    copies: Map<String, CopyFacts>,
+    chains: Map<String, List<String>>
+): RuleCard? {
+    if (basic == null) return null
+    return RuleCard(
+        com.mtgcompanion.app.data.CardFacts(
+            c.entry.name, advanced?.colors, basic.typeLine, advanced?.set, null, advanced?.identity, advanced?.cmc, basic.rarity,
+            advanced?.usd, advanced?.usdFoil, c.line.isFoil
+        ),
+        basic, advanced, copyFactsOfCopy(c, copies[c.entry.scryfallId], chains), roleTags, userTags
+    )
+}
+
 /** A Scryfall card's sorting facts, for a copy (foil or not). */
 fun ruleFactsOf(card: com.mtgcompanion.app.network.scryfall.ScryfallCard, foil: Boolean) = cardFactsOf(card).copy(foil = foil)

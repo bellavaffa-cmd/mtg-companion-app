@@ -26,19 +26,24 @@ import java.util.Locale
  * tests/collection/placeFilter.test.ts).
  */
 
+/** The quick filter for copies their place's rules say don't belong there. */
+const val MISFITS_CHIP = "Doesn't fit its place"
+
 /** A place's (or the Storage tab's) search and filters: the Cards tab's, kept together. */
 data class CardsFilter(
     val query: String = "",
     val basic: CollectionFilter = CollectionFilter(),
     val advanced: AdvancedFilter = AdvancedFilter(),
     /** Only copies of cards no deck of yours plays (Spares.kt). */
-    val sparesOnly: Boolean = false
+    val sparesOnly: Boolean = false,
+    /** Only copies their place's rules say don't belong there — the wrong place or section (StorageRules.kt). */
+    val misfitsOnly: Boolean = false
 ) {
     /** Whether anything narrows the copies: the search or a filter. */
-    val active: Boolean get() = query.isNotBlank() || basic.active || advanced.active || sparesOnly
+    val active: Boolean get() = query.isNotBlank() || basic.active || advanced.active || sparesOnly || misfitsOnly
 
     /** The filters on, for the filter button's badge (the search is in its own field). */
-    val count: Int get() = basic.count + advanced.count + (if (sparesOnly) 1 else 0)
+    val count: Int get() = basic.count + advanced.count + (if (sparesOnly) 1 else 0) + (if (misfitsOnly) 1 else 0)
 }
 
 /** What judging copies needs besides the copies: the cards' data, the collection's, and the search's tags. */
@@ -59,7 +64,9 @@ class FilterFacts(
     /** A card's role tags by name (RoleTags.tagsOf), for the Tags row's Untagged; null = not looked up yet. */
     val roleTags: (String) -> List<String>? = { null },
     /** The user's own tags on a printing (userTagsById), by scryfallId, for the Tags row's chips. */
-    val userTags: (String) -> List<String> = { emptyList() }
+    val userTags: (String) -> List<String> = { emptyList() },
+    /** Whether a line of copies fits its place's rules (copyFitsItsPlace); null when its card data isn't here. */
+    val fitsItsPlace: (PlacedCard) -> Boolean? = { true }
 )
 
 /**
@@ -88,6 +95,8 @@ fun copyMatches(f: CardsFilter, copy: PlacedCard, facts: FilterFacts): Boolean {
     val q = f.query.trim()
     if (q.isNotEmpty() && !facts.searchMatches(copy, q)) return false
     if (f.sparesOnly && facts.usedNames?.contains(copy.entry.name.trim().lowercase()) != false) return false
+    // Doesn't fit its place: only copies known not to (a card whose data isn't here can't be judged).
+    if (f.misfitsOnly && facts.fitsItsPlace(copy) != false) return false
     if (!f.basic.matches(facts.card(id))) return false
     // The Tags row (Untagged, the user's own tags), judged as the Cards tab judges it.
     if (!f.basic.matchesTags(facts.roleTags(copy.entry.name), facts.userTags(id))) return false
@@ -150,13 +159,15 @@ fun cardsFilterChips(
     val q = f.query.trim()
     return listOfNotNull(if (q.isNotEmpty()) ActiveChip("search", "“$q”") else null) +
         filterChips(f.basic, f.advanced, binderName, formatLocal, placeName) +
-        listOfNotNull(if (f.sparesOnly) ActiveChip("spares", "Spares only") else null)
+        listOfNotNull(if (f.sparesOnly) ActiveChip("spares", "Spares only") else null) +
+        listOfNotNull(if (f.misfitsOnly) ActiveChip("misfits", MISFITS_CHIP) else null)
 }
 
 /** [f] with the chip [key] taken off. */
 fun removeCardsFilterChip(f: CardsFilter, key: String): CardsFilter = when (key) {
     "search" -> f.copy(query = "")
     "spares" -> f.copy(sparesOnly = false)
+    "misfits" -> f.copy(misfitsOnly = false)
     else -> {
         val (b, a) = removeChip(f.basic, f.advanced, key)
         f.copy(basic = b, advanced = a)
