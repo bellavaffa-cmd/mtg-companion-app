@@ -2,6 +2,7 @@ package com.mtgcompanion.app.data
 
 import com.mtgcompanion.app.ui.collection.allCardEntries
 import com.mtgcompanion.app.ui.collection.copyFactsOf
+import com.mtgcompanion.app.ui.common.buildCardSources
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -98,5 +99,22 @@ class OwnedCopiesTest {
         val s = ownedSummary(emptyList(), listOf(virtual, physical), "Sol Ring", "Sol Ring")
         assertEquals(1, s.samePrinting)
         assertEquals(listOf("Krenko deck" to 1), s.places)
+    }
+
+    @Test
+    fun `where you own it leaves out unowned decks and the Wishlist`() {
+        val binder = Collection("b", "Binder", listOf(CollectionEntry("sol", "Sol Ring", null, quantity = 1)), createdAt = 1)
+        val wishlist = Collection(WISHLIST_ID, "Wishlist", listOf(CollectionEntry("sol", "Sol Ring", null, quantity = 1)), createdAt = 1, type = CollectionType.WISHLIST.name)
+        fun d(name: String, o: String, gameMode: String = GameMode.COMMANDER.name, sample: Boolean? = null) =
+            Deck(name, name, cards = listOf(card("sol")), ownership = o, gameMode = gameMode, sample = sample, createdAt = 1)
+        val decks = listOf(
+            d("Physical", "PHYSICAL"), d("Proxy", "PROXY"), d("Virtual", "VIRTUAL"), d("Prototype", "PROTOTYPE"),
+            d("Cube", "VIRTUAL", gameMode = CUBE_MODE), d("Sample", "PHYSICAL", sample = true), d("Unset", "")
+        )
+        val held = buildCardSources(listOf(binder, wishlist), decks)["sol"].orEmpty()
+        assertEquals(listOf("Binder", "Physical", "Proxy", "Unset"), held.map { it.name })
+        assertEquals(listOf(1, 1, 1, 1), held.map { it.quantity })
+        // A card only in a Virtual deck and on the Wishlist is owned nowhere.
+        assertFalse(buildCardSources(listOf(wishlist), listOf(decks[2])).containsKey("sol"))
     }
 }

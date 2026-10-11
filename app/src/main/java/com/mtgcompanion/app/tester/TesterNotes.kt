@@ -16,6 +16,7 @@ val TESTER_NOTES: List<TesterNote> = listOf(
             "3) Do the same with a Prototype deck, and with a cube: their cards aren't on All cards and don't add to the value. " +
             "4) Make a Physical deck with a card you don't own: it does appear on All cards, the count goes up by one and the value by its price. " +
             "5) A Proxy deck's cards show on All cards marked proxy, but add nothing to the value. " +
-            "6) Also check \"You own N\" on the scanner's Last scanned panel and in Sort a pile: copies in Virtual/Prototype decks and cubes aren't counted, real copies in Physical decks are."
+            "6) Also check \"You own N\" on the scanner's Last scanned panel and in Sort a pile: copies in Virtual/Prototype decks and cubes aren't counted, real copies in Physical decks are. " +
+            "7) Search for the card that's only in your Virtual deck (or on your Wishlist) and enlarge it: there's no \"In 1 deck\" / \"In 1 binder\" line for it. A card in a Physical deck still says \"In 1 deck\"."
     )
 )

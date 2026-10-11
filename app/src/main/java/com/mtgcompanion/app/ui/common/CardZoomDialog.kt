@@ -104,8 +104,12 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardRepository
 import com.mtgcompanion.app.data.Collection
+import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
+import com.mtgcompanion.app.data.countsAsOwned
 import com.mtgcompanion.app.data.keptLabel
+import com.mtgcompanion.app.data.ownedCopies
+import com.mtgcompanion.app.data.ownedProxies
 import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.ui.theme.BorderColor
@@ -123,15 +127,16 @@ enum class SourceKind { BINDER, DECK }
 data class CardSource(val kind: SourceKind, val id: String, val name: String, val quantity: Int, val kept: String = "")
 
 /**
- * Where every card is physically held, across every binder and deck — scryfallId -> the places
- * holding it. Feeds [ZoomCard.sources] for the enlarged-card "IN N PLACES" section; a card held
+ * Where every card is owned, across the owned binders (never the Wishlist) and the decks that count
+ * as owned (countsAsOwned: not Virtual, Prototype, a cube or a sample) — scryfallId -> the places
+ * holding it, a deck's copies counted as All cards counts them (real ones and proxies). Feeds [ZoomCard.sources] for the enlarged-card "IN N PLACES" section; a card held
  * nowhere is simply absent from the map. Callers viewing one particular deck/binder typically
  * filter out that deck/binder's own [CardSource.id] before passing the list to [ZoomCard].
  */
 fun buildCardSources(collections: List<Collection>, decks: List<Deck>): Map<String, List<CardSource>> {
     val bySource = HashMap<String, MutableList<CardSource>>()
     val places = placesOf(collections)
-    collections.forEach { collection ->
+    collections.filter { it.kind != CollectionType.WISHLIST }.forEach { collection ->
         collection.entries.forEach { entry ->
             val qty = entry.quantity + entry.foilQuantity
             if (qty > 0) {
@@ -140,11 +145,12 @@ fun buildCardSources(collections: List<Collection>, decks: List<Deck>): Map<Stri
             }
         }
     }
-    decks.forEach { deck ->
+    decks.filter { it.countsAsOwned }.forEach { deck ->
         deck.cards.forEach { entry ->
-            if (entry.quantity > 0) {
+            val qty = ownedCopies(deck, entry) + ownedProxies(deck, entry)
+            if (qty > 0) {
                 bySource.getOrPut(entry.scryfallId) { mutableListOf() } +=
-                    CardSource(SourceKind.DECK, deck.id, deck.name, entry.quantity)
+                    CardSource(SourceKind.DECK, deck.id, deck.name, qty)
             }
         }
     }
