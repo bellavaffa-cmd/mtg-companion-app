@@ -232,6 +232,21 @@ data class RuleCard(
 fun ruleCardOf(card: ScryfallCard, foil: Boolean = false, roleTags: List<String>? = null, userTags: List<String> = emptyList(), copy: CopyFacts? = null): RuleCard =
     RuleCard(cardFactsOf(card).copy(foil = foil), FilterFacts.of(card), advancedFactsOf(card), copy, roleTags, userTags)
 
+/**
+ * A card as the rules judge it from its sorting facts alone, when its Scryfall data isn't at hand (a
+ * deck's card being put back, a sorted pile being filed): enough for colours, type, rarity, set, mana
+ * value and price — not rules text or keywords. Without a type line there's nothing to judge by.
+ */
+fun ruleCardOfFacts(f: CardFacts): RuleCard {
+    val typeLine = f.typeLine ?: return RuleCard(f)
+    val identity = (f.colorIdentity ?: f.colors).orEmpty().map { it.uppercase() }
+    return RuleCard(
+        f,
+        FilterFacts(identity.mapNotNull { it.firstOrNull() }.toSet(), typeLine, f.rarity.orEmpty().lowercase(), "", f.set.orEmpty().lowercase()),
+        AdvancedFacts(colors = f.colors.orEmpty().map { it.uppercase() }, identity = identity, cmc = f.cmc, set = f.set.orEmpty().lowercase(), usd = f.usd, usdFoil = f.usdFoil)
+    )
+}
+
 /** Whether [card] is one [holds] takes — everything when null. Prices typed in the chosen currency go through [toUsd]. */
 fun holdsMatch(holds: Pair<CollectionFilter, AdvancedFilter>?, card: RuleCard, toUsd: (Double) -> Double = { it }): Boolean {
     val (basic, advanced) = holds ?: return true

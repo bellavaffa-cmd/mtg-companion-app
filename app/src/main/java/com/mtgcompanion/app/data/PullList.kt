@@ -705,14 +705,14 @@ data class PutBackListData(val groups: List<PutBackGroup>, val total: Int)
 
 /**
  * The best place by rule for a card: the first place in the user's rule order whose rules it fits
- * (StorageRules.kt placeFor) — [card] is the card as the places' "Holds" judge it; without it only
- * places that hold everything can take it. Null when none fits.
+ * (StorageRules.kt placeFor) — [card] is the card as the places' "Holds" judge it; without it, as far
+ * as its sorting facts tell. Null when none fits.
  */
 fun bestPlaceByRule(
     places: List<StoragePlace>,
     facts: CardFacts,
     collections: List<Collection>,
-    /** The card as the places' "Holds" judge it; without it only places that hold everything can take it. */
+    /** The card as the places' "Holds" judge it; without it, as far as [facts] tell (ruleCardOfFacts). */
     card: RuleCard? = null,
     factsOf: (CollectionEntry) -> CardFacts? = { null },
     toUsd: (Double) -> Double = { it },
@@ -720,7 +720,7 @@ fun bestPlaceByRule(
     needRoom: Boolean = false
 ): Pair<Spot, StoragePlace>? {
     // The first place in the user's rule order whose rules the card fits (and, with [needRoom], that has room) — StorageRules.kt.
-    val place = placeFor(places, placeOrderOf(collections), card ?: RuleCard(facts), { !needRoom || hasRoom(it, collections) }, toUsd) ?: return null
+    val place = placeFor(places, placeOrderOf(collections), card ?: ruleCardOfFacts(facts), { !needRoom || hasRoom(it, collections) }, toUsd) ?: return null
     return suggestSpot(place, facts, collections, factsOf).first to place
 }
 

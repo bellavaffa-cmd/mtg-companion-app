@@ -244,8 +244,9 @@ class StorageRulesTest {
         assertEquals(Spot("blue", section = "Sorceries"), best.first)
         assertEquals("Sorceries › after Cryptic Command", suggestSpot(placeOf("blue"), factsOf("ponder"), cols).second)
         assertEquals("Instants › next to Counterspell", ruleSpot(placeOf("blue"), factsOf("counterspell"), cardsIn(cols, "blue")).second)
-        // No place holds a card whose data isn't here, but the places holding everything.
-        assertEquals("bulk", bestPlaceByRule(placesOf(cols), factsOf("mystery"), cols)?.second?.id)
+        // Without its data, a card is judged by its sorting facts; with only its name, only the places holding everything take it.
+        assertEquals("blue", bestPlaceByRule(placesOf(cols), factsOf("mystery"), cols)?.second?.id)
+        assertEquals("bulk", bestPlaceByRule(placesOf(cols), CardFacts("Mystery Card"), cols)?.second?.id)
         assertTrue(canLetAppChoose(places))
         assertFalse(canLetAppChoose(listOf(placeOf("plain"))))
     }
