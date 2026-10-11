@@ -128,13 +128,15 @@ private fun PillButton(label: String, primary: Boolean, modifier: Modifier = Mod
     }
 }
 
-/** The Wishlist's two buttons at the foot: "Set targets for all…" and "Buy these cards". */
+/**
+ * The Wishlist's two buttons at the foot: "Set targets for all…" and "Buy these cards". The last row
+ * of the Wishlist's list, so it scrolls with the cards rather than covering the last of them.
+ */
 @Composable
-fun WishlistFoot(onSetAll: () -> Unit, onBuyAll: () -> Unit) {
-    val app = LocalAppColors.current
+fun WishlistFoot(onSetAll: () -> Unit, onBuyAll: () -> Unit, modifier: Modifier = Modifier) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth().background(app.bg).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 20.dp)
+        modifier = modifier.fillMaxWidth()
     ) {
         PillButton("Set targets for all…", primary = false, height = 48, modifier = Modifier.weight(1f), onClick = onSetAll)
         PillButton("Buy these cards", primary = true, height = 48, modifier = Modifier.weight(1f), onClick = onBuyAll)

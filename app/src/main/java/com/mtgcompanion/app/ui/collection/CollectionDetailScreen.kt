@@ -187,6 +187,8 @@ fun CollectionDetailScreen(
     var alertTarget by remember { mutableStateOf<CollectionEntry?>(null) }
     val isWishlist = collection?.kind == CollectionType.WISHLIST
     var settingAll by remember { mutableStateOf(false) }
+    // The Wishlist's "cards you said no to", opened. Kept here, not in its row, so scrolling it away keeps it open.
+    var showNotWanted by remember { mutableStateOf(false) }
     // "Got it" on the Under your price box, kept on this device: card -> its price then. A card that
     // goes back over its target is forgotten, so the next time under shows again.
     val appContext = LocalContext.current
@@ -278,9 +280,6 @@ fun CollectionDetailScreen(
                     SelectionAction("Export list", Icons.Filled.IosShare) { bulk = "export" },
                     SelectionAction("Remove from binder", Icons.Filled.Delete, destructive = true) { bulk = "remove" }
                 )
-            ) else if (isWishlist && collection?.entries?.isNotEmpty() == true) WishlistFoot(
-                onSetAll = { settingAll = true },
-                onBuyAll = { collection?.let { c -> buyListUrl(c.entries.map { BuyLine(it.name, it.quantity) })?.let { openUrl(context, it) } } }
             )
         },
         topBar = {
@@ -329,11 +328,7 @@ fun CollectionDetailScreen(
             "export" -> ExportCollectionDialog(collection?.name ?: "binder", viewModel::exportText, buildCsv = { viewModel.exportCsv() }) { listDialog = null }
         }
         Column(modifier = Modifier.fillMaxSize().background(Bg).padding(padding)) {
-            if (collection?.entries?.isNotEmpty() == true) {
-                Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)) {
-                    DashboardPanel(dashboard)
-                }
-            }
+            // The binder's own search stays put above the list, as the Collection's header search does.
             if (!embedded) OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::onQueryChange,
@@ -359,148 +354,158 @@ fun CollectionDetailScreen(
                 ),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)
             )
-            // A search that found cards by their tag says which, since tags only show in the zoom.
-            if (query.isNotBlank()) {
-                val tagHits = entries.filterNot { it.name.contains(query.trim(), ignoreCase = true) }
-                    .flatMap { RoleTags.matched(cardTags[it.name].orEmpty(), query) }.distinct()
-                Text(
-                    buildString {
-                        append("${entries.size} ${if (entries.size == 1) "card" else "cards"}")
-                        if (tagHits.isNotEmpty()) append(" · tag: " + tagHits.take(2).joinToString(", ") { RoleTags.label(it) } + if (tagHits.size > 2) "…" else "")
-                        if (tagging != null) append(" · finding tags…")
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = TextMuted,
-                    modifier = Modifier.padding(start = 22.dp, end = 20.dp, bottom = 6.dp)
-                )
-            }
-
             val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
-            if (isWishlist && under.isNotEmpty()) {
-                UnderYourPriceBox(
-                    hits = under,
-                    onBuy = {
-                        val url = if (under.size == 1) buyCardUrl(under.first().watch.entry.name)
-                        else buyListUrl(under.map { BuyLine(it.watch.entry.name, maxOf(1, it.watch.entry.quantity + it.watch.entry.foilQuantity)) })
-                        url?.let { openUrl(context, it) }
-                    },
-                    onGotIt = { gotIt = withGotIt(gotIt, under).also { PriceAlerts.saveGotIt(appContext, it) } },
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
-                )
-            }
-            if (collection?.isWishlist == true) {
-                Text(
-                    "Cards you want. They don't count as owned. Cards your decks are considering that you don't own are added here by themselves, until you own them — take one off and it stays off.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
-                )
-            }
+            val hasCards = collection?.entries?.isNotEmpty() == true
             val notWanted = collection?.notWanted.orEmpty()
-            if (collection?.isWishlist == true && notWanted.isNotEmpty()) {
-                var showNotWanted by remember { mutableStateOf(false) }
-                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+            // One list, like the Collection's other tabs: the dashboard, the Wishlist's boxes and notes
+            // are its first rows and scroll away with the cards; the Wishlist's buttons are its last.
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = if (embedded) 4.dp else 0.dp, bottom = if (embedded) 120.dp else 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (hasCards) item(key = "head:dashboard") { DashboardPanel(dashboard) }
+                // A search that found cards by their tag says which, since tags only show in the zoom.
+                if (query.isNotBlank()) item(key = "head:count") {
+                    val tagHits = entries.filterNot { it.name.contains(query.trim(), ignoreCase = true) }
+                        .flatMap { RoleTags.matched(cardTags[it.name].orEmpty(), query) }.distinct()
                     Text(
-                        "${notWanted.size} ${if (notWanted.size == 1) "card" else "cards"} you said no to" +
-                            if (showNotWanted) "" else " · tap to show",
+                        buildString {
+                            append("${entries.size} ${if (entries.size == 1) "card" else "cards"}")
+                            if (tagHits.isNotEmpty()) append(" · tag: " + tagHits.take(2).joinToString(", ") { RoleTags.label(it) } + if (tagHits.size > 2) "…" else "")
+                            if (tagging != null) append(" · finding tags…")
+                        },
                         style = MaterialTheme.typography.labelMedium,
-                        color = Gold,
-                        modifier = Modifier.clickable { showNotWanted = !showNotWanted }
+                        color = TextMuted,
+                        modifier = Modifier.padding(start = 2.dp)
                     )
-                    if (showNotWanted) {
-                        notWanted.forEach { name ->
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                                Text(
-                                    name,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextMuted,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                }
+                if (isWishlist && under.isNotEmpty()) item(key = "head:under") {
+                    UnderYourPriceBox(
+                        hits = under,
+                        onBuy = {
+                            val url = if (under.size == 1) buyCardUrl(under.first().watch.entry.name)
+                            else buyListUrl(under.map { BuyLine(it.watch.entry.name, maxOf(1, it.watch.entry.quantity + it.watch.entry.foilQuantity)) })
+                            url?.let { openUrl(context, it) }
+                        },
+                        onGotIt = { gotIt = withGotIt(gotIt, under).also { PriceAlerts.saveGotIt(appContext, it) } }
+                    )
+                }
+                if (collection?.isWishlist == true) item(key = "head:about") {
+                    Text(
+                        "Cards you want. They don't count as owned. Cards your decks are considering that you don't own are added here by themselves, until you own them — take one off and it stays off.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
+                    )
+                }
+                if (collection?.isWishlist == true && notWanted.isNotEmpty()) {
+                    item(key = "head:not-wanted") {
+                        Text(
+                            "${notWanted.size} ${if (notWanted.size == 1) "card" else "cards"} you said no to" +
+                                if (showNotWanted) "" else " · tap to show",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Gold,
+                            modifier = Modifier.clickable { showNotWanted = !showNotWanted }
+                        )
+                    }
+                    if (showNotWanted) items(notWanted, key = { "not-wanted:$it" }) { name ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                name,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextMuted,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            TextButton(onClick = { viewModel.wantAgain(name) }) { Text("Want it", color = Gold) }
+                        }
+                    }
+                }
+                if (collection?.isUnsorted == true && hasCards) item(key = "head:unsorted") {
+                    Text(
+                        "Cards you own that aren't in a binder yet. Long-press a card and choose Move to put it in a binder — or a new one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
+                    )
+                }
+                when {
+                    !hasCards -> item(key = "empty") {
+                        when {
+                            collection?.isUnsorted == true -> EmptyPrompt(Icons.Filled.Inbox, "All sorted — every card is in a binder.")
+                            isWishlist -> EmptyPrompt(
+                                Icons.Filled.Star,
+                                "Your wishlist is empty. Add cards you want from any card's page; cards your decks are considering show up here too.",
+                                actions = listOfNotNull(onOpenSearch?.let { EmptyAction("Search cards", Icons.Filled.Search, it) })
+                            )
+                            else -> EmptyPrompt(
+                                Icons.Filled.CollectionsBookmark,
+                                "No cards yet. Add cards from a card's page, or scan them in.",
+                                actions = listOfNotNull(onOpenScan?.let { EmptyAction("Scan cards", Icons.Filled.PhotoCamera, it) })
+                            )
+                        }
+                    }
+                    entries.isEmpty() -> item(key = "no-match") { EmptyPrompt(Icons.Filled.SearchOff, "No cards match \"$query\".") }
+                    else -> {
+                        item(key = "head:total") {
+                            if (isWishlist) Text(
+                                targetCount(collection?.entries.orEmpty()).uppercase(),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextMuted,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            ) else Text(
+                                "$total cards · ${collection?.entries?.size ?: 0} unique",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                        }
+                        if (viewMode == CardViewMode.GRID) {
+                            cardGrid(entries, columns = gridCols, key = { it.scryfallId }) { entry ->
+                                CollectionCardTile(
+                                    entry = entry,
+                                    selecting = selecting,
+                                    selected = entry.scryfallId in pickedIds,
+                                    onClick = { if (selecting) toggle(entry) else zoomId = entry.scryfallId },
+                                    onLongClick = { toggle(entry) }
                                 )
-                                TextButton(onClick = { viewModel.wantAgain(name) }) { Text("Want it", color = Gold) }
+                            }
+                        } else {
+                            cardGrid(entries, columns = listCols, key = { it.scryfallId }) { entry ->
+                                CollectionCardRow(
+                                    entry = entry,
+                                    selecting = selecting,
+                                    selected = entry.scryfallId in pickedIds,
+                                    onClick = { if (selecting) toggle(entry) else zoomId = entry.scryfallId },
+                                    onLongClick = { toggle(entry) },
+                                    onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
+                                    onRemove = { removeTarget = entry },
+                                    // A wishlist shows each card's price now, and can watch for it to drop.
+                                    // ...except a card wanted from the spoilers, which has none until its set is out.
+                                    price = if (isWishlist && preReleaseLabel(entry, java.time.LocalDate.now().toString()) == null) prices[entry.scryfallId] else null,
+                                    priceTrack = if (isWishlist) priceTracks?.get(entry.scryfallId) else null,
+                                    onPriceAlert = if (isWishlist) ({ alertTarget = entry }) else null,
+                                    considering = if (entry.auto) decksConsidering(decks, entry.name).joinToString(", ").ifEmpty { null } else null,
+                                    chips = if (isWishlist) emptyList() else entryChips(collection?.id.orEmpty(), entry, placesById, lentByEntry),
+                                    chipActions = ChipActions(
+                                        onPlace = onOpenPlaceAt,
+                                        onLent = onOpenLoans,
+                                        onPutAway = { puttingAway = entry },
+                                        onMore = { onViewDetails(entry.name) }
+                                    )
+                                )
                             }
                         }
                     }
                 }
-            }
-            if (collection?.isUnsorted == true && collection?.entries?.isNotEmpty() == true) {
-                Text(
-                    "Cards you own that aren't in a binder yet. Long-press a card and choose Move to put it in a binder — or a new one.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
-                )
-            }
-            when {
-                collection?.entries.isNullOrEmpty() -> when {
-                    collection?.isUnsorted == true -> EmptyPrompt(Icons.Filled.Inbox, "All sorted — every card is in a binder.")
-                    isWishlist -> EmptyPrompt(
-                        Icons.Filled.Star,
-                        "Your wishlist is empty. Add cards you want from any card's page; cards your decks are considering show up here too.",
-                        actions = listOfNotNull(onOpenSearch?.let { EmptyAction("Search cards", Icons.Filled.Search, it) })
+                // The Wishlist's "Set targets for all… / Buy these cards": the list's last row, as no
+                // other Collection tab pins a bar over its cards (only the pick's bar while picking).
+                if (isWishlist && hasCards && !selecting) item(key = "foot") {
+                    WishlistFoot(
+                        onSetAll = { settingAll = true },
+                        onBuyAll = { collection?.let { c -> buyListUrl(c.entries.map { BuyLine(it.name, it.quantity) })?.let { openUrl(context, it) } } },
+                        modifier = Modifier.padding(top = 6.dp)
                     )
-                    else -> EmptyPrompt(
-                        Icons.Filled.CollectionsBookmark,
-                        "No cards yet. Add cards from a card's page, or scan them in.",
-                        actions = listOfNotNull(onOpenScan?.let { EmptyAction("Scan cards", Icons.Filled.PhotoCamera, it) })
-                    )
-                }
-                entries.isEmpty() -> EmptyPrompt(Icons.Filled.SearchOff, "No cards match \"$query\".")
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    item {
-                        if (isWishlist) Text(
-                            targetCount(collection?.entries.orEmpty()).uppercase(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TextMuted,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        ) else Text(
-                            "$total cards · ${collection?.entries?.size ?: 0} unique",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                    }
-                    if (viewMode == CardViewMode.GRID) {
-                        cardGrid(entries, columns = gridCols, key = { it.scryfallId }) { entry ->
-                            CollectionCardTile(
-                                entry = entry,
-                                selecting = selecting,
-                                selected = entry.scryfallId in pickedIds,
-                                onClick = { if (selecting) toggle(entry) else zoomId = entry.scryfallId },
-                                onLongClick = { toggle(entry) }
-                            )
-                        }
-                    } else {
-                        cardGrid(entries, columns = listCols, key = { it.scryfallId }) { entry ->
-                            CollectionCardRow(
-                                entry = entry,
-                                selecting = selecting,
-                                selected = entry.scryfallId in pickedIds,
-                                onClick = { if (selecting) toggle(entry) else zoomId = entry.scryfallId },
-                                onLongClick = { toggle(entry) },
-                                onQuantityChange = { qty, foil -> viewModel.setQuantity(entry, qty, foil) },
-                                onRemove = { removeTarget = entry },
-                                // A wishlist shows each card's price now, and can watch for it to drop.
-                                // ...except a card wanted from the spoilers, which has none until its set is out.
-                                price = if (isWishlist && preReleaseLabel(entry, java.time.LocalDate.now().toString()) == null) prices[entry.scryfallId] else null,
-                                priceTrack = if (isWishlist) priceTracks?.get(entry.scryfallId) else null,
-                                onPriceAlert = if (isWishlist) ({ alertTarget = entry }) else null,
-                                considering = if (entry.auto) decksConsidering(decks, entry.name).joinToString(", ").ifEmpty { null } else null,
-                                chips = if (isWishlist) emptyList() else entryChips(collection?.id.orEmpty(), entry, placesById, lentByEntry),
-                                chipActions = ChipActions(
-                                    onPlace = onOpenPlaceAt,
-                                    onLent = onOpenLoans,
-                                    onPutAway = { puttingAway = entry },
-                                    onMore = { onViewDetails(entry.name) }
-                                )
-                            )
-                        }
-                    }
                 }
             }
         }

@@ -9,6 +9,15 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "wishlist-scroll",
+        "Wishlist tab scrolls like the other tabs",
+        "1) Collection › Wishlist (with a few cards on it). Swipe up: the dashboard, the \"Under your price\" box, the \"Cards you want…\" note and \"N cards you said no to\" scroll away with the cards — the whole page moves, not just the cards under them. The Collection's title, search and tabs stay put, the same as on Cards, Binders and Storage. " +
+            "2) Scroll to the bottom: \"Set targets for all…\" and \"Buy these cards\" are the last row, under the last card, and nothing covers the last card any more. " +
+            "3) Tap \"N cards you said no to\" to open it, scroll down and back up: it's still open. " +
+            "4) Switch the view (grid / list button beside the total) and check the grid scrolls the same way. Search in the header: the \"3 cards\" line scrolls with the list too. " +
+            "5) Collection › Binders › open a binder: its search box stays at the top, its dashboard scrolls away with the cards, in list and grid view. Long-press a card: the pick's bar at the bottom works as before."
+    ),
+    TesterNote(
         "storage-rules",
         "Storage rules: say what a place holds, how its sections go and the order inside them — and which place wins",
         "1) Collection › Storage › open a box › ⋯ › Change place (or New place). Under \"Rules\": Holds — Everything, Choose… or one of your saved filters. Choose… opens the Cards filter panel (Type, Text, Colors, Rarity, Tags incl. Untagged) with Advanced filters behind it; it says \"Holds blue cards\" and how many of your cards fit. Done. " +
