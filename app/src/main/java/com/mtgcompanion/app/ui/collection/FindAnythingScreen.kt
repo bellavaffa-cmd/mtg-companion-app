@@ -1,5 +1,8 @@
 package com.mtgcompanion.app.ui.collection
 
+import com.mtgcompanion.app.data.findChipDescription
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -84,10 +87,12 @@ fun FindAnythingScreen(
     onOpenPlace: (String) -> Unit,
     onOpenDeck: (String) -> Unit,
     /** Search, for cards that aren't the user's. */
-    onSearchAll: (String) -> Unit
+    onSearchAll: (String) -> Unit,
+    /** What's typed to start with: the Collection's Search everywhere. */
+    initialQuery: String = ""
 ) {
     val colors = LocalAppColors.current
-    var query by rememberSaveable { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf(initialQuery) }
     var finder by remember { mutableStateOf<Finder?>(null) }
     LaunchedEffect(collections, decks) {
         finder = withContext(Dispatchers.Default) { Finder(buildFindIndex(collections, decks)) }
@@ -140,7 +145,7 @@ fun FindAnythingScreen(
             ) {
                 if (result.cards.isNotEmpty()) {
                     item(key = "h-cards") { SectionLabel("Your cards") }
-                    items(result.cards, key = { "c-" + it.name }) { card -> CardResult(card) { onOpenCard(card.name) } }
+                    items(result.cards, key = { "c-" + it.name }) { card -> CardResult(card, onOpenPlace, onOpenDeck) { onOpenCard(card.name) } }
                     if (result.moreCards > 0) item(key = "more") {
                         Text("And ${result.moreCards} more — type a little more of the name", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
                     }
@@ -184,7 +189,7 @@ private fun SectionLabel(text: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CardResult(card: FoundCard, onClick: () -> Unit) {
+private fun CardResult(card: FoundCard, onOpenPlace: (String) -> Unit, onOpenDeck: (String) -> Unit, onClick: () -> Unit) {
     val colors = LocalAppColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -211,6 +216,15 @@ private fun CardResult(card: FoundCard, onClick: () -> Unit) {
                         color = if (lent) colors.accentLight else colors.textPrimary,
                         modifier = Modifier.clip(RoundedCornerShape(12.dp))
                             .background(if (lent) colors.accent.copy(alpha = 0.16f) else colors.surface2)
+                            // A place or a deck opens; every chip says itself in full to a screen reader.
+                            .then(
+                                when {
+                                    chip.kind == FindChipKind.PLACE && chip.placeId != null -> Modifier.clickable(role = Role.Button) { onOpenPlace(chip.placeId) }
+                                    chip.kind == FindChipKind.DECK && chip.deckId != null -> Modifier.clickable(role = Role.Button) { onOpenDeck(chip.deckId) }
+                                    else -> Modifier
+                                }
+                            )
+                            .semantics { contentDescription = findChipDescription(chip) }
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }

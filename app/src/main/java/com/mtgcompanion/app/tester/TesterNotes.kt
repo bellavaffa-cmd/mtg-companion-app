@@ -9,12 +9,20 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "sort-by-type",
-        "Sort a pile: a ready-made recipe by card type",
-        "1) Collection › Sort a pile. Under Start from, second (after Commander by colour) is a new \"By card type\", its line \"Creatures · Instants · Sorceries · Artifacts · Enchantments · Lands — an artifact creature goes with Creatures\". " +
-            "2) Tap it: the table shows 1 Decks need, 2 Friends want, 3 Binder gaps, then Creatures, Planeswalkers, Battles, Instants, Sorceries, Artifacts, Enchantments, Lands, Other (12 piles). " +
-            "3) Sort a few cards: a creature, an instant, a land, and some with two types. A card goes on the first of those piles it fits: an artifact creature or enchantment creature (and Dryad Arbor) on Creatures, an artifact land on Artifacts, Urza's Saga on Enchantments, a spell // land card by its front face (Instant // Land on Instants). Anything none of those (a Conspiracy, a Scheme) goes on Other. " +
-            "4) Make your own recipe: the Split by choices now read Value, Colour, Card type, Set, Mana value, Rarity, Colour identity, A–Z, Collector number — Card type in the first row. Your saved recipes are unchanged (open one that splits by colour identity: still colour identity). " +
-            "5) The other templates are as before: Binder by set, Rares by value, What my collection needs."
+        "collection-layout",
+        "Collection: four tabs — Cards, Binders, Storage, Wishlist — and every card says where it is",
+        "1) Open Collection. No tile page any more: one header (value, sync, ⋮ menu), one search bar, and four tabs Cards · Binders · Storage · Wishlist right away. Swipe or tap between them; TalkBack reads each as a tab. " +
+            "2) Leave on Storage, go to Home and come back: it opens on Storage again. Back from any tab leaves the Collection (no tile page in between). " +
+            "3) Tap the value: Value history. If Upkeep has something, an amber \"Needs attention · N\" sits under the search; tap it for Upkeep's list. With nothing to do it isn't there. " +
+            "4) Cards: type in the search — only Cards narrows; at the bottom, \"Search everywhere for …\" opens Find anything with it typed. The filter button (and view button) are in the search bar; Advanced filters work as before. " +
+            "5) Cards rows (list view) show where the copies are: \"Blue box › Instants ×2\", \"Talrand deck ×1\", \"Lent to Sam ×1\", two at most then \"+N\" (opens the card). A place chip opens the place at that section (a binder at its page), a deck chip the deck, a loan chip Loans. Copies with no place show an amber \"No place yet · Put away\": tap it, pick a place, and the chip turns into that place. " +
+            "6) Group by: None / Set / Binder / Place. Set shows each set with \"41/92\" (owned/size) and opens the set's cards (this replaces the Sets tab). Place puts No place yet last. " +
+            "7) Quick filters Lent out, For sale, No place yet, Graded (each with its count, one at a time); \"Manage…\" opens Loans, To sell, Upkeep or Graded cards. " +
+            "8) Long-press a card: selecting still works (Add to…, Export, Remove), and a swipe doesn't leave Cards while picking. Tap a card: its zoom lists binders with where each binder's copies are kept (\"Red box ×2\"). " +
+            "9) Binders: Unsorted, your binders (each saying \"kept in N places\"), New binder, By tag binders, and Goals (every open goal with its bar, New goal, See all). The Wishlist isn't here any more. Open a binder: its rows have the same chips. " +
+            "10) Storage: \"Put cards away\" on top and ⋮ beside it (Upkeep, Set up storage, Value by place, Space, To sell, Sort a new pile, Data and speed, Sharing storage at home). Then your places (each with \"in N binders\"), Deck boxes, Sealed, Graded (new list of every slab: grade, value, place — tap opens the card), Lent out, Gear, and how much has a place. Search narrows the places. " +
+            "11) Wishlist tab: the Wishlist as before — price targets, Under your price, spoiler cards, Buy these cards, said-no list — searched by the header's search. " +
+            "12) New sets moved to Search (top of the page). Import list, New binder, Share my collection and (with an account) Shared with me are in the header's ⋮ menu. Scan stays in the bottom bar. " +
+            "13) Links still land right: Friends › See what friends share opens Shared with me; Settings › What's new tour runs a new 5-step tour over the tabs."
     )
 )

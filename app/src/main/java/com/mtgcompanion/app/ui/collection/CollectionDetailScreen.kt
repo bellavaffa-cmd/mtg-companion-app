@@ -105,6 +105,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionEntry
+import com.mtgcompanion.app.data.LocationChip
+import com.mtgcompanion.app.data.entryChips
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import androidx.activity.compose.BackHandler
 import com.mtgcompanion.app.ui.common.CardZoomDialog
@@ -140,10 +142,25 @@ fun CollectionDetailScreen(
     onShare: (() -> Unit)? = null,
     /** The empty binder's and Wishlist's buttons. */
     onOpenSearch: (() -> Unit)? = null,
-    onOpenScan: (() -> Unit)? = null
+    onOpenScan: (() -> Unit)? = null,
+    /**
+     * Shown as the Collection's Wishlist tab: no title or back (the Collection's header is above), and
+     * searched by the header's search, [externalQuery], rather than a field of its own.
+     */
+    embedded: Boolean = false,
+    externalQuery: String? = null,
+    /** A row's place chip: the place, at the box's section or the binder's page. */
+    onOpenPlaceAt: (String, String?, Int?) -> Unit = { _, _, _ -> },
+    /** A row's "Lent" chip: the Loans screen. */
+    onOpenLoans: () -> Unit = {}
 ) {
     val collection by viewModel.collection.collectAsState()
     val entries by viewModel.entries.collectAsState()
+    LaunchedEffect(externalQuery) { if (externalQuery != null) viewModel.onQueryChange(externalQuery) }
+    // Where each row's copies are (CollectionLayout.kt): its places, and copies with no place yet.
+    val lentByEntry by viewModel.lentByEntry.collectAsState()
+    // A row's "No place yet · Put away": the entry whose copies are getting a place.
+    var puttingAway by remember { mutableStateOf<CollectionEntry?>(null) }
     val query by viewModel.query.collectAsState()
     val dashboard by viewModel.dashboard.collectAsState()
     // A wishlist card with a target shows the price its target is checked against.
@@ -187,6 +204,7 @@ fun CollectionDetailScreen(
     var listDialog by remember { mutableStateOf<String?>(null) } // "import" or "export"
     val importProgress by viewModel.importProgress.collectAsState()
     val storagePlaces by viewModel.places.collectAsState()
+    val placesById = remember(storagePlaces) { storagePlaces.associateBy { it.id } }
     // Cards picked by pressing and holding (scryfall ids), and the action open for them:
     // "move", "copy", "remove" or "export".
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -202,6 +220,53 @@ fun CollectionDetailScreen(
     // Name of the card whose "find similar" overlay is open, if any.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
     val addTo = LocalAddToFeedback.current
+
+    // The binder's actions: in the top bar, or beside the Wishlist tab's total when embedded.
+    val barActions: @Composable () -> Unit = {
+        if (!embedded) SyncIconButton()
+                    ViewModeButton(viewMode, viewModel::setViewMode)
+                if (onShare != null) {
+                    IconButton(onClick = onShare) {
+                        Icon(Icons.Filled.GroupAdd, contentDescription = "Share with friends", tint = TextPrimary)
+                    }
+                }
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Binder actions", tint = TextPrimary)
+                    }
+                    // The binder's own actions, in a sheet like a card's: each with a line on what
+                    // it does, the destructive one last.
+                    val c = collection
+                    if (c != null) {
+                        val binderActions = buildList {
+                            add(CardMenuAction("Import list", Icons.AutoMirrored.Filled.PlaylistAdd, description = "A list from Moxfield, ManaBox, Archidekt…") { viewModel.resetImport(); listDialog = "import" })
+                            add(CardMenuAction("Export list", Icons.Filled.IosShare, description = "For other apps, as text or CSV") { listDialog = "export" })
+                            // The Wishlist is a shopping list: buy the lot in one basket.
+                            if (c.isWishlist && c.entries.isNotEmpty()) add(
+                                CardMenuAction("Buy these cards", Icons.Filled.Sell, description = "All of them at TCGplayer, in one basket") {
+                                    buyListUrl(c.entries.map { BuyLine(it.name, it.quantity) })?.let { openUrl(context, it) }
+                                }
+                            )
+                            // The Wishlist is always there.
+                            if (!c.isWishlist) add(
+                                CardMenuAction(
+                                    if (c.isUnsorted) "Remove all cards" else "Delete binder",
+                                    Icons.Filled.Delete,
+                                    destructive = true
+                                ) { confirmDeleteBinder = true }
+                            )
+                        }
+                        val cardCount = c.entries.sumOf { it.quantity + it.foilQuantity }
+                        CardActionMenu(
+                            expanded = menuOpen,
+                            onDismiss = { menuOpen = false },
+                            actions = binderActions,
+                            title = c.name,
+                            subtitle = "$cardCount card${if (cardCount == 1) "" else "s"}"
+                        )
+                    }
+                }
+    }
 
     Scaffold(
         containerColor = Bg,
@@ -224,7 +289,18 @@ fun CollectionDetailScreen(
                 total = entries.size,
                 onSelectAll = { selected = pickedIds + entries.map { it.scryfallId } },
                 onClear = { selected = emptySet() }
-            ) else TopAppBar(
+            ) else if (embedded) Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 4.dp)
+            ) {
+                // What the Wishlist would cost today.
+                val worth = if (isWishlist) wishlistTotal(collection?.entries.orEmpty(), prices) else null
+                Text(
+                    if (worth != null) rememberMoney().format(worth, whole = true) + " to buy it all" else "",
+                    style = MaterialTheme.typography.labelLarge, color = Gold, maxLines = 1, modifier = Modifier.weight(1f)
+                )
+                barActions()
+            } else TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(collection?.name ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).a11yHeading())
@@ -236,51 +312,7 @@ fun CollectionDetailScreen(
                 navigationIcon = {
                     BackButton(onClick = onBack)
                 },
-                actions = {
-                    SyncIconButton()
-                    ViewModeButton(viewMode, viewModel::setViewMode)
-                    if (onShare != null) {
-                        IconButton(onClick = onShare) {
-                            Icon(Icons.Filled.GroupAdd, contentDescription = "Share with friends", tint = TextPrimary)
-                        }
-                    }
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Binder actions", tint = TextPrimary)
-                        }
-                        // The binder's own actions, in a sheet like a card's: each with a line on what
-                        // it does, the destructive one last.
-                        val c = collection
-                        if (c != null) {
-                            val binderActions = buildList {
-                                add(CardMenuAction("Import list", Icons.AutoMirrored.Filled.PlaylistAdd, description = "A list from Moxfield, ManaBox, Archidekt…") { viewModel.resetImport(); listDialog = "import" })
-                                add(CardMenuAction("Export list", Icons.Filled.IosShare, description = "For other apps, as text or CSV") { listDialog = "export" })
-                                // The Wishlist is a shopping list: buy the lot in one basket.
-                                if (c.isWishlist && c.entries.isNotEmpty()) add(
-                                    CardMenuAction("Buy these cards", Icons.Filled.Sell, description = "All of them at TCGplayer, in one basket") {
-                                        buyListUrl(c.entries.map { BuyLine(it.name, it.quantity) })?.let { openUrl(context, it) }
-                                    }
-                                )
-                                // The Wishlist is always there.
-                                if (!c.isWishlist) add(
-                                    CardMenuAction(
-                                        if (c.isUnsorted) "Remove all cards" else "Delete binder",
-                                        Icons.Filled.Delete,
-                                        destructive = true
-                                    ) { confirmDeleteBinder = true }
-                                )
-                            }
-                            val cardCount = c.entries.sumOf { it.quantity + it.foilQuantity }
-                            CardActionMenu(
-                                expanded = menuOpen,
-                                onDismiss = { menuOpen = false },
-                                actions = binderActions,
-                                title = c.name,
-                                subtitle = "$cardCount card${if (cardCount == 1) "" else "s"}"
-                            )
-                        }
-                    }
-                },
+                actions = { barActions() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
             )
         }
@@ -302,7 +334,7 @@ fun CollectionDetailScreen(
                     DashboardPanel(dashboard)
                 }
             }
-            OutlinedTextField(
+            if (!embedded) OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::onQueryChange,
                 label = { Text("Name or tag, e.g. ramp", color = TextMuted) },
@@ -458,7 +490,14 @@ fun CollectionDetailScreen(
                                 price = if (isWishlist && preReleaseLabel(entry, java.time.LocalDate.now().toString()) == null) prices[entry.scryfallId] else null,
                                 priceTrack = if (isWishlist) priceTracks?.get(entry.scryfallId) else null,
                                 onPriceAlert = if (isWishlist) ({ alertTarget = entry }) else null,
-                                considering = if (entry.auto) decksConsidering(decks, entry.name).joinToString(", ").ifEmpty { null } else null
+                                considering = if (entry.auto) decksConsidering(decks, entry.name).joinToString(", ").ifEmpty { null } else null,
+                                chips = if (isWishlist) emptyList() else entryChips(collection?.id.orEmpty(), entry, placesById, lentByEntry),
+                                chipActions = ChipActions(
+                                    onPlace = onOpenPlaceAt,
+                                    onLent = onOpenLoans,
+                                    onPutAway = { puttingAway = entry },
+                                    onMore = { onViewDetails(entry.name) }
+                                )
                             )
                         }
                     }
@@ -500,6 +539,36 @@ fun CollectionDetailScreen(
             )
         }
         CardZoomDialog(zoomCards, entries.indexOfFirst { it.scryfallId == id }.coerceAtLeast(0)) { zoomId = null }
+    }
+
+    puttingAway?.let { entry ->
+        val (plain, foil) = com.mtgcompanion.app.data.unplacedCopies(entry)
+        val here = collection?.id
+        PlacePickerDialog("Give ${entry.name} a place", storagePlaces, onDismiss = { puttingAway = null }) { placeId ->
+            puttingAway = null
+            storagePlaces.firstOrNull { it.id == placeId }?.let { place ->
+                com.mtgcompanion.app.data.CopyHistoryStore.record(listOf(com.mtgcompanion.app.data.putAwayMove(
+                    System.currentTimeMillis(), com.mtgcompanion.app.data.MoveCard(entry.name, entry.scryfallId), plain + foil,
+                    com.mtgcompanion.app.data.MoveSpot(place.id, place.name), null
+                )))
+            }
+            // This binder's copies of this printing: plain ones, then foils, each to where the place's rule puts them.
+            viewModel.changeStorage { current ->
+                val place = com.mtgcompanion.app.data.placesOf(current).firstOrNull { it.id == placeId } ?: return@changeStorage current
+                val spot = com.mtgcompanion.app.data.suggestSpot(place, com.mtgcompanion.app.data.CardFacts(entry.name), current).first
+                current.map { c ->
+                    if (c.id != here) c
+                    else c.copy(entries = c.entries.map { e ->
+                        if (e.scryfallId != entry.scryfallId) e
+                        else {
+                            val (u, f) = com.mtgcompanion.app.data.unplacedCopies(e)
+                            val withPlain = com.mtgcompanion.app.data.placeCopies(e, spot, u, foil = false).first
+                            com.mtgcompanion.app.data.placeCopies(withPlain, spot, f, foil = true).first
+                        }
+                    })
+                }
+            }
+        }
     }
 
     similarSearchFor?.let { name ->
@@ -646,7 +715,10 @@ private fun CollectionCardRow(
     /** Wishlists: opens this card's target sheet; the row then says how far off its target it is. */
     onPriceAlert: (() -> Unit)? = null,
     /** The Wishlist: the decks considering a card it has because of them. */
-    considering: String? = null
+    considering: String? = null,
+    /** Owned binders: where this entry's copies are (CollectionLayout.kt's entryChips). */
+    chips: List<LocationChip> = emptyList(),
+    chipActions: ChipActions = ChipActions()
 ) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -691,6 +763,7 @@ private fun CollectionCardRow(
                         Icon(Icons.Filled.NotificationsActive, contentDescription = "Price alert set", tint = Gold, modifier = Modifier.size(14.dp))
                     }
                 }
+                if (!selecting) LocationChips(chips, chipActions)
                 considering?.let {
                     Text("Considering in $it", style = MaterialTheme.typography.labelMedium, color = GoldDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }

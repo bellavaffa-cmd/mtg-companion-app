@@ -82,14 +82,24 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
 import com.mtgcompanion.app.ui.common.rememberMoney
 import com.mtgcompanion.app.data.sealedOf
 import com.mtgcompanion.app.data.sealedTotalUsd
+import com.mtgcompanion.app.data.bindersByPlace
+import com.mtgcompanion.app.data.bindersIn
+import com.mtgcompanion.app.data.gradedOf
+import com.mtgcompanion.app.data.inBindersLine
+import com.mtgcompanion.app.ui.common.a11yHeading
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.semantics.Role
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.UUID
 
 /*
- * The Collection's Storage tab: how much of the collection has a place, the places themselves as a
- * tree with their copies, the deck boxes and the copies lent out — and the dialogs to make, change
- * and pick a place. The logic is in data/StoragePlaces.kt. Mirrors the web app's
+ * The Collection's Storage tab: Put cards away (and the other storage tools under More), the places
+ * themselves as a tree with their copies and the binders using them, then deck boxes, sealed, graded,
+ * lent out and gear, and how much of the collection has a place — and the dialogs to make, change and
+ * pick a place. The logic is in data/StoragePlaces.kt. Mirrors the web app's
  * src/collection/StorageTab.tsx.
  */
 
@@ -115,9 +125,11 @@ fun StorageTab(
     onPutAway: (String) -> Unit,
     onOpenDecks: () -> Unit,
     onChange: (StorageChange) -> Unit,
+    /** The header's search: narrows the places to those it names. */
+    query: String = "",
     /** The Loans screen (LoansScreen.kt). */
     onOpenLoans: () -> Unit = {},
-    /** The scanner sorting a new pile into piles (SortPanel.kt). */
+    /** Sort a pile's recipes (SortRecipesScreen.kt). */
     onSortPile: () -> Unit = {},
     /** Value by place (ValueByPlaceScreen.kt). */
     onOpenValue: () -> Unit = {},
@@ -133,60 +145,81 @@ fun StorageTab(
     onOpenHousehold: () -> Unit = {},
     /** Sealed product (SealedScreen.kt). */
     onOpenSealed: () -> Unit = {},
+    /** Every graded copy (GradedListScreen.kt). */
+    onOpenGraded: () -> Unit = {},
     /** Gear: sleeves, deck boxes, tokens (GearScreen.kt). */
     onOpenGear: () -> Unit = {},
     /** Settings › Data and speed: the backup (DataAndSpeedSection.kt). */
-    onOpenDataAndSpeed: () -> Unit = {}
+    onOpenDataAndSpeed: () -> Unit = {},
+    /** Search everywhere (Find anything) with the header's search. */
+    onSearchEverywhere: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val places = placesOf(collections)
     val summary = remember(collections, decks) { storageSummary(collections, decks) }
+    val byPlace = remember(collections) { bindersByPlace(collections) }
     var editing by remember { mutableStateOf(false) }
     var choosing by remember { mutableStateOf(false) }
+    var more by remember { mutableStateOf(false) }
     val share = if (summary.total > 0) summary.placed.toFloat() / summary.total else 0f
     val upkeep = rememberUpkeep(collections, decks)
     val money = rememberMoney()
+    val q = query.trim()
+    val putAway = { if (places.isEmpty()) onSetUp() else choosing = true }
+    // A place's line: what it is, and the binders with copies in it ("in 2 binders").
+    fun detail(p: StoragePlace, withSubtitle: Boolean): String? =
+        listOf(if (withSubtitle) placeSubtitle(p) else "", inBindersLine(bindersIn(byPlace, places, p.id))).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { null }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface).padding(14.dp)
-            ) {
-                Text(
-                    "${count(summary.placed)} of ${count(summary.total)} ${if (summary.total == 1) "copy has" else "copies have"} a place",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = colors.textPrimary
-                )
-                Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(colors.surface2)) {
-                    Box(Modifier.fillMaxWidth(share).height(8.dp).clip(RoundedCornerShape(4.dp)).background(colors.accent))
-                }
-                if (summary.unplaced > 0) {
+        // Put cards away, and the rest of storage's tools behind More.
+        item(key = "actions") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = putAway,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent, contentColor = colors.onAccent),
+                    modifier = Modifier.weight(1f).height(48.dp)
+                ) {
                     Text(
-                        "${count(summary.unplaced)} without a place · Put them away",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = colors.accentLight,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { if (places.isEmpty()) editing = true else choosing = true }
-                            .padding(vertical = 4.dp)
+                        if (summary.unplaced > 0) "Put cards away · ${count(summary.unplaced)}" else "Put cards away",
+                        fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
+                }
+                Box {
+                    IconButton(onClick = { more = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More storage tools", tint = colors.textPrimary)
+                    }
+                    DropdownMenu(expanded = more, onDismissRequest = { more = false }, containerColor = colors.surface) {
+                        val n = upkeep?.items?.size ?: 0
+                        listOf(
+                            (if (n > 0) "Upkeep · $n" else "Upkeep") to onOpenUpkeep,
+                            "Set up storage" to onSetUp,
+                            "Value by place" to onOpenValue,
+                            "Space" to onOpenSpace,
+                            "To sell" to onOpenSell,
+                            "Sort a new pile" to onSortPile,
+                            "Data and speed" to onOpenDataAndSpeed,
+                            "Sharing storage at home" to onOpenHousehold
+                        ).forEach { (label, open) ->
+                            DropdownMenuItem(text = { Text(label, color = colors.textPrimary) }, onClick = { more = false; open() })
+                        }
+                    }
                 }
             }
         }
-        item {
+        item(key = "places-head") {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                Text("Your places", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+                Text("Your places", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f).a11yHeading())
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(RoundedCornerShape(18.dp))
                         .background(colors.accent.copy(alpha = 0.16f))
-                        .clickable { editing = true }
+                        .clickable(role = Role.Button) { editing = true }
                         .heightIn(min = 36.dp)
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
@@ -207,7 +240,17 @@ fun StorageTab(
                 )
             }
         }
-        items(childrenOf(places, null), key = { it.id }) { top ->
+        if (q.isNotEmpty()) {
+            // Searching: every place whose name has it, flat, with where it sits.
+            val found = placeTree(places).filter { it.place.name.contains(q, ignoreCase = true) }
+            if (found.isEmpty() && places.isNotEmpty()) item { Text("No places match \"$q\".", style = MaterialTheme.typography.bodySmall, color = colors.textMuted) }
+            items(found, key = { "found:" + it.place.id }) { node ->
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    PlaceRow(placeIcon(node.place.placeKind), node.place.name, detail(node.place, true), count(copiesWithin(summary, places, node.place.id)), gold = node.depth > 0, onClick = { onOpenPlace(node.place.id) })
+                }
+            }
+            item(key = "everywhere") { SearchEverywhereRow(q, onSearchEverywhere) }
+        } else items(childrenOf(places, null), key = { it.id }) { top ->
             val within = placeAndInside(places, top.id)
             val inside = placeTree(places).filter { it.place.id != top.id && it.place.id in within }
             val kids = childrenOf(places, top.id).size
@@ -218,7 +261,7 @@ fun StorageTab(
                 PlaceRow(
                     icon = placeIcon(top.placeKind),
                     name = top.name,
-                    detail = if (kids == 0) placeSubtitle(top) else null,
+                    detail = detail(top, kids == 0),
                     trailing = if (kids > 0) "$kids ${if (kids == 1) "place" else "places"}" else count(copiesWithin(summary, places, top.id)),
                     gold = false,
                     onClick = { onOpenPlace(top.id) }
@@ -235,7 +278,7 @@ fun StorageTab(
                         PlaceRow(
                             icon = placeIcon(node.place.placeKind),
                             name = node.place.name,
-                            detail = placeSubtitle(node.place),
+                            detail = detail(node.place, true),
                             trailing = count(copiesWithin(summary, places, node.place.id)),
                             gold = true,
                             onClick = { onOpenPlace(node.place.id) }
@@ -244,59 +287,71 @@ fun StorageTab(
                 }
             }
         }
-        item {
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                PlaceRow(Icons.Filled.Style, "Deck boxes", "Your physical decks, kept up to date", count(summary.inDecks), gold = false, onClick = onOpenDecks)
+        if (q.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    PlaceRow(Icons.Filled.Style, "Deck boxes", "Your physical decks, kept up to date", count(summary.inDecks), gold = false, onClick = onOpenDecks)
+                }
             }
-        }
-        item {
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                PlaceRow(Icons.Filled.Handshake, "Lent out", "Your loans, and what friends lent you", count(summary.lent), gold = false, onClick = onOpenLoans)
+            item {
+                val sealed = sealedOf(collections)
+                val boxes = sealed.sumOf { it.count }
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    PlaceRow(
+                        Icons.Filled.Inventory2, "Sealed",
+                        if (sealed.isNotEmpty()) "${count(boxes)} sealed · ${money.format(sealedTotalUsd(sealed), whole = true)}" else "Booster boxes, bundles and precons",
+                        count(boxes), gold = false, onClick = onOpenSealed
+                    )
+                }
             }
-        }
-        item {
-            val sealed = sealedOf(collections)
-            val boxes = sealed.sumOf { it.count }
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                PlaceRow(
-                    Icons.Filled.Inventory2, "Sealed",
-                    if (sealed.isNotEmpty()) "${count(boxes)} sealed · ${money.format(sealedTotalUsd(sealed), whole = true)}" else "Booster boxes, bundles and precons",
-                    count(boxes), gold = false, onClick = onOpenSealed
-                )
+            item {
+                val graded = gradedOf(collections)
+                val worth = graded.sumOf { it.valueUsd ?: 0.0 }
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    PlaceRow(
+                        Icons.Filled.Verified, "Graded",
+                        if (graded.isNotEmpty()) "${count(graded.size)} ${if (graded.size == 1) "slab" else "slabs"}" + (if (worth > 0) " · ${money.format(worth, whole = true)}" else "")
+                        else "Slabs from PSA, BGS, CGC — mark one from a card's page",
+                        count(graded.size), gold = false, onClick = onOpenGraded
+                    )
+                }
             }
-        }
-        item {
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                PlaceRow(Icons.Filled.Backpack, "Gear", gearSummary(gearOf(collections), decks), "›", gold = false, onClick = onOpenGear)
+            item {
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    PlaceRow(Icons.Filled.Handshake, "Lent out", "Your loans, and what friends lent you", count(summary.lent), gold = false, onClick = onOpenLoans)
+                }
             }
-        }
-        item {
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                PlaceRow(Icons.Filled.Speed, "Data and speed", "Save a backup of everything, or restore one", "›", gold = false, onClick = onOpenDataAndSpeed)
+            item {
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    PlaceRow(Icons.Filled.Backpack, "Gear", gearSummary(gearOf(collections), decks), "›", gold = false, onClick = onOpenGear)
+                }
             }
-        }
-        item {
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                PlaceRow(Icons.Filled.Home, "Sharing storage at home", "Keep cards on the same shelf as someone you live with", "›", gold = false, onClick = onOpenHousehold)
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                val n = upkeep?.items?.size ?: 0
-                LoanButton(if (n > 0) "Upkeep · $n" else "Upkeep", primary = n > 0, modifier = Modifier.weight(1f), onClick = onOpenUpkeep)
-                LoanButton("Set up storage", primary = false, modifier = Modifier.weight(1f), onClick = onSetUp)
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                LoanButton("Sort a new pile", primary = false, modifier = Modifier.weight(1f), onClick = onSortPile)
-                LoanButton("Value by place", primary = false, modifier = Modifier.weight(1f), onClick = onOpenValue)
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                LoanButton("Space", primary = false, modifier = Modifier.weight(1f), onClick = onOpenSpace)
-                LoanButton("To sell", primary = false, modifier = Modifier.weight(1f), onClick = onOpenSell)
+            // How much of the collection has a place.
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(16.dp)).background(colors.surface).padding(14.dp)
+                ) {
+                    Text(
+                        "${count(summary.placed)} of ${count(summary.total)} ${if (summary.total == 1) "copy has" else "copies have"} a place",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.textPrimary
+                    )
+                    Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(colors.surface2)) {
+                        Box(Modifier.fillMaxWidth(share).height(8.dp).clip(RoundedCornerShape(4.dp)).background(colors.accent))
+                    }
+                    if (summary.unplaced > 0) {
+                        Text(
+                            "${count(summary.unplaced)} without a place · Put them away",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = colors.accentLight,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(role = Role.Button) { putAway() }
+                                .padding(vertical = 4.dp)
+                        )
+                    }
+                }
             }
         }
     }

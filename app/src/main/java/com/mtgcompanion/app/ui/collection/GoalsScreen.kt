@@ -188,22 +188,29 @@ fun GoalRow(goal: CollectionGoal, p: GoalProgress, money: Money, onClick: () -> 
     }
 }
 
-/** The Collection home's Goals card: the two open goals nearest done, and See all. */
+/**
+ * The Binders tab's Goals: every open goal with its progress, nearest done first (narrowed by the
+ * header's search, [query]), how many are complete, New goal and See all.
+ */
 @Composable
-fun GoalsHomeCard(collections: List<Collection>, decks: List<Deck>, money: Money, onOpenGoals: () -> Unit, onOpenGoal: (String) -> Unit, onNewGoal: () -> Unit) {
+fun GoalsSection(collections: List<Collection>, decks: List<Deck>, money: Money, query: String, onOpenGoals: () -> Unit, onOpenGoal: (String) -> Unit, onNewGoal: () -> Unit) {
     val colors = LocalAppColors.current
     val goals = goalsOf(collections)
     val progress = remember(collections, decks) { HashMap<String, GoalProgress>() }
     val of = { g: CollectionGoal -> progress.getOrPut(g.id) { goalProgress(g, collections, decks) } }
     val (open, done) = remember(collections, decks) { sortedGoals(goals, of) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+    val q = query.trim()
+    val shown = if (q.isEmpty()) open else open.filter { it.name.contains(q, ignoreCase = true) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Goals", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = colors.textPrimary, modifier = Modifier.weight(1f).a11yHeading())
-            TextButton(onClick = if (goals.isEmpty()) onNewGoal else onOpenGoals) {
-                Text(if (goals.isEmpty()) "New goal" else "See all", color = colors.accent, fontWeight = FontWeight.SemiBold)
+            if (goals.isNotEmpty()) TextButton(onClick = onOpenGoals) { Text("See all", color = colors.accent, fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = onNewGoal) {
+                Icon(Icons.Filled.Add, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
+                Text("New goal", color = colors.accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp))
             }
         }
-        if (open.isEmpty()) {
+        if (shown.isEmpty() && q.isEmpty()) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -216,7 +223,11 @@ fun GoalsHomeCard(collections: List<Collection>, decks: List<Deck>, money: Money
                     style = MaterialTheme.typography.bodyMedium, color = colors.textMuted
                 )
             }
-        } else open.take(2).forEach { g -> GoalRow(g, of(g), money) { onOpenGoal(g.id) } }
+        } else shown.forEach { g -> GoalRow(g, of(g), money) { onOpenGoal(g.id) } }
+        if (done.isNotEmpty() && shown.isNotEmpty() && q.isEmpty()) {
+            Text("${done.size} complete · See all", style = MaterialTheme.typography.labelMedium, color = colors.textMuted,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onOpenGoals).padding(vertical = 4.dp))
+        }
     }
 }
 

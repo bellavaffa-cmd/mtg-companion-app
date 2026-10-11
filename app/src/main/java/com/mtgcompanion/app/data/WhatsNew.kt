@@ -1,18 +1,18 @@
 package com.mtgcompanion.app.data
 
 /*
- * The What's new tour: a few spotlight steps over the Collection's home, shown once on a phone after
- * updating to a version with new collection features (the home, Storage, Find anything…), and again
+ * The What's new tour: a few spotlight steps over the Collection's tabs, shown once on a phone after
+ * updating to a version with new collection features (the tabs, Storage, Find anything…), and again
  * from Settings › What's new tour. Which steps, their words and whether it's been seen are here, pure;
  * ui/collection/WhatsNewTour.kt draws it and keeps the seen id (WhatsNewStore). Mirrors the web app's
  * src/onboarding/whatsNew.ts (tests: WhatsNewTest.kt ↔ tests/onboarding/whatsNew.test.ts).
  */
 
 /** This tour. A later one gets a new id, and shows once more. */
-const val TOUR_ID = "collection-home-1"
+const val TOUR_ID = "collection-tabs-1"
 
-/** The part of the screen a step lights up. */
-enum class TourTarget { HOME_TILES, HOME_STORAGE, HOME_FIND, HOME_SEALED, HOME_TODO }
+/** The part of the screen a step lights up: the tab row, the Storage and Cards tabs, the search bar, the header. */
+enum class TourTarget { TABS, STORAGE, SEARCH, CARDS, HEADER }
 
 /** What a step's call to action does: set up storage, or open Find anything. */
 enum class TourAction { STORAGE_SETUP, FIND }
@@ -23,31 +23,31 @@ data class TourStep(val target: TourTarget, val title: String, val body: String,
 
 val TOUR_STEPS = listOf(
     TourStep(
-        TourTarget.HOME_TILES,
-        "Your collection has a home",
-        "What it's worth, what's where and what needs doing, on one page. Each tile opens its part of the collection."
+        TourTarget.TABS,
+        "Your collection in four tabs",
+        "Cards, Binders, Storage and Wishlist, always one tap away. The Collection opens on the tab you used last."
     ),
     TourStep(
-        TourTarget.HOME_STORAGE,
+        TourTarget.STORAGE,
         "Know where every card is",
-        "Make your boxes and binders here, then scan cards as you put them away. Any card page will tell you where it is.",
+        "Make your boxes and binders on Storage, then scan cards as you put them away. Sealed product and graded cards live there too.",
         TourCta("Set it up", TourAction.STORAGE_SETUP)
     ),
     TourStep(
-        TourTarget.HOME_FIND,
-        "Find anything",
-        "One search for your cards, your places and your decks. Each card says where every copy is — the box, the deck, who borrowed it.",
+        TourTarget.SEARCH,
+        "One search",
+        "It searches the tab you're on. Search everywhere, at the bottom, finds your cards, places and decks at once.",
         TourCta("Try it", TourAction.FIND)
     ),
     TourStep(
-        TourTarget.HOME_SEALED,
-        "Boxes, slabs, loans and sales",
-        "Sealed product and graded cards have places too, and what's lent out or marked to sell is counted here."
+        TourTarget.CARDS,
+        "Every card says where it is",
+        "Each card shows its box, deck or who borrowed it. No place yet puts it away. Group by set, binder or place, or show only what's lent out, for sale or graded."
     ),
     TourStep(
-        TourTarget.HOME_TODO,
+        TourTarget.HEADER,
         "A little upkeep",
-        "The few things worth doing this week, each with a button that does it. Upkeep has the rest."
+        "What it's worth and whether it's synced, up top. Needs attention shows when something is worth doing this week."
     )
 )
 

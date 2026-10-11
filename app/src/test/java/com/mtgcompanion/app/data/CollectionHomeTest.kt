@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * The Collection's home: the tiles' numbers and the To do. The web app has the same cases — see
+ * The Collection's numbers and the To do. The web app has the same cases — see
  * MtgCompanionWeb/tests/collection/collectionHome.test.ts.
  */
 class CollectionHomeTest {
@@ -28,7 +28,7 @@ class CollectionHomeTest {
     private val deck = Deck("d1", "Krenko", cards = listOf(card("gob", 4), card("ring")), ownership = DeckOwnership.PHYSICAL.name, createdAt = 1)
 
     @Test
-    fun `the tiles count cards, places, binders, sealed and graded, loans and selling`() {
+    fun `the numbers count cards, places, binders, sealed and graded, loans and selling`() {
         val n = homeNumbers(listOf(pile, trades, wishlist), listOf(deck))
         // ring, bolt, elf, gob: printings, not copies; the wishlist's don't count.
         assertEquals(4, n.cards)
@@ -41,26 +41,6 @@ class CollectionHomeTest {
         assertEquals(3, n.toSell)
         // 3 + 4 + 2 + 1 binder copies and 5 in the deck: 2 in the Red box, 5 in the deck, 1 lent.
         assertEquals(8 * 100 / 15, n.placedPercent)
-        val tiles = homeTiles(n) { "$" + it.toInt() }
-        assertEquals(
-            listOf(
-                "All cards: 4 · filters",
-                "Storage: 2 places · 53% placed",
-                "Binders: 1 · wishlist",
-                "Sets: completion",
-                "Sealed and graded: 3 items · $240",
-                "Loans and selling: 1 out · 3 to sell"
-            ),
-            tiles.map { "${it.title}: ${it.line}" }
-        )
-    }
-
-    @Test
-    fun `an empty collection asks to set up places`() {
-        val tiles = homeTiles(homeNumbers(emptyList(), emptyList())) { "$" + it.toInt() }
-        assertEquals("Set up your places", tiles[1].line)
-        assertEquals("Boxes and slabs", tiles[4].line)
-        assertEquals("0 out · 0 to sell", tiles[5].line)
     }
 
     private fun item(kind: UpkeepKind, title: String, detail: String = "", action: String? = null, deckId: String? = null) = UpkeepItem(

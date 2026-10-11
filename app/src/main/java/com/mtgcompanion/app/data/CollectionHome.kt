@@ -1,13 +1,10 @@
 package com.mtgcompanion.app.data
 
-import java.text.NumberFormat
-import java.util.Locale
 
 /*
- * The Collection's home: what it's worth, one search over everything, a tile for each part of the
- * collection with its numbers ("8 places · 92% placed"), the few things worth doing this week (from
- * Upkeep) and Scan / Sort a pile / Import. The numbers and the to-do lines are worked out here, pure,
- * so they can be tested. Mirrors the web app's src/collection/collectionHome.ts line for line (tests:
+ * The Collection's numbers (what's owned, placed, sealed and graded, lent and to sell) and the To do
+ * lines from Upkeep — once the home's tiles, now the Collection's tabs and its Needs attention list
+ * (CollectionLayout.kt). Worked out here, pure, so they can be tested. Mirrors the web app's src/collection/collectionHome.ts line for line (tests:
  * CollectionHomeTest.kt ↔ tests/collection/collectionHome.test.ts).
  */
 
@@ -55,31 +52,6 @@ fun homeNumbers(collections: List<Collection>, decks: List<Deck>): HomeNumbers {
         toSell = sellRows(collections).sumOf { it.qty }
     )
 }
-
-private fun count(n: Int): String = NumberFormat.getIntegerInstance(Locale.UK).format(n)
-
-enum class HomeTileKey { ALL, STORAGE, BINDERS, SETS, SEALED, LOANS }
-
-/** One tile: its name and the line under it. */
-data class HomeTile(val key: HomeTileKey, val title: String, val line: String)
-
-/** The six tiles, in the home's order, with [money] writing an amount the way the app shows prices. */
-fun homeTiles(n: HomeNumbers, money: (Double) -> String): List<HomeTile> = listOf(
-    HomeTile(HomeTileKey.ALL, "All cards", "${count(n.cards)} · filters"),
-    HomeTile(
-        HomeTileKey.STORAGE, "Storage",
-        if (n.places == 0) "Set up your places" else "${count(n.places)} ${if (n.places == 1) "place" else "places"} · ${n.placedPercent}% placed"
-    ),
-    HomeTile(HomeTileKey.BINDERS, "Binders", "${count(n.binders)} · wishlist"),
-    HomeTile(HomeTileKey.SETS, "Sets", "completion"),
-    HomeTile(
-        HomeTileKey.SEALED, "Sealed and graded",
-        if (n.sealedAndGraded == 0) "Boxes and slabs"
-        else "${count(n.sealedAndGraded)} ${if (n.sealedAndGraded == 1) "item" else "items"}" +
-            (if (n.sealedAndGradedUsd > 0) " · ${money(n.sealedAndGradedUsd)}" else "")
-    ),
-    HomeTile(HomeTileKey.LOANS, "Loans and selling", "${count(n.lentOut)} out · ${count(n.toSell)} to sell")
-)
 
 /** One line of the home's To do: Upkeep's item, said short, with its button. */
 data class HomeTodo(val item: UpkeepItem, val title: String, val action: String)

@@ -127,6 +127,20 @@ class CollectionDetailViewModel(
         viewModelScope, SharingStarted.WhileSubscribed(5000), null
     )
 
+    /**
+     * Copies of each binder entry out on loan (lentByEntry), for the location chips on this binder's
+     * rows (CollectionLayout.kt's entryChips).
+     */
+    val lentByEntry: StateFlow<Map<String, Int>> =
+        combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
+            com.mtgcompanion.app.data.lentByEntry(com.mtgcompanion.app.data.lentCopies(collections, decks))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** Changes the storage places or where copies are kept (a row's "No place yet · Put away"). */
+    fun changeStorage(change: (List<Collection>) -> List<Collection>) {
+        viewModelScope.launch { repository.changeStorage(change) }
+    }
+
     /** scryfallId -> every other binder/deck holding that card, for the zoom overlay's "also in" list. */
     val cardSources: StateFlow<Map<String, List<CardSource>>> =
         combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->

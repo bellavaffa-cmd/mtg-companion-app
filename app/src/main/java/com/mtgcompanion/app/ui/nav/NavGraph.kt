@@ -205,7 +205,9 @@ import com.mtgcompanion.app.data.offline.OfflineCardRepository
 import com.mtgcompanion.app.ui.collection.CollectionDetailScreen
 import com.mtgcompanion.app.ui.collection.CollectionDetailViewModel
 import com.mtgcompanion.app.ui.collection.CollectionsScreen
-import com.mtgcompanion.app.ui.collection.CollectionHomeRequest
+import com.mtgcompanion.app.ui.collection.CollectionTabRequest
+import com.mtgcompanion.app.data.WISHLIST_ID
+import com.mtgcompanion.app.ui.collection.GradedListScreen
 import com.mtgcompanion.app.ui.collection.FindAnythingScreen
 import com.mtgcompanion.app.ui.collection.WhatsNewStore
 import com.mtgcompanion.app.ui.collection.CollectionsViewModel
@@ -376,9 +378,11 @@ private object Routes {
     const val DECK_DETAIL = "deck/{deckId}?tab={tab}"
     const val COLLECTION_DETAIL = "collection/{collectionId}"
     /** A storage place's page — from the Collection's Storage page. [page]: the page a binder opens at. */
-    const val PLACE = "place/{placeId}?page={page}"
-    fun place(placeId: String, page: Int? = null) =
-        "place/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name()) + (page?.let { "?page=$it" } ?: "")
+    const val PLACE = "place/{placeId}?page={page}&section={section}"
+    fun place(placeId: String, page: Int? = null, section: String? = null) =
+        "place/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name()) +
+            listOfNotNull(page?.let { "page=$it" }, section?.let { "section=" + URLEncoder.encode(it, StandardCharsets.UTF_8.name()) })
+                .joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
     /** The scanner checking a storage place (PlaceCheck.kt); what's checked is in CheckSessions. */
     const val CHECK = "check/{placeId}"
     fun check(placeId: String) = "check/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
@@ -424,7 +428,11 @@ private object Routes {
     /** Upkeep: what's worth doing this week (Upkeep.kt). */
     const val UPKEEP = "upkeep"
     /** Find anything: the user's cards, places and decks in one search (FindAnything.kt). */
-    const val FIND = "find_anything"
+    const val FIND = "find_anything?q={q}"
+    /** Find anything with [q] already typed (the Collection's Search everywhere). */
+    fun find(q: String = "") = "find_anything" + if (q.isBlank()) "" else "?q=" + URLEncoder.encode(q.trim(), StandardCharsets.UTF_8.name())
+    /** Every graded copy (GradedListScreen.kt), from the Collection's Storage tab. */
+    const val GRADED_LIST = "graded_list"
     /** Gear: sleeves, deck boxes, tokens, dice and playmats (Gear.kt). */
     const val GEAR = "gear"
     /** Pack your bag (EventBag.kt): the bags on this phone, and one bag's checklist. */
@@ -639,9 +647,9 @@ fun MtgNavGraph(
         if (showWideNav) {
             val destination = when (currentRoute) {
                 Routes.HOME, Routes.VALUE_HISTORY -> NavDestination.HOME
-                Routes.SEARCH, Routes.SEARCH_RESULTS -> NavDestination.SEARCH
+                Routes.SEARCH, Routes.SEARCH_RESULTS, Routes.NEW_SETS, Routes.NEW_SET -> NavDestination.SEARCH
                 Routes.DECKS, Routes.DECK_DETAIL, Routes.PRECONS, Routes.NEW_DECK -> NavDestination.DECKS
-                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN, Routes.FIND, Routes.NEW_SETS, Routes.NEW_SET,
+                Routes.COLLECTION, Routes.COLLECTION_DETAIL, Routes.FRIEND_SHARED, Routes.TAG_BINDER, Routes.SET_CARDS, Routes.SPREAD_THIN, Routes.FIND, Routes.GRADED_LIST,
                 Routes.GOALS, Routes.GOAL, Routes.NEW_GOAL -> NavDestination.COLLECTION
                 Routes.RULES -> NavDestination.RULES
                 Routes.PLAY, Routes.GAME_NIGHT, Routes.PLAYGROUP, Routes.EVENTS, Routes.EVENT_NEW, Routes.EVENT, Routes.PACK_LIST, Routes.PACK -> NavDestination.LIFE_COUNTER
@@ -874,11 +882,13 @@ fun MtgNavGraph(
                 Routes.PLACE,
                 arguments = listOf(
                     navArgument("placeId") { type = NavType.StringType },
-                    navArgument("page") { type = NavType.StringType; nullable = true; defaultValue = null }
+                    navArgument("page") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("section") { type = NavType.StringType; nullable = true; defaultValue = null }
                 )
             ) { entry ->
                 val placeId = entry.arguments?.getString("placeId")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty()
                 val startPage = entry.arguments?.getString("page")?.toIntOrNull() ?: 1
+                val startSection = entry.arguments?.getString("section")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
                 PlaceScreen(
@@ -895,6 +905,7 @@ fun MtgNavGraph(
                     onCheck = { id -> navController.navigate(Routes.check(id)) },
                     onFit = { id -> navController.navigate(Routes.placeFit(id)) },
                     startPage = startPage,
+                    startSection = startSection,
                     onLend = { id -> navController.navigate(Routes.lendFrom(id)) },
                     onScanPage = { id, page -> navController.navigate(Routes.pageScan(id, page)) },
                     social = socialRepository,
@@ -1176,7 +1187,7 @@ fun MtgNavGraph(
                     onBack = { navController.popBackStack() },
                     onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } },
                     onRetag = { id, tags -> addToScope.launch { collectionRepository.setUserTags(id, tags); deckRepository.setUserTags(id, tags) } },
-                    onLendFromPlace = { navController.navigateToTab(Routes.COLLECTION) }
+                    onLendFromPlace = { CollectionTabRequest.open("storage"); navController.navigateToTab(Routes.COLLECTION) }
                 )
             }
 
@@ -1241,12 +1252,13 @@ fun MtgNavGraph(
                 )
             }
 
-            destination(Routes.FIND) {
+            destination(Routes.FIND, arguments = listOf(navArgument("q") { type = NavType.StringType; nullable = true; defaultValue = null })) { entry ->
                 val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
                 val decks by deckRepository.decksFlow.collectAsState(initial = emptyList())
                 FindAnythingScreen(
                     collections = collections,
                     decks = decks,
+                    initialQuery = entry.arguments?.getString("q")?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.orEmpty(),
                     onBack = { navController.popBackStack() },
                     onOpenCard = { name -> navController.navigate(Routes.detail(name)) },
                     onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
@@ -1328,6 +1340,15 @@ fun MtgNavGraph(
                     collections = collections,
                     onBack = { navController.popBackStack() },
                     onChange = { change -> addToScope.launch { collectionRepository.changeStorage(change) } }
+                )
+            }
+
+            destination(Routes.GRADED_LIST) {
+                val collections by collectionRepository.collectionsFlow.collectAsState(initial = emptyList())
+                GradedListScreen(
+                    collections = collections,
+                    onBack = { navController.popBackStack() },
+                    onOpenCard = { name -> navController.navigate(Routes.detail(name)) }
                 )
             }
 
@@ -1464,7 +1485,8 @@ fun MtgNavGraph(
                     viewModel = viewModel,
                     onCardClick = { card -> navController.navigate(Routes.detail(card.name)) },
                     onOpenResults = { navController.navigate(Routes.SEARCH_RESULTS) },
-                    onOpenRules = { navController.navigateToTab(Routes.RULES) }
+                    onOpenRules = { navController.navigateToTab(Routes.RULES) },
+                    onOpenNewSets = { navController.navigate(Routes.NEW_SETS) { launchSingleTop = true } }
                 )
             }
 
@@ -1594,11 +1616,29 @@ fun MtgNavGraph(
                     }),
                     openShared = openShared,
                     onSharedOpened = { openShared = false; socialRepository.openSharedTab = false },
+                    // The Wishlist tab: the Wishlist binder's own page, under the Collection's header.
+                    wishlistPage = { query ->
+                        val wishlistModel: CollectionDetailViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                            key = "wishlist-tab",
+                            factory = CollectionDetailViewModel.Factory(WISHLIST_ID, collectionRepository, deckRepository, settingsRepository)
+                        )
+                        CollectionDetailScreen(
+                            viewModel = wishlistModel,
+                            onBack = { navController.popBackStack() },
+                            onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
+                            onOpenSearch = { navController.navigateToTab(Routes.SEARCH) },
+                            onOpenScan = { navController.navigateToTab(Routes.SCAN) },
+                            embedded = true,
+                            externalQuery = query
+                        )
+                    },
                     onOpenTag = { id -> navController.navigate(Routes.tagBinder(id)) },
                     onOfferSpares = if (supabaseSync.auth.configured) ({ cards -> offering = cards }) else null,
                     onOpenSet = { code -> navController.navigate(Routes.setCards(code)) },
                     onOpenSpreadThin = { navController.navigate(Routes.SPREAD_THIN) },
                     onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+                    onOpenPlaceAt = { id, section, page -> navController.navigate(Routes.place(id, page, section)) },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) },
                     onPutAway = { id -> navController.navigate(Routes.putAway(id)) },
                     onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
                     onOpenLoans = { navController.navigate(Routes.loans()) },
@@ -1607,16 +1647,14 @@ fun MtgNavGraph(
                     onOpenSpace = { navController.navigate(Routes.SPACE) },
                     onOpenSell = { navController.navigate(Routes.SELL) },
                     onOpenSealed = { navController.navigate(Routes.SEALED) },
+                    onOpenGraded = { navController.navigate(Routes.GRADED_LIST) },
                     onSetUpStorage = { navController.navigate(Routes.STORAGE_SETUP) },
                     onOpenUpkeep = { navController.navigate(Routes.UPKEEP) },
                     onOpenHousehold = { navController.navigate(Routes.household()) },
                     onOpenGear = { navController.navigate(Routes.GEAR) },
-                    onFind = { navController.navigate(Routes.FIND) { launchSingleTop = true } },
-                    onCheck = { id -> navController.navigate(Routes.check(id)) },
-                    onOpenPullList = { id -> navController.navigate(Routes.pullList(id)) },
+                    onFind = { q -> navController.navigate(Routes.find(q)) { launchSingleTop = true } },
                     onOpenDataAndSpeed = { navController.navigate(Routes.settingsSection(SettingsSection.DATA.id)) },
                     onOpenValueHistory = { navController.navigate(Routes.VALUE_HISTORY) },
-                    onOpenNewSets = { navController.navigate(Routes.NEW_SETS) },
                     onOpenGoals = { navController.navigate(Routes.GOALS) { launchSingleTop = true } },
                     onOpenGoal = { id -> navController.navigate(Routes.goal(id)) },
                     onNewGoal = { navController.navigate(Routes.newGoal()) }
@@ -1661,7 +1699,9 @@ fun MtgNavGraph(
                     onViewDetails = { name -> navController.navigate(Routes.detail(name)) },
                     onShare = if (supabaseSync.auth.configured) ({ sharing = true }) else null,
                     onOpenSearch = { navController.navigateToTab(Routes.SEARCH) },
-                    onOpenScan = { navController.navigateToTab(Routes.SCAN) }
+                    onOpenScan = { navController.navigateToTab(Routes.SCAN) },
+                    onOpenPlaceAt = { id, section, page -> navController.navigate(Routes.place(id, page, section)) },
+                    onOpenLoans = { navController.navigate(Routes.loans()) }
                 )
                 if (sharing) {
                     ShareDialog(
@@ -2627,8 +2667,6 @@ private fun NavHostController.navigateToTab(route: String) {
     val currentTab = currentBackStack.value.lastOrNull { it.destination.route in tabRoutes }?.destination?.route
     if (route == currentTab) {
         popBackStack(route, inclusive = false) // nothing to pop when already there
-        // The Collection goes back to its home (CollectionHome.kt) from one of its pages.
-        if (route == Routes.COLLECTION) CollectionHomeRequest.ask()
         return
     }
     navigate(route) {
