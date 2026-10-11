@@ -1,5 +1,15 @@
 package com.mtgcompanion.app.ui.collection
 
+import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.mtgcompanion.app.data.NewSetsStore
+import com.mtgcompanion.app.data.SetInfo
+import com.mtgcompanion.app.data.releaseSets
+import com.mtgcompanion.app.data.setsToAnnounce
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -20,7 +30,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Refresh
@@ -47,7 +56,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,16 +79,13 @@ import com.mtgcompanion.app.data.wantedCount
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckFits
-import com.mtgcompanion.app.data.NewSetsStore
 import com.mtgcompanion.app.data.SetCard
-import com.mtgcompanion.app.data.SetInfo
 import com.mtgcompanion.app.data.commanderDecks
 import com.mtgcompanion.app.data.deckFits
 import com.mtgcompanion.app.data.deckProfile
 import com.mtgcompanion.app.data.fitReason
 import com.mtgcompanion.app.data.isWishlist
 import com.mtgcompanion.app.data.releaseLabel
-import com.mtgcompanion.app.data.releaseSets
 import com.mtgcompanion.app.data.wishlistReprints
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import com.mtgcompanion.app.ui.common.BackButton
@@ -440,5 +445,47 @@ private fun CardRow(card: SetCard, why: String, onClick: () -> Unit) {
             Text(card.name, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(why, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
         }
+    }
+}
+
+/** New sets: "2 coming soon · 1 just out", with how many followed sets are out. Mirrors the web's useNewSetsLine. On Search (it was on the Collection's home). */
+@Composable
+fun NewSetsEntryRow(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = LocalAppColors.current
+    val context = LocalContext.current
+    val followed by NewSetsStore.followed.collectAsState()
+    val told by NewSetsStore.told.collectAsState()
+    val sets by produceState<List<SetInfo>?>(null) { value = runCatching { NewSetsStore.releaseSets(context) }.getOrNull() }
+    val today = NewSetsStore.today()
+    val all = sets
+    val line = if (all == null) "What's coming, and cards for your decks" else {
+        val lists = releaseSets(all, today)
+        listOfNotNull(
+            lists.upcoming.size.takeIf { it > 0 }?.let { "$it coming soon" },
+            lists.recent.size.takeIf { it > 0 }?.let { "$it just out" }
+        ).joinToString(" · ").ifEmpty { "No new sets right now" }
+    }
+    val out = all?.let { setsToAnnounce(followed, it, today, told).size } ?: 0
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface)
+            .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Icon(Icons.Filled.NewReleases, contentDescription = null, tint = colors.accent, modifier = Modifier.size(22.dp))
+        Column(Modifier.weight(1f)) {
+            Text("New sets", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = colors.textPrimary)
+            Text(line, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (out > 0) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.clip(RoundedCornerShape(11.dp)).background(colors.accent).padding(horizontal = 7.dp, vertical = 2.dp)
+                    .semantics { contentDescription = "$out followed ${if (out == 1) "set is" else "sets are"} out" }
+            ) {
+                Text("$out", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = colors.onAccent)
+            }
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = colors.textDim)
     }
 }

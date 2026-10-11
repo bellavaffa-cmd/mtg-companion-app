@@ -452,6 +452,19 @@ class CollectionsViewModel(
         viewModelScope.launch { repository.deleteCollection(collectionId) }
     }
 
+    /**
+     * Where every owned printing's copies are, as the chips on a card row say it (CollectionLayout.kt),
+     * by scryfallId — worked out once off the main thread, not per row.
+     */
+    val locationIndex: StateFlow<Map<String, List<com.mtgcompanion.app.data.LocationChip>>> =
+        combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
+            com.mtgcompanion.app.data.locationIndex(collections, decks)
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** A card's facts for the sorting rules (where in a place it goes), from Scryfall when loaded. */
+    fun placeFacts(scryfallId: String, name: String): com.mtgcompanion.app.data.CardFacts =
+        ownedCards.value[scryfallId]?.let { com.mtgcompanion.app.data.cardFactsOf(it) } ?: com.mtgcompanion.app.data.CardFacts(name)
+
     /** Changes the storage places or where copies are kept (see StoragePlaces.kt). */
     fun changeStorage(change: (List<Collection>) -> List<Collection>) {
         viewModelScope.launch { repository.changeStorage(change) }

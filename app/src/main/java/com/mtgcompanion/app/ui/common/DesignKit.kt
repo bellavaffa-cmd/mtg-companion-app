@@ -312,7 +312,15 @@ fun SectionHeader(title: String, modifier: Modifier = Modifier, action: String? 
  * Scrolls horizontally when the labels don't fit, e.g. the deck page's five sections.
  */
 @Composable
-fun SegmentedTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, counts: Map<Int, Int> = emptyMap()) {
+fun SegmentedTabs(
+    labels: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    counts: Map<Int, Int> = emptyMap(),
+    /** Extra on one tab (the What's new tour marks a tab with it). */
+    tabModifier: (Int) -> Modifier = { Modifier }
+) {
     val colors = LocalAppColors.current
     val density = LocalDensity.current
     val xs = remember(labels.size) { mutableStateListOf(*Array(labels.size) { 0f }) }
@@ -339,6 +347,7 @@ fun SegmentedTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, 
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                     modifier = Modifier
+                        .then(tabModifier(i))
                         .heightIn(min = 38.dp)
                         .onGloballyPositioned { xs[i] = it.positionInParentX(); ws[i] = it.size.width.toFloat(); tabHeight = maxOf(tabHeight, it.size.height) }
                         .clip(RoundedCornerShape(12.dp))

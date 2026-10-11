@@ -46,6 +46,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.gestures.scrollBy
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -131,6 +133,8 @@ fun PlaceScreen(
     onFit: (String) -> Unit = {},
     /** The page a binder opens at. */
     startPage: Int = 1,
+    /** The box section it opens at, open and scrolled to (a card row's place chip). */
+    startSection: String? = null,
     /** Lend cards from the place (LendScreen.kt). */
     onLend: (String) -> Unit = {},
     /** Scan a whole binder page (PageScanScreen): the binder and the page shown. */
@@ -170,7 +174,8 @@ fun PlaceScreen(
     var choosingCheck by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf<List<PocketMove>?>(null) }
     var closed by remember { mutableStateOf<List<PocketMove>?>(null) }
-    var open by remember { mutableStateOf(setOf<String>()) }
+    var open by remember { mutableStateOf(if (startSection != null) setOf(startSection) else setOf<String>()) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
@@ -247,7 +252,20 @@ fun PlaceScreen(
             place.placeKind == PlaceKind.BOX || place.sections.orEmpty().isNotEmpty() -> sections.count { it.name != null } to "sections"
             else -> inside.size to if (inside.size == 1) "place inside" else "places inside"
         }
+        // Opened at a section (a card row's chip): scrolled down to it once the list is laid out.
+        val sectionKey = startSection?.let { "section:$it" }
+        LaunchedEffect(sectionKey, binder == null) {
+            if (sectionKey == null || binder != null) return@LaunchedEffect
+            androidx.compose.runtime.snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
+            repeat(40) {
+                val hit = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == sectionKey }
+                if (hit != null) { listState.animateScrollToItem(hit.index); return@LaunchedEffect }
+                if (!listState.canScrollForward) return@LaunchedEffect
+                listState.scrollBy(listState.layoutInfo.viewportSize.height * 0.8f)
+            }
+        }
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -625,3 +643,4 @@ private fun ViewChip(label: String, on: Boolean, onClick: () -> Unit) {
         modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) colors.accent else colors.surface2).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp)
     )
 }
+

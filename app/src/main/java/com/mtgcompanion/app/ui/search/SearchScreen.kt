@@ -101,7 +101,9 @@ fun SearchScreen(
     viewModel: SearchViewModel,
     onCardClick: (ScryfallCard) -> Unit,
     onOpenResults: () -> Unit,
-    onOpenRules: () -> Unit = {}
+    onOpenRules: () -> Unit = {},
+    /** New sets: coming soon and just out (NewSetsScreen.kt) — once on the Collection's home. */
+    onOpenNewSets: (() -> Unit)? = null
 ) {
     val mode by viewModel.mode.collectAsState()
     val query by viewModel.query.collectAsState()
@@ -131,6 +133,9 @@ fun SearchScreen(
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg)
                 )
+                if (mode == SearchMode.CARDS && onOpenNewSets != null) {
+                    com.mtgcompanion.app.ui.collection.NewSetsEntryRow(onOpenNewSets, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                }
             }
         },
         bottomBar = {
