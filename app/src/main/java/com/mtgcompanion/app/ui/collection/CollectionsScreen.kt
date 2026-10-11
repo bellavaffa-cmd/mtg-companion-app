@@ -219,7 +219,7 @@ fun CollectionsScreen(
     onOpenDecks: () -> Unit = {},
     /** Lent out: the Loans screen. */
     onOpenLoans: () -> Unit = {},
-    /** Sort a new pile: Sort a pile's recipes. */
+    /** Sort a new pile: the scanner in Sort a pile (Start with the recipe used last, or pick one). */
     onSortPile: () -> Unit = {},
     /** Value by place. */
     onOpenValue: () -> Unit = {},

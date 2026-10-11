@@ -21,6 +21,15 @@ import com.mtgcompanion.app.network.scryfall.canBeFoil
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.Verified
 import com.mtgcompanion.app.data.ScanMode
+import com.mtgcompanion.app.data.CarryOver
+import com.mtgcompanion.app.data.PUT_AWAY_BY_RULE
+import com.mtgcompanion.app.data.ScannerMode
+import com.mtgcompanion.app.data.SortRecipe
+import com.mtgcompanion.app.data.canLetAppChoose
+import com.mtgcompanion.app.data.carryOver
+import com.mtgcompanion.app.data.recipeLine
+import com.mtgcompanion.app.data.social.TradeCard
+import com.mtgcompanion.app.ui.collection.SortRecipesScreen
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -198,7 +207,9 @@ fun ScanScreen(
     /** Put-away into a binder in order: Add cards in order (BinderFitScreen). */
     onFit: (String) -> Unit = {},
     /** Sorting with a recipe: Done, or Finish check — what went where (SortRecipesScreen's summary). */
-    onRecipeDone: () -> Unit = {}
+    onRecipeDone: () -> Unit = {},
+    /** The recipe picker over the camera: a sort's spares offered to a friend in a trade. */
+    onOffer: (friendId: String, cards: List<TradeCard>) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -223,6 +234,22 @@ fun ScanScreen(
     // Recipe mode: each card goes in its pile by the sort's recipe (RecipeScanPanel.kt).
     val recipe by viewModel.recipe.collectAsState()
     val recipeVoice by viewModel.recipeVoice.collectAsState()
+    // The mode switch (ScannerModes.kt): what the scanner's doing, the one-time tip, the recipe picker over
+    // the camera (with a recipe to lay out, or none: the picker), and "Keep the N scanned cards?".
+    val mode by viewModel.mode.collectAsState()
+    val sortTipSeen by remember { ScannerModeSetting.sortTipSeen(context) }.collectAsState()
+    var recipeSheet by remember { mutableStateOf<RecipeSheet?>(null) }
+    var askCarry by remember { mutableStateOf<Int?>(null) }
+    var carryAsked by remember { mutableStateOf(false) }
+    var choosingCheck by remember { mutableStateOf(false) }
+    LaunchedEffect(mode) { if (mode == ScannerMode.SORT && !sortTipSeen) ScannerModeSetting.dismissSortTip(context) }
+    LaunchedEffect(recipeSheet) { viewModel.setPaused(recipeSheet != null) }
+    // Back from another screen (a sort's summary): the sort kept on the phone may have ended there.
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.resyncRecipe() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     // Scans a learned correction put right (ScanCorrections.kt), and the one whose "Learned" was tapped.
     val learned by viewModel.learned.collectAsState()
     var learnedOpen by remember { mutableStateOf<Pair<Long, Boolean>?>(null) }
@@ -275,10 +302,17 @@ fun ScanScreen(
     }
     // Cards scanned but not put away yet: leaving would throw them away, so it asks first.
     var confirmLeave by remember { mutableStateOf(false) }
+    // Only on Add cards: in the other modes the list waits untouched (kept on the phone) for Add cards.
     val leave = {
-        if (putAwayTarget != null || tickList != null || check != null || sort != null || recipe != null || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
+        if (mode != ScannerMode.ADD || state.scannedCards.isEmpty()) onBack() else confirmLeave = true
     }
-    BackHandler(enabled = putAwayTarget == null && tickList == null && check == null && sort == null && recipe == null && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
+    BackHandler(enabled = mode == ScannerMode.ADD && state.scannedCards.isNotEmpty() && !showList) { confirmLeave = true }
+    /** The switch: a new mode, asking first about the Add cards list when it's needed (carryOver). */
+    val pickMode: (ScannerMode) -> Unit = { to ->
+        if (to == ScannerMode.SORT && !sortTipSeen) ScannerModeSetting.dismissSortTip(context)
+        if (carryOver(mode, to, state.scannedCards.size, carryAsked) == CarryOver.ASK) askCarry = state.scannedCards.size
+        else viewModel.switchMode(to)
+    }
     var showManualAdd by remember { mutableStateOf(false) }
 
     // Bound once the camera provider resolves, so the torch button has something to control.
@@ -295,7 +329,7 @@ fun ScanScreen(
     // The zoom: SCAN_ZOOM to start with, then whatever was last chosen on this phone — pinch on the
     // preview, or − 1.8× + under the top bar (ScanZoomControl.kt). Moving it counts as the card moving.
     val zoom = rememberScanZoom("card", onMoved = viewModel::zoomMoved)
-    DisposableEffect(Unit) { onDispose { viewModel.setPinching(false); viewModel.autoCamera = false } }
+    DisposableEffect(Unit) { onDispose { viewModel.setPinching(false); viewModel.autoCamera = false; viewModel.setPaused(false) } }
 
     // Auto zoom and focus (Settings › Scanner; ScanAutoCamera.kt): the card's edges and crispness,
     // looked at a few times a second, zoom the card to fill the guide and refocus it when it goes soft.
@@ -602,6 +636,8 @@ fun ScanScreen(
                 ScrimIconButton(onClick = leave, icon = Icons.AutoMirrored.Filled.ArrowBack, desc = "Back")
                 if (putAwayPlace != null) {
                     PutAwayTarget(putAwayPlace.name, onClick = { choosingPlace = true }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                } else if (putAwayTarget == PUT_AWAY_BY_RULE) {
+                    PutAwayTarget("the box whose rule fits", onClick = { choosingPlace = true }, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
                 } else if (check != null) {
                     val c = check
                     val what = when (checkPlace?.placeKind) { PlaceKind.BINDER -> "binder"; PlaceKind.BOX -> "box"; else -> "place" }
@@ -697,6 +733,11 @@ fun ScanScreen(
                         desc = "Scan test card"
                     )
                 }
+            }
+            // Add cards · Sort a pile · Put away · Check — not while ticking a deck's list, a job of its own.
+            if (viewModel.showModeSwitch) {
+                ScannerModeSwitch(mode, state.scannedCards.size, onPick = pickMode, modifier = Modifier.padding(top = 8.dp))
+                if (!sortTipSeen && mode != ScannerMode.SORT) SortModeTip(onDismiss = { ScannerModeSetting.dismissSortTip(context) })
             }
             // The status line on the left, the zoom on the right — both above the framing guide.
             Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
@@ -813,7 +854,39 @@ fun ScanScreen(
 
         // Bottom overlay: the card just scanned (ScanCardPanel.kt), above the view-list button — only on
         // the plain scanner; the other modes have panels of their own.
-        if (putAwayTarget == null && tickList == null && check == null && sort == null && recipe == null) Column(
+        // Each mode before it can start: Sort a pile's Start or recipe, Put away's and Check's place.
+        if (mode == ScannerMode.SORT && sort == null && recipe == null) {
+            val last = remember(mode, sort, recipe, collections) { viewModel.lastRecipe() }
+            SortStartPanel(
+                last = last,
+                line = last?.let { r -> recipeLine(r) { n -> money.formatLocal(n, whole = n == Math.floor(n)) } },
+                onStart = { last?.let(viewModel::startRecipe) },
+                onLayout = { recipeSheet = RecipeSheet(last) },
+                onChange = { recipeSheet = RecipeSheet(null) },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+        if (mode == ScannerMode.PUT_AWAY && putAwayTarget == null) {
+            val auto = canLetAppChoose(placesOf(collections))
+            PlacePromptPanel(
+                "Put cards away",
+                "Pick the box or binder, and each card you scan goes straight in." + if (auto) " Or let the app choose: each card goes to the box whose rule fits it." else "",
+                onPick = { choosingPlace = true },
+                onAuto = if (auto) ({ viewModel.setPutAwayTarget(PUT_AWAY_BY_RULE) }) else null,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+        if (mode == ScannerMode.CHECK && check == null) {
+            PlacePromptPanel(
+                "Check a place",
+                "Scan everything in it, one card at a time: you'll see what's missing and what doesn't belong.",
+                onPick = { choosingCheck = true },
+                onAuto = null,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        if (mode == ScannerMode.ADD && putAwayTarget == null && tickList == null && check == null && sort == null && recipe == null) Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)
         ) {
@@ -887,6 +960,57 @@ fun ScanScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+
+        // Sort a pile's recipe picker (Start from templates / Your recipes / Make your own, and Lay out),
+        // over the camera, which keeps running behind it; Start scanning comes back here, sorting.
+        recipeSheet?.let { open ->
+            BackHandler { recipeSheet = null }
+            Box(Modifier.fillMaxSize().background(LocalAppColors.current.bg)) {
+                androidx.compose.runtime.key(open) {
+                    SortRecipesScreen(
+                        collections = collections,
+                        startOnSummary = false,
+                        onBack = { recipeSheet = null },
+                        onChange = viewModel::changeStorage,
+                        onScan = { recipeSheet = null; viewModel.reloadRecipe() },
+                        onClassic = { recipeSheet = null; viewModel.startClassicSort() },
+                        onOffer = onOffer,
+                        onFit = onFit,
+                        startLayout = open.layout
+                    )
+                }
+            }
+        }
+    }
+
+    if (choosingCheck) {
+        PlacePickerDialog("Check which place?", placesOf(collections), onDismiss = { choosingCheck = false }) { id ->
+            choosingCheck = false
+            viewModel.chooseCheck(id)
+        }
+    }
+
+    askCarry?.let { n ->
+        AlertDialog(
+            onDismissRequest = { askCarry = null },
+            containerColor = Surface,
+            title = { Text("Keep the $n scanned ${if (n == 1) "card" else "cards"} in the list?", color = GoldLight) },
+            text = {
+                Text(
+                    "${if (n == 1) "It hasn't" else "They haven't"} been added anywhere yet. The pile you sort now is filed on its own — the list waits in Add cards until you come back to it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { askCarry = null; carryAsked = true; viewModel.switchMode(ScannerMode.SORT) }) { Text("Keep them", color = Gold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { askCarry = null; carryAsked = true; viewModel.clearScanned(); viewModel.switchMode(ScannerMode.SORT) }) {
+                    Text("Clear the list", color = LocalAppColors.current.error)
+                }
+            }
+        )
     }
 
     if (choosingPlace) {
@@ -1447,3 +1571,6 @@ private fun DifferentCardDialog(suggest: suspend (String) -> List<String>, onPic
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextMuted) } }
     )
 }
+
+/** The recipe picker open over the scanner: at [layout]'s Lay out step, or (null) at the picker. */
+private data class RecipeSheet(val layout: SortRecipe?)

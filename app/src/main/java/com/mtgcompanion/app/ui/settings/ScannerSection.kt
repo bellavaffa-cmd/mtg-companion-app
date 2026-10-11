@@ -188,6 +188,21 @@ internal fun ScannerSection(settingsRepository: SettingsRepository) {
         "The card just scanned stays over the camera until the next one: its set code and number, how it was recognised, and Change printing, Foil and Undo.",
         lastScanned
     ) { com.mtgcompanion.app.ui.scan.LastScannedSetting.set(context, it) }
+    // The scanner's one-time tips ("New: sort a pile while you scan"), shown again (ScannerModeSetting).
+    val tipSeen by remember { com.mtgcompanion.app.ui.scan.ScannerModeSetting.sortTipSeen(context) }.collectAsState()
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.weight(1f)) {
+            Text("Scanner tips", style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+            Text(
+                if (tipSeen) "Seen. Show them again the next time the scanner opens." else "They'll show the next time the scanner opens.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textMuted
+            )
+        }
+        OutlinedButton(onClick = { com.mtgcompanion.app.ui.scan.ScannerModeSetting.resetTips(context) }, enabled = tipSeen) {
+            Text("Show tips again", color = if (tipSeen) colors.accent else colors.textMuted)
+        }
+    }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
     LearnedCorrections()
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))

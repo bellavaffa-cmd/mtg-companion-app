@@ -146,11 +146,21 @@ fun SortRecipesScreen(
     /** "Keep, spares, decks, bulk": the first sorter, as it was. */
     onClassic: () -> Unit,
     onOffer: (friendId: String, cards: List<TradeCard>) -> Unit,
-    onFit: (placeId: String) -> Unit
+    onFit: (placeId: String) -> Unit,
+    /** Opens on this recipe's Lay out step (the scanner's Sort a pile: "Lay out piles first"). */
+    startLayout: SortRecipe? = null
 ) {
     val context = LocalContext.current
     val store = remember { RecipeSessionStore(context) }
-    var step by remember { mutableStateOf<RecipeStep>(if (startOnSummary) RecipeStep.Summary else RecipeStep.Pick) }
+    var step by remember {
+        mutableStateOf<RecipeStep>(
+            when {
+                startOnSummary -> RecipeStep.Summary
+                startLayout != null -> RecipeStep.Layout(startLayout)
+                else -> RecipeStep.Pick
+            }
+        )
+    }
     // Back from the scanner: the sort kept on the phone is read again.
     val lifecycleOwner = LocalLifecycleOwner.current
     var resumes by remember { mutableIntStateOf(0) }

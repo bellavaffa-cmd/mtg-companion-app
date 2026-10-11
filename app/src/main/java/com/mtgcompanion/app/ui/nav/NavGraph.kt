@@ -449,6 +449,8 @@ private object Routes {
     fun sortRecipes(summary: Boolean = false) = "sort_recipes?summary=$summary"
     /** The scanner sorting with a recipe. */
     const val SORT_RECIPE_SCAN = "sort_recipe_scan"
+    /** The scanner in Sort a pile, sorter not chosen yet: a sort under way carries on, else Start or pick a recipe. */
+    const val SORT_SCAN = "sort_scan"
     /** A storage place's label to print (and "All labels" from there). */
     const val PLACE_LABEL = "place_label/{placeId}"
     fun placeLabel(placeId: String) = "place_label/" + URLEncoder.encode(placeId, StandardCharsets.UTF_8.name())
@@ -589,6 +591,28 @@ fun MtgNavGraph(
     val addToHost = remember { SnackbarHostState() }
     val addToScope = rememberCoroutineScope()
     val addTo = remember { addToFeedback(addToHost, addToScope, deckRepository, collectionRepository) }
+    // The camera scanner, however it was opened: with the mode switch (ScannerModes.kt) any of them can
+    // put cards away, check a place or sort a pile, so each has every way out. [onRecipeDone]: a sort's
+    // Done — what went where.
+    val scanner: @Composable (ScanViewModel, (() -> Unit)?) -> Unit = { viewModel, onRecipeDone ->
+        ScanScreen(
+            viewModel = viewModel,
+            social = socialRepository,
+            onBack = { navController.popBackStack() },
+            onCardClick = { name -> navController.navigate(Routes.detail(name)) },
+            onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
+            onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
+            onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
+            onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) },
+            onFinishCheck = { id -> navController.navigate(Routes.checkResults(id)) },
+            onFit = { id -> navController.navigate(Routes.placeFit(id)) },
+            onRecipeDone = onRecipeDone ?: { navController.navigate(Routes.sortRecipes(summary = true)) },
+            onOffer = { friendId, cards ->
+                socialRepository.draft = SocialRepository.TradeDraft(to = friendId, give = cards)
+                navController.navigate(Routes.tradeNew(friendId))
+            }
+        )
+    }
     // "Trade matches tonight" on Game night and in Pack your bag: Propose a trade opens the composer
     // with both sides, Bring them puts the cards on the "Bring to game night" pull list (as Friends
     // want these does), and the pull list opens from there.
@@ -975,18 +999,7 @@ fun MtgNavGraph(
                         checkPlaceId = placeId
                     )
                 )
-                ScanScreen(
-                    viewModel = viewModel,
-                    social = socialRepository,
-                    onBack = { navController.popBackStack() },
-                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
-                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
-                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
-                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
-                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) },
-                    onFinishCheck = { id -> navController.navigate(Routes.checkResults(id)) },
-                    onFit = { id -> navController.navigate(Routes.placeFit(id)) }
-                )
+                scanner(viewModel, null)
             }
 
             destination(Routes.CHECK_RESULTS, arguments = listOf(navArgument("placeId") { type = NavType.StringType })) { entry ->
@@ -1144,17 +1157,7 @@ fun MtgNavGraph(
                         putAwayPlaceId = placeId
                     )
                 )
-                ScanScreen(
-                    viewModel = viewModel,
-                    social = socialRepository,
-                    onBack = { navController.popBackStack() },
-                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
-                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
-                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
-                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
-                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) },
-                    onFit = { id -> navController.navigate(Routes.placeFit(id)) }
-                )
+                scanner(viewModel, null)
             }
 
             destination(
@@ -1375,16 +1378,22 @@ fun MtgNavGraph(
                         sortPile = true
                     )
                 )
-                ScanScreen(
-                    viewModel = viewModel,
-                    social = socialRepository,
-                    onBack = { navController.popBackStack() },
-                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
-                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
-                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
-                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
-                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) }
+                scanner(viewModel, null)
+            }
+
+            destination(Routes.SORT_SCAN) {
+                val viewModel: ScanViewModel = viewModel(
+                    key = "sort-scan",
+                    factory = ScanViewModel.Factory(
+                        LocalContext.current.applicationContext,
+                        collectionRepository,
+                        deckRepository,
+                        cardIndexRepository,
+                        settingsRepository,
+                        sortEntry = true
+                    )
                 )
+                scanner(viewModel, null)
             }
 
             destination(Routes.SORT_RECIPES, arguments = listOf(navArgument("summary") { type = NavType.BoolType; defaultValue = false })) { entry ->
@@ -1417,22 +1426,13 @@ fun MtgNavGraph(
                         recipeSort = true
                     )
                 )
-                ScanScreen(
-                    viewModel = viewModel,
-                    social = socialRepository,
-                    onBack = { navController.popBackStack() },
-                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
-                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
-                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
-                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
-                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) },
-                    // What went where: the summary, in place of the screens that led here.
-                    onRecipeDone = {
-                        navController.navigate(Routes.sortRecipes(summary = true)) {
-                            popUpTo(Routes.SORT_RECIPES) { inclusive = true }
-                        }
+                // What went where: the summary, in place of the screens that led here.
+                val toSummary: () -> Unit = {
+                    navController.navigate(Routes.sortRecipes(summary = true)) {
+                        popUpTo(Routes.SORT_RECIPES) { inclusive = true }
                     }
-                )
+                }
+                scanner(viewModel, toSummary)
             }
 
             destination(Routes.SPREAD_THIN) {
@@ -1642,7 +1642,7 @@ fun MtgNavGraph(
                     onPutAway = { id -> navController.navigate(Routes.putAway(id)) },
                     onOpenDecks = { navController.navigateToTab(Routes.DECKS) },
                     onOpenLoans = { navController.navigate(Routes.loans()) },
-                    onSortPile = { navController.navigate(Routes.sortRecipes()) },
+                    onSortPile = { navController.navigate(Routes.SORT_SCAN) },
                     onOpenValue = { navController.navigate(Routes.VALUE_BY_PLACE) },
                     onOpenSpace = { navController.navigate(Routes.SPACE) },
                     onOpenSell = { navController.navigate(Routes.SELL) },
@@ -1870,16 +1870,7 @@ fun MtgNavGraph(
                         settingsRepository
                     )
                 )
-                ScanScreen(
-                    viewModel = viewModel,
-                    social = socialRepository,
-                    onBack = { navController.popBackStack() },
-                    onCardClick = { name -> navController.navigate(Routes.detail(name)) },
-                    onOpenSharedLink = { token -> navController.navigate(Routes.sharedLink(token)) },
-                    onOpenRemote = { matchId, seat -> navController.navigate(Routes.remote(matchId, seat)) },
-                    onOpenPlace = { id -> navController.navigate(Routes.place(id)) },
-                    onPullFrom = { deck, place -> navController.navigate(Routes.pullList(deck, place)) }
-                )
+                scanner(viewModel, null)
             }
 
             destination(
