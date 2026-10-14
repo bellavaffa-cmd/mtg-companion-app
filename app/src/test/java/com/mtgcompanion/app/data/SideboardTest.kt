@@ -112,7 +112,7 @@ class SideboardTest {
     fun `a banned sideboard card is an issue too`() {
         val deck = modern(emptyList(), listOf(card("oko", name = "Oko")))
         val issue = evaluateLegality(deck, mapOf("oko" to scry("oko", "Oko", mapOf("modern" to "banned")))).issues.single { it.kind == LegalityIssueKind.LEGALITY }
-        assertEquals("Banned in Modern (sideboard).", issue.reason)
+        assertEquals("Banned in Modern — it's in the sideboard.", issue.reason)
     }
 
     @Test

@@ -208,8 +208,11 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckOwnership
 import com.mtgcompanion.app.data.GameMode
+import com.mtgcompanion.app.data.LEGALITY_CHECKING
 import com.mtgcompanion.app.data.LegalityIssue
-import com.mtgcompanion.app.data.LegalityIssueKind
+import com.mtgcompanion.app.data.legalityReason
+import com.mtgcompanion.app.data.legalitySummary
+import com.mtgcompanion.app.data.uncheckedNote
 import com.mtgcompanion.app.data.SecondCommanderKind
 import com.mtgcompanion.app.data.canPair
 import com.mtgcompanion.app.data.pairCard
@@ -330,6 +333,8 @@ fun DeckDetailScreen(
     // Tapping a card enlarges it (swipeable), showing value/total and a quantity stepper.
     // Holds (source, key): source "card" -> deck card by scryfallId, "sugg" -> suggestion by id/name.
     var zoom by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // The header's legality pill tapped: every problem, in a sheet (LegalitySheet.kt).
+    var legalityOpen by remember { mutableStateOf(false) }
     // A tag tapped in a card's zoom or in Stats: the Cards tab, searched for it.
     val searchTag: (String) -> Unit = { label ->
         zoom = null
@@ -397,6 +402,7 @@ fun DeckDetailScreen(
                 analysis = analysis,
                 height = height,
                 collapsedFraction = scrollBehavior.state.collapsedFraction,
+                onLegality = { legalityOpen = true },
                 onBack = onBack,
                 onMenu = { menuOpen = true },
                 menu = {
@@ -740,6 +746,48 @@ fun DeckDetailScreen(
                     }
                 },
                 onDismiss = { addSuggestion = null }
+            )
+        }
+
+        if (legalityOpen) analysis.legality?.let { report ->
+            val goTo = { tab: String -> tabs.indexOf(tab).takeIf { it >= 0 }?.let { page -> scope.launch { pagerState.animateScrollToPage(page) } } }
+            val entryOf = { issue: LegalityIssue ->
+                (if (issue.sideboard) currentDeck.sideboard else currentDeck.cards).find { it.scryfallId == issue.scryfallId }
+            }
+            val commanderIds = setOfNotNull(currentDeck.commander?.scryfallId, currentDeck.partnerCommander?.scryfallId)
+            LegalitySheet(
+                report = report,
+                actions = LegalityActions(
+                    onOpen = { issue ->
+                        val id = issue.scryfallId
+                        if (id != null) { legalityOpen = false; zoom = (if (issue.sideboard) "side" else "card") to id }
+                    },
+                    onReduce = { issue ->
+                        val id = issue.scryfallId
+                        val quantity = issue.fixQuantity
+                        if (id != null && quantity != null) {
+                            viewModel.setCardQuantity(id, quantity)
+                            toast("Reduced ${issue.card} to $quantity ${if (quantity == 1) "copy" else "copies"}.")
+                        }
+                    },
+                    onMoveToConsidering = { issue ->
+                        entryOf(issue)?.let { entry ->
+                            addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, considering = true)) { viewModel.moveToConsidering(entry.scryfallId) }
+                        }
+                    },
+                    // Asked first, as from the card's own menu.
+                    onRemove = { issue ->
+                        entryOf(issue)?.let { entry ->
+                            legalityOpen = false
+                            if (issue.sideboard) removeSideboardTarget = entry else removeCardTarget = entry
+                        }
+                    },
+                    onSizeFix = { adding -> legalityOpen = false; goTo(if (adding) "Suggestions" else "Cards") },
+                    canConsider = { !it.sideboard && it.scryfallId !in commanderIds }
+                ),
+                // On a desktop-width window Stats is already beside the cards.
+                onSeeStats = if ("Stats" in tabs) ({ legalityOpen = false; goTo("Stats") }) else null,
+                onDismiss = { legalityOpen = false }
             )
         }
 
@@ -1411,12 +1459,13 @@ private fun DeckSettingsDialog(
 }
 
 /**
- * The deck's legality at a glance — "Legal" with a tick, or how many problems there are — which
- * opens the full list, with its one-tap fixes, underneath. Heads the Stats tab.
+ * The deck's legality at a glance — "Legal" with a tick, or what's wrong ("3 banned", "4 problems")
+ * — which opens the full list, with its one-tap fixes, underneath. Heads the Stats tab; open from
+ * the start when the deck isn't legal.
  */
 @Composable
 private fun LegalitySection(report: LegalityReport, viewModel: DeckDetailViewModel) {
-    var open by rememberSaveable { mutableStateOf(false) }
+    var open by rememberSaveable { mutableStateOf(!report.legal) }
     Column {
         LegalityBadge(report, expanded = open, onClick = { open = !open })
         AnimatedVisibility(visible = open) {
@@ -1428,8 +1477,8 @@ private fun LegalitySection(report: LegalityReport, viewModel: DeckDetailViewMod
 @Composable
 private fun LegalityBadge(report: LegalityReport, expanded: Boolean, onClick: () -> Unit) {
     val app = LocalAppColors.current
-    val color = if (report.legal) app.success else app.error
-    val problems = report.issues.size
+    val checking = legalitySummary(report) == LEGALITY_CHECKING
+    val color = if (checking) TextMuted else if (report.legal) app.success else app.error
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1442,9 +1491,9 @@ private fun LegalityBadge(report: LegalityReport, expanded: Boolean, onClick: ()
         Icon(if (report.legal) Icons.Filled.CheckCircle else Icons.Filled.Cancel, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
         Text(
             when {
+                checking -> LEGALITY_CHECKING
                 report.legal -> "Legal"
-                problems > 0 -> "$problems problem${if (problems == 1) "" else "s"}"
-                else -> "Not legal"
+                else -> legalityReason(report)
             },
             style = MaterialTheme.typography.labelLarge,
             color = color
@@ -1474,8 +1523,11 @@ private fun LegalityDetails(report: LegalityReport, viewModel: DeckDetailViewMod
         style = MaterialTheme.typography.labelMedium,
         color = TextMuted
     )
+    uncheckedNote(report)?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = TextMuted, modifier = Modifier.padding(top = 8.dp))
+    }
     if (report.legal) {
-        Text(
+        if (report.unchecked == 0) Text(
             "This deck follows ${report.mode.label}'s building rules.",
             style = MaterialTheme.typography.bodySmall,
             color = TextMuted,
@@ -1483,60 +1535,15 @@ private fun LegalityDetails(report: LegalityReport, viewModel: DeckDetailViewMod
         )
         return
     }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
-        report.issues.forEach { issue ->
-            LegalityIssueRow(
-                issue,
-                onFix = if (issue.kind == LegalityIssueKind.COPY_LIMIT && issue.scryfallId != null && issue.fixQuantity != null) {
-                    {
-                        viewModel.setCardQuantity(issue.scryfallId, issue.fixQuantity)
-                        val word = if (issue.fixQuantity == 1) "copy" else "copies"
-                        Toast.makeText(context, "Reduced ${issue.card} to ${issue.fixQuantity} $word.", Toast.LENGTH_SHORT).show()
-                    }
-                } else null
-            )
-        }
-    }
-}
-
-@Composable
-private fun LegalityIssueRow(issue: LegalityIssue, onFix: (() -> Unit)?) {
+    // The same groups as the header's sheet (LegalitySheet.kt), with the copy-limit fix.
     val haptic = LocalHapticFeedback.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .elevatedCard(shape = RoundedCornerShape(16.dp))
-            .let {
-                if (onFix != null) {
-                    it.clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onFix() }
-                } else it
-            }
-            .padding(12.dp)
-    ) {
-        Icon(
-            Icons.Filled.Cancel,
-            contentDescription = null,
-            tint = LocalAppColors.current.error,
-            modifier = Modifier.size(18.dp)
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            issue.card?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-            }
-            Text(issue.reason, style = MaterialTheme.typography.bodySmall, color = TextMuted)
-            if (onFix != null) {
-                val word = if (issue.fixQuantity == 1) "copy" else "copies"
-                Text(
-                    "Tap to reduce to ${issue.fixQuantity} $word",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Gold,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-        }
-    }
+    LegalityGroups(report, LegalityActions(onReduce = { issue ->
+        val id = issue.scryfallId ?: return@LegalityActions
+        val quantity = issue.fixQuantity ?: return@LegalityActions
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        viewModel.setCardQuantity(id, quantity)
+        Toast.makeText(context, "Reduced ${issue.card} to $quantity ${if (quantity == 1) "copy" else "copies"}.", Toast.LENGTH_SHORT).show()
+    }))
 }
 
 @Composable
@@ -3077,7 +3084,9 @@ private fun DeckHero(
     collapsedFraction: Float,
     onBack: () -> Unit,
     onMenu: () -> Unit,
-    menu: @Composable () -> Unit
+    menu: @Composable () -> Unit,
+    /** The legality pill tapped: why it isn't legal (LegalitySheet.kt). */
+    onLegality: () -> Unit = {}
 ) {
     val app = LocalAppColors.current
     val identity = analysis.colorCounts.map { it.first }.filter { it in listOf("W", "U", "B", "R", "G") }
@@ -3163,18 +3172,10 @@ private fun DeckHero(
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(app.accentGlow).padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
-                    // Whether the deck is legal for its game mode; the badge at the top of Stats says why not.
-                    analysis.legality?.takeIf { !analysis.loading }?.let { report ->
-                        val illegal = app.error
-                        Text(
-                            if (report.legal) "Legal" else "Not legal",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (report.legal) app.accent else illegal,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(if (report.legal) app.accentGlow else illegal.copy(alpha = 0.18f))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
+                    // Whether the deck is legal for its game mode, and the main reason it isn't; tapping it
+                    // opens every problem (LegalitySheet.kt).
+                    if (deck.cards.isNotEmpty() || analysis.legality != null) {
+                        LegalityPill(analysis.legality, loading = analysis.loading, onClick = onLegality)
                     }
                 }
                 if (identity.isNotEmpty()) IdentityStrip(identity, modifier = Modifier.width(110.dp).padding(top = 4.dp))
