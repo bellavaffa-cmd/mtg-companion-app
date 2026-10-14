@@ -2078,7 +2078,7 @@ private fun StatsTab(
                 onCard = onCard
             )
         }
-        item(key = "value") { DeckValuePanel(valueHistory, money) }
+        item(key = "value-history") { DeckValuePanel(valueHistory, money) }
         item(key = "summary") {
             val cards = deck.cards.sumOf { it.quantity }
             CollapsibleStat("Summary", isOpen("summary"), { toggle("summary") }, summary = "$cards cards · ${money.format(analysis.totalUsd)}") {

@@ -9,6 +9,11 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "deck-tabs-crash",
+        "Decks: switching tabs no longer crashes",
+        "Your crash report (build 47): opening Stats in a deck crashed the app (two panels shared one id). Open a deck and switch between all its tabs, several times and quickly, including Stats with its panels open and closed; scroll Stats to the bottom. Nothing should crash."
+    ),
+    TesterNote(
         "legality-why",
         "The deck says why it isn't legal",
         "1) Open a Commander deck that breaks a rule (98 cards, a banned card such as Mana Crypt, no commander, an off-colour card or two copies of something). The pill under the deck name now says the main reason: \"Not legal · 98/100 cards\", \"Not legal · 1 banned\", \"Not legal · no commander\", or \"Not legal · 3 problems\" when it's several kinds of thing. A legal deck still says \"Legal\". " +
