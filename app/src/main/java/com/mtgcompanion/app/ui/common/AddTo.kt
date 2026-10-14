@@ -139,6 +139,8 @@ sealed interface UndoStep {
     data class Commanders(val deckId: String, val commander: DeckCardEntry?, val partner: DeckCardEntry?) : UndoStep
     /** A card in a binder. */
     data class BinderCard(val binderId: String, val scryfallId: String, val before: CollectionEntry?, val stillThere: Boolean) : UndoStep
+    /** Where a deck's copies came from (Deck.cameFrom), as it was. */
+    data class CameFromList(val deckId: String, val before: List<com.mtgcompanion.app.data.CameFrom>?) : UndoStep
     /** A deck or binder made for the cards: it goes again. */
     data class DeleteDeck(val deckId: String) : UndoStep
     data class DeleteBinder(val binderId: String) : UndoStep
@@ -170,6 +172,7 @@ fun undoSteps(
         steps += changed(was.cards, after.cards, { it.scryfallId }) { id, b, still -> UndoStep.DeckCard(after.id, id, b, still) }
         steps += changed(was.considering, after.considering, { it.scryfallId }) { id, b, still -> UndoStep.Considered(after.id, id, b, still) }
         steps += changed(was.sideboard, after.sideboard, { it.scryfallId }) { id, b, still -> UndoStep.Sideboard(after.id, id, b, still) }
+        if (before != null && was.cameFrom != after.cameFrom) steps += UndoStep.CameFromList(after.id, was.cameFrom)
         if (was.commander != after.commander || was.partnerCommander != after.partnerCommander) {
             commanders += UndoStep.Commanders(after.id, was.commander, was.partnerCommander)
         }

@@ -225,8 +225,8 @@ fun PutBackScreen(
                 title = { Text("Taken apart", color = colors.accentLight) },
                 text = {
                     Text(
-                        (if (r.placed > 0) "${r.placed} ${if (r.placed == 1) "card is" else "cards are"} back in their places. " else "") +
-                            (if (r.unplaced > 0) "${r.unplaced} ${if (r.unplaced == 1) "is" else "are"} in No binder with no place yet. " else "") +
+                        (if (r.placed > 0) "${r.placed} ${if (r.placed == 1) "card is" else "cards are"} back in their places, in the binders they're listed in (or No binder). " else "") +
+                            (if (r.unplaced > 0) "${r.unplaced} ${if (r.unplaced == 1) "has" else "have"} no place yet. " else "") +
                             "${deck.name} is a virtual deck now.",
                         color = colors.textMuted
                     )

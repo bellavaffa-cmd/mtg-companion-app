@@ -27,7 +27,7 @@ fun joinedBinders(a: List<BinderRef>?, b: List<BinderRef>?): List<BinderRef>? {
     val out = ArrayList<BinderRef>()
     for (ref in a.orEmpty() + b.orEmpty()) {
         val at = out.indexOfFirst { it.id == ref.id }
-        if (at >= 0) out[at] = out[at].copy(qty = out[at].qty + ref.qty) else out += ref
+        if (at >= 0) out[at] = binderRef(ref.id, out[at].qty + ref.qty, out[at].foils + ref.foils) else out += ref
     }
     return out
 }

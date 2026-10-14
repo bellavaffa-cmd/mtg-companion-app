@@ -126,9 +126,11 @@ class AddToFeedback internal constructor(
             when (step) {
                 is UndoStep.DeckCard -> when {
                     step.before == null -> decks.setCardQuantity(step.deckId, step.scryfallId, 0)
-                    step.stillThere -> decks.setCardQuantity(step.deckId, step.scryfallId, step.before.quantity)
+                    // The card as it was: its count, and the binders its copies were in.
+                    step.stillThere -> decks.restoreCard(step.deckId, step.before)
                     else -> decks.addEntry(step.deckId, step.before)
                 }
+                is UndoStep.CameFromList -> decks.setCameFrom(step.deckId, step.before)
                 is UndoStep.Considered -> {
                     if (step.stillThere) decks.removeFromConsidering(step.deckId, step.scryfallId)
                     step.before?.let { decks.addConsideringEntry(step.deckId, it) }
@@ -144,7 +146,10 @@ class AddToFeedback internal constructor(
                 }
                 is UndoStep.BinderCard -> when {
                     step.before == null -> binders.removeEntry(step.binderId, step.scryfallId)
-                    step.stillThere -> binders.setQuantity(step.binderId, step.scryfallId, step.before.quantity, step.before.foilQuantity)
+                    step.stillThere -> {
+                        binders.setQuantity(step.binderId, step.scryfallId, step.before.quantity, step.before.foilQuantity)
+                        step.before.places?.let { binders.setPlaces(step.binderId, step.scryfallId, it) }
+                    }
                     else -> binders.addEntry(step.binderId, step.before)
                 }
                 is UndoStep.DeleteDeck -> decks.deleteDeck(step.deckId)

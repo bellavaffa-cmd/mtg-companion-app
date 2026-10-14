@@ -93,7 +93,9 @@ data class SwapResult(val collections: List<Collection>, val decks: List<Deck>)
 
 /**
  * One proxy swapped for the real card: the deck keeps the same card, one copy of it stops being a
- * proxy, and the binder copy that took its place is gone from the binder — it's in the deck now.
+ * proxy, and the binder copy that took its place is gone from the binder — it's in the deck now, and
+ * the deck's card is sorted into that binder, so the binder still lists it (BinderFlows.kt), with the
+ * spot it was kept in noted on the deck (Deck.cameFrom). Taken from No binder, it's in no binder.
  * Null when there's no proxy of that card, or no copy to swap in.
  */
 fun withSwapIn(collections: List<Collection>, decks: List<Deck>, deckId: String, scryfallId: String): SwapResult? {
@@ -104,24 +106,26 @@ fun withSwapIn(collections: List<Collection>, decks: List<Deck>, deckId: String,
     val binder = collections.firstOrNull { c ->
         c.kind != CollectionType.WISHLIST && c.entries.any { key(it.name) == key(entry.name) && it.quantity + it.foilQuantity > 0 }
     } ?: return null
+    val taking = binder.entries.first { key(it.name) == key(entry.name) && it.quantity + it.foilQuantity > 0 }
+    // A plain copy first; a foil only if that's all there is. One with no place first, then the last place's.
+    val foil = taking.quantity <= 0
+    val (staying, going) = splitPlaces(taking, if (foil) 0 else 1, if (foil) 1 else 0)
+    val left = taking.copy(
+        quantity = taking.quantity - (if (foil) 0 else 1),
+        foilQuantity = taking.foilQuantity - (if (foil) 1 else 0),
+        places = if (taking.places == null) null else staying
+    )
 
-    val nextDecks = decks.map { d ->
-        if (d.id != deckId) d
-        else d.copy(cards = d.cards.map { if (it.scryfallId != scryfallId) it else it.copy(proxyQuantity = proxies - 1) })
-    }
+    val swapped = deck.copy(cards = deck.cards.map { if (it.scryfallId != scryfallId) it else it.copy(proxyQuantity = proxies - 1) })
+    val valid = sortingBinderIds(collections)
+    val sorted = if (binder.id !in valid) swapped
+    else withCardBinders(swapped, scryfallId, withRef(assignedCopies(deck, entry), binderRef(binder.id, 1, if (foil) 1 else 0)))
+    val came = going.map { cameFromLine(entry.name, it) }
+    val next = if (came.isEmpty()) sorted else sorted.copy(cameFrom = tidyCameFrom(sorted.cameFrom.orEmpty() + came))
+    val nextDecks = decks.map { d -> if (d.id != deckId) d else next }
     val nextCollections = collections.map { c ->
-        if (c.id != binder.id) c else {
-            var taken = false
-            c.copy(entries = c.entries.flatMap { e ->
-                if (taken || key(e.name) != key(entry.name)) listOf(e)
-                else {
-                    taken = true
-                    // A plain copy first; a foil only if that's all there is.
-                    val next = if (e.quantity > 0) e.copy(quantity = e.quantity - 1) else e.copy(foilQuantity = e.foilQuantity - 1)
-                    if (next.quantity + next.foilQuantity > 0) listOf(next) else emptyList()
-                }
-            })
-        }
+        if (c.id != binder.id) c
+        else c.copy(entries = c.entries.mapNotNull { e -> if (e !== taking) e else left.takeIf { it.quantity + it.foilQuantity > 0 } })
     }
     return SwapResult(nextCollections, nextDecks)
 }

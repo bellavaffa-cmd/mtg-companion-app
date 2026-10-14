@@ -115,6 +115,7 @@ import com.mtgcompanion.app.data.BinderView
 import com.mtgcompanion.app.data.NO_BINDER_TITLE
 import com.mtgcompanion.app.data.binderCountLine
 import com.mtgcompanion.app.data.binderView
+import com.mtgcompanion.app.data.deckCopiesStayLine
 import com.mtgcompanion.app.data.deckCopiesByBinder
 import com.mtgcompanion.app.data.keptInPlacesAndDecksLine
 import com.mtgcompanion.app.data.noBinderLine
@@ -1213,7 +1214,8 @@ private fun BindersTab(
         ConfirmDeleteDialog(
             title = "Delete binder?",
             message = "\"${collection.name}\" and its $total card${if (total == 1) "" else "s"} will be " +
-                "permanently deleted. This can't be undone.",
+                "permanently deleted. This can't be undone." +
+                deckCopiesStayLine(binderView(collection.id, collections, decks, views).inDecks).let { if (it.isEmpty()) "" else " $it" },
             confirmLabel = "Delete binder",
             onConfirm = { onDelete(collection.id); confirmDelete = null },
             onDismiss = { confirmDelete = null }

@@ -122,8 +122,19 @@ data class DeckCardEntry(
     val binders: List<BinderRef>? = null
 )
 
-/** Some of a deck card's copies sorted into a binder: [id] the binder (Collection) id, [qty] how many. */
-data class BinderRef(val id: String, val qty: Int)
+/**
+ * Some of a deck card's copies sorted into a binder: [id] the binder (Collection) id, [qty] how many,
+ * and [foil] how many of those are foil (null, left out of the JSON, when none) — so a foil that came
+ * out of a binder goes back as one (BinderFlows.kt). An app from before [foil] keeps the ref and drops
+ * the count, the copies then going back plain.
+ */
+data class BinderRef(val id: String, val qty: Int, val foil: Int? = null) {
+    /** Its foil copies, never more than [qty]. */
+    val foils: Int get() = (foil ?: 0).coerceIn(0, qty.coerceAtLeast(0))
+}
+
+/** A ref as both apps write it: [foil] left out when none. */
+fun binderRef(id: String, qty: Int, foil: Int = 0): BinderRef = BinderRef(id, qty, foil.coerceAtMost(qty).takeIf { it > 0 })
 
 /**
  * Whether a card can be the commander of a [mode] deck: a legendary creature, or a card whose

@@ -167,7 +167,7 @@ class DeckUpgradeTest {
         val cols = listOf(Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME, listOf(entry("Opt", 2)), createdAt = 0, type = CollectionType.OWNED.name))
         val applied = applyUpgradesForUndo(cols, listOf(deck, other), "me", listOf("id-Mind Stone" to dcard("Arcane Signet")))
         assertEquals(listOf("Opt" to 2, "Mind Stone" to 1), applied.collections[0].entries.map { it.name to it.quantity })
-        assertEquals(listOf("Mind Stone"), applied.back.map { it.name })
+        assertEquals(listOf("Mind Stone"), applied.back.map { it.entry.name })
         val (cols2, decks2) = undoUpgrades(applied.collections, applied.decks, applied.before!!, applied.back)
         assertEquals(deck, decks2[0])
         assertSame(other, decks2[1])

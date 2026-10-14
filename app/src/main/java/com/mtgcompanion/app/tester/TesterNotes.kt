@@ -9,32 +9,14 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "deck-tabs-crash",
-        "Decks: switching tabs no longer crashes",
-        "Your crash report (build 47): opening Stats in a deck crashed the app (two panels shared one id). Open a deck and switch between all its tabs, several times and quickly, including Stats with its panels open and closed; scroll Stats to the bottom. Nothing should crash."
-    ),
-    TesterNote(
-        "legality-why",
-        "The deck says why it isn't legal",
-        "1) Open a Commander deck that breaks a rule (98 cards, a banned card such as Mana Crypt, no commander, an off-colour card or two copies of something). The pill under the deck name now says the main reason: \"Not legal · 98/100 cards\", \"Not legal · 1 banned\", \"Not legal · no commander\", or \"Not legal · 3 problems\" when it's several kinds of thing. A legal deck still says \"Legal\". " +
-            "2) Tap the pill: a sheet lists every problem under a heading (Commander, Deck size, Banned or not legal in Commander, Outside the commander's colours, Too many copies, Companion). Tap a card's row to open the card. A banned or off-colour card offers Move to Considering and Remove (Remove asks first); too many copies offers Reduce; a short deck offers \"Add 2 cards · see suggestions\" (goes to Suggestions), an over-size one \"Remove 1 card · open the cards\". \"See in Stats\" goes to the Stats tab. " +
-            "3) Stats tab: on a deck that isn't legal the Legality box is already open, with the same headings. " +
-            "4) A Modern deck with a banned card in the sideboard says \"Banned in Modern — it's in the sideboard.\", and Remove there takes it out of the sideboard. " +
-            "5) Turn on airplane mode and open a deck: while the cards can't be looked up the pill says \"Checking…\" rather than \"Legal\" or \"Not legal\" (unless something is wrong that needs no card data, like the deck's size), and the sheet says how many cards couldn't be checked."
-    ),
-    TesterNote(
-        "binder-views",
-        "Binders show the cards your decks hold — \"Unsorted\" is now \"No binder\"",
-        "Before anything else: this build saved a backup of your library the first time it opened — Settings › Data and speed › Backup › \"Restore from before the binders update\". " +
-            "1) Collection › Binders: the pile at the top is called \"No binder\" now (it was Unsorted). Its line counts your physical and proxy decks' real cards too: \"40 cards · 28 in decks, not in a binder\". Open it: your loose cards first, then IN DECKS — each deck card with a badge (\"In Talrand deck\", or \"In 2 decks\") and the deck's chip; tap the chip to open the deck. " +
-            "2) Open a Physical (or Proxy) deck › ⋯ › \"Put all cards in a binder…\" › pick a binder: \"N cards put in Rares\". Proxies never go in. Open that binder: the deck's cards are listed under IN DECKS with their badge, and its row on the Binders tab says \"84 cards · 12 in decks\" and \"… · 1 deck\". No binder no longer lists that deck's cards. " +
-            "3) Note the Collection header's count and the Cards tab's dashboard value before step 2 — they're the same after it: the cards are still the deck's; the binder only shows them. " +
-            "4) In the binder, a deck card's ⋮ › \"Take out of binder\": it moves to No binder (still in the deck). ⋮ › \"Move to another binder…\" › pick one: it shows there instead. \"Open deck\" opens it. " +
-            "5) On the deck, long-press a card: \"Add to binder…\" (or \"Binder: Rares ×1 · change\") puts just that card's real copies in a binder, or takes them out. " +
-            "6) A Virtual or Prototype deck, a cube and the welcome samples: their cards never show in a binder or in No binder, and they don't offer \"Put all cards in a binder\". " +
-            "7) Cards tab › Group by Binder: deck cards sit under their binder, the rest under \"No binder\"; decks aren't groups here any more (Group by Place still has them). " +
-            "8) In a binder, the + / − steppers, Remove, Move/Copy and long-press picking are for the loose cards only — deck cards aren't picked (the IN DECKS note says so). " +
-            "9) Look for \"Unsorted\" anywhere you'd see it before (scanner's Add to, imports, Sort a pile, Put back, deck delete): it says \"No binder\". A friend you share a binder with sees only its loose cards. " +
-            "10) Sync with the web app or another phone on this build: which binder a deck card is in comes along."
+        "binder-flows",
+        "Cards going into and out of decks keep their binder",
+        "Before you start, note the Collection header's card count and the dashboard's value — none of these steps should change them. " +
+            "1) Open a binder (say Rares) with Sol Ring in it, long-press Sol Ring › Move › a Physical deck (say Talrand): \"Moved Sol Ring to Talrand\" and \"Still listed in Rares: In Talrand deck\". Rares lists it under IN DECKS with the badge \"In Talrand deck\"; Talrand's card says \"Binder: Rares ×1\". Picking cards in Rares › Copy to… › a Physical deck does the same (\"Added …\"), rather than counting the card twice; into a Virtual or Prototype deck the card is only listed and your copy stays in Rares. " +
+            "2) Give Sol Ring a box spot first (Storage) and do step 1 again; then on the deck lower Sol Ring's count (or remove it): Sol Ring is back in Rares as a loose card, at its old box spot (Where it is shows it). A copy that came from search or No binder goes back to No binder, first. " +
+            "3) Delete a deck that has cards from your binders, choosing \"Delete deck, keep cards\": the dialog says they go back to the binders they're listed in. Each card is back in its own binder (and spot); the rest in No binder. Making a Physical deck Virtual or Prototype (Keep cards) does the same. " +
+            "4) Delete a binder whose cards are in a deck: the dialog adds \"N cards in decks stay in their decks.\" The deck keeps them; they now show in No binder. " +
+            "5) On a Proxy deck with a proxy of a card you own in a binder: Stats › Proxies › swap it in. The binder lists it in the deck (\"In … deck\"); lower the count and it goes back to that binder. The pull list's \"Move pulled into deck box\" does the same for cards pulled from a binder. A foil copy goes back foil. " +
+            "6) Undo on the confirmation puts everything back. Through all of this the header count and value never change; sync with the web app or another phone on this build and nothing is doubled or lost."
     )
 )

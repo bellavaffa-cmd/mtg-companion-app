@@ -29,6 +29,13 @@ import com.mtgcompanion.app.data.SettingsRepository
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.splitPlaces
+import com.mtgcompanion.app.data.FromBinder
+import com.mtgcompanion.app.data.cameFromLine
+import com.mtgcompanion.app.data.cameFromOf
+import com.mtgcompanion.app.data.copiesMoveInto
+import com.mtgcompanion.app.data.deckTitle
+import com.mtgcompanion.app.data.shownName
+import com.mtgcompanion.app.data.sortingBinderIds
 import com.mtgcompanion.app.ui.common.MoveTarget
 import com.mtgcompanion.app.ui.common.AddToOps
 import com.mtgcompanion.app.ui.common.AddToPick
@@ -364,38 +371,53 @@ class CollectionDetailViewModel(
 
     /**
      * Sends [pick]'s quantity of [entry]'s copies (plain ones first, then foils) to a deck or another
-     * binder — moving them out of this binder, or with [keep], copying them. Onto a deck's
-     * Considering list they're copied either way: it's a list of cards to think about, and the
-     * copies stay where they are. Run by the add confirmation ([ops]), which can undo it.
+     * binder — moving them out of this binder, or with [keep], copying them to another binder. Into a
+     * deck that holds its cards (Physical or Proxy) they always move, copied or not — a copy can't be
+     * in two places — and the deck's card is sorted into this binder, so it's still listed here, "In
+     * Talrand deck", with the spots they were kept in noted on the deck (BinderFlows.kt). Any other deck
+     * (Virtual, Prototype) and a deck's Considering list only list the card: the copies stay here. Run by
+     * the add confirmation ([ops]), which can undo it.
      */
     suspend fun sendEntry(entry: CollectionEntry, pick: AddToPick, keep: Boolean, ops: AddToOps) {
         val target = ops.resolve(pick)
         val (plain, foil) = copiesTaken(entry, pick.quantity)
         // Where the copies are kept goes with them; a copy made in the app has no place of its own.
         val (staying, going) = splitPlaces(entry, plain, foil)
-        val moving = entry.copy(quantity = plain, foilQuantity = foil, places = if (entry.places == null || keep) null else going)
-        when (target.kind) {
+        val leaves = when (target.kind) {
             SourceKind.DECK -> {
+                val moving = entry.copy(quantity = plain, foilQuantity = foil, places = null)
                 val deckEntry = cardRepository.withFullCardInfo(listOf(moving.toDeckEntry())).first()
-                if (pick.considering) deckRepository.addConsideringEntry(target.id, deckEntry.copy(quantity = 1))
-                else deckRepository.addEntry(target.id, deckEntry)
+                if (pick.considering) {
+                    deckRepository.addConsideringEntry(target.id, deckEntry.copy(quantity = 1))
+                    false
+                } else {
+                    val deck = deckRepository.decksFlow.first().firstOrNull { it.id == target.id }
+                    val moves = copiesMoveInto(deck)
+                    val came = if (moves) going.map { cameFromLine(entry.name, it) } else emptyList()
+                    deckRepository.addFromBinder(target.id, collectionId, listOf(FromBinder(deckEntry, if (moves) foil else 0, came)), sortingBinderIds(repository.collectionsFlow.first()))
+                    sayWhereItIs(ops, deck, target.name, moves, keep)
+                    moves
+                }
             }
-            SourceKind.BINDER -> repository.addEntry(target.id, moving)
+            SourceKind.BINDER -> {
+                repository.addEntry(target.id, entry.copy(quantity = plain, foilQuantity = foil, places = if (entry.places == null || keep) null else going))
+                !keep
+            }
         }
-        if (!keep && !pick.considering) {
+        if (leaves) {
             val leftPlain = entry.quantity - plain
             val leftFoil = entry.foilQuantity - foil
             if (leftPlain + leftFoil <= 0) repository.removeEntry(collectionId, entry.scryfallId)
             else {
                 repository.setQuantity(collectionId, entry.scryfallId, leftPlain, leftFoil)
-                if (entry.places != null && target.kind == SourceKind.BINDER) repository.setPlaces(collectionId, entry.scryfallId, staying)
+                if (entry.places != null) repository.setPlaces(collectionId, entry.scryfallId, staying)
             }
         }
     }
 
     /**
      * Sends the picked cards [ids] (all their copies) to a deck or another binder — moving them, or
-     * with [keep], copying them; see [sendEntry] for Considering.
+     * with [keep], copying them to another binder; into a deck as [sendEntry] says.
      */
     suspend fun sendEntries(ids: Set<String>, pick: AddToPick, keep: Boolean, ops: AddToOps) {
         val target = ops.resolve(pick)
@@ -407,10 +429,37 @@ class CollectionDetailViewModel(
                 if (picked.isEmpty()) return
                 // One lookup for all the picked cards, rather than one each.
                 val entries = cardRepository.withFullCardInfo(picked.map { it.toDeckEntry() })
-                if (pick.considering) deckRepository.addConsideringEntries(target.id, entries.map { it.copy(quantity = 1) })
-                else deckRepository.addEntries(target.id, entries)
-                if (!keep && !pick.considering) repository.removeEntries(collectionId, picked.map { it.scryfallId }.toSet())
+                if (pick.considering) {
+                    deckRepository.addConsideringEntries(target.id, entries.map { it.copy(quantity = 1) })
+                    return
+                }
+                val deck = deckRepository.decksFlow.first().firstOrNull { it.id == target.id }
+                val moves = copiesMoveInto(deck)
+                val byId = picked.associateBy { it.scryfallId }
+                val cards = entries.map { d ->
+                    val c = byId[d.scryfallId]
+                    if (c == null || !moves) FromBinder(d, 0, emptyList())
+                    else FromBinder(d, c.foilQuantity, cameFromOf(c, c.quantity, c.foilQuantity))
+                }
+                deckRepository.addFromBinder(target.id, collectionId, cards, sortingBinderIds(repository.collectionsFlow.first()))
+                sayWhereItIs(ops, deck, target.name, moves, keep)
+                if (moves) repository.removeEntries(collectionId, picked.map { it.scryfallId }.toSet())
             }
+        }
+    }
+
+    /**
+     * The confirmation for cards sent to a deck: into one that holds its cards they're added, still
+     * listed in this binder ("Rares still lists them, in Talrand deck"); any other deck only lists them.
+     */
+    private fun sayWhereItIs(ops: AddToOps, deck: Deck?, deckName: String, moves: Boolean, keep: Boolean) {
+        val here = collection.value
+        val name = here?.shownName ?: "this binder"
+        if (keep || !moves) ops.message = ops.message.replaceFirst(Regex("^(Copied|Moved) "), "Added ")
+        ops.note = when {
+            !moves -> "A ${deck?.ownershipType?.label?.lowercase() ?: "virtual"} deck: your copies stay in $name"
+            here?.isUnsorted == true -> null
+            else -> "Still listed in $name: In ${deckTitle(deck?.name ?: deckName)}"
         }
     }
 

@@ -14,14 +14,13 @@ import com.mtgcompanion.app.ui.common.AddCheck
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.lazy.LazyRow
 import com.mtgcompanion.app.data.madeByLabel
-import com.mtgcompanion.app.data.holdsOwnCopies
 import com.mtgcompanion.app.data.holdsCards
 import com.mtgcompanion.app.data.pullNeeds
 import com.mtgcompanion.app.data.proxyCopies
 import com.mtgcompanion.app.data.sortsIntoBinders
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Unarchive
-import com.mtgcompanion.app.data.realCopiesOf
+import com.mtgcompanion.app.data.heldCopies
 import com.mtgcompanion.app.data.ProxyHeldElsewhere
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -893,7 +892,7 @@ fun DeckDetailScreen(
                 onSelect = { viewModel.setGameMode(it) },
                 ownership = currentDeck.ownershipType,
                 onOwnershipChange = { o ->
-                    if (currentDeck.holdsOwnCopies && o != DeckOwnership.PHYSICAL && realCopiesOf(currentDeck).isNotEmpty()) leavingPhysical = o
+                    if (heldCopies(currentDeck) > heldCopies(currentDeck.copy(ownership = o.name))) leavingPhysical = o
                     else viewModel.setOwnership(o)
                 },
                 tags = currentDeck.tags,
@@ -931,7 +930,7 @@ fun DeckDetailScreen(
             ImportResultDialog(state = state, onDismiss = { importState = null })
         }
         leavingPhysical?.let { target ->
-            val real = realCopiesOf(currentDeck).sumOf { it.quantity }
+            val real = heldCopies(currentDeck) - heldCopies(currentDeck.copy(ownership = target.name))
             AlertDialog(
                 containerColor = Surface,
                 onDismissRequest = { leavingPhysical = null },
@@ -939,7 +938,7 @@ fun DeckDetailScreen(
                 text = {
                     Text(
                         "\"${currentDeck.name}\" holds $real of your cards, and a ${target.label.lowercase()} deck doesn't count " +
-                            "its cards as yours. Keep them and they go to No binder; or remove them from your collection.",
+                            "its cards as yours. Keep them and they go back to the binders they're listed in (the rest to No binder); or remove them from your collection.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextPrimary
                     )
@@ -962,7 +961,7 @@ fun DeckDetailScreen(
             DeleteDeckDialog(
                 deckName = currentDeck.name,
                 cardCount = currentDeck.cards.sumOf { it.quantity },
-                realCopies = realCopiesOf(currentDeck).sumOf { it.quantity },
+                realCopies = heldCopies(currentDeck),
                 onDelete = { keepCards -> confirmDelete = false; viewModel.deleteDeck(keepCards, onBack) },
                 onDismiss = { confirmDelete = false }
             )
@@ -1152,7 +1151,7 @@ private fun DeleteDeckDialog(
         title = { Text("Delete deck?", color = GoldLight) },
         text = {
             Text(
-                "\"$deckName\" holds $realCopies of your cards. Keep them and they go to No binder; " +
+                "\"$deckName\" holds $realCopies of your cards. Keep them and they go back to the binders they're listed in, the rest to No binder; " +
                     "or delete them with the deck, out of your collection. Deleting the deck can't be undone.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextPrimary

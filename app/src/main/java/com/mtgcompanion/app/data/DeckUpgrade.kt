@@ -385,14 +385,14 @@ data class UpgradeApplied(
     val decks: List<Deck>,
     /** The deck as it was before; null when nothing changed. */
     val before: Deck?,
-    /** The real copies of the cards cut that went back to the Unsorted pile. */
-    val back: List<CollectionEntry>
+    /** The real copies of the cards cut that went back to their binders or No binder (BinderFlows.kt returnCopies). */
+    val back: List<CopiesBack>
 )
 
 /**
  * [swaps] (cut id to the entry coming in) made in deck [deckId], in one change: each as [withUpgrade],
- * and the real copies of each card cut (a physical deck's, proxies aside) back to the Unsorted pile,
- * as moving a card to Considering does.
+ * and the real copies of each card cut (proxies aside) back to their binders or No binder, as moving
+ * a card to Considering does (BinderFlows.kt returnCopies).
  */
 fun applyUpgrades(collections: List<Collection>, decks: List<Deck>, deckId: String, swaps: List<Pair<String, DeckCardEntry>>): Pair<List<Collection>, List<Deck>> =
     applyUpgradesForUndo(collections, decks, deckId, swaps).let { it.collections to it.decks }
@@ -401,30 +401,26 @@ fun applyUpgrades(collections: List<Collection>, decks: List<Deck>, deckId: Stri
 fun applyUpgradesForUndo(collections: List<Collection>, decks: List<Deck>, deckId: String, swaps: List<Pair<String, DeckCardEntry>>): UpgradeApplied {
     val before = decks.firstOrNull { it.id == deckId } ?: return UpgradeApplied(collections, decks, null, emptyList())
     var deck = before
-    val back = mutableListOf<CollectionEntry>()
+    var cols = collections
+    val back = mutableListOf<CopiesBack>()
     for ((cutId, add) in swaps) {
-        val cut = deck.cards.firstOrNull { it.scryfallId == cutId } ?: continue
+        if (deck.cards.none { it.scryfallId == cutId }) continue
         val next = withUpgrade(deck, cutId, add)
         if (next === deck) continue
-        val leaving = realCopiesLeaving(deck, cut, 0)
-        if (leaving > 0) back += pileEntryOf(cut, leaving)
-        deck = next
+        // The cut card's copies go back where they belong, as when it's taken out by hand.
+        val r = returnCopies(cols, deck, next)
+        cols = r.collections
+        back += r.back
+        deck = r.deck ?: next
     }
     if (deck === before) return UpgradeApplied(collections, decks, null, emptyList())
-    val cols = if (back.isEmpty()) collections
-    else withUnsortedPile(collections).map { if (it.id == UNSORTED_COLLECTION_ID) it.copy(entries = intoPile(it.entries, back)) else it }
     return UpgradeApplied(cols, decks.map { if (it.id == deckId) deck else it }, before, back)
 }
 
 /**
  * Undo for [applyUpgradesForUndo]: the deck exactly as it was ([before] — cut cards back in their place,
  * added cards and their pull-list marks gone, Considering as it was), and the copies that went back
- * to the Unsorted pile ([back]) taken out of it again.
+ * to the collection ([back]) taken out of it again.
  */
-fun undoUpgrades(collections: List<Collection>, decks: List<Deck>, before: Deck, back: List<CollectionEntry>): Pair<List<Collection>, List<Deck>> {
-    val cols = if (back.isEmpty()) collections else collections.map { c ->
-        if (c.id != UNSORTED_COLLECTION_ID) c
-        else c.copy(entries = back.fold(c.entries) { entries, e -> takenFromUnsorted(entries, e.scryfallId, e.name, e.quantity).first })
-    }
-    return cols to decks.map { if (it.id == before.id) before else it }
-}
+fun undoUpgrades(collections: List<Collection>, decks: List<Deck>, before: Deck, back: List<CopiesBack>): Pair<List<Collection>, List<Deck>> =
+    takeBack(collections, back) to decks.map { if (it.id == before.id) before else it }

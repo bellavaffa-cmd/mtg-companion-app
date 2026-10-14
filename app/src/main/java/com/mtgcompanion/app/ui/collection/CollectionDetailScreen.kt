@@ -705,7 +705,8 @@ fun CollectionDetailScreen(
         val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
         ConfirmDeleteDialog(
             title = "Delete binder?",
-            message = "\"$name\" and its $total card${if (total == 1) "" else "s"} will be permanently deleted. This can't be undone.",
+            message = "\"$name\" and its $total card${if (total == 1) "" else "s"} will be permanently deleted. This can't be undone." +
+                com.mtgcompanion.app.data.deckCopiesStayLine(binderView?.inDecks ?: 0).let { if (it.isEmpty()) "" else " $it" },
             confirmLabel = "Delete binder",
             onConfirm = { confirmDeleteBinder = false; viewModel.deleteCollection(onBack) },
             onDismiss = { confirmDeleteBinder = false }

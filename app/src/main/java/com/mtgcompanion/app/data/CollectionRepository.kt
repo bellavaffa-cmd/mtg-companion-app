@@ -14,6 +14,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
@@ -357,14 +358,38 @@ class CollectionRepository(private val context: Context) {
     }
 
     /**
-     * [entry]'s count in [deck] went down to [newQuantity]: its real copies that left go back to the
-     * Unsorted pile (see realCopiesLeaving). Answers how many did.
+     * [entry]'s count in [deck] went down to [newQuantity] (0: taken out of the main deck): its real
+     * copies that left go back — to the binders they're sorted into, the rest to No binder, each to
+     * the spot it came from (BinderFlows.kt returnCopies). Answers how many did.
      */
     suspend fun returnFromDeck(deck: Deck?, entry: DeckCardEntry, newQuantity: Int = 0): Int {
         if (deck == null) return 0
-        val n = realCopiesLeaving(deck, entry, newQuantity)
-        if (n > 0) addUnsorted(listOf(pileEntryOf(entry, n)))
-        return n
+        return returnLeaving(deck, withCardCount(deck, entry.scryfallId, newQuantity)).copies
+    }
+
+    /**
+     * The deck went from [before] to [after] (null: deleted, its cards kept) — written already: the
+     * owned copies it no longer holds go back into the binders (returnCopies), and the deck's cards'
+     * binders and cameFrom say what's left. Read and written in one go per store, the deck's cameFrom as
+     * it is now, so several cards going back one after another each take their own spots.
+     */
+    suspend fun returnLeaving(before: Deck, after: Deck?): ReturnResult {
+        val decks = DeckRepository(context)
+        val now = decks.decksFlow.first().firstOrNull { it.id == before.id }
+        val from = if (now != null && now.cameFrom != before.cameFrom) before.copy(cameFrom = now.cameFrom) else before
+        var result: ReturnResult? = null
+        update { collections -> returnCopies(collections, from, after).also { result = it }.collections }
+        val r = result ?: return ReturnResult(emptyList(), null, emptyList(), emptyMap(), emptyList())
+        if (after != null && (r.refs.isNotEmpty() || r.used.isNotEmpty())) decks.changeBinders { d -> if (d.id == before.id) applyReturned(d, r) else d }
+        return r
+    }
+
+    /** [count] loose copies of a card taken out of the Unsorted pile, whatever the deck (see takenFromUnsorted); how many were. */
+    suspend fun takeLoose(scryfallId: String, name: String, count: Int): Int {
+        if (count <= 0) return 0
+        var taken = 0
+        updateEntries(UNSORTED_COLLECTION_ID) { entries -> takenFromUnsorted(entries, scryfallId, name, count).let { (left, n) -> taken = n; left } }
+        return taken
     }
 
     private suspend fun updateEntries(collectionId: String, transform: (List<CollectionEntry>) -> List<CollectionEntry>) {

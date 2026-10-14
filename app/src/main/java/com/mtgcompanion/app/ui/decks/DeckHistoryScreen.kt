@@ -250,7 +250,7 @@ data class RestoreOutcome(val incoming: Int, val out: Int, val missing: Int, val
  * One earlier list, read only — the web app's DeckVersionPage: what was in it then and isn't now, and
  * what's been added since (or the whole list), with "Copy as new deck" and "Go back to this". Going
  * back keeps today's list in the history; a physical deck gets its pull list for the cards coming
- * back, and the ones going out land on the Unsorted pile.
+ * back, and the ones going out go back to their binders (BinderFlows.kt), the rest to No binder.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -408,7 +408,7 @@ fun DeckVersionScreen(
             val pull = r.physical && r.incoming > 0
             val text = listOfNotNull(
                 if (pull) "Its pull list has the ${r.incoming} ${if (r.incoming == 1) "card" else "cards"} coming back." else null,
-                if (r.out > 0) "The ${r.out} ${if (r.out == 1) "card" else "cards"} taken out ${if (r.out == 1) "is" else "are"} in No binder." else null,
+                if (r.out > 0) "The ${r.out} ${if (r.out == 1) "card" else "cards"} taken out ${if (r.out == 1) "is" else "are"} back in ${if (r.out == 1) "its binder" else "their binders"} (or No binder)." else null,
                 if (r.missing > 0) "${r.missing} ${if (r.missing == 1) "card" else "cards"} couldn't be found, so ${if (r.missing == 1) "it's" else "they're"} left out." else null,
                 "Today's list is in the history, so you can go back to it."
             ).joinToString(" ")

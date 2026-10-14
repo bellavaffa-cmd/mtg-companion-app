@@ -16,8 +16,8 @@ import com.mtgcompanion.app.data.tokensNeeded
 import com.mtgcompanion.app.data.TokenNeeded
 import com.mtgcompanion.app.data.userTagsOf
 import com.mtgcompanion.app.data.allUserTags
-import com.mtgcompanion.app.data.holdsOwnCopies
-import com.mtgcompanion.app.data.realCopiesOf
+import com.mtgcompanion.app.data.ownedCopies
+import com.mtgcompanion.app.data.tidiedRefs
 import com.mtgcompanion.app.data.proxiesHeldElsewhere
 import com.mtgcompanion.app.data.ProxyHeldElsewhere
 import com.mtgcompanion.app.data.proxySwaps
@@ -1222,9 +1222,10 @@ class DeckDetailViewModel(
     }
 
     /**
-     * Changes whether the deck holds the user's real cards. Becoming physical, the loose copies it now
-     * holds come out of the Unsorted pile; no longer physical, its real copies go back to the pile —
-     * or, with [keepCards] false, out of the collection (see realCopiesOf).
+     * Changes whether the deck holds the user's real cards. Copies it now counts as owned are loose
+     * ones, out of the Unsorted pile; copies it no longer does go back to the binders they're sorted
+     * into, the rest to No binder (BinderFlows.kt returnCopies) — or, with [keepCards] false, out of
+     * the collection.
      */
     fun setOwnership(ownership: DeckOwnership, keepCards: Boolean = true) {
         viewModelScope.launch {
@@ -1232,11 +1233,11 @@ class DeckDetailViewModel(
             if (before.ownershipType == ownership) return@launch
             val after = before.copy(ownership = ownership.name)
             repository.setOwnership(deckId, ownership)
-            when {
-                before.holdsOwnCopies && !after.holdsOwnCopies ->
-                    if (keepCards) realCopiesOf(before).takeIf { it.isNotEmpty() }?.let { collectionRepository.addUnsorted(it) }
-                !before.holdsOwnCopies && after.holdsOwnCopies ->
-                    realCopiesOf(after).forEach { collectionRepository.takeIntoDeck(after, it.scryfallId, it.name, it.quantity) }
+            if (keepCards) collectionRepository.returnLeaving(before, after)
+            else repository.changeBinders { d -> if (d.id == deckId) tidiedRefs(d) else d }
+            for (e in after.cards) {
+                val more = ownedCopies(after, e) - ownedCopies(before, e)
+                if (more > 0) collectionRepository.takeLoose(e.scryfallId, e.name, more)
             }
         }
     }
@@ -1310,11 +1311,12 @@ class DeckDetailViewModel(
         }
     }
 
-    /** Deletes the deck; with [keepCards], its real copies go back to the Unsorted pile first (see realCopiesOf). */
+    /** Deletes the deck; with [keepCards], its real copies go back to their binders first (see returnCopies). */
     fun deleteDeck(keepCards: Boolean, onDeleted: () -> Unit) {
         viewModelScope.launch {
-            val kept = if (keepCards) deck.value?.let { realCopiesOf(it) }.orEmpty() else emptyList()
-            if (kept.isNotEmpty()) collectionRepository.addUnsorted(kept)
+            // Its copies go back to the binders they're sorted into, the rest to No binder (returnCopies).
+            val before = deck.value
+            if (keepCards && before != null) collectionRepository.returnLeaving(before, null)
             repository.deleteDeck(deckId)
             onDeleted()
         }

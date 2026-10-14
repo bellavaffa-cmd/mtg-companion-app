@@ -239,6 +239,31 @@ class DeckRepository(private val context: Context) {
     }
 
     /**
+     * Cards whose copies come out of the collection [from] (a binder, or the Unsorted pile) into the
+     * deck's main list, in one write: each as withCopiesFromBinder (BinderFlows.kt) — real copies,
+     * sorted into that binder, their spots noted. [valid]: the binders deck copies can be sorted into.
+     */
+    suspend fun addFromBinder(deckId: String, from: String?, cards: List<FromBinder>, valid: Set<String>) {
+        if (cards.isEmpty()) return
+        update { decks ->
+            decks.map { deck ->
+                if (deck.id != deckId) deck
+                else cards.fold(deck) { d, c -> withCopiesFromBinder(d, c.entry, from, c.foil, c.came, valid) }
+            }
+        }
+    }
+
+    /** Undo: the main-deck card [entry] put back as it was — its count, proxies and binders. */
+    suspend fun restoreCard(deckId: String, entry: DeckCardEntry) {
+        update { decks -> decks.map { d -> if (d.id != deckId) d else d.copy(cards = d.cards.map { if (it.scryfallId == entry.scryfallId) entry else it }) } }
+    }
+
+    /** Undo: where the deck's copies came from, as it was ([cameFrom]). Not a change to the list. */
+    suspend fun setCameFrom(deckId: String, cameFrom: List<CameFrom>?) {
+        update(recordVersions = false) { decks -> decks.map { if (it.id == deckId) it.copy(cameFrom = cameFrom) else it } }
+    }
+
+    /**
      * Add many entries in a single write, merging into existing copies. Used by decklist import:
      * calling [addEntry] per card would emit the deck list once per card, and every emission makes
      * observers (deck analysis) re-query Scryfall — enough to rate-limit the app mid-import.

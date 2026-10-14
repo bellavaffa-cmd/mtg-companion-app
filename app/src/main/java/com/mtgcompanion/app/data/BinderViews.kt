@@ -41,8 +41,10 @@ fun assignedCopies(deck: Deck, entry: DeckCardEntry): List<BinderRef> {
         val take = minOf(ref.qty.coerceAtLeast(0), left)
         if (take <= 0) continue
         left -= take
+        // A ref cut down keeps its foils: the plain copies are the ones that leave first (BinderFlows.kt).
+        val foil = minOf(ref.foils, take)
         val at = out.indexOfFirst { it.id == ref.id }
-        if (at >= 0) out[at] = out[at].copy(qty = out[at].qty + take) else out += BinderRef(ref.id, take)
+        if (at >= 0) out[at] = binderRef(ref.id, out[at].qty + take, out[at].foils + foil) else out += binderRef(ref.id, take, foil)
     }
     return out
 }
@@ -167,19 +169,23 @@ fun withCardBinders(deck: Deck, scryfallId: String, refs: List<BinderRef>): Deck
  */
 fun movedRefs(current: List<BinderRef>, from: String?, to: String?, qty: Int, valid: Set<String>): List<BinderRef> {
     var left = qty
+    var foils = 0
     val out = ArrayList<BinderRef>()
     for (r in current) {
         val leaving = if (from == null) r.id !in valid else r.id == from
         if (leaving && left > 0) {
             val take = minOf(left, r.qty)
             left -= take
-            if (r.qty - take > 0) out += r.copy(qty = r.qty - take)
+            // Plain copies first; a foil goes with them only when that's what's left.
+            val foil = (take - (r.qty - r.foils)).coerceAtLeast(0)
+            foils += foil
+            if (r.qty - take > 0) out += binderRef(r.id, r.qty - take, r.foils - foil)
         } else out += r
     }
     val moved = qty - (if (from == null) 0 else left)
     if (to != null && moved > 0) {
         val at = out.indexOfFirst { it.id == to }
-        if (at >= 0) out[at] = out[at].copy(qty = out[at].qty + moved) else out += BinderRef(to, moved)
+        if (at >= 0) out[at] = binderRef(to, out[at].qty + moved, out[at].foils + foils) else out += binderRef(to, moved, foils)
     }
     return out
 }

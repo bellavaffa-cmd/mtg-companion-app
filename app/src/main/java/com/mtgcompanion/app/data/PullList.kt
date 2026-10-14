@@ -515,9 +515,16 @@ fun movePulled(deck: Deck, list: PullListData, ticked: Set<String>, collections:
     var cols = collections
     var others = decks
     val pulled = HashMap<String, Int>()
+    // Which binder each name's pulled copies came out of, in order (null: not a binder's), for the
+    // deck's card to be sorted into it (BinderFlows.kt).
+    val from = HashMap<String, ArrayDeque<BinderRef>>()
+    val valid = sortingBinderIds(collections)
     val came = mutableListOf<CameFrom>()
     val taken = mutableListOf<TakenFromDeck>()
-    fun note(name: String, n: Int) { pulled[nameKey(name)] = (pulled[nameKey(name)] ?: 0) + n }
+    fun note(name: String, n: Int, binder: String? = null, foil: Boolean = false) {
+        pulled[nameKey(name)] = (pulled[nameKey(name)] ?: 0) + n
+        from.getOrPut(nameKey(name)) { ArrayDeque() } += if (binder != null && binder in valid) binderRef(binder, n, if (foil) n else 0) else BinderRef("", n)
+    }
     val known = placesOf(collections).map { it.id }.toSet()
     fun entryOf(collectionId: String, scryfallId: String) = cols.firstOrNull { it.id == collectionId }?.entries?.firstOrNull { it.scryfallId == scryfallId }
     fun setEntry(collectionId: String, scryfallId: String, to: CollectionEntry?) {
@@ -539,7 +546,7 @@ fun movePulled(deck: Deck, list: PullListData, ticked: Set<String>, collections:
                 val (entry, moved) = moveCopies(e, src.line, null, row.qty)
                 if (moved <= 0) continue
                 setEntry(src.collectionId, src.scryfallId, fewer(entry, moved, src.line.isFoil))
-                note(row.name, moved)
+                note(row.name, moved, src.collectionId, src.line.isFoil)
                 val l = copyPlace(src.line.spot, moved, src.line.isFoil)
                 came += CameFrom(row.name, l.placeId, l.qty, l.foil, l.section, l.page, l.slot)
             }
@@ -550,7 +557,7 @@ fun movePulled(deck: Deck, list: PullListData, ticked: Set<String>, collections:
                 val n = minOf(row.qty, if (src.foil) foil else plain)
                 if (n <= 0) continue
                 setEntry(src.collectionId, src.scryfallId, fewer(clean, n, src.foil))
-                note(row.name, n)
+                note(row.name, n, src.collectionId, src.foil)
             }
             is PullSource.InDeck -> {
                 val other = others.firstOrNull { it.id == src.deckId } ?: continue
@@ -578,6 +585,23 @@ fun movePulled(deck: Deck, list: PullListData, ticked: Set<String>, collections:
     if (moved == 0) return MovePulledResult(collections, decks, 0, emptyList(), false, proxiesOf(deck))
 
     val wasHeld = deck.holdsCards
+    /** [e] sorted into the binders its [take] pulled copies came out of. */
+    fun sorted(e: DeckCardEntry, take: Int): DeckCardEntry {
+        val queue = from[nameKey(e.name)] ?: return e
+        var refs = if (wasHeld) assignedCopies(deck, e) else emptyList()
+        var want = take
+        var any = false
+        while (want > 0 && queue.isNotEmpty()) {
+            val r = queue.removeFirst()
+            val n = minOf(want, r.qty)
+            want -= n
+            if (r.qty > n) queue.addFirst(binderRef(r.id, r.qty - n, (r.foils - n).coerceAtLeast(0)))
+            if (r.id.isEmpty()) continue
+            refs = withRef(refs, binderRef(r.id, n, minOf(n, r.foils)))
+            any = true
+        }
+        return if (any) e.copy(binders = refs) else e
+    }
     val cards = deck.cards.map { e ->
         val left = pulled[nameKey(e.name)] ?: 0
         if (wasHeld) {
@@ -585,21 +609,21 @@ fun movePulled(deck: Deck, list: PullListData, ticked: Set<String>, collections:
             val take = minOf(left, proxies)
             if (take <= 0) return@map e
             pulled[nameKey(e.name)] = left - take
-            withProxies(e, proxies - take, deck.ownershipType == DeckOwnership.PROXY)
+            sorted(withProxies(e, proxies - take, deck.ownershipType == DeckOwnership.PROXY), take)
         } else {
             val marked = (e.proxyQuantity ?: 0).coerceAtLeast(0)
             val take = minOf(left, (e.quantity - marked).coerceAtLeast(0))
             pulled[nameKey(e.name)] = left - take
-            withProxies(e, e.quantity - take, false)
+            sorted(withProxies(e, e.quantity - take, false), take)
         }
     }
     val cameFrom = if (came.isNotEmpty() || deck.cameFrom != null) tidyCameFrom(deck.cameFrom.orEmpty() + came) else null
     val next = withCommandersFrom(
-        deck.copy(
+        tidiedRefs(deck.copy(
             cards = cards,
             ownership = if (wasHeld) deck.ownership else DeckOwnership.PHYSICAL.name,
             cameFrom = cameFrom
-        )
+        ))
     )
     return MovePulledResult(
         collections = cols,
@@ -809,38 +833,55 @@ data class TakeApartResult(
 )
 
 /**
- * "Done: deck taken apart": every copy on [list] goes back into the collection as the Unsorted pile's
- * — as a deck's cards do when it's deleted with its cards kept (intoPile) — each given its place. The
- * deck stays, as a virtual list: its proxies and where its cards came from are cleared, so building
- * it again starts afresh.
+ * "Done: deck taken apart": every copy on [list] goes back into the collection — as a deck's cards do
+ * when it's deleted with its cards kept (BinderFlows.kt returnCopies): the copies in no binder to the
+ * Unsorted pile, the ones sorted into a binder back into that binder (putBackOrder) — each given its
+ * place. The deck stays, as a virtual list: its proxies, its cards' binders and where its cards came
+ * from are cleared, so building it again starts afresh.
  */
 fun takeApart(deck: Deck, list: PutBackListData, collections: List<Collection>): TakeApartResult {
-    val withPile = withUnsortedPile(collections)
-    var pile = withPile.first { it.isUnsorted }.entries
+    var cols = withUnsortedPile(collections)
+    val valid = sortingBinderIds(cols)
+    val order = HashMap<String, ArrayDeque<Pair<String, Int>>>()
+    for (e in deck.cards) order[e.scryfallId] = ArrayDeque(putBackOrder(deck, e, valid))
     var placed = 0
     var unplaced = 0
+    fun put(collectionId: String, e: DeckCardEntry, row: PutBackRow, qty: Int) {
+        cols = cols.map { c ->
+            if (c.id != collectionId) return@map c
+            var entries = intoPile(c.entries, listOf(pileEntryOf(e, if (row.foil) 0 else qty).copy(foilQuantity = if (row.foil) qty else 0)))
+            val dest = row.dest
+            if (dest != null) {
+                val at = entries.indexOfFirst { it.scryfallId == row.scryfallId }
+                val (entry, moved) = placeCopies(entries[at], dest, qty, row.foil)
+                entries = entries.mapIndexed { i, x -> if (i == at) entry else x }
+                placed += moved
+                unplaced += qty - moved
+            } else unplaced += qty
+            c.copy(entries = entries)
+        }
+    }
     for (row in list.groups.flatMap { it.rows }) {
         val e = deck.cards.firstOrNull { it.scryfallId == row.scryfallId } ?: continue
         if (row.qty <= 0) continue
-        pile = intoPile(pile, listOf(pileEntryOf(e, if (row.foil) 0 else row.qty).copy(foilQuantity = if (row.foil) row.qty else 0)))
-        val dest = row.dest
-        if (dest != null) {
-            val at = pile.indexOfFirst { it.scryfallId == row.scryfallId }
-            val (entry, moved) = placeCopies(pile[at], dest, row.qty, row.foil)
-            pile = pile.mapIndexed { i, x -> if (i == at) entry else x }
-            placed += moved
-            unplaced += row.qty - moved
-        } else {
-            unplaced += row.qty
+        var left = row.qty
+        val queue = order[e.scryfallId]
+        while (left > 0 && queue != null && queue.isNotEmpty()) {
+            val (to, n) = queue.removeFirst()
+            val take = minOf(n, left)
+            if (n > take) queue.addFirst(to to n - take)
+            put(to, e, row, take)
+            left -= take
         }
+        // Copies the deck doesn't count as owned (a sample's): to the pile, as before.
+        if (left > 0) put(UNSORTED_COLLECTION_ID, e, row, left)
     }
-    val out = withPile.map { if (it.isUnsorted) it.copy(entries = pile) else it }
     val next = deck.copy(
         ownership = DeckOwnership.VIRTUAL.name,
-        cards = deck.cards.map { it.copy(proxyQuantity = null) },
+        cards = deck.cards.map { it.copy(proxyQuantity = null, binders = if (it.binders != null) emptyList() else null) },
         commander = deck.commander?.copy(proxyQuantity = null),
         partnerCommander = deck.partnerCommander?.copy(proxyQuantity = null),
         cameFrom = if (deck.cameFrom != null) emptyList() else null
     )
-    return TakeApartResult(out, next, placed, unplaced)
+    return TakeApartResult(cols, next, placed, unplaced)
 }
