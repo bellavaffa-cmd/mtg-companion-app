@@ -107,6 +107,7 @@ import com.mtgcompanion.app.data.CardViewMode
 import com.mtgcompanion.app.data.CollectionEntry
 import com.mtgcompanion.app.data.LocationChip
 import com.mtgcompanion.app.data.entryChips
+import com.mtgcompanion.app.data.shownName
 import com.mtgcompanion.app.network.scryfall.toArtCropUrl
 import androidx.activity.compose.BackHandler
 import com.mtgcompanion.app.ui.common.CardZoomDialog
@@ -152,10 +153,17 @@ fun CollectionDetailScreen(
     /** A row's place chip: the place, at the box's section or the binder's page. */
     onOpenPlaceAt: (String, String?, Int?) -> Unit = { _, _, _ -> },
     /** A row's "Lent" chip: the Loans screen. */
-    onOpenLoans: () -> Unit = {}
+    onOpenLoans: () -> Unit = {},
+    /** A deck copy's deck chip, or its "Open deck". */
+    onOpenDeck: (String) -> Unit = {}
 ) {
     val collection by viewModel.collection.collectAsState()
     val entries by viewModel.entries.collectAsState()
+    // The deck copies this binder shows (BinderViews.kt), one row a printing, and the binders they can go to.
+    val binderView by viewModel.view.collectAsState()
+    val deckRows by viewModel.deckRows.collectAsState()
+    val sortingTargets by viewModel.sortingTargets.collectAsState()
+    var movingDeckRow by remember { mutableStateOf<com.mtgcompanion.app.data.DeckCopyRow?>(null) }
     LaunchedEffect(externalQuery) { if (externalQuery != null) viewModel.onQueryChange(externalQuery) }
     // Where each row's copies are (CollectionLayout.kt): its places, and copies with no place yet.
     val lentByEntry by viewModel.lentByEntry.collectAsState()
@@ -263,7 +271,7 @@ fun CollectionDetailScreen(
                             expanded = menuOpen,
                             onDismiss = { menuOpen = false },
                             actions = binderActions,
-                            title = c.name,
+                            title = c.shownName,
                             subtitle = "$cardCount card${if (cardCount == 1) "" else "s"}"
                         )
                     }
@@ -302,7 +310,7 @@ fun CollectionDetailScreen(
             } else TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(collection?.name ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).a11yHeading())
+                        Text(collection?.shownName ?: "Binder", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).a11yHeading())
                         // What the Wishlist would cost today.
                         val worth = if (isWishlist) wishlistTotal(collection?.entries.orEmpty(), prices) else null
                         if (worth != null) Text(rememberMoney().format(worth, whole = true), style = MaterialTheme.typography.titleLarge, color = Gold, maxLines = 1)
@@ -318,7 +326,7 @@ fun CollectionDetailScreen(
     ) { padding ->
         when (listDialog) {
             "import" -> ImportCardsDialog(
-                title = "Import into ${collection?.name ?: "binder"}",
+                title = "Import into ${collection?.shownName ?: "binder"}",
                 askName = false,
                 progress = importProgress,
                 onImport = { _, text, targets -> viewModel.importCards(text, targets) },
@@ -355,7 +363,10 @@ fun CollectionDetailScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)
             )
             val total = collection?.entries?.sumOf { it.quantity + it.foilQuantity } ?: 0
-            val hasCards = collection?.entries?.isNotEmpty() == true
+            // A binder shows the deck copies sorted into it too; they count as its cards here.
+            val inDecks = if (isWishlist) 0 else binderView?.inDecks ?: 0
+            val hasCards = collection?.entries?.isNotEmpty() == true || inDecks > 0
+            val shownDeckRows = if (isWishlist) emptyList() else deckRows
             val notWanted = collection?.notWanted.orEmpty()
             // One list, like the Collection's other tabs: the dashboard, the Wishlist's boxes and notes
             // are its first rows and scroll away with the cards; the Wishlist's buttons are its last.
@@ -424,7 +435,7 @@ fun CollectionDetailScreen(
                 }
                 if (collection?.isUnsorted == true && hasCards) item(key = "head:unsorted") {
                     Text(
-                        "Cards you own that aren't in a binder yet. Long-press a card and choose Move to put it in a binder — or a new one.",
+                        "Cards you own that aren't in a binder yet, loose or in your decks. Long-press a loose card and choose Move to put it in a binder — or a new one; a deck's card goes in one from its menu, or from the deck.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted
                     )
@@ -445,7 +456,7 @@ fun CollectionDetailScreen(
                             )
                         }
                     }
-                    entries.isEmpty() -> item(key = "no-match") { EmptyPrompt(Icons.Filled.SearchOff, "No cards match \"$query\".") }
+                    entries.isEmpty() && shownDeckRows.isEmpty() -> item(key = "no-match") { EmptyPrompt(Icons.Filled.SearchOff, "No cards match \"$query\".") }
                     else -> {
                         item(key = "head:total") {
                             if (isWishlist) Text(
@@ -455,7 +466,8 @@ fun CollectionDetailScreen(
                                 color = TextMuted,
                                 modifier = Modifier.padding(bottom = 4.dp)
                             ) else Text(
-                                "$total cards · ${collection?.entries?.size ?: 0} unique",
+                                if (inDecks > 0) "${total + inDecks} cards · $inDecks in decks · ${collection?.entries?.size ?: 0} loose unique"
+                                else "$total cards · ${collection?.entries?.size ?: 0} unique",
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
@@ -493,6 +505,36 @@ fun CollectionDetailScreen(
                                         onPutAway = { puttingAway = entry },
                                         onMore = { onViewDetails(entry.name) }
                                     )
+                                )
+                            }
+                        }
+                        // The deck copies shown here: in their decks, sorted into this binder.
+                        if (shownDeckRows.isNotEmpty()) {
+                            item(key = "head:in-decks") {
+                                Column(Modifier.padding(top = 8.dp)) {
+                                    Text(
+                                        "IN DECKS · ${shownDeckRows.sumOf { it.qty }}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextMuted
+                                    )
+                                    Text(
+                                        if (selecting) "Cards in decks aren't picked — change them from their row's menu."
+                                        else if (collection?.isUnsorted == true) "In your decks and in no binder. Each stays in its deck; put it in a binder to see it there."
+                                        else "In your decks, and kept in this binder when they're out. Counts, selling and lending here are for the loose cards.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextMuted
+                                    )
+                                }
+                            }
+                            cardGrid(shownDeckRows, columns = listCols, key = { "deck:" + it.scryfallId }) { row ->
+                                DeckCopyCardRow(
+                                    row = row,
+                                    inNoBinder = collection?.isUnsorted == true,
+                                    onClick = { row.decks.firstOrNull()?.let { onOpenDeck(it.first) } },
+                                    onOpenDeck = onOpenDeck,
+                                    onMove = { movingDeckRow = row },
+                                    onTakeOut = { viewModel.moveDeckCopies(row, null) }
                                 )
                             }
                         }
@@ -590,6 +632,16 @@ fun CollectionDetailScreen(
         )
     }
 
+    movingDeckRow?.let { row ->
+        BinderPickDialog(
+            title = if (collection?.isUnsorted == true) "Put ${row.name} in a binder" else "Move ${row.name} to another binder",
+            binders = sortingTargets,
+            note = "It stays in ${com.mtgcompanion.app.data.inDecksBadge(row.decks.map { it.second }).removePrefix("In ")}; the binder shows it.",
+            onPick = { b -> movingDeckRow = null; viewModel.moveDeckCopies(row, b.id) },
+            onDismiss = { movingDeckRow = null }
+        )
+    }
+
     moveTarget?.let { entry ->
         AddToPicker(
             verb = AddVerb.MOVE,
@@ -642,8 +694,8 @@ fun CollectionDetailScreen(
     if (confirmDeleteBinder && collection?.isUnsorted == true) {
         val total = collection?.entries.orEmpty().sumOf { it.quantity + it.foilQuantity }
         ConfirmDeleteDialog(
-            title = "Remove all unsorted cards?",
-            message = "All $total unsorted card${if (total == 1) "" else "s"} will be removed from your collection, here and on your other devices. Cards in binders stay.",
+            title = "Remove all loose cards in No binder?",
+            message = "All $total loose card${if (total == 1) "" else "s"} in No binder will be removed from your collection, here and on your other devices. Cards in binders and decks stay.",
             confirmLabel = "Remove all",
             onConfirm = { confirmDeleteBinder = false; viewModel.clearAll(onBack) },
             onDismiss = { confirmDeleteBinder = false }

@@ -308,6 +308,41 @@ class DeckDetailViewModel(
             decks.filter { it.id != deckId }.map { it.asTarget() } + collections.map { it.asTarget() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** The binders this deck's real copies can be sorted into (BinderViews.kt), A to Z. */
+    val sortingBinders: StateFlow<List<com.mtgcompanion.app.data.Collection>> = collectionRepository.collectionsFlow
+        .map { com.mtgcompanion.app.data.sortingBinders(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Every real copy of [entry] this deck owns sorted into binder [binderId] — or, with null, into
+     * none (it then shows in No binder). The copies stay in the deck; the binder shows them.
+     */
+    fun setCardBinder(entry: DeckCardEntry, binderId: String?) {
+        viewModelScope.launch {
+            repository.changeBinders { d ->
+                if (d.id != deckId) d
+                else {
+                    val e = d.cards.firstOrNull { it.scryfallId == entry.scryfallId } ?: return@changeBinders d
+                    val owned = com.mtgcompanion.app.data.ownedCopies(d, e)
+                    com.mtgcompanion.app.data.withCardBinders(d, e.scryfallId, if (binderId == null || owned <= 0) emptyList() else listOf(com.mtgcompanion.app.data.BinderRef(binderId, owned)))
+                }
+            }
+        }
+    }
+
+    /** "Put all cards in a binder…": every real copy in no binder put in [binderId]; [done] gets how many. */
+    fun putAllInBinder(binderId: String, done: (Int) -> Unit) {
+        viewModelScope.launch {
+            val valid = com.mtgcompanion.app.data.sortingBinderIds(collectionRepository.collectionsFlow.first())
+            var moved = 0
+            repository.changeBinders { d ->
+                if (d.id != deckId) d
+                else com.mtgcompanion.app.data.allIntoBinder(d, binderId, valid).also { moved = it.second }.first
+            }
+            done(moved)
+        }
+    }
+
     /**
      * This deck's copies out on loan (Loans.kt), by lower-cased card name: the deck still lists them,
      * marked lent out.

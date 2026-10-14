@@ -172,7 +172,7 @@ class StoragePlacesTest {
         val collections = listOf(binder("b1", listOf(entry("bolt", 1))), pile(listOf(entry("bolt", 1)), places))
         val out = putAway(collections, "bolt", "bolt", Spot("red", section = "Red"), newEntry("bolt"))
         assertEquals(PutAwayResult.PLACED, out.result)
-        assertEquals("moved from Unsorted", out.label)
+        assertEquals("moved from No binder", out.label)
         assertEquals(listOf(at("red", 1, section = "Red")), out.collections[1].entries[0].places)
         assertNull(out.collections[0].entries[0].places)
         // Undo takes the place away again.

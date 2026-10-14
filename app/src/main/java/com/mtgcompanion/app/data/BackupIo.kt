@@ -47,6 +47,45 @@ class BackupIo(
         }.getOrDefault(false)
     }
 
+    /**
+     * The backup made by itself the first time this version ran (binders as views: BinderViews.kt), kept
+     * in the app's own storage — once, flagged so it never runs again, and not over one already there.
+     * Decks, binders, the copy history and settings; photos stay where they are on the phone. Answers
+     * whether one was made now.
+     */
+    suspend fun saveBeforeBinders(): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val prefs = context.getSharedPreferences(BEFORE_BINDERS_PREFS, Context.MODE_PRIVATE)
+            if (prefs.getBoolean(BEFORE_BINDERS_DONE, false)) return@runCatching false
+            val file = beforeBindersFile(context)
+            var made = false
+            if (!file.exists()) {
+                val decks = deckRepository.decksFlow.first()
+                val collections = collectionRepository.collectionsFlow.first()
+                if (decks.isNotEmpty() || collections.any { it.entries.isNotEmpty() }) {
+                    val backup = buildBackup(
+                        decks = decks,
+                        collections = collections,
+                        createdAt = System.currentTimeMillis(),
+                        copyHistory = CopyHistoryStore.moves.value,
+                        settings = settingsRepository.backupValues()
+                    )
+                    val tmp = java.io.File(file.parentFile, "$BEFORE_BINDERS_FILE.tmp")
+                    tmp.sink().buffer().use { writeBackup(backup, it) }
+                    made = tmp.renameTo(file)
+                }
+            }
+            prefs.edit().putBoolean(BEFORE_BINDERS_DONE, true).apply()
+            made
+        }.getOrDefault(false)
+    }
+
+    /** The backup from before the binders update (saveBeforeBinders): the backup, or null when there's none or it can't be read. */
+    suspend fun readBeforeBinders(): ParsedBackup? = withContext(Dispatchers.IO) {
+        val file = beforeBindersFile(context)
+        if (!file.exists()) null else runCatching { parseBackup(file.readText()) }.getOrNull()
+    }
+
     /** Reads the file at [uri] (the one Restore picked): the backup, or why it can't be restored. */
     suspend fun read(uri: Uri): ParsedBackup = withContext(Dispatchers.IO) {
         val text = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
@@ -77,3 +116,10 @@ class BackupIo(
         fromBackup.count { it.hasPhotos }
     }
 }
+
+private const val BEFORE_BINDERS_FILE = "backup-before-binder-views.json"
+private const val BEFORE_BINDERS_PREFS = "binder_views"
+private const val BEFORE_BINDERS_DONE = "backed_up_before"
+
+/** Where the backup from before the binders update is kept: the app's own storage, never shared. */
+fun beforeBindersFile(context: Context): java.io.File = java.io.File(context.filesDir, BEFORE_BINDERS_FILE)

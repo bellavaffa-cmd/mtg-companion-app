@@ -408,7 +408,7 @@ fun DeckVersionScreen(
             val pull = r.physical && r.incoming > 0
             val text = listOfNotNull(
                 if (pull) "Its pull list has the ${r.incoming} ${if (r.incoming == 1) "card" else "cards"} coming back." else null,
-                if (r.out > 0) "The ${r.out} ${if (r.out == 1) "card" else "cards"} taken out ${if (r.out == 1) "is" else "are"} on the Unsorted pile." else null,
+                if (r.out > 0) "The ${r.out} ${if (r.out == 1) "card" else "cards"} taken out ${if (r.out == 1) "is" else "are"} in No binder." else null,
                 if (r.missing > 0) "${r.missing} ${if (r.missing == 1) "card" else "cards"} couldn't be found, so ${if (r.missing == 1) "it's" else "they're"} left out." else null,
                 "Today's list is in the history, so you can go back to it."
             ).joinToString(" ")

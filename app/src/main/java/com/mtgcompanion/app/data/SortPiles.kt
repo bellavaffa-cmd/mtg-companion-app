@@ -69,10 +69,10 @@ fun pileTitle(r: PileRule, fmt: (Double) -> String): String = when (r.pileKind) 
     PileKind.BULK -> "Bulk: everything else"
 }
 
-/** Where a pile goes, in words: a place's name, "The box whose rule fits", or "No place (Unsorted)". */
+/** Where a pile goes, in words: a place's name, "The box whose rule fits", or "No place · No binder". */
 fun pileGoesTo(r: PileRule, collections: List<Collection>): String {
     if (r.to == BY_RULE) return "The box whose rule fits"
-    return r.to?.let { id -> placesOf(collections).firstOrNull { it.id == id } }?.name ?: "No place (Unsorted)"
+    return r.to?.let { id -> placesOf(collections).firstOrNull { it.id == id } }?.name ?: "No place · No binder"
 }
 
 // ---- What each card is ----

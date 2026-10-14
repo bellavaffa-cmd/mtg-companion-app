@@ -39,6 +39,7 @@ import com.mtgcompanion.app.ui.theme.LocalAppColors
 import androidx.activity.compose.BackHandler
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
+import com.mtgcompanion.app.data.NO_BINDER_TITLE
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
 import com.mtgcompanion.app.data.GUIDE_WIDTH
 import com.mtgcompanion.app.data.GUIDE_HEIGHT
@@ -1132,7 +1133,7 @@ fun ScanScreen(
 
     // Cards you own but haven't sorted: offered even before the pile exists.
     val binders = if (collections.any { it.isUnsorted }) collections
-    else listOf(Collection(UNSORTED_COLLECTION_ID, UNSORTED_COLLECTION_NAME)) + collections
+    else listOf(Collection(UNSORTED_COLLECTION_ID, NO_BINDER_TITLE)) + collections
     val places = decks.map { it.asTarget() } + binders.map { it.asTarget() }
 
     if (addingAll) {

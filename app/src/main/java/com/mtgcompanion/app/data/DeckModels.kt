@@ -111,8 +111,19 @@ data class DeckCardEntry(
      * in several (DeckCategories.kt). Null (left out of the JSON) when it has none. Merged like
      * [userTags]. The web app's DeckCardEntry.categories.
      */
-    val categories: List<String>? = null
+    val categories: List<String>? = null,
+    /**
+     * Which binders this card's real copies are sorted into, by binder (Collection) id and count —
+     * main deck cards only, never Considering or the sideboard (BinderRefs.kt, BinderViews.kt). The
+     * copies still belong to the deck; a binder only shows them. Null (left out of the JSON) until
+     * first set, then kept, as [] once none are. Merged as one value, whoever changed it, not line by
+     * line. The web app's DeckCardEntry.binders.
+     */
+    val binders: List<BinderRef>? = null
 )
+
+/** Some of a deck card's copies sorted into a binder: [id] the binder (Collection) id, [qty] how many. */
+data class BinderRef(val id: String, val qty: Int)
 
 /**
  * Whether a card can be the commander of a [mode] deck: a legendary creature, or a card whose

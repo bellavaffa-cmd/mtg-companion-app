@@ -188,6 +188,23 @@ fun DataAndSpeedSection() {
                 modifier = Modifier.weight(1f).height(40.dp)
             ) { Text("Restore", fontWeight = FontWeight.SemiBold) }
         }
+        // The backup made by itself before the binders update (BackupIo.saveBeforeBinders), offered like any other.
+        val beforeBinders = remember { com.mtgcompanion.app.data.beforeBindersFile(app).takeIf { it.exists() }?.lastModified() }
+        if (beforeBinders != null) TextButton(
+            onClick = {
+                notice = null
+                scope.launch {
+                    busy = "Reading the backup…"
+                    when (val read = io.readBeforeBinders()) {
+                        is ParsedBackup.Ok -> { mode = RestoreMode.MERGE; pending = read.backup }
+                        is ParsedBackup.Refused -> problem = read.message
+                        null -> problem = "That backup isn't on this phone any more."
+                    }
+                    busy = null
+                }
+            },
+            enabled = busy == null
+        ) { Text("Restore from before the binders update", color = colors.accent) }
         (busy ?: notice)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = if (busy != null) colors.textMuted else colors.success) }
     }
     // Below the backup: the Danger zone's Reset collection (ResetCollectionPanel.kt).

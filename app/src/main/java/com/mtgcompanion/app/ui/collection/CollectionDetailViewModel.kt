@@ -213,6 +213,47 @@ class CollectionDetailViewModel(
         if (q.isBlank()) all else all.filter { RoleTags.matches(it.name, RoleTags.tagsOf(it.name).orEmpty(), q) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /**
+     * This binder as it shows (BinderViews.kt): its own cards and the deck copies sorted into it — for
+     * No binder, the deck copies sorted into none. A wishlist shows only its own.
+     */
+    val view: StateFlow<com.mtgcompanion.app.data.BinderView?> =
+        combine(repository.collectionsFlow, deckRepository.decksFlow) { collections, decks ->
+            com.mtgcompanion.app.data.binderView(collectionId, collections, decks)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** The deck copies this binder shows, one row a printing, filtered by the search like [entries]. */
+    val deckRows: StateFlow<List<com.mtgcompanion.app.data.DeckCopyRow>> = combine(view, _query, RoleTags.version) { v, q, _ ->
+        val rows = com.mtgcompanion.app.data.deckCopyRows(v?.deckCopies.orEmpty())
+        if (q.isBlank()) rows else rows.filter { RoleTags.matches(it.name, RoleTags.tagsOf(it.name).orEmpty(), q) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** The binders a deck copy can be moved into from here: every binder but this one, A to Z. */
+    val sortingTargets: StateFlow<List<Collection>> = repository.collectionsFlow
+        .map { all -> com.mtgcompanion.app.data.sortingBinders(all).filter { it.id != collectionId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * [row]'s deck copies shown here moved into binder [to] — or, with [to] null, taken out of this
+     * binder (they then show in No binder). Only where the copies show changes: they stay in their decks.
+     */
+    fun moveDeckCopies(row: com.mtgcompanion.app.data.DeckCopyRow, to: String?) {
+        viewModelScope.launch {
+            val valid = com.mtgcompanion.app.data.sortingBinderIds(repository.collectionsFlow.first())
+            val from = if (collectionId == com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID) null else collectionId
+            val byDeck = row.copies.groupBy { it.deckId }
+            deckRepository.changeBinders { d ->
+                byDeck[d.id]?.fold(d) { acc, copies ->
+                    val e = acc.cards.firstOrNull { it.scryfallId == copies.entry.scryfallId } ?: return@fold acc
+                    com.mtgcompanion.app.data.withCardBinders(
+                        acc, e.scryfallId,
+                        com.mtgcompanion.app.data.movedRefs(com.mtgcompanion.app.data.assignedCopies(acc, e), from, to, copies.qty, valid)
+                    )
+                } ?: d
+            }
+        }
+    }
+
     /** Card name -> what it does (RoleTags ids), for the zoom and the search. */
     val cardTags: StateFlow<Map<String, List<String>>> = combine(collection, RoleTags.version) { c, _ ->
         c?.entries.orEmpty().associate { it.name to RoleTags.tagsOf(it.name).orEmpty() }

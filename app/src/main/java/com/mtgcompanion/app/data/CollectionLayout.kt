@@ -165,7 +165,8 @@ private fun nameKey(name: String) = name.trim().lowercase()
 
 /**
  * Every owned printing's chips, by scryfallId, in one walk over the library: a chip per place and
- * section its binder copies are in, per physical deck holding real copies (less those lent from it),
+ * section its binder copies are in, per deck holding real owned copies (ownedCopies: a physical deck's,
+ * a proxy deck's swapped-in ones; less those lent from it),
  * per loan, copies tagged "lent", and the copies with no place yet. The same rules as Where it is
  * (whereItIs) and Find anything, a printing at a time. Graded copies are kept apart and have none.
  */
@@ -185,9 +186,12 @@ fun locationIndex(collections: List<Collection>, decks: List<Deck>): Map<String,
         val k = "$d|${l.card.scryfallId}|${nameKey(l.card.name)}"
         fromDeck[k] = (fromDeck[k] ?: 0) + l.qty
     }
-    for (d in decks) for (e in realCopiesOf(d)) {
+    // A deck's real owned copies (ownedCopies): a physical deck's, and the real copies swapped into a proxy deck.
+    for (d in decks) for (e in d.cards) {
+        val real = ownedCopies(d, e)
+        if (real <= 0) continue
         val k = "${d.id}|${e.scryfallId}|${nameKey(e.name)}"
-        of(e.scryfallId).add(LocationChip(LocationKind.DECK, e.quantity - (fromDeck.remove(k) ?: 0), deck = d.name, deckId = d.id))
+        of(e.scryfallId).add(LocationChip(LocationKind.DECK, real - (fromDeck.remove(k) ?: 0), deck = d.name, deckId = d.id))
     }
     for (l in lent) of(l.card.scryfallId).add(LocationChip(LocationKind.LENT, l.qty, loanTo = l.loan.to, loanId = l.loan.id))
     return out.mapValues { it.value.list() }

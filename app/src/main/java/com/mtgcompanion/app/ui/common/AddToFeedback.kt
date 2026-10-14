@@ -85,7 +85,7 @@ class AddToFeedback internal constructor(
                 undoSteps(beforeDecks, decks.decksFlow.first(), beforeBinders, binders.collectionsFlow.first(), ops.created)
             }
             if (leaveOut.isNotEmpty()) ops.addNote("${leaveOut.size} not allowed in the deck, left out.")
-            if (ops.takenFromPile > 0) ops.addNote("${ops.takenFromPile} taken from Unsorted.")
+            if (ops.takenFromPile > 0) ops.addNote("${ops.takenFromPile} taken from No binder.")
             val text = listOfNotNull(ops.message, ops.note).joinToString("\n")
             host.currentSnackbarData?.dismiss()
             val result = host.showSnackbar(
@@ -164,7 +164,7 @@ class AddToOps internal constructor(
     /** What the confirmation says; a change can replace it. */
     var message: String
 ) {
-    /** A second line under [message] — cards skipped, taken from Unsorted. */
+    /** A second line under [message] — cards skipped, taken from No binder. */
     var note: String? = null
 
     /**

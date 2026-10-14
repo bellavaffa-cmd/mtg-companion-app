@@ -46,7 +46,8 @@ class DeckRepository(private val context: Context) {
         partnerCommander: DeckCardEntry?
     ): Deck {
         val merged = entries.groupBy { it.scryfallId }.map { (_, copies) ->
-            copies.first().copy(quantity = copies.sumOf { it.quantity })
+            // A new deck's copies aren't in any of this user's binders yet (a friend's deck, copied, names theirs).
+            copies.first().copy(quantity = copies.sumOf { it.quantity }, binders = null)
         }
         val deck = Deck(
             id = UUID.randomUUID().toString(),
@@ -365,6 +366,15 @@ class DeckRepository(private val context: Context) {
      * while the sync was running isn't overwritten. Records no version: what's pulled already carries
      * its own version history, and a new one would log a sync as if the user had edited the deck.
      */
+    /**
+     * Which binders decks' cards' copies are sorted into (BinderViews.kt): [change] gets each deck and
+     * answers it with its cards' binders changed. Where a copy shows, not a change to the list, so no
+     * version or history entry.
+     */
+    suspend fun changeBinders(change: (Deck) -> Deck) {
+        update(recordVersions = false) { decks -> decks.map(change) }
+    }
+
     suspend fun applySync(transform: (List<Deck>) -> List<Deck>) {
         update(recordVersions = false, transform = transform)
     }

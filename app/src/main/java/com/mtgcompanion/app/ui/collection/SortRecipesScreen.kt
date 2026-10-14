@@ -494,7 +494,7 @@ private fun RecipeLayout(
     fun goesTo(p: RecipePile): String = when (p.key) {
         "S:DECKS" -> "For their decks"
         "S:BINDER" -> "Into its binder"
-        else -> pileGoesTo(draft, p).let { to -> if (to == BY_RULE) "Place whose rules fit" else if (to.isEmpty()) "Unsorted" else places.firstOrNull { it.id == to }?.name ?: "No place" }
+        else -> pileGoesTo(draft, p).let { to -> if (to == BY_RULE) "Place whose rules fit" else if (to.isEmpty()) "No binder" else places.firstOrNull { it.id == to }?.name ?: "No place" }
     }
     val begin = {
         if (!draft.isTemplate && sortRecipe(start) != draft) onChange { saveRecipe(it, draft) }
@@ -546,7 +546,7 @@ private fun RecipeLayout(
             title = { Text("Where pile ${p.number} goes", color = colors.accentLight) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    (listOf(BY_RULE to "The place whose rules fit", "" to "No place (Unsorted)") + placeTree(places).map { it.place.id to "  ".repeat(it.depth) + it.place.name }).forEach { (id, name) ->
+                    (listOf(BY_RULE to "The place whose rules fit", "" to "No place · No binder") + placeTree(places).map { it.place.id to "  ".repeat(it.depth) + it.place.name }).forEach { (id, name) ->
                         RecipeRow(name, if (pileGoesTo(draft, p) == id) "Chosen" else "", mine = pileGoesTo(draft, p) == id) { draft = withGoTo(draft, p.key, id); placing = null }
                     }
                 }
@@ -753,7 +753,7 @@ private fun fileLine(s: RecipeSessionState, piles: List<RecipePile>, collections
             }
             p.key == "S:DECKS" -> parts += "${p.number} with no place, for the decks' pull lists"
             to.isNotEmpty() && to != BY_RULE -> parts += "${p.number} to ${places.firstOrNull { it.id == to }?.name ?: "its place"}"
-            to.isEmpty() -> parts += "${p.number} to Unsorted"
+            to.isEmpty() -> parts += "${p.number} to No binder"
         }
     }
     return if (parts.isEmpty()) "Everything here is filed already." else parts.joinToString("; ") + "."

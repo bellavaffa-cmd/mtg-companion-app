@@ -71,7 +71,9 @@ fun withDeckPrinting(deck: Deck, oldId: String, card: ScryfallCard): Deck {
             val bothUnset = old.proxyQuantity == null && already.proxyQuantity == null
             val merged = already.copy(
                 quantity = already.quantity + old.quantity,
-                proxyQuantity = if (bothUnset) null else proxyCopies(deck, already) + proxyCopies(deck, old)
+                proxyQuantity = if (bothUnset) null else proxyCopies(deck, already) + proxyCopies(deck, old),
+                // Which binders the copies are in comes along too, the counts per binder added up (BinderRefs.kt).
+                binders = joinedBinders(already.binders, old.binders)
             )
             deck.cards.filter { it.scryfallId != oldId }.map { if (it.scryfallId == card.id) merged else it }
         }

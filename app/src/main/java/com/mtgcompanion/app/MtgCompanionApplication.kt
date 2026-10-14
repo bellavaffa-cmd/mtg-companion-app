@@ -107,6 +107,10 @@ class MtgCompanionApplication : Application(), ImageLoaderFactory {
         CardPriceHistory.init(this)
         // Where each copy has been, on this phone (CopyHistory.kt).
         CopyHistoryStore.init(this)
+        // The first time this version runs: a backup of the library as it was before binders showed deck
+        // cards (BackupIo.saveBeforeBinders; Settings › Data and speed › Backup › Restore from before the
+        // binders update). Nothing here writes a deck card's binders by itself, so it's as it was.
+        appScope.launch { com.mtgcompanion.app.data.BackupIo(this@MtgCompanionApplication, deckRepository, collectionRepository, settingsRepository).saveBeforeBinders() }
         // How long All cards took to open, for Settings › Data and speed.
         com.mtgcompanion.app.data.DataAndSpeed.init(this)
         ComboCache.init(this)

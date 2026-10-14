@@ -24,11 +24,11 @@ import java.util.Locale
 enum class ResetScope(val title: String, val detail: String) {
     CARDS(
         "Cards only",
-        "Empties every binder and the Unsorted pile. Your binders, storage places, Wishlist, decks, cubes, sealed product, graded cards, gear, loans, goals and what the scanner learned stay."
+        "Empties every binder and No binder. Your binders, storage places, Wishlist, decks, cubes, sealed product, graded cards, gear, loans, goals and what the scanner learned stay."
     ),
     COLLECTION(
         "Collection",
-        "Every card and binder, storage places, sealed product, graded cards, gear, loans, goals, what the scanner learned from your corrections, and your copies’ photos and history. The Unsorted pile and Wishlist stay, empty. Decks, cubes and card prices stay."
+        "Every card and binder, storage places, sealed product, graded cards, gear, loans, goals, what the scanner learned from your corrections, and your copies’ photos and history. No binder and the Wishlist stay, empty. Decks, cubes and card prices stay."
     ),
     EVERYTHING(
         "Everything",

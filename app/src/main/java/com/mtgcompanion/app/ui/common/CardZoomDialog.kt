@@ -109,6 +109,7 @@ import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.countsAsOwned
 import com.mtgcompanion.app.data.keptLabel
 import com.mtgcompanion.app.data.ownedCopies
+import com.mtgcompanion.app.data.shownName
 import com.mtgcompanion.app.data.ownedProxies
 import com.mtgcompanion.app.data.placesOf
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
@@ -141,7 +142,7 @@ fun buildCardSources(collections: List<Collection>, decks: List<Deck>): Map<Stri
             val qty = entry.quantity + entry.foilQuantity
             if (qty > 0) {
                 bySource.getOrPut(entry.scryfallId) { mutableListOf() } +=
-                    CardSource(SourceKind.BINDER, collection.id, collection.name, qty, keptLabel(entry, places))
+                    CardSource(SourceKind.BINDER, collection.id, collection.shownName, qty, keptLabel(entry, places))
             }
         }
     }

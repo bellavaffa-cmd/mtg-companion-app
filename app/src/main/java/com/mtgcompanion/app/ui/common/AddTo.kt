@@ -7,6 +7,7 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.GameMode
 import com.mtgcompanion.app.network.scryfall.ScryfallCard
 import com.mtgcompanion.app.data.Collection as Binder
+import com.mtgcompanion.app.data.shownName
 
 // The plain parts of adding, moving and copying cards into a deck or binder: what the picker
 // (AddToPicker) is titled and hands back, what the confirmation (AddToFeedback) says, and how its
@@ -34,7 +35,7 @@ data class MoveTarget(
 fun Deck.asTarget() = MoveTarget(SourceKind.DECK, id, name, imageUrl = commander?.imageUrl, cards = cards.sumOf { it.quantity }, hasSideboard = mode.hasSideboard, pool = mode.limited, archived = archived == true || isCube)
 
 /** A binder as a place to put cards. */
-fun Binder.asTarget() = MoveTarget(SourceKind.BINDER, id, name, cards = entries.sumOf { it.quantity + it.foilQuantity })
+fun Binder.asTarget() = MoveTarget(SourceKind.BINDER, id, shownName, cards = entries.sumOf { it.quantity + it.foilQuantity })
 
 /**
  * Which kind of place the picker asks about first — null when there's only one kind to offer, so

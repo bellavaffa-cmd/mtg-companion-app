@@ -7,6 +7,7 @@ import com.mtgcompanion.app.data.DeckCardEntry
 import com.mtgcompanion.app.data.DeckVersion
 import com.mtgcompanion.app.data.keepHistoryFromOlderApp
 import com.mtgcompanion.app.data.keepCubeFromOlderApp
+import com.mtgcompanion.app.data.keepBindersFromOlderApp
 import com.mtgcompanion.app.data.mergeCubeSettings
 import com.mtgcompanion.app.data.mergeHistory
 import com.mtgcompanion.app.data.GameResult
@@ -83,6 +84,9 @@ import com.mtgcompanion.app.data.tidied
  *  - A cube's settings (Cube.kt, the deck's "cube") merge field by field like a deck's name; a cube
  *    saved by an app that doesn't know about cubes leaves them as they were. Its cards merge card by
  *    card like any deck's.
+ *  - Which binders a deck card's copies are in (BinderRefs.kt, the card's "binders") is one value that
+ *    goes to whoever changed it, not added up line by line; a card added on both sides takes it from
+ *    whichever side has it. A deck saved by an app that doesn't know about it leaves it as it was.
  * The web app merges the same way — see MtgCompanionWeb/src/sync/mergeItems.ts.
  */
 object ItemMerge {
@@ -113,7 +117,10 @@ object ItemMerge {
         id: (T) -> String,
         counts: (T) -> List<Int>,
         withCounts: (T, List<Int>) -> T,
-        mergeRest: (base: T, mine: T, theirs: T) -> T
+        mergeRest: (base: T, mine: T, theirs: T) -> T,
+        // A card added on both sides: [theirs] with the fields merged as one whole value (a deck card's
+        // binders) taken from whichever side has them rather than only from the other device's copy.
+        addedOnBoth: (mine: T, theirs: T) -> T = { _, t -> t }
     ): List<T> {
         val baseMap = base.associateBy(id)
         val mineMap = mine.associateBy(id)
@@ -133,7 +140,7 @@ object ItemMerge {
                 b == null -> {
                     // Added on one side, or on both at once: one copy, the larger count.
                     if (m != null && t != null) {
-                        withCounts(t, counts(t).zip(counts(m)) { theirCount, myCount -> maxOf(theirCount, myCount) })
+                        withCounts(addedOnBoth(m, t), counts(t).zip(counts(m)) { theirCount, myCount -> maxOf(theirCount, myCount) })
                     } else {
                         t ?: m
                     }
@@ -164,7 +171,11 @@ object ItemMerge {
         base: List<DeckCardEntry>,
         mine: List<DeckCardEntry>,
         theirs: List<DeckCardEntry>,
-        minePreferred: Boolean
+        minePreferred: Boolean,
+        // The main deck's cards also say which binders their copies are in: one value, whoever changed
+        // it, and nothing to agree on for a card added on both sides — one side having it is its change.
+        // (Considering and the sideboard never have them; the web's DECK_COUNTS vs DECK_CARDS.)
+        binders: Boolean = false
     ): List<DeckCardEntry> = mergeEntries(
         base, mine, theirs,
         id = { it.scryfallId },
@@ -184,9 +195,11 @@ object ItemMerge {
                 // A card's categories in this deck merge the same way.
                 categories = mergeStringSet(b.categories.orEmpty(), m.categories.orEmpty(), t.categories.orEmpty()).ifEmpty { null },
                 replaceable = pick(b.replaceable, m.replaceable, t.replaceable, minePreferred),
-                proxyQuantity = pick(b.proxyQuantity, m.proxyQuantity, t.proxyQuantity, minePreferred)
+                proxyQuantity = pick(b.proxyQuantity, m.proxyQuantity, t.proxyQuantity, minePreferred),
+                binders = pick(b.binders, m.binders, t.binders, minePreferred)
             )
-        }
+        },
+        addedOnBoth = { m, t -> if (binders) t.copy(binders = pick(null, m.binders, t.binders, minePreferred)) else t }
     )
 
     /** Games logged on either device, minus any deleted on either; newest first, like the deck page. */
@@ -211,10 +224,11 @@ object ItemMerge {
         // A side saved by an app that doesn't know where the deck's copies came from left that as it was.
         // ...and the same for its primer, folder, archive flag, companion and categories.
         // ...and its history (DeckHistory.kt), and a cube's settings (Cube.kt).
+        // ...and which binders its cards' copies are in (BinderRefs.kt).
         mergeDecksKnowingCameFrom(
             base,
-            keepCubeFromOlderApp(base, keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, mine)))),
-            keepCubeFromOlderApp(base, keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, theirs)))),
+            keepBindersFromOlderApp(base, keepCubeFromOlderApp(base, keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, mine))))),
+            keepBindersFromOlderApp(base, keepCubeFromOlderApp(base, keepHistoryFromOlderApp(base, keepDeckExtrasFromOlderApp(base, keepCameFromFromOlderApp(base, theirs))))),
             minePreferred
         )
 
@@ -226,7 +240,7 @@ object ItemMerge {
         createdAt = minOf(mine.createdAt, theirs.createdAt),
         commander = pick(base.commander, mine.commander, theirs.commander, minePreferred),
         partnerCommander = pick(base.partnerCommander, mine.partnerCommander, theirs.partnerCommander, minePreferred),
-        cards = mergeDeckCards(base.cards, mine.cards, theirs.cards, minePreferred),
+        cards = mergeDeckCards(base.cards, mine.cards, theirs.cards, minePreferred, binders = true),
         considering = mergeDeckCards(base.considering, mine.considering, theirs.considering, minePreferred),
         sideboard = mergeDeckCards(base.sideboard, mine.sideboard, theirs.sideboard, minePreferred),
         tags = mergeStringSet(base.tags, mine.tags, theirs.tags),

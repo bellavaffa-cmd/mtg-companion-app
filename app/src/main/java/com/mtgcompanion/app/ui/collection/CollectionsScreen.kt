@@ -108,10 +108,17 @@ import com.mtgcompanion.app.data.QuickSets
 import com.mtgcompanion.app.data.RoleTags
 import com.mtgcompanion.app.data.TourAction
 import com.mtgcompanion.app.data.TourTarget
-import com.mtgcompanion.app.data.binderKeys
+import com.mtgcompanion.app.data.binderGroupIndex
 import com.mtgcompanion.app.data.groupLayout
 import com.mtgcompanion.app.data.isWishlist
-import com.mtgcompanion.app.data.keptInPlacesLine
+import com.mtgcompanion.app.data.BinderView
+import com.mtgcompanion.app.data.NO_BINDER_TITLE
+import com.mtgcompanion.app.data.binderCountLine
+import com.mtgcompanion.app.data.binderView
+import com.mtgcompanion.app.data.deckCopiesByBinder
+import com.mtgcompanion.app.data.keptInPlacesAndDecksLine
+import com.mtgcompanion.app.data.noBinderLine
+import com.mtgcompanion.app.data.unsortedView
 import com.mtgcompanion.app.data.needsAttentionLabel
 import com.mtgcompanion.app.data.offerCards
 import com.mtgcompanion.app.data.passesQuick
@@ -915,20 +922,21 @@ private fun CardsTab(
     val gridCols = adaptiveGridColumns(gridColumns)
     val listCols = adaptiveListColumns()
     val collections by viewModel.collections.collectAsState()
+    val decks by viewModel.decks.collectAsState()
+    // Group by Binder: the binders each card shows in, deck copies sorted into one included (BinderViews.kt).
+    val binderGroups = remember(collections, decks, groupBy) { if (groupBy == CardGroupBy.BINDER) binderGroupIndex(collections, decks) else emptyMap() }
 
     // Group by set needs Scryfall's sets for each set's size: "41/92".
     LaunchedEffect(groupBy) { if (groupBy == CardGroupBy.SET) viewModel.loadSets() }
     val setProgress by viewModel.setProgress.collectAsState()
     val bySet = remember(setProgress) { setProgress.orEmpty().associateBy { it.set.code.lowercase() } }
-    val groups: List<LayoutGroup<AllCardEntry>>? = remember(filtered, groupBy, cardFacts, chipIndex, bySet) {
+    val groups: List<LayoutGroup<AllCardEntry>>? = remember(filtered, groupBy, cardFacts, chipIndex, bySet, binderGroups) {
         when (groupBy) {
             CardGroupBy.NONE -> null
             CardGroupBy.SET -> groupLayout(filtered, { c -> setKeys(cardFacts[c.scryfallId]?.let { it.set to it.setName }) }, "Set not known yet") { code ->
                 bySet[code]?.let { setGroupDetail(it.owned, it.total) }
             }
-            CardGroupBy.BINDER -> groupLayout(filtered, { c ->
-                binderKeys(c.sources.map { Triple(if (it.kind == SourceKind.DECK) "deck" else "binder", it.id, it.name) })
-            }, "No binder")
+            CardGroupBy.BINDER -> groupLayout(filtered, { c -> binderGroups[c.scryfallId].orEmpty() }, NO_BINDER_TITLE)
             CardGroupBy.PLACE -> groupLayout(filtered, { c -> placeKeys(chipIndex[c.scryfallId].orEmpty()) }, NO_PLACE_TITLE)
         }
     }
@@ -971,8 +979,10 @@ private fun CardsTab(
                     CardGroupBy.entries.forEach { g -> PillChip(g.label, g == groupBy, { onGroupBy(g) }) }
                 }
             }
-            if (query.isBlank() && quick == null && unsorted != null && unsorted.entries.isNotEmpty()) {
-                item { UnsortedRow(unsorted) { onOpenUnsorted(unsorted.id) } }
+            // No binder: the pile's own cards and the deck copies in no binder (BinderViews.kt).
+            val noBinder = unsortedView(collections, decks)
+            if (query.isBlank() && quick == null && unsorted != null && noBinder.total > 0) {
+                item { UnsortedRow(noBinder) { onOpenUnsorted(unsorted.id) } }
             }
             if (query.isBlank() && quick == null && groupBy == CardGroupBy.NONE) {
                 item { DashboardPanel(dashboard) }
@@ -1147,6 +1157,8 @@ private fun BindersTab(
     val binders = collections.filter { !it.isUnsorted && !it.isWishlist && it.kind != CollectionType.WISHLIST }
         .filter { q.isEmpty() || it.name.contains(q, ignoreCase = true) }
     val empty = collections.none { !it.isUnsorted && !it.isWishlist && it.kind != CollectionType.WISHLIST } && unsorted?.entries.isNullOrEmpty()
+    // What each binder shows: its own cards and the deck copies sorted into it (BinderViews.kt).
+    val views = remember(collections, decks) { deckCopiesByBinder(collections, decks) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1154,7 +1166,7 @@ private fun BindersTab(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         if (unsorted != null && q.isEmpty()) {
-            item(key = "unsorted") { UnsortedRow(unsorted) { onOpenUnsorted(unsorted.id) } }
+            item(key = "unsorted") { UnsortedRow(unsortedView(collections, decks, views)) { onOpenUnsorted(unsorted.id) } }
         }
         item(key = "binders-head") {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
@@ -1180,10 +1192,11 @@ private fun BindersTab(
             item { Text("No binders match \"$q\".", style = MaterialTheme.typography.bodySmall, color = TextMuted) }
         }
         cardGrid(binders, columns = listCols, key = { it.id }) { collection ->
-            val total = collection.entries.sumOf { it.quantity + it.foilQuantity }
+            val view = binderView(collection.id, collections, decks, views)
             CollectionRow(
                 collection = collection,
-                kept = keptInPlacesLine(placesUsed(collection, known), total),
+                kept = keptInPlacesAndDecksLine(placesUsed(collection, known), view.ownCopies, view.decks),
+                view = view,
                 onClick = { onCollectionClick(collection.id) },
                 onDelete = { confirmDelete = collection }
             )
@@ -1318,7 +1331,7 @@ private fun AllCardTile(card: AllCardEntry, selecting: Boolean, selected: Boolea
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CollectionRow(collection: Collection, kept: String, onClick: () -> Unit, onDelete: (() -> Unit)?) {
+private fun CollectionRow(collection: Collection, kept: String, onClick: () -> Unit, onDelete: (() -> Unit)?, view: BinderView? = null) {
     var menuExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -1351,6 +1364,8 @@ private fun CollectionRow(collection: Collection, kept: String, onClick: () -> U
                 val total = collection.entries.sumOf { it.quantity + it.foilQuantity }
                 Text(
                     if (collection.isWishlist) "Cards you want · $total ${if (total == 1) "card" else "cards"} · not counted as owned"
+                    // With deck copies sorted into it: "84 cards · 12 in decks" (BinderViews.kt).
+                    else if (view != null && view.inDecks > 0) binderCountLine(view) + if (kept.isNotEmpty()) " · $kept" else ""
                     else "$total cards · ${collection.entries.size} unique" + if (kept.isNotEmpty()) " · $kept" else "",
                     style = MaterialTheme.typography.labelMedium,
                     color = TextMuted
@@ -1372,10 +1387,13 @@ private fun CollectionRow(collection: Collection, kept: String, onClick: () -> U
     }
 }
 
-/** The Unsorted pile: cards owned but not in a binder or deck yet, opened to sort them. */
+/**
+ * No binder (the Unsorted pile): cards owned but not in a binder — its own and the deck copies sorted
+ * into none (BinderViews.kt) — opened to sort them.
+ */
 @Composable
-private fun UnsortedRow(unsorted: Collection, onClick: () -> Unit) {
-    val total = unsorted.entries.sumOf { it.quantity + it.foilQuantity }
+private fun UnsortedRow(view: BinderView, onClick: () -> Unit) {
+    val total = view.total
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -1389,10 +1407,10 @@ private fun UnsortedRow(unsorted: Collection, onClick: () -> Unit) {
     ) {
         Icon(Icons.Filled.Inbox, contentDescription = null, tint = Gold, modifier = Modifier.size(32.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text("Unsorted", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            Text(NO_BINDER_TITLE, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
             Text(
-                if (total > 0) "$total card${if (total == 1) "" else "s"} not in a binder yet — tap to sort them"
-                else "Empty — for cards you own that aren't in a binder or a deck",
+                if (total > 0) noBinderLine(view)
+                else "Empty — for cards you own that aren't in a binder",
                 style = MaterialTheme.typography.labelMedium,
                 color = TextMuted
             )

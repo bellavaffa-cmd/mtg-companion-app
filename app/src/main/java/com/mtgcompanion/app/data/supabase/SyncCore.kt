@@ -1,6 +1,7 @@
 package com.mtgcompanion.app.data.supabase
 
 import com.mtgcompanion.app.data.keepCubeFromOlderApp
+import com.mtgcompanion.app.data.keepBindersFromOlderApp
 import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.isSample
@@ -282,10 +283,11 @@ internal class SyncCore(
         (again.filter { it.key !in inPull } + rows).forEach { row ->
             val taken = if (row.kind == "deck") {
                 // A deck saved by an app that doesn't know where its copies came from keeps this device's note,
-                // and its primer, folder, archive flag, companion and categories (DeckExtras.kt), its history and a cube's settings (Cube.kt).
+                // and its primer, folder, archive flag, companion and categories (DeckExtras.kt), its history and a cube's settings (Cube.kt),
+                // and which binders its cards' copies are in (BinderRefs.kt).
                 takeRow(row, deckAdapter, deckChanges, { mine ->
                     mine.copy(cards = emptyList(), considering = emptyList(), sideboard = emptyList(), tags = emptyList(), gameResults = emptyList(), versions = emptyList(), cameFrom = null)
-                }, merge = { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) }, heal = { mine, theirs -> keepCubeFromOlderApp(mine, keepHistoryFromOlderApp(mine, keepDeckExtrasFromOlderApp(mine, keepCameFromFromOlderApp(mine, theirs)))) })
+                }, merge = { b, m, t, p -> ItemMerge.mergeDecks(b, m, t, minePreferred = p) }, heal = { mine, theirs -> keepBindersFromOlderApp(mine, keepCubeFromOlderApp(mine, keepHistoryFromOlderApp(mine, keepDeckExtrasFromOlderApp(mine, keepCameFromFromOlderApp(mine, theirs))))) })
             } else {
                 // First meeting: the places too are each device's own, kept as additions.
                 takeRow(

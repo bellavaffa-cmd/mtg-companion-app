@@ -213,7 +213,7 @@ fun OpeningPacksScreen(
                 list == null -> Text("Looking through the set's cards…", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
                 else -> {
                     Text(
-                        "${set?.name ?: code.uppercase()}: the cards you want from it. Tick one off as it comes out of a pack — it goes into your Unsorted pile and you want one fewer.",
+                        "${set?.name ?: code.uppercase()}: the cards you want from it. Tick one off as it comes out of a pack — it goes into No binder and you want one fewer.",
                         style = MaterialTheme.typography.bodyMedium, color = colors.textMuted
                     )
                     if (list.isEmpty()) EmptyPrompt(Icons.Filled.Inventory2, "Nothing wanted from this set yet. Mark cards Want on the set's page.")

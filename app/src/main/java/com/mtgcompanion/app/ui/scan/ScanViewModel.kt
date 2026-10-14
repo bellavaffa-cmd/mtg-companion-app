@@ -44,6 +44,7 @@ import com.mtgcompanion.app.data.ScanBox
 import com.mtgcompanion.app.data.cardShaped
 import com.mtgcompanion.app.data.ScanPile
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_NAME
+import com.mtgcompanion.app.data.NO_BINDER_TITLE
 import com.mtgcompanion.app.data.UNSORTED_COLLECTION_ID
 import com.mtgcompanion.app.data.grouped
 import com.mtgcompanion.app.data.ScanGroup
@@ -2018,7 +2019,7 @@ class ScanViewModel(
                     PutAwayResult.HERE -> Unit
                     else -> {
                         val from = done.step?.from?.let { f -> places.firstOrNull { it.id == f.placeId }?.let { MoveSpot(it.id, it.name) } }
-                            ?: if (done.step?.collectionId == UNSORTED_COLLECTION_ID) MoveSpot("", "Unsorted") else null
+                            ?: if (done.step?.collectionId == UNSORTED_COLLECTION_ID) MoveSpot("", NO_BINDER_TITLE) else null
                         CopyHistoryStore.record(listOf(putAwayMove(System.currentTimeMillis(), moveCard, 1, here, from, "by scanning")))
                     }
                 }

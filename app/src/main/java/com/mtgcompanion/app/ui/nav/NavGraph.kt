@@ -1719,7 +1719,8 @@ fun MtgNavGraph(
                     onOpenSearch = { navController.navigateToTab(Routes.SEARCH) },
                     onOpenScan = { navController.navigateToTab(Routes.SCAN) },
                     onOpenPlaceAt = { id, section, page -> navController.navigate(Routes.place(id, page, section)) },
-                    onOpenLoans = { navController.navigate(Routes.loans()) }
+                    onOpenLoans = { navController.navigate(Routes.loans()) },
+                    onOpenDeck = { id -> navController.navigate(Routes.deckDetail(id)) }
                 )
                 if (sharing) {
                     ShareDialog(

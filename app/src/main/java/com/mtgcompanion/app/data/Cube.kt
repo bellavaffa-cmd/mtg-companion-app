@@ -613,7 +613,7 @@ data class CubeCardStatus(
     val elsewhere: Int,
     val proxies: Int,
     val state: CubeCardState,
-    /** Where the copies outside the box are: "Red box ×2 · No place (Unsorted) ×1"; "" for none. */
+    /** Where the copies outside the box are: "Red box ×2 · No place (No binder) ×1"; "" for none. */
     val where: String
 )
 
@@ -646,7 +646,7 @@ fun cubeStatus(cube: Deck, collections: List<Collection>): List<CubeCardStatus> 
         val loose = copies - placed
         if (loose > 0) {
             h.elsewhere += loose
-            val label = "No place (${c.name})"
+            val label = "No place (${c.shownName})"
             h.where[label] = (h.where[label] ?: 0) + loose
         }
     }

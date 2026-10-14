@@ -85,7 +85,7 @@ class WelcomeViewModel(
                         collectionRepository.afterImport(binder.id, result, targets, parsed.locationColumn)
                     }
                 }
-                ImportProgress.Done(result, binderName ?: "your collection (Unsorted)")
+                ImportProgress.Done(result, binderName ?: "your collection (No binder)")
             } catch (e: java.io.IOException) {
                 ImportProgress.Failed("You're offline. Try again when you're connected.")
             } catch (e: Exception) {

@@ -4,6 +4,7 @@ import com.mtgcompanion.app.data.Collection
 import com.mtgcompanion.app.data.CollectionType
 import com.mtgcompanion.app.data.Deck
 import com.mtgcompanion.app.data.ownedCopies
+import com.mtgcompanion.app.data.shownName
 import com.mtgcompanion.app.data.ownedProxies
 import com.mtgcompanion.app.ui.common.CardSource
 import com.mtgcompanion.app.ui.common.SourceKind
@@ -34,7 +35,7 @@ fun allCardEntries(collections: List<Collection>, decks: List<Deck>): List<AllCa
     collections.filter { it.kind == CollectionType.OWNED }.forEach { collection ->
         collection.entries.forEach {
             val qty = it.quantity + it.foilQuantity
-            add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, qty, CardSource(SourceKind.BINDER, collection.id, collection.name, qty))
+            add(it.scryfallId, it.name, it.imageUrl, it.backImageUrl, it.tags, qty, CardSource(SourceKind.BINDER, collection.id, collection.shownName, qty))
         }
     }
     decks.forEach { deck ->

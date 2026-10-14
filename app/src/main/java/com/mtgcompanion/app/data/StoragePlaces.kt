@@ -804,7 +804,7 @@ data class PutAwayStep(
     val added: Boolean
 )
 
-/** [label]: "moved from Unsorted", "moved from Trade binder", "already here", "new to collection". */
+/** [label]: "moved from No binder", "moved from Trade binder", "already here", "new to collection". */
 data class PutAwayOutcome(
     val collections: List<Collection>,
     val result: PutAwayResult,
@@ -852,7 +852,7 @@ fun putAway(collections: List<Collection>, cardId: String, cardName: String, to:
         return PutAwayOutcome(
             mapEntry(collections, c.id, e.scryfallId) { entry },
             PutAwayResult.PLACED,
-            if (c.isUnsorted) "moved from Unsorted" else "given a place",
+            if (c.isUnsorted) "moved from No binder" else "given a place",
             PutAwayStep(c.id, e.scryfallId, null, copyPlace(to, 1, f), added = false)
         )
     }

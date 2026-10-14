@@ -227,7 +227,7 @@ class CubeTest {
         assertEquals(
             listOf(
                 "Lightning Bolt: IN_BOX 1/1 Red box ×1",
-                "Sol Ring: OWNED 0/1 No place (Unsorted) ×1",
+                "Sol Ring: OWNED 0/1 No place (No binder) ×1",
                 "Elvish Mystic: OWNED 0/1 Red box ×1",
                 "Black Lotus: NOT_OWNED 0/0 ",
                 "Mox Pearl: PROXY 0/0 "

@@ -184,7 +184,7 @@ fun ImportCardsDialog(
                     }
                     if (!newBinder) {
                         Text(
-                            "Cards go into Unsorted, under All cards. Move them into binders whenever you like.",
+                            "Cards go into No binder, under All cards. Move them into binders whenever you like.",
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.textDim
                         )

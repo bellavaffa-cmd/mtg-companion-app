@@ -18,6 +18,7 @@ import com.mtgcompanion.app.data.holdsOwnCopies
 import com.mtgcompanion.app.data.holdsCards
 import com.mtgcompanion.app.data.pullNeeds
 import com.mtgcompanion.app.data.proxyCopies
+import com.mtgcompanion.app.data.sortsIntoBinders
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Unarchive
 import com.mtgcompanion.app.data.realCopiesOf
@@ -343,6 +344,12 @@ fun DeckDetailScreen(
     val cardSources by viewModel.cardSources.collectAsState()
     // The card whose "add a copy elsewhere" picker is open (doesn't remove it from this deck).
     var copyTarget by remember { mutableStateOf<DeckCardEntry?>(null) }
+    // Which binder a card's real copies are kept in (BinderViews.kt): the card whose binder is being
+    // picked, and "Put all cards in a binder…".
+    val sortingBinders by viewModel.sortingBinders.collectAsState()
+    val binderNames = remember(sortingBinders) { sortingBinders.associate { it.id to it.name } }
+    var binderFor by remember { mutableStateOf<DeckCardEntry?>(null) }
+    var puttingAllInBinder by remember { mutableStateOf(false) }
     // Name of the card whose "find similar" overlay is open, if any.
     var similarSearchFor by remember { mutableStateOf<String?>(null) }
     // A suggested card (by name, and the card itself when it's known) whose "into the deck or
@@ -421,6 +428,10 @@ fun DeckDetailScreen(
                             }
                             if (onTakeApart != null && d.holdsCards && d.cards.any { it.quantity - proxyCopies(d, it) > 0 }) {
                                 add(CardMenuAction("Take apart", Icons.Filled.Unarchive, description = "A list to put its cards back where they go") { onTakeApart() })
+                            }
+                            // Where its real copies are kept when they're out (BinderViews.kt): Physical and Proxy decks.
+                            if (d.sortsIntoBinders && d.cards.any { com.mtgcompanion.app.data.ownedCopies(d, it) > 0 }) {
+                                add(CardMenuAction("Put all cards in a binder…", Icons.Filled.Collections, description = "Every card not in one yet — they stay in the deck") { puttingAllInBinder = true })
                             }
                             add(CardMenuAction("Print proxies…", Icons.Filled.Print, description = "Nine to a page at real size, to cut out") { printingProxies = true })
                             add(CardMenuAction("Cards I don't own", Icons.Filled.Sell, description = "Buy them, wishlist them, or ask friends") { showMissing = true })
@@ -522,6 +533,11 @@ fun DeckDetailScreen(
                                 onMoveToConsidering = { entry -> addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, considering = true)) { viewModel.moveToConsidering(entry.scryfallId) } },
                                 onSwap = { swapOut = it },
                                 onCategories = { categoriesFor = it },
+                                // A Physical or Proxy deck's real copies say which binder they're kept in.
+                                binderLabel = if (currentDeck.sortsIntoBinders && com.mtgcompanion.app.data.ownedCopies(currentDeck, entry) > 0)
+                                    com.mtgcompanion.app.data.cardBindersLine(com.mtgcompanion.app.data.assignedCopies(currentDeck, entry), binderNames)?.let { "$it · change" } ?: "Add to binder…"
+                                else null,
+                                onBinder = { binderFor = it },
                                 hasSideboard = currentDeck.mode.hasSideboard,
                                 sideboardName = sideboardName(currentDeck.mode),
                                 onMoveToSideboard = { entry ->
@@ -698,6 +714,31 @@ fun DeckDetailScreen(
             )
         }
 
+        binderFor?.let { entry ->
+            val owned = com.mtgcompanion.app.data.ownedCopies(currentDeck, entry)
+            val current = com.mtgcompanion.app.data.assignedCopies(currentDeck, entry).filter { it.id in binderNames }
+            com.mtgcompanion.app.ui.collection.BinderPickDialog(
+                title = if (current.isEmpty()) "Add ${entry.name} to a binder" else "Change ${entry.name}'s binder",
+                binders = sortingBinders,
+                note = "Its ${if (owned == 1) "copy stays" else "$owned copies stay"} in this deck; the binder shows ${if (owned == 1) "it" else "them"}, and it's where ${if (owned == 1) "it goes" else "they go"} when ${if (owned == 1) "it's" else "they're"} out.",
+                onNone = if (current.isEmpty()) null else ({ binderFor = null; viewModel.setCardBinder(entry, null) }),
+                onPick = { b -> binderFor = null; viewModel.setCardBinder(entry, b.id); toast("${entry.name} · Binder: ${b.name}") },
+                onDismiss = { binderFor = null }
+            )
+        }
+        if (puttingAllInBinder) {
+            com.mtgcompanion.app.ui.collection.BinderPickDialog(
+                title = "Put all cards in a binder",
+                binders = sortingBinders,
+                note = "Every real card here that isn't in a binder yet. They stay in the deck; the binder shows them. Proxies never go in a binder.",
+                onPick = { b ->
+                    puttingAllInBinder = false
+                    viewModel.putAllInBinder(b.id) { n -> toast(if (n == 0) "Every card is already in a binder" else "$n ${if (n == 1) "card" else "cards"} put in ${b.name}") }
+                },
+                onDismiss = { puttingAllInBinder = false }
+            )
+        }
+
         // Move or copy a card to another deck or binder: the same picker as everywhere else.
         listOfNotNull(moveTarget?.let { it to AddVerb.MOVE }, copyTarget?.let { it to AddVerb.COPY }).firstOrNull()?.let { (entry, verb) ->
             val close = { moveTarget = null; copyTarget = null }
@@ -850,7 +891,7 @@ fun DeckDetailScreen(
                 text = {
                     Text(
                         "\"${currentDeck.name}\" holds $real of your cards, and a ${target.label.lowercase()} deck doesn't count " +
-                            "its cards as yours. Keep them and they go to Unsorted; or remove them from your collection.",
+                            "its cards as yours. Keep them and they go to No binder; or remove them from your collection.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextPrimary
                     )
@@ -1063,7 +1104,7 @@ private fun DeleteDeckDialog(
         title = { Text("Delete deck?", color = GoldLight) },
         text = {
             Text(
-                "\"$deckName\" holds $realCopies of your cards. Keep them and they go to Unsorted; " +
+                "\"$deckName\" holds $realCopies of your cards. Keep them and they go to No binder; " +
                     "or delete them with the deck, out of your collection. Deleting the deck can't be undone.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextPrimary
@@ -2984,6 +3025,9 @@ private fun deckCardActions(
     onMoveToConsidering: (DeckCardEntry) -> Unit,
     onSwap: (DeckCardEntry) -> Unit,
     onCategories: (DeckCardEntry) -> Unit = {},
+    /** "Add to binder…" or "Binder: Rares ×1 · change"; null where its copies can't go in one (BinderViews.kt). */
+    binderLabel: String? = null,
+    onBinder: (DeckCardEntry) -> Unit = {},
     hasSideboard: Boolean = false,
     /** "Sideboard", or "Pool" for a Limited deck. */
     sideboardName: String = "Sideboard",
@@ -3031,6 +3075,12 @@ private fun deckCardActions(
         description = entry.categories?.joinToString(", ") ?: "Your own groups: Ramp, Removal, Win cons…",
         section = inDeck
     ) { onCategories(entry) }
+    // Which binder its real copies are kept in; they stay in the deck (BinderViews.kt).
+    if (binderLabel != null) actions += CardMenuAction(
+        binderLabel, Icons.Filled.Collections,
+        description = "Where it's kept when it's out of the deck — it stays in the deck",
+        section = inDeck
+    ) { onBinder(entry) }
     // Elsewhere: other decks and binders, and the card's own page.
     val elsewhere = "Elsewhere"
     actions += CardMenuAction("Move to…", Icons.AutoMirrored.Filled.DriveFileMove, description = "Out of this deck, into another or a binder", section = elsewhere) { onMove(entry) }

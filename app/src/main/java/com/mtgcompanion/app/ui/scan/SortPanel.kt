@@ -132,7 +132,7 @@ fun SortPanel(session: SortSession, collections: List<Collection>, onChange: (So
                     Text("Each card shows its pile, big.", style = MaterialTheme.typography.labelMedium, color = ink)
                 } else {
                     Text(
-                        if (rule != null) "Pile ${last.pile + 1} · ${pileDestination(rule, last.facts, collections).label}" else "No pile fits · Unsorted",
+                        if (rule != null) "Pile ${last.pile + 1} · ${pileDestination(rule, last.facts, collections).label}" else "No pile fits · No binder",
                         style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                     Text(last.name, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -247,7 +247,7 @@ private fun PilesDialog(rules: List<PileRule>, collections: List<Collection>, on
                             OutlinedTextField(text, { v -> text = v; v.toIntOrNull()?.takeIf { it >= 0 }?.let { change(i, r.copy(keep = it)) } }, label = { Text("Copies to keep") }, singleLine = true)
                         }
                         Text("Where it goes", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-                        Choice("No place (Unsorted)", r.to == null) { change(i, r.copy(to = null)) }
+                        Choice("No place · No binder", r.to == null) { change(i, r.copy(to = null)) }
                         Choice("The box whose rule fits", r.to == BY_RULE) { change(i, r.copy(to = BY_RULE)) }
                         places.forEach { n -> Choice("  ".repeat(n.depth) + n.place.name, r.to == n.place.id) { change(i, r.copy(to = n.place.id)) } }
                     }
