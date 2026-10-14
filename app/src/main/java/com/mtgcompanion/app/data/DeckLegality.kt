@@ -6,23 +6,31 @@ import com.mtgcompanion.app.network.scryfall.ScryfallCard
 enum class LegalityIssueKind { DECK_SIZE, COMMANDER, LEGALITY, COPY_LIMIT, COLOR_IDENTITY, COMPANION }
 
 /**
- * A single problem found while checking a deck against its format's rules. [scryfallId] +
- * [fixQuantity] are set only for [LegalityIssueKind.COPY_LIMIT] issues — tapping such an issue can
- * set the card's quantity straight to [fixQuantity] to resolve it.
+ * A single problem found while checking a deck against its format's rules. [scryfallId] is the row
+ * the issue is about (a card's issue: banned, outside the colours, too many copies), so it can be
+ * opened, moved or removed; [fixQuantity] is set only for [LegalityIssueKind.COPY_LIMIT] issues —
+ * tapping such an issue can set the card's quantity straight to [fixQuantity] to resolve it.
+ * [sideboard]: the problem is in the sideboard, not the main deck.
  */
 data class LegalityIssue(
     val card: String?,
     val reason: String,
     val kind: LegalityIssueKind = LegalityIssueKind.LEGALITY,
     val scryfallId: String? = null,
-    val fixQuantity: Int? = null
+    val fixQuantity: Int? = null,
+    val sideboard: Boolean = false
 )
 
+/**
+ * [unchecked]: cards (main deck and sideboard) whose legality couldn't be read — no card data for
+ * them yet (offline, still loading) — so "no issues" doesn't yet mean legal (LegalitySummary.kt).
+ */
 data class LegalityReport(
     val mode: GameMode,
     val totalCards: Int,
     val legal: Boolean,
-    val issues: List<LegalityIssue>
+    val issues: List<LegalityIssue>,
+    val unchecked: Int = 0
 )
 
 private val BASIC_LAND_NAMES = setOf(
@@ -100,8 +108,8 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
         // Format legality of the card itself. (Restricted cards' copy limit is checked below, with
         // every printing and the sideboard counted together.)
         when (card?.legalities?.get(format)) {
-            "banned" -> issues += LegalityIssue(entry.name, "Banned in ${mode.label}.", kind = LegalityIssueKind.LEGALITY)
-            "not_legal" -> issues += LegalityIssue(entry.name, "Not legal in ${mode.label}.", kind = LegalityIssueKind.LEGALITY)
+            "banned" -> issues += LegalityIssue(entry.name, "Banned in ${mode.label}.", kind = LegalityIssueKind.LEGALITY, scryfallId = entry.scryfallId)
+            "not_legal" -> issues += LegalityIssue(entry.name, "Not legal in ${mode.label}.", kind = LegalityIssueKind.LEGALITY, scryfallId = entry.scryfallId)
         }
 
         // Commander colour identity.
@@ -127,25 +135,31 @@ fun evaluateLegality(deck: Deck, cards: Map<String, ScryfallCard>): LegalityRepo
     if (sideboardCount - companionOutside > 0 && !mode.hasSideboard) {
         issues += LegalityIssue(
             null, "${mode.label} has no sideboard — $sideboardCount card${if (sideboardCount == 1) "" else "s"} still there.",
-            kind = LegalityIssueKind.DECK_SIZE
+            kind = LegalityIssueKind.DECK_SIZE, sideboard = true
         )
     } else if (sideLimit != null && sideboardCount > sideLimit) {
         issues += LegalityIssue(
             null, "Sideboard has $sideboardCount cards; ${mode.label} allows at most $sideLimit.",
-            kind = LegalityIssueKind.DECK_SIZE
+            kind = LegalityIssueKind.DECK_SIZE, sideboard = true
         )
     }
     deck.sideboard.forEach { entry ->
         when (cards[entry.scryfallId]?.legalities?.get(format)) {
-            "banned" -> issues += LegalityIssue(entry.name, "Banned in ${mode.label} (sideboard).", kind = LegalityIssueKind.LEGALITY)
-            "not_legal" -> issues += LegalityIssue(entry.name, "Not legal in ${mode.label} (sideboard).", kind = LegalityIssueKind.LEGALITY)
+            "banned" -> issues += LegalityIssue(entry.name, "Banned in ${mode.label} — it's in the sideboard.", kind = LegalityIssueKind.LEGALITY, scryfallId = entry.scryfallId, sideboard = true)
+            "not_legal" -> issues += LegalityIssue(entry.name, "Not legal in ${mode.label} — it's in the sideboard.", kind = LegalityIssueKind.LEGALITY, scryfallId = entry.scryfallId, sideboard = true)
         }
     }
 
     issues += copyLimitIssues(deck, cards)
     issues += companionIssues(deck, cards, commanderIdentity)
 
-    return LegalityReport(mode = mode, totalCards = totalCards, legal = issues.isEmpty(), issues = issues)
+    // Cards whose legality couldn't be read: no card data (offline, or not loaded yet), or none for this format.
+    val unchecked = (deck.cards + deck.sideboard).map { it.scryfallId }.distinct().count { id ->
+        val card = cards[id]
+        card == null || (format.isNotEmpty() && card.legalities?.get(format) == null)
+    }
+
+    return LegalityReport(mode = mode, totalCards = totalCards, legal = issues.isEmpty(), issues = issues, unchecked = unchecked)
 }
 
 /**

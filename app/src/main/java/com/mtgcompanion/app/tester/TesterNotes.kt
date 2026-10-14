@@ -9,6 +9,15 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
+        "legality-why",
+        "The deck says why it isn't legal",
+        "1) Open a Commander deck that breaks a rule (98 cards, a banned card such as Mana Crypt, no commander, an off-colour card or two copies of something). The pill under the deck name now says the main reason: \"Not legal · 98/100 cards\", \"Not legal · 1 banned\", \"Not legal · no commander\", or \"Not legal · 3 problems\" when it's several kinds of thing. A legal deck still says \"Legal\". " +
+            "2) Tap the pill: a sheet lists every problem under a heading (Commander, Deck size, Banned or not legal in Commander, Outside the commander's colours, Too many copies, Companion). Tap a card's row to open the card. A banned or off-colour card offers Move to Considering and Remove (Remove asks first); too many copies offers Reduce; a short deck offers \"Add 2 cards · see suggestions\" (goes to Suggestions), an over-size one \"Remove 1 card · open the cards\". \"See in Stats\" goes to the Stats tab. " +
+            "3) Stats tab: on a deck that isn't legal the Legality box is already open, with the same headings. " +
+            "4) A Modern deck with a banned card in the sideboard says \"Banned in Modern — it's in the sideboard.\", and Remove there takes it out of the sideboard. " +
+            "5) Turn on airplane mode and open a deck: while the cards can't be looked up the pill says \"Checking…\" rather than \"Legal\" or \"Not legal\" (unless something is wrong that needs no card data, like the deck's size), and the sheet says how many cards couldn't be checked."
+    ),
+    TesterNote(
         "binder-views",
         "Binders show the cards your decks hold — \"Unsorted\" is now \"No binder\"",
         "Before anything else: this build saved a backup of your library the first time it opened — Settings › Data and speed › Backup › \"Restore from before the binders update\". " +
