@@ -96,10 +96,11 @@ class BinderRefsTest {
     }
 
     @Test
-    fun `to the sideboard or Considering and back the binders come along as on the web`() {
+    fun `the sideboard only lists a card, so it keeps no binders, as on the web`() {
         val d = Deck("d", "D", cards = listOf(card("a", 1, listOf(BinderRef("b1", 1)))), createdAt = 1, gameMode = GameMode.MODERN.name)
         val side = d.movedToSideboard("a")
-        assertEquals(listOf(BinderRef("b1", 1)), side.sideboard.single().binders)
+        // Its real copies go back to their binder (BinderFlows.kt toSideboard, moveVectors.json).
+        assertEquals(null, side.sideboard.single().binders)
         // Only the main deck's show in a binder (BinderViews.kt), so it's in none while it's there.
         assertTrue(deckCopiesByBinder(listOf(Collection("b1", "b1", createdAt = 1)), listOf(side)).byBinder.isEmpty())
     }
