@@ -9,14 +9,14 @@ data class TesterNote(val id: String, val title: String, val howToTry: String)
  */
 val TESTER_NOTES: List<TesterNote> = listOf(
     TesterNote(
-        "binder-flows",
-        "Cards going into and out of decks keep their binder",
-        "Before you start, note the Collection header's card count and the dashboard's value — none of these steps should change them. " +
-            "1) Open a binder (say Rares) with Sol Ring in it, long-press Sol Ring › Move › a Physical deck (say Talrand): \"Moved Sol Ring to Talrand\" and \"Still listed in Rares: In Talrand deck\". Rares lists it under IN DECKS with the badge \"In Talrand deck\"; Talrand's card says \"Binder: Rares ×1\". Picking cards in Rares › Copy to… › a Physical deck does the same (\"Added …\"), rather than counting the card twice; into a Virtual or Prototype deck the card is only listed and your copy stays in Rares. " +
-            "2) Give Sol Ring a box spot first (Storage) and do step 1 again; then on the deck lower Sol Ring's count (or remove it): Sol Ring is back in Rares as a loose card, at its old box spot (Where it is shows it). A copy that came from search or No binder goes back to No binder, first. " +
-            "3) Delete a deck that has cards from your binders, choosing \"Delete deck, keep cards\": the dialog says they go back to the binders they're listed in. Each card is back in its own binder (and spot); the rest in No binder. Making a Physical deck Virtual or Prototype (Keep cards) does the same. " +
-            "4) Delete a binder whose cards are in a deck: the dialog adds \"N cards in decks stay in their decks.\" The deck keeps them; they now show in No binder. " +
-            "5) On a Proxy deck with a proxy of a card you own in a binder: Stats › Proxies › swap it in. The binder lists it in the deck (\"In … deck\"); lower the count and it goes back to that binder. The pull list's \"Move pulled into deck box\" does the same for cards pulled from a binder. A foil copy goes back foil. " +
-            "6) Undo on the confirmation puts everything back. Through all of this the header count and value never change; sync with the web app or another phone on this build and nothing is doubled or lost."
+        "move-fixes",
+        "Moving and copying cards never makes or loses a copy",
+        "Before you start, note the Collection header's card count and the dashboard's value. Through every step below they stay the same — they only change when you add cards (search, scan, Add to a binder) or remove them. " +
+            "1) Sideboard: in a Physical deck with a sideboard (say Modern), a card that's listed in a binder (\"Binder: Rares ×1\") › Move to sideboard: the confirmation says your copy is back in its binder, and Rares has it again as a loose card. The sideboard only lists a card, like Considering. Move it back to the main deck: a loose copy in No binder goes in; with none, the deck counts it as a proxy to pull (Pull list shows it, and fetches it from Rares). Moving a card from another deck to this deck's sideboard does the same. " +
+            "2) Deck to a Virtual or Prototype deck: in a Physical deck, a card's ⋮ › Move to… › a Virtual deck: the Virtual deck lists it, and the copy goes back to its binder (or No binder) — the confirmation says so. Copy to… a Virtual deck: nothing leaves the Physical deck. " +
+            "3) Deck to deck: Move a card from one Physical deck to another: it leaves the first and arrives in the second with its binder (\"Binder: Rares ×1\" on the new deck, Rares lists it there). Copy a card to another Physical deck: it isn't counted twice — a loose copy comes out of No binder (\"1 taken from No binder\"), the rest is to pull (\"1 to pull\") and shows on that deck's pull list as needed. " +
+            "4) Deck to a binder: Move puts the deck's real copies in the binder (a proxy is no card and doesn't go). Copy to… a binder lists the deck's copy there (\"It stays in Talrand; Rares lists it\") instead of making a second one. " +
+            "5) Copies of decks: a deck's History › an earlier version › Copy as new deck, and a friend's shared deck › Copy to my decks, now make a Virtual deck — make it Physical to build it from your binders (loose copies come out of No binder). " +
+            "6) Undo on each confirmation puts everything back. Sync with the web app (Move to sideboard / back there does the same) and nothing is doubled or lost."
     )
 )

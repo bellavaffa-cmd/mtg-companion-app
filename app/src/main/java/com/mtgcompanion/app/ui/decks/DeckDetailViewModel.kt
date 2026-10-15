@@ -9,6 +9,12 @@ import com.mtgcompanion.app.data.deckValueOf
 import com.mtgcompanion.app.data.HistoryDevice
 import com.mtgcompanion.app.data.withCompanion
 import com.mtgcompanion.app.data.withSideboardCopies
+import com.mtgcompanion.app.data.SendTo
+import com.mtgcompanion.app.data.sendDeckCard
+import com.mtgcompanion.app.data.toMain
+import com.mtgcompanion.app.data.movedToSideboard
+import com.mtgcompanion.app.data.assignedCopies
+import com.mtgcompanion.app.data.countsAsOwned
 import com.mtgcompanion.app.ui.common.toAddItem
 import com.mtgcompanion.app.ui.common.AddCheckOutcome
 import com.mtgcompanion.app.ui.common.AddItem
@@ -1047,17 +1053,38 @@ class DeckDetailViewModel(
     }
 
     // ---- Sideboard ----
-    // Moving between the main deck and the sideboard leaves the Unsorted pile alone: the copies stay
-    // with the deck either way.
+    // The sideboard only lists a card, as Considering does (BinderFlows.kt toSideboard / toMain): a card
+    // going to it sends its real copies back to their binders (the rest to No binder); one coming back
+    // takes loose copies out of No binder, the rest to pull. The web app does the same.
 
-    /** Run by the add confirmation, which says so and can undo it. */
-    suspend fun moveToSideboard(scryfallId: String) {
+    /** Run by the add confirmation ([ops]), which says so and can undo it. */
+    suspend fun moveToSideboard(scryfallId: String, ops: AddToOps? = null) {
+        val before = repository.decksFlow.first().firstOrNull { it.id == deckId } ?: return
+        val after = before.movedToSideboard(scryfallId)
+        if (after === before) return
         repository.moveToSideboard(deckId, scryfallId)
+        val back = collectionRepository.returnLeaving(before, after).copies
+        if (back > 0) ops?.addNote(copiesBackNote(back, before.cards.firstOrNull { it.scryfallId == scryfallId }?.let { assignedCopies(before, it).isNotEmpty() } == true))
     }
 
-    /** Run by the add confirmation, which says so and can undo it. */
-    suspend fun moveToMain(scryfallId: String) {
-        repository.moveToMain(deckId, scryfallId)
+    /** Run by the add confirmation ([ops]), which says so and can undo it. */
+    suspend fun moveToMain(scryfallId: String, ops: AddToOps? = null) {
+        val before = repository.decksFlow.first().firstOrNull { it.id == deckId } ?: return
+        val cols = collectionRepository.collectionsFlow.first()
+        val r = toMain(cols, before, scryfallId)
+        if (r.collections !== cols) collectionRepository.applySync { r.collections }
+        repository.change { decks -> decks.map { if (it.id == deckId) toMain(cols, it, scryfallId).deck else it } }
+        ops?.let { pullNotes(it, r.taken, r.toPull) }
+    }
+
+    /** "Your 2 copies are back in their binders" — real copies a move sent back. */
+    private fun copiesBackNote(n: Int, inBinder: Boolean): String =
+        "${if (n == 1) "Your copy is" else "Your $n copies are"} back in ${if (!inBinder) "No binder" else if (n == 1) "its binder" else "their binders"}"
+
+    /** Where copies going into a deck that holds its cards came from: No binder, or still to pull. */
+    private fun pullNotes(ops: AddToOps, taken: Int, toPull: Int) {
+        if (taken > 0) ops.addNote("$taken taken from No binder")
+        if (toPull > 0) ops.addNote("$toPull to pull — on the deck's pull list")
     }
 
     /** The sideboard's copies of a card; zero takes it off the sideboard. */
@@ -1263,27 +1290,51 @@ class DeckDetailViewModel(
     }
 
     /**
-     * Sends [pick]'s quantity of [entry]'s copies to another deck (or its Considering list) or a
-     * binder — moving them out of this deck, or with [keep], copying them. Run by the add
+     * Sends [pick]'s quantity of [entry]'s copies to another deck (its main deck, sideboard or
+     * Considering list) or a binder — moving them out of this deck, or with [keep], copying them. No
+     * copy is made or lost (BinderFlows.kt sendDeckCard): into a deck that holds its cards a move takes
+     * the real copies with their binders, and a copy takes loose ones out of No binder, the rest to pull;
+     * anywhere that only lists the card, a move's real copies go back to their binders. Run by the add
      * confirmation ([ops]), which can undo it.
      */
     suspend fun sendCard(entry: DeckCardEntry, pick: AddToPick, keep: Boolean, ops: AddToOps) {
         val target = ops.resolve(pick)
         val quantity = pick.quantity.coerceIn(1, entry.quantity.coerceAtLeast(1))
-        when (target.kind) {
-            SourceKind.DECK -> when {
-                pick.considering -> repository.addConsideringEntry(target.id, entry.copy(quantity = 1))
-                pick.sideboard -> repository.addSideboardEntry(target.id, entry.copy(quantity = quantity))
-                else -> repository.addEntry(target.id, entry.copy(quantity = quantity))
-            }
-            SourceKind.BINDER -> collectionRepository.addEntry(
-                target.id,
-                CollectionEntry(entry.scryfallId, entry.name, entry.imageUrl, quantity = quantity, foilQuantity = 0, backImageUrl = entry.backImageUrl, tags = entry.tags)
+        val decks = repository.decksFlow.first()
+        val from = decks.firstOrNull { it.id == deckId } ?: return
+        val to = when (target.kind) {
+            SourceKind.DECK -> SendTo.ToDeck(
+                decks.firstOrNull { it.id == target.id } ?: return,
+                when {
+                    pick.considering -> DeckPart.CONSIDERING
+                    pick.sideboard -> DeckPart.SIDEBOARD
+                    else -> DeckPart.MAIN
+                }
             )
+            SourceKind.BINDER -> SendTo.ToBinder(target.id)
         }
-        if (!keep) {
-            if (quantity >= entry.quantity) repository.removeCardFromDeck(deckId, entry.scryfallId)
-            else repository.setCardQuantity(deckId, entry.scryfallId, entry.quantity - quantity)
+        val cols = collectionRepository.collectionsFlow.first()
+        val sent = sendDeckCard(cols, from, entry.scryfallId, quantity, to, keep)
+        if (sent.collections !== cols) collectionRepository.applySync { sent.collections }
+        repository.change { all -> all.map { d -> sent.to?.takeIf { it.id == d.id } ?: if (d.id == sent.from.id) sent.from else d } }
+
+        // What happened to the copies, under the confirmation.
+        val back = if (keep) 0 else ownedCopies(from, entry) - (sent.from.cards.firstOrNull { it.scryfallId == entry.scryfallId }?.let { ownedCopies(sent.from, it) } ?: 0) - sent.real
+        when (to) {
+            is SendTo.ToDeck -> {
+                if (back > 0) ops.addNote(copiesBackNote(back, assignedCopies(from, entry).isNotEmpty()))
+                if (to.part == DeckPart.SIDEBOARD || (to.part == DeckPart.MAIN && !to.deck.countsAsOwned)) {
+                    if (from.countsAsOwned && keep) ops.addNote("${to.deck.name} only lists it: your copies stay here")
+                }
+                pullNotes(ops, sent.taken, sent.toPull)
+            }
+            is SendTo.ToBinder -> when {
+                sent.added > 0 -> Unit
+                keep && sent.real > 0 -> ops.addNote("It stays in ${from.name}; ${target.name} lists ${if (sent.real == 1) "it" else "${sent.real} copies"}")
+                keep -> ops.addNote("It stays in ${from.name}: a copy can't be in two places")
+                back > 0 -> ops.addNote(copiesBackNote(back, assignedCopies(from, entry).isNotEmpty()))
+                sent.real < quantity -> ops.addNote("Proxies aren't real copies: ${if (sent.real == 0) "none" else "only ${sent.real}"} went")
+            }
         }
     }
 

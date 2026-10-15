@@ -43,7 +43,9 @@ class DeckRepository(private val context: Context) {
         gameMode: GameMode,
         entries: List<DeckCardEntry>,
         commander: DeckCardEntry?,
-        partnerCommander: DeckCardEntry?
+        partnerCommander: DeckCardEntry?,
+        /** Physical unless said: a copy of another deck — an earlier version of one, a friend's — is Virtual, so the same cards aren't counted as owned twice. */
+        ownership: DeckOwnership = DeckOwnership.DEFAULT
     ): Deck {
         val merged = entries.groupBy { it.scryfallId }.map { (_, copies) ->
             // A new deck's copies aren't in any of this user's binders yet (a friend's deck, copied, names theirs).
@@ -55,7 +57,8 @@ class DeckRepository(private val context: Context) {
             gameMode = gameMode.name,
             cards = merged,
             commander = commander,
-            partnerCommander = partnerCommander
+            partnerCommander = partnerCommander,
+            ownership = ownership.name
         )
         update { it + deck }
         Usage.action(UsageAction.DECK_CREATED)

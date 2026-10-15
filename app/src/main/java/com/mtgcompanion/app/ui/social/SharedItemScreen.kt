@@ -297,7 +297,8 @@ private fun SharedDeck(item: SharedItem, deckRepository: DeckRepository, canCopy
                             copied = createCube(deckRepository, deck.name, s.size, s.singleton, deck.cards.map { it.copy(proxyQuantity = null) })
                             return@launch
                         }
-                        val made = deckRepository.createDeckWithCards(deck.name, deck.mode, deck.cards, deck.commander, deck.partnerCommander)
+                        // Their list, not your cards: Virtual (no proxies of theirs either), so nothing is counted as owned until you build it.
+                        val made = deckRepository.createDeckWithCards(deck.name, deck.mode, deck.cards.map { it.copy(proxyQuantity = null) }, deck.commander, deck.partnerCommander, com.mtgcompanion.app.data.DeckOwnership.VIRTUAL)
                         // The primer comes along: it's how the deck is meant to play.
                         val primer = tidyDescription(deck.description.orEmpty())
                         if (primer.isNotEmpty()) deckRepository.change { all -> all.map { if (it.id == made.id) it.copy(description = primer) else it } }

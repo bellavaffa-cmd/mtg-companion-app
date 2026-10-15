@@ -399,7 +399,7 @@ fun DeckVersionScreen(
             }
             item {
                 Text(
-                    "Going back keeps today's list in the history too, so you can always return to it. Physical decks get a pull list for the cards that change.",
+                    "Going back keeps today's list in the history too, so you can always return to it. Physical decks get a pull list for the cards that change. A copy as a new deck is Virtual: the cards are still this deck's — make it Physical to build it from your binders.",
                     style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(top = 6.dp)
                 )
             }

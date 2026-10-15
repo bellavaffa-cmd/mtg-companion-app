@@ -12,6 +12,11 @@ package com.mtgcompanion.app.data
  *    a binder that's gone, No binder — each to the spot it came from (Deck.cameFrom) while that place
  *    is still there. The card's refs are cut to what it still holds.
  *  - A binder deleted: its own copies go with it; deck copies stay in their decks, now in No binder.
+ *  - From one deck to another (sendDeckCard): into a deck that holds its cards (Physical or Proxy, its
+ *    main list) a move takes the real copies with their binders and spots; a copy, or the copies a move
+ *    doesn't bring, come out of No binder (a Physical deck) and the rest are marked to pull — never
+ *    made up. A sideboard, a Considering list, or a deck that doesn't hold its cards (Virtual,
+ *    Prototype, a cube, a sample) only lists the card: a move's real copies go back the usual way.
  * No copy is made or lost: what's owned and what it's worth (OwnedCopies.kt) never change, and the
  * views still add up to All cards' real copies. Mirrors the web app's src/collection/binderFlows.ts
  * (shared cases: returnToBinderVectors.json).
@@ -295,3 +300,182 @@ fun sendToDeck(collections: List<Collection>, deck: Deck, from: String, scryfall
 /** "2 cards in decks stay in their decks." — said when a binder that lists deck copies is deleted; "" when none. */
 fun deckCopiesStayLine(n: Int): String =
     if (n <= 0) "" else "${java.text.NumberFormat.getIntegerInstance(java.util.Locale.UK).format(n)} ${if (n == 1) "card" else "cards"} in decks stay in their decks."
+
+// ---- Between decks, and in and out of the sideboard ----
+
+/** [entry] as a new card for another deck or list: no binders, no proxies, not a cut candidate. */
+private fun freshCard(entry: DeckCardEntry, quantity: Int) = entry.copy(quantity = quantity, binders = null, proxyQuantity = null, replaceable = false)
+
+/** [deck] with its main-deck card [next] put in place of the one with its id, or added. */
+private fun withMainCard(deck: Deck, next: DeckCardEntry): Deck =
+    if (deck.cards.any { it.scryfallId == next.scryfallId }) deck.copy(cards = deck.cards.map { if (it.scryfallId == next.scryfallId) next else it })
+    else deck.copy(cards = deck.cards + next)
+
+/** [deck] with its main-deck card [scryfallId] down to [quantity] copies; gone at 0, as its commander too. */
+private fun withoutCopies(deck: Deck, scryfallId: String, quantity: Int): Deck {
+    val after = withCardCount(deck, scryfallId, quantity)
+    if (quantity > 0) return after
+    return after.copy(
+        commander = deck.commander?.takeUnless { it.scryfallId == scryfallId },
+        partnerCommander = deck.partnerCommander?.takeUnless { it.scryfallId == scryfallId }
+    )
+}
+
+/** [deck] with [entry] on its Considering list (once: it's a list of candidates). */
+private fun withConsidered(deck: Deck, entry: DeckCardEntry): Deck =
+    if (deck.considering.any { it.scryfallId == entry.scryfallId }) deck else deck.copy(considering = deck.considering + freshCard(entry, 1))
+
+/** What [withCopiesToPull] did: [taken] loose copies out of No binder, [toPull] copies the deck is short, marked to pull. */
+data class ToPull(val collections: List<Collection>, val deck: Deck, val taken: Int, val toPull: Int)
+
+/**
+ * [deck] with [n] more copies of [entry] in its main list that aren't coming with real copies — a card
+ * copied from another deck, moved there from a deck that didn't hold it, or back from the sideboard. No
+ * copy is made up: a deck that holds its cards takes loose copies out of No binder (a Physical deck, as
+ * adding by hand does) and marks the rest to pull — its proxies until the pull list fetches them. Any
+ * other deck just lists them.
+ */
+fun withCopiesToPull(collections: List<Collection>, deck: Deck, entry: DeckCardEntry, n: Int): ToPull {
+    if (n <= 0) return ToPull(collections, deck, 0, 0)
+    val base = deck.cards.firstOrNull { it.scryfallId == entry.scryfallId } ?: freshCard(entry, 0)
+    if (!deck.countsAsOwned) return ToPull(collections, withMainCard(deck, base.copy(quantity = base.quantity + n)), 0, 0)
+    var taken = 0
+    val cols = if (!deck.holdsOwnCopies) collections else collections.map { c ->
+        if (c.id != UNSORTED_COLLECTION_ID) return@map c
+        val (left, got) = takenFromUnsorted(c.entries, entry.scryfallId, entry.name, n)
+        taken = got
+        if (got > 0) c.copy(entries = left) else c
+    }
+    val toPull = n - taken
+    val proxies = proxyCopies(deck, base) + toPull
+    val next = base.copy(
+        quantity = base.quantity + n,
+        proxyQuantity = if (proxies > 0 || deck.ownershipType == DeckOwnership.PROXY) proxies else base.proxyQuantity
+    )
+    return ToPull(cols, tidiedRefs(withMainCard(deck, next), setOf(entry.scryfallId)), taken, toPull)
+}
+
+/** Where a deck's card is sent: another deck's main list, sideboard or Considering list, or a binder (the Unsorted pile is No binder). */
+sealed interface SendTo {
+    data class ToDeck(val deck: Deck, val part: DeckPart) : SendTo
+    data class ToBinder(val binderId: String) : SendTo
+}
+
+/** What [sendDeckCard] did. */
+data class DeckCardSent(
+    val collections: List<Collection>,
+    /** The deck the card came from, after. */
+    val from: Deck,
+    /** The deck it went to, after; null for a binder. */
+    val to: Deck?,
+    /** Real copies that went with it: into the other deck, into the binder, or (a copy to a binder) listed there. */
+    val real: Int = 0,
+    /** Loose copies taken out of No binder for the other deck. */
+    val taken: Int = 0,
+    /** Copies the other deck is short, marked to pull. */
+    val toPull: Int = 0,
+    /** New copies put in a binder: the card of a deck that holds none of its own, sent to a binder — an add. */
+    val added: Int = 0
+)
+
+/**
+ * [quantity] copies of [from]'s main-deck card [scryfallId] sent [to] another deck or a binder — moved
+ * ([keep] false: out of [from]) or copied. No copy is made or lost (OwnedCopies.kt):
+ *  - Into a deck that holds its cards (its main list): a move takes the real copies leaving [from] with
+ *    it, their binders and the spots they came from too; the rest — a copy's, or a move's proxies — come
+ *    out of No binder or are marked to pull (withCopiesToPull).
+ *  - Into a sideboard, a Considering list, or a deck that doesn't hold its cards: only the card is
+ *    listed. A move's real copies go back to their binders, the rest to No binder (returnCopies).
+ *  - Into a binder: a move's real copies go into it as its own copies (proxies are no card at all); a
+ *    copy can't be in two places, so a copy lists the deck's real copies that are in no binder in that
+ *    one (sorts them into it). A deck that holds none of its cards adds the card to the binder, as from
+ *    search. A wishlist only lists the card: a move's real copies go back the usual way.
+ * Mirrors the web app's sendDeckCard (shared cases: moveVectors.json).
+ */
+fun sendDeckCard(collections: List<Collection>, from: Deck, scryfallId: String, quantity: Int, to: SendTo, keep: Boolean): DeckCardSent {
+    val entry = from.cards.firstOrNull { it.scryfallId == scryfallId }
+    val nothing = DeckCardSent(collections, from, (to as? SendTo.ToDeck)?.deck)
+    if (entry == null || entry.quantity <= 0) return nothing
+    val q = quantity.coerceAtMost(entry.quantity).coerceAtLeast(1)
+    val valid = sortingBinderIds(collections)
+    // On a move [from]'s card goes down by q: the real copies leaving are the ones that go (returnCopies' chunks).
+    val left = if (keep) null else returnCopies(collections, from, withoutCopies(from, scryfallId, entry.quantity - q))
+    val src = left?.deck ?: from
+    val leaving = left?.copies ?: 0
+
+    return when (to) {
+        is SendTo.ToBinder -> {
+            val holds = to.binderId == UNSORTED_COLLECTION_ID || to.binderId in valid
+            if (!holds || !from.countsAsOwned) {
+                // A wishlist, or a deck that holds none of its cards: the card is listed / added there; a move's real copies go back.
+                val back = left?.collections ?: collections
+                val cols = if (to.binderId == UNSORTED_COLLECTION_ID) withUnsortedPile(back) else back
+                val add = CopiesBack(to.binderId, entry, q, 0, emptyList())
+                return nothing.copy(
+                    collections = cols.map { c -> if (c.id != to.binderId) c else c.copy(entries = intoCollection(c.entries, add)) },
+                    from = src,
+                    added = if (holds) q else 0
+                )
+            }
+            if (left != null) {
+                // Moved: its real copies go in the binder as the binder's own, plain and foil as they were.
+                val plain = left.back.sumOf { it.plain }
+                val foil = left.back.sumOf { it.foil }
+                if (plain + foil <= 0) return nothing.copy(from = src)
+                val cols = if (to.binderId == UNSORTED_COLLECTION_ID) withUnsortedPile(collections) else collections
+                val add = CopiesBack(to.binderId, entry, plain, foil, emptyList())
+                return nothing.copy(collections = cols.map { c -> if (c.id != to.binderId) c else c.copy(entries = intoCollection(c.entries, add)) }, from = src, real = plain + foil)
+            }
+            // Copied: a copy can't be in two places, so the deck's real copies in no binder are listed in
+            // this one instead (sorted into it); one already in a binder stays where it is.
+            if (to.binderId == UNSORTED_COLLECTION_ID) return nothing
+            val refs = assignedCopies(from, entry).filter { it.id in valid }
+            val n = minOf(q, ownedCopies(from, entry) - refs.sumOf { it.qty })
+            if (n <= 0) return nothing
+            return nothing.copy(from = tidiedRefs(withMainCard(from, entry.copy(binders = withRef(refs, binderRef(to.binderId, n, 0)))), setOf(scryfallId)), real = n)
+        }
+        is SendTo.ToDeck -> {
+            val deck = to.deck
+            if (to.part != DeckPart.MAIN || !deck.countsAsOwned) {
+                // Only the card is listed there: the copies a move takes out of [from] go back to their binders, the rest to No binder.
+                val listed = when (to.part) {
+                    DeckPart.SIDEBOARD -> deck.withSideboardCopies(freshCard(entry, q))
+                    DeckPart.CONSIDERING -> withConsidered(deck, entry)
+                    DeckPart.MAIN -> withCopiesToPull(collections, deck, entry, q).deck
+                }
+                return nothing.copy(collections = left?.collections ?: collections, from = src, to = listed)
+            }
+            // Into a deck that holds its cards: the real copies leaving go with the card, their binders and spots too.
+            var into = deck
+            for (b in left?.back.orEmpty()) into = withCopiesFromBinder(into, entry.copy(quantity = b.copies), b.collectionId, b.foil, emptyList(), valid)
+            if (left != null && left.used.isNotEmpty()) into = into.copy(cameFrom = tidyCameFrom(into.cameFrom.orEmpty() + left.used))
+            val rest = withCopiesToPull(collections, into, entry, q - leaving)
+            return nothing.copy(collections = rest.collections, from = src, to = rest.deck, real = leaving, taken = rest.taken, toPull = rest.toPull)
+        }
+    }
+}
+
+/** What [toSideboard] did: [back] real copies went back to their binders or No binder. */
+data class Sided(val collections: List<Collection>, val deck: Deck, val back: Int)
+
+/**
+ * [deck]'s main-deck card [scryfallId] moved to its sideboard. The sideboard only lists a card, so its
+ * real copies go back to their binders, the rest to No binder (returnCopies). Unchanged for a card not
+ * in the main deck, or a commander.
+ */
+fun toSideboard(collections: List<Collection>, deck: Deck, scryfallId: String): Sided {
+    val after = deck.movedToSideboard(scryfallId)
+    if (after === deck) return Sided(collections, deck, 0)
+    val r = returnCopies(collections, deck, after)
+    return Sided(r.collections, r.deck!!, r.copies)
+}
+
+/**
+ * [deck]'s sideboard card [scryfallId] moved into its main deck: into a deck that holds its cards, loose
+ * copies out of No binder, the rest to pull (withCopiesToPull) — the sideboard held none.
+ */
+fun toMain(collections: List<Collection>, deck: Deck, scryfallId: String): ToPull {
+    val entry = deck.sideboard.firstOrNull { it.scryfallId == scryfallId } ?: return ToPull(collections, deck, 0, 0)
+    val without = deck.copy(sideboard = deck.sideboard.filterNot { it.scryfallId == scryfallId })
+    return withCopiesToPull(collections, without, entry, entry.quantity)
+}

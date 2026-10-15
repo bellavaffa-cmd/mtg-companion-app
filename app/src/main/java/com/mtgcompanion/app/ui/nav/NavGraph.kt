@@ -1104,7 +1104,8 @@ fun MtgNavGraph(
                     onCopy = { name, cards, commander, partner ->
                         val mode = decks.firstOrNull { it.id == deckId }?.mode ?: GameMode.DEFAULT
                         addToScope.launch {
-                            val made = deckRepository.createDeckWithCards(name, mode, cards, commander, partner)
+                            // A copy of the list, not of the cards: Virtual, so the deck's copies aren't counted as owned twice.
+                            val made = deckRepository.createDeckWithCards(name, mode, cards, commander, partner, com.mtgcompanion.app.data.DeckOwnership.VIRTUAL)
                             navController.navigate(Routes.deckDetail(made.id)) { popUpTo(Routes.DECKS) }
                         }
                     },

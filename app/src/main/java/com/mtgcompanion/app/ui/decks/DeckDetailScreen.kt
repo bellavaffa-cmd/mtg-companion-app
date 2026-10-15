@@ -550,7 +550,7 @@ fun DeckDetailScreen(
                                         addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity, sideboard = true, pool = currentDeck.mode.limited),
                                         // Asked first when the sideboard would go past its 15 cards.
                                         check = AddCheck.forMove(AddToPick(currentDeck.asTarget()), listOf(entry.toAddItem(entry.quantity, sideboard = true)))
-                                    ) { viewModel.moveToSideboard(entry.scryfallId) }
+                                    ) { viewModel.moveToSideboard(entry.scryfallId, ops = this) }
                                 }
                             )
                         },
@@ -561,7 +561,7 @@ fun DeckDetailScreen(
                                 entry = entry,
                                 sideboardName = sideboardName(currentDeck.mode),
                                 onMoveToMain = {
-                                    addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity)) { viewModel.moveToMain(entry.scryfallId) }
+                                    addTo.perform(addToMessage(AddVerb.MOVE, entry.name, currentDeck.name, quantity = entry.quantity)) { viewModel.moveToMain(entry.scryfallId, ops = this) }
                                 },
                                 onRemove = { removeSideboardTarget = entry },
                                 onViewDetails = onViewDetails,

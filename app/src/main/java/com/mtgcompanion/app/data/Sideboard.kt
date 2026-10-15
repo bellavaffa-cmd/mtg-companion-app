@@ -2,8 +2,12 @@ package com.mtgcompanion.app.data
 
 // A deck's sideboard: up to fifteen cards beside the main deck, for formats that have one
 // (GameMode.hasSideboard). Kept in Deck.sideboard — out of the main list, so stats, size, price and
-// combos never see it — and merged by the sync exactly like the Considering list. The changes here are
-// plain functions on a Deck so they can be tested; DeckRepository writes them.
+// combos never see it — and merged by the sync exactly like the Considering list. Its copies don't
+// count as cards the deck holds: like Considering it only lists a card, so a sideboard card is in no
+// binder and has no proxies. Moving a card out of the main deck into it sends the real copies back to
+// their binders, and moving it back takes loose copies out of No binder, the rest to pull
+// (BinderFlows.kt toSideboard / toMain). The changes here are plain functions on a Deck so they can be
+// tested; DeckRepository writes them. Mirrors the web app's src/decks/sideboard.ts.
 
 /** Where an imported decklist line goes in a deck. */
 enum class DeckPart { MAIN, SIDEBOARD, CONSIDERING }
@@ -45,9 +49,12 @@ internal fun List<DeckCardEntry>.plusCopies(entry: DeckCardEntry): List<DeckCard
         map { if (it.scryfallId == entry.scryfallId) it.copy(quantity = it.quantity + entry.quantity) else it }
     } else this + entry
 
-/** This deck with [entry]'s copies added to its sideboard. A sideboard card is never a cut candidate. */
+/** A sideboard card is never a cut candidate, and only lists the card: no binders, no proxies. */
+private fun DeckCardEntry.sided() = copy(replaceable = false, binders = null, proxyQuantity = null)
+
+/** This deck with [entry]'s copies added to its sideboard. */
 fun Deck.withSideboardCopies(entry: DeckCardEntry): Deck =
-    copy(sideboard = sideboard.plusCopies(entry.copy(replaceable = false)))
+    copy(sideboard = sideboard.plusCopies(entry.sided()))
 
 /** This deck with the sideboard's copies of [scryfallId] set to [quantity]; zero or less takes it off. */
 fun Deck.withSideboardQuantity(scryfallId: String, quantity: Int): Deck = copy(
@@ -65,7 +72,7 @@ fun Deck.movedToSideboard(scryfallId: String): Deck {
     if (scryfallId == commander?.scryfallId || scryfallId == partnerCommander?.scryfallId) return this
     return copy(
         cards = cards.filterNot { it.scryfallId == scryfallId },
-        sideboard = sideboard.plusCopies(entry.copy(replaceable = false))
+        sideboard = sideboard.plusCopies(entry.sided())
     )
 }
 
